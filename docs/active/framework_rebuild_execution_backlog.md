@@ -25,12 +25,16 @@
 - editor 模板页已优先从后端模板 `default_graph` 初始化
 - SQLite 持久化已落地
 - Tailwind 与前端组件层已建立
+- editor 第一阶段 `canvas-first` 布局已落地
+  - `State Panel` 折叠
+  - 浮动面板
+  - 节点库搜索
 
 以下事项仍然是现实问题：
 
-1. 模板注册表目前只有 `creative_factory`
-2. 前端仍保留 fallback 模板逻辑
-3. `/api/settings` 仍暴露 `skills`
+1. 前端仍保留 fallback 模板逻辑
+2. `/api/settings` 仍暴露 `skills`
+3. `Node Picker` 与拖线建点还未实现
 4. UI 层虽然已有 primitives 和语义组件，但还没有完整设计系统
 
 ---
@@ -111,20 +115,14 @@
 
 优先级：`P1`
 
-目标：
+状态：`已完成`
 
-验证当前架构不是只服务 `creative_factory`。
+已完成结果：
 
-建议新增：
-
-- 第二个模板目录：
-  - `backend/app/templates/<new_template>/`
-- 对应前端模板源最小支持
-
-完成标准：
-
-- `/api/templates` 返回两个模板
-- editor 能通过模板路由打开第二个模板
+- 第二个模板 `hello_world` 已落地
+- `/api/templates` 现在返回两个模板
+- editor 可通过模板路由打开 `hello_world`
+- `hello_world` 用于验证前端编排到本地 OpenAI-compatible 模型服务的调用链
 
 ## Task T4 弱化 settings 中的 skills 概念
 
@@ -158,6 +156,27 @@
 - `DataList`
 - `ToolbarGroup`
 
+## Task T6 Node Picker 与拖线建点
+
+优先级：`P0`
+
+目标：
+
+让用户从节点拖线到空白处时，直接在落点创建新节点，而不是先回到节点库。
+
+需要修改：
+
+- `frontend/components/editor/editor-workbench.tsx`
+- 新增 `Node Picker` 组件
+- React Flow 空白落点处理逻辑
+
+完成标准：
+
+- 拖线到空白处会弹出节点选择器
+- 选择节点类型后自动创建并连线
+- 支持搜索
+- 节点分组与当前 palette 保持一致
+
 ---
 
 ## 4. 当前不建议优先做的事
@@ -176,6 +195,7 @@
 建议按这个顺序推进：
 
 1. `T2 模板单一来源继续收口`
-2. `T3 第二个模板`
-3. `T4 弱化 settings 中的 skills 概念`
-4. `T5 UI 组件层继续收口`
+2. `T6 Node Picker 与拖线建点`
+3. `T3 第二个模板`
+4. `T4 弱化 settings 中的 skills 概念`
+5. `T5 UI 组件层继续收口`
