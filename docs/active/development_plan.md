@@ -91,6 +91,10 @@
 - editor 点击 `Run` 后会立即请求一次 `/api/runs/{run_id}`，并把结果映射回节点状态
 - editor 已具备持续轮询
   - run 未进入终态前，会周期性刷新 `/api/runs/{run_id}`
+- editor 已具备基础运行观测增强
+  - 顶部会显示轮询中的 run 状态
+  - run 级 `warnings / errors` 会在编辑器内展示
+  - 选中节点后会请求 `/api/runs/{run_id}/nodes/{node_id}` 查看节点级执行明细
 - `runs` 页面已支持按 `graph_name` 搜索、按 `status` 过滤
 - `knowledge` 页面已支持搜索和展开详情
 - `memories` 页面已支持按 `memory_type` 过滤和展开详情
@@ -100,14 +104,15 @@
   - `templates`
 - `creative_factory` 默认图已由后端模板层生成
 - editor 模板主路径已优先依赖后端 `default_graph`
-  - 前端本地完整模板图仅作为异常兜底
+  - 前端异常兜底已降级为最小 shell graph + 本地 theme presets
+  - 前端不再维护完整默认图副本
 
 ### 3.2 尚未完成
 
 - 模板注册表目前 **只有一个模板**
   - 还没有第二个模板用于验证框架通用性
 - 前端和后端的模板定义虽然已收拢很多，但仍不是完全单一来源
-  - 前端仍保留 fallback 模板逻辑，但已不再参与主路径
+  - 前端仍保留 fallback shell 与本地 preset 逻辑，但已不再维护完整图结构
 - `settings` 里仍保留 `skills` 字段
   - 说明 skill 层还没有完全退出主概念层
 - 前端已建立 primitives 与语义组件，但还没有形成完整设计系统
@@ -214,13 +219,15 @@
 
 ### P0
 
-- 增强 editor 的运行观测
-  - 当前节点高亮更实时
-  - 更明确的 run status 区
-  - 失败节点的错误摘要展示
 - 继续收拢模板单一来源
   - 继续减少前端 fallback 模板图维护量
   - 让后端模板定义成为更明确的源头
+
+### 已完成的近期增量
+
+- editor 运行轮询已完成
+- editor run 级 `warnings / errors` 展示已完成
+- editor 节点级执行明细查看已完成
 
 ### P1
 
