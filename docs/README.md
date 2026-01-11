@@ -19,7 +19,8 @@
 - `editor_interaction_spec.md`
 - `development_plan.md`
 - `acceptance_runbook.md`
-- `node_definition_spec.md`
+- `node_system_design.md`
+- `node_system_execution_plan.md`
 
 ## `docs/architecture/`
 
@@ -54,8 +55,9 @@
 2. `docs/active/editor_interaction_spec.md`
 3. `docs/active/development_plan.md`
 4. `docs/active/acceptance_runbook.md`
-5. `docs/active/node_definition_spec.md`
-6. `docs/architecture/framework_positioning.md`
+5. `docs/active/node_system_design.md`
+6. `docs/active/node_system_execution_plan.md`
+7. `docs/architecture/framework_positioning.md`
 
 ## 3. Current Source of Truth
 
@@ -65,7 +67,8 @@
 - [editor_interaction_spec.md](/home/abyss/GraphiteUI/docs/active/editor_interaction_spec.md)
 - [development_plan.md](/home/abyss/GraphiteUI/docs/active/development_plan.md)
 - [acceptance_runbook.md](/home/abyss/GraphiteUI/docs/active/acceptance_runbook.md)
-- [node_definition_spec.md](/home/abyss/GraphiteUI/docs/active/node_definition_spec.md)
+- [node_system_design.md](/home/abyss/GraphiteUI/docs/active/node_system_design.md)
+- [node_system_execution_plan.md](/home/abyss/GraphiteUI/docs/active/node_system_execution_plan.md)
 
 这些文档共同定义：
 
@@ -82,4 +85,5 @@
 - 逐项 state 连线
 - ComfyUI 风格的参数 socket 覆盖本地 widget
 - `hello_world` 的真实闭环验收
-- 节点定义驱动渲染与 runtime mapping
+- 节点系统原型、preset、skill 与边界职责
+- 节点系统迁移的分阶段执行路径
