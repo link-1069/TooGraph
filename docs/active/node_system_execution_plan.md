@@ -533,6 +533,15 @@ agent node 的 skill attachment 已经有可依赖的数据源。
 
 至少一个 agent preset 能脱离旧 `hello_model` 体系运行。
 
+### Status
+
+第一版最小 runtime 已接入：
+
+- `node_system` graph 已增加独立执行入口
+- 当前支持线性 DAG 下的 `Input Boundary -> Agent Node -> Output Boundary`
+- `Agent Node` 已支持基础 skill 调用、文本生成与 `output_binding`
+- `Condition Node` runtime 仍待 Phase 6
+
 ---
 
 ## Phase 6: Add Generic Condition Node Runtime
@@ -569,6 +578,15 @@ agent node 的 skill attachment 已经有可依赖的数据源。
 ### Exit Criteria
 
 新 graph 体系已经能表达最基础的条件路由。
+
+### Status
+
+第一版条件路由已接入：
+
+- `Condition Node` 已支持 `condition_mode = rule`
+- 当前支持单规则与基础 `branch_mapping`
+- 运行时会只激活命中的分支边
+- 更复杂的表达式与 model-based condition 仍待后续扩展
 
 ---
 
@@ -610,6 +628,15 @@ agent node 的 skill attachment 已经有可依赖的数据源。
 ### Exit Criteria
 
 “输出是否可见/可保存由 output boundary 决定”正式成立。
+
+### Status
+
+第一版输出边界收口已完成：
+
+- `Output Boundary` 已支持展示与可选持久化保存
+- `node_system` runtime 已把导出结果收口为 `exported_outputs`
+- run detail 已开始围绕 output boundary 展示导出内容
+- 中间节点当前不承担正式文件导出职责
 
 ---
 
