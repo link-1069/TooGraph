@@ -212,6 +212,10 @@ def _resolve_input_values(
 
 def _execute_node(node: NodeSystemGraphNode, input_values: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     config = node.data.config
+    graph_context = {
+        "theme_config": state.get("theme_config", {}),
+        "metadata": state.get("metadata", {}),
+    }
     if isinstance(config, InputBoundaryNodeConfig):
         raw_value = input_values.get(config.output.key, config.default_value)
         value = _coerce_input_boundary_value(raw_value, config.value_type.value)
@@ -220,7 +224,7 @@ def _execute_node(node: NodeSystemGraphNode, input_values: dict[str, Any], state
             "final_result": str(value) if value is not None else "",
         }
     if isinstance(config, AgentNodeConfig):
-        return _execute_agent_node(node, config, input_values)
+        return _execute_agent_node(node, config, input_values, graph_context)
     if isinstance(config, OutputBoundaryNodeConfig):
         value = input_values.get(config.input.key)
         preview = {
@@ -250,7 +254,7 @@ def _execute_node(node: NodeSystemGraphNode, input_values: dict[str, Any], state
             "final_result": "" if value is None else str(value),
         }
     if isinstance(config, ConditionNodeConfig):
-        return _execute_condition_node(config, input_values)
+        return _execute_condition_node(config, input_values, graph_context)
     raise ValueError(f"Unsupported node family '{config.family}'.")
 
 
@@ -258,6 +262,7 @@ def _execute_agent_node(
     node: NodeSystemGraphNode,
     config: AgentNodeConfig,
     input_values: dict[str, Any],
+    graph_context: dict[str, Any],
 ) -> dict[str, Any]:
     selected_skills: list[str] = []
     skill_outputs: list[dict[str, Any]] = []
@@ -269,7 +274,14 @@ def _execute_agent_node(
         if skill_func is None:
             raise ValueError(f"Skill '{skill.skill_key}' is not registered.")
         skill_inputs = {
-            target_key: _resolve_reference(source_ref, inputs=input_values, response={}, skills=skill_context, context=skill_context)
+            target_key: _resolve_reference(
+                source_ref,
+                inputs=input_values,
+                response={},
+                skills=skill_context,
+                context=skill_context,
+                graph=graph_context,
+            )
             for target_key, source_ref in skill.input_mapping.items()
         }
         skill_result = _invoke_skill(skill_func, skill_inputs)
@@ -282,6 +294,7 @@ def _execute_agent_node(
                 response={},
                 skills=skill_context,
                 context=skill_context,
+                graph=graph_context,
             )
         skill_outputs.append(
             {
@@ -292,7 +305,22 @@ def _execute_agent_node(
             }
         )
 
-    response_payload = _generate_agent_response(config, input_values, skill_context)
+    response_payload: dict[str, Any] = {}
+    bound_output_values = {
+        output.key: _resolve_reference(
+            config.output_binding.get(output.key, f"$response.{output.key}"),
+            inputs=input_values,
+            response={},
+            skills=skill_context,
+            context=skill_context,
+            graph=graph_context,
+        )
+        for output in config.outputs
+    }
+
+    if any(value in (None, "") for value in bound_output_values.values()):
+        response_payload = _generate_agent_response(config, input_values, skill_context)
+
     output_values = {
         output.key: _resolve_reference(
             config.output_binding.get(output.key, f"$response.{output.key}"),
@@ -300,6 +328,7 @@ def _execute_agent_node(
             response=response_payload,
             skills=skill_context,
             context=skill_context,
+            graph=graph_context,
         )
         for output in config.outputs
     }
@@ -357,7 +386,11 @@ def _invoke_skill(skill_func: Any, skill_inputs: dict[str, Any]) -> dict[str, An
     return skill_func(**skill_inputs)
 
 
-def _execute_condition_node(config: ConditionNodeConfig, input_values: dict[str, Any]) -> dict[str, Any]:
+def _execute_condition_node(
+    config: ConditionNodeConfig,
+    input_values: dict[str, Any],
+    graph_context: dict[str, Any],
+) -> dict[str, Any]:
     if config.condition_mode.value != "rule":
         raise ValueError("Condition node currently only supports rule mode.")
 
@@ -367,6 +400,7 @@ def _execute_condition_node(config: ConditionNodeConfig, input_values: dict[str,
         response={},
         skills={},
         context={},
+        graph=graph_context,
     )
     condition_result = _evaluate_condition_rule(rule_value, config.rule.operator.value, config.rule.value)
     branch_key = _resolve_branch_key(config.branch_mapping, condition_result)
@@ -387,6 +421,7 @@ def _resolve_reference(
     response: dict[str, Any],
     skills: dict[str, Any],
     context: dict[str, Any],
+    graph: dict[str, Any],
 ) -> Any:
     if not isinstance(reference, str) or not reference.startswith("$"):
         return reference
@@ -399,6 +434,8 @@ def _resolve_reference(
         return _read_path(skills, reference[len("$skills."):])
     if reference.startswith("$context."):
         return _read_path(context, reference[len("$context."):])
+    if reference.startswith("$graph."):
+        return _read_path(graph, reference[len("$graph."):])
     return reference
 
 

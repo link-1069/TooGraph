@@ -23,7 +23,7 @@ import "@xyflow/react/dist/style.css";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { EMPTY_AGENT_PRESET, getNodePresetById, NODE_PRESETS_MOCK } from "@/lib/node-presets-mock";
 import {
@@ -63,6 +63,7 @@ type StateField = {
 };
 
 type GraphPayload = {
+  graph_family?: "node_system";
   graph_id?: string | null;
   name: string;
   template_id: string;
@@ -81,6 +82,7 @@ type TemplateRecord = {
   supported_node_types: string[];
   state_schema: StateField[];
   default_graph: Omit<GraphPayload, "graph_id">;
+  default_node_system_graph?: Omit<GraphPayload, "graph_id"> | null;
 };
 
 type EditorClientProps = {
@@ -88,6 +90,7 @@ type EditorClientProps = {
   initialGraph?: GraphPayload | null;
   graphId?: string;
   templates: TemplateRecord[];
+  defaultTemplateId?: string;
 };
 
 type FlowNodeData = {
@@ -116,6 +119,14 @@ type SkillDefinition = {
   sideEffects: string[];
 };
 
+type PresetDocument = {
+  presetId: string;
+  sourcePresetId?: string | null;
+  definition: NodePresetDefinition;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+};
+
 const HELLO_WORLD_TEMPLATE_ID = "hello_world";
 const TYPE_COLORS: Record<ValueType, string> = {
   text: "#d97706",
@@ -129,15 +140,25 @@ const TYPE_COLORS: Record<ValueType, string> = {
 const VALUE_TYPE_OPTIONS: ValueType[] = ["text", "json", "image", "audio", "video", "any"];
 const RULE_OPERATOR_OPTIONS: ConditionRule["operator"][] = ["==", "!=", ">=", "<=", ">", "<", "exists"];
 
-function createEditorDefaults(templates: TemplateRecord[]): GraphPayload {
-  const helloWorldTemplate = templates.find((item) => item.template_id === HELLO_WORLD_TEMPLATE_ID);
+function createEditorDefaults(templates: TemplateRecord[], defaultTemplateId?: string): GraphPayload {
+  const preferredTemplate =
+    templates.find((item) => item.template_id === defaultTemplateId) ??
+    templates.find((item) => item.template_id === HELLO_WORLD_TEMPLATE_ID) ??
+    templates[0];
+  if (preferredTemplate?.default_node_system_graph) {
+    return {
+      ...preferredTemplate.default_node_system_graph,
+      graph_id: null,
+    };
+  }
 
   return {
+    graph_family: "node_system",
     graph_id: null,
-    name: helloWorldTemplate?.default_graph_name ?? "Node System Playground",
-    template_id: helloWorldTemplate?.template_id ?? HELLO_WORLD_TEMPLATE_ID,
+    name: preferredTemplate?.default_graph_name ?? "Node System Playground",
+    template_id: preferredTemplate?.template_id ?? HELLO_WORLD_TEMPLATE_ID,
     theme_config:
-      helloWorldTemplate?.default_graph.theme_config ?? {
+      preferredTemplate?.default_graph.theme_config ?? {
         theme_preset: "node_system",
         domain: "workflow",
         genre: "agent_framework",
@@ -151,11 +172,50 @@ function createEditorDefaults(templates: TemplateRecord[]): GraphPayload {
         asset_source_policy: {},
         strategy_profile: {},
       },
-    state_schema: helloWorldTemplate?.state_schema ?? [],
+    state_schema: preferredTemplate?.state_schema ?? [],
     nodes: [],
     edges: [],
     metadata: {},
   };
+}
+
+function createFlowNodeFromGraphNode(node: any): FlowNode {
+  return {
+    id: node.id,
+    type: node.type ?? "default",
+    position: node.position ?? { x: 0, y: 0 },
+    data: {
+      nodeId: node.data?.nodeId ?? node.id,
+      config: deepClonePreset(node.data?.config as NodePresetDefinition),
+      previewText: node.data?.previewText ?? "",
+    },
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    style: {
+      background: "transparent",
+      border: "none",
+      padding: 0,
+      width: "auto",
+    },
+  } satisfies FlowNode;
+}
+
+function createFlowEdgeFromGraphEdge(edge: any, nodesById: Map<string, FlowNode>): Edge {
+  const sourceNode = nodesById.get(edge.source);
+  const sourceType = sourceNode ? getPortType(sourceNode.data.config, edge.sourceHandle) : "any";
+  const color = TYPE_COLORS[sourceType ?? "any"];
+  return {
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    sourceHandle: edge.sourceHandle ?? null,
+    targetHandle: edge.targetHandle ?? null,
+    markerEnd: { type: MarkerType.ArrowClosed, color },
+    style: {
+      stroke: color,
+      strokeWidth: 1.8,
+    },
+  } satisfies Edge;
 }
 
 function deepClonePreset<T extends NodePresetDefinition>(preset: T): T {
@@ -902,12 +962,20 @@ function NodeSystemCanvas({ initialGraph }: { initialGraph: GraphPayload }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const reactFlow = useReactFlow<FlowNode, Edge>();
   const [graphName, setGraphName] = useState(initialGraph.name);
+  const [graphId, setGraphId] = useState<string | null>(initialGraph.graph_id ?? null);
+  const [templateId] = useState(initialGraph.template_id);
+  const [themeConfig] = useState(initialGraph.theme_config);
+  const [stateSchema] = useState(initialGraph.state_schema);
+  const [metadata] = useState(initialGraph.metadata);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusMessage, setStatusMessage] = useState("Node system phase 4: skill definitions connected.");
-  const [localPresets, setLocalPresets] = useState<NodePresetDefinition[]>([]);
+  const [persistedPresets, setPersistedPresets] = useState<NodePresetDefinition[]>([]);
+  const [presetsLoading, setPresetsLoading] = useState(true);
+  const [presetsError, setPresetsError] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [skillDefinitions, setSkillDefinitions] = useState<SkillDefinition[]>([]);
   const [skillDefinitionsLoading, setSkillDefinitionsLoading] = useState(true);
   const [skillDefinitionsError, setSkillDefinitionsError] = useState<string | null>(null);
@@ -930,7 +998,7 @@ function NodeSystemCanvas({ initialGraph }: { initialGraph: GraphPayload }) {
   });
   const ignoreNextPaneClickRef = useRef(false);
 
-  const allPresets = useMemo(() => [...NODE_PRESETS_MOCK, ...localPresets], [localPresets]);
+  const allPresets = useMemo(() => [...NODE_PRESETS_MOCK, ...persistedPresets], [persistedPresets]);
   const getRecommendedPresets = useCallback(
     (sourceType: ValueType | null) => {
       if (!sourceType) {
@@ -998,6 +1066,43 @@ function NodeSystemCanvas({ initialGraph }: { initialGraph: GraphPayload }) {
     };
   }, []);
 
+  useEffect(() => {
+    const initialNodes = Array.isArray(initialGraph.nodes) ? initialGraph.nodes.map((node) => createFlowNodeFromGraphNode(node)) : [];
+    const nodesById = new Map(initialNodes.map((node) => [node.id, node]));
+    const initialEdges = Array.isArray(initialGraph.edges)
+      ? initialGraph.edges.map((edge) => createFlowEdgeFromGraphEdge(edge, nodesById))
+      : [];
+    setNodes(initialNodes);
+    setEdges(initialEdges);
+  }, [initialGraph.edges, initialGraph.nodes, setEdges, setNodes]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadPersistedPresets() {
+      try {
+        setPresetsLoading(true);
+        setPresetsError(null);
+        const payload = await apiGet<PresetDocument[]>("/api/presets");
+        if (!active) return;
+        setPersistedPresets(payload.map((item) => item.definition));
+      } catch (error) {
+        if (!active) return;
+        setPresetsError(error instanceof Error ? error.message : "Unknown error");
+      } finally {
+        if (active) {
+          setPresetsLoading(false);
+        }
+      }
+    }
+
+    void loadPersistedPresets();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const openCreationMenuAtClientPoint = useCallback(
     (clientX: number, clientY: number, sourceValueType: ValueType | null = null) => {
       const position = reactFlow.screenToFlowPosition({ x: clientX, y: clientY });
@@ -1036,7 +1141,7 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
   }
 
   function addNodeFromPresetId(presetId: string, position: { x: number; y: number }, connectionSource?: { sourceNodeId?: string; sourceHandle?: string; sourceValueType?: ValueType | null }) {
-    const preset = getNodePresetById(presetId) ?? localPresets.find((item) => item.presetId === presetId);
+    const preset = getNodePresetById(presetId) ?? persistedPresets.find((item) => item.presetId === presetId);
     if (!preset) return;
 
     const nextNode = createNodeFromPreset(preset, position);
@@ -1110,7 +1215,7 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
     );
   }
 
-  function saveSelectedNodeAsPreset() {
+  async function saveSelectedNodeAsPreset() {
     if (!selectedNode) return;
     const slug = selectedNode.data.config.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "custom";
     const nextPreset = {
@@ -1118,8 +1223,75 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
       presetId: `preset.local.${slug}.${crypto.randomUUID().slice(0, 6)}`,
       label: `${selectedNode.data.config.label} Copy`,
     } satisfies NodePresetDefinition;
-    setLocalPresets((current) => current.concat(nextPreset));
-    setStatusMessage(`Saved preset ${nextPreset.presetId}`);
+    try {
+      await apiPost<{ presetId: string; updatedAt?: string | null }>("/api/presets", {
+        presetId: nextPreset.presetId,
+        sourcePresetId: selectedNode.data.config.presetId,
+        definition: nextPreset,
+      });
+      setPersistedPresets((current) => [nextPreset, ...current.filter((item) => item.presetId !== nextPreset.presetId)]);
+      setStatusMessage(`Saved preset ${nextPreset.presetId}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to save preset.");
+    }
+  }
+
+  function buildPayload(): GraphPayload {
+    return {
+      graph_family: "node_system",
+      graph_id: graphId,
+      name: graphName,
+      template_id: templateId,
+      theme_config: themeConfig,
+      state_schema: stateSchema,
+      nodes: nodes.map((node) => ({
+        id: node.id,
+        type: "default",
+        position: node.position,
+        data: {
+          nodeId: node.data.nodeId,
+          config: node.data.config,
+          previewText: previewTextByNode[node.id] ?? node.data.previewText ?? "",
+        },
+      })),
+      edges: edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        sourceHandle: edge.sourceHandle ?? null,
+        targetHandle: edge.targetHandle ?? null,
+      })),
+      metadata,
+    };
+  }
+
+  async function handleSave() {
+    try {
+      const response = await apiPost<{ graph_id: string; validation: { valid: boolean; issues: Array<{ message: string }> } }>("/api/graphs/save", buildPayload());
+      setGraphId(response.graph_id);
+      setStatusMessage(`Saved graph ${response.graph_id}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to save graph.");
+    }
+  }
+
+  async function handleValidate() {
+    try {
+      const response = await apiPost<{ valid: boolean; issues: Array<{ message: string }> }>("/api/graphs/validate", buildPayload());
+      setStatusMessage(response.valid ? "Validation passed." : response.issues.map((issue) => issue.message).join("; "));
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to validate graph.");
+    }
+  }
+
+  async function handleRun() {
+    try {
+      const response = await apiPost<{ run_id: string; status: string }>("/api/graphs/run", buildPayload());
+      setActiveRunId(response.run_id);
+      setStatusMessage(`Run ${response.run_id} ${response.status}`);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to run graph.");
+    }
   }
 
   return (
@@ -1128,13 +1300,13 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
         <Input className="h-10" value={graphName} onChange={(event) => setGraphName(event.target.value)} placeholder="Graph name" />
         <div className="text-sm text-[var(--muted)]">Preset-driven node system prototype</div>
         <div className="flex items-center gap-2">
-          <Button size="sm" disabled>
+          <Button size="sm" onClick={() => void handleSave()}>
             Save
           </Button>
-          <Button size="sm" disabled>
+          <Button size="sm" onClick={() => void handleValidate()}>
             Validate
           </Button>
-          <Button size="sm" variant="primary" disabled>
+          <Button size="sm" variant="primary" onClick={() => void handleRun()}>
             Run
           </Button>
         </div>
@@ -1388,6 +1560,7 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
                     <div>Type-aware creation suggestions</div>
                     <div>Advanced JSON kept as fallback</div>
                     <div>Skill definitions connected</div>
+                    <div>Preset persistence {presetsLoading ? "loading" : presetsError ? "degraded" : "connected"}</div>
                     <div>Runtime migration pending</div>
                   </div>
                 </section>
@@ -1805,7 +1978,7 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
                   </>
                 ) : null}
 
-                <Button variant="ghost" onClick={saveSelectedNodeAsPreset}>
+                <Button variant="ghost" onClick={() => void saveSelectedNodeAsPreset()}>
                   Save As Preset
                 </Button>
                 <Button
@@ -1826,6 +1999,11 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
             <span>Status</span>
             <span className="text-[var(--text)]">{statusMessage}</span>
           </div>
+          {activeRunId ? (
+            <div className="mt-3 rounded-[18px] border border-[rgba(31,111,80,0.16)] bg-[rgba(241,250,245,0.92)] px-3 py-2 text-sm text-[var(--muted)]">
+              Latest run: <a className="text-[var(--accent-strong)] underline" href={`/runs/${activeRunId}`}>{activeRunId}</a>
+            </div>
+          ) : null}
         </aside>
       </div>
 
@@ -1838,7 +2016,7 @@ function createNodeFromPreset(preset: NodePresetDefinition, position: { x: numbe
 }
 
 export function NodeSystemEditor(props: EditorClientProps) {
-  const graph = props.initialGraph ?? createEditorDefaults(props.templates);
+  const graph = props.initialGraph ?? createEditorDefaults(props.templates, props.defaultTemplateId);
 
   return (
     <ReactFlowProvider>

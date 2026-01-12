@@ -675,6 +675,15 @@ agent node 的 skill attachment 已经有可依赖的数据源。
 
 `preset` 从设计概念变成正式系统能力。
 
+### Status
+
+第一版 preset 持久化已接入：
+
+- 后端已新增 preset schema、SQLite 存储和 `/api/presets`
+- 前端 `Save As Preset` 已改为保存到正式后端
+- NodeSystemEditor 已会加载后端 preset 并纳入创建器
+- 当前先完成 list/get/create/update 基础链路，lineage 通过 `sourcePresetId` 保留
+
 ---
 
 ## Phase 9: Migrate Existing Demo Flow Into New Preset + Skill Model
@@ -682,6 +691,21 @@ agent node 的 skill attachment 已经有可依赖的数据源。
 ### Goal
 
 不要再继续用 `hello_model` 当主验证路径，把 demo 中的核心阶段迁成新模型样板。
+
+### Status
+
+进行中：
+
+- `hello_world` 模板已开始提供 `default_node_system_graph`
+- 新默认图已改为 `Input Boundary -> Agent Node -> Output Boundary`
+- 新默认 `Agent Node` 已通过 `generate_hello_greeting` skill 生成 greeting
+- `hello_world` 的模板图已通过 validate/run，最小闭环已可作为 node system smoke path
+- `creative_factory` 已补入 research/fetch 最小 node system 样板
+- `creative_factory` 已扩展到 `research -> brief` 第二阶段闭环
+- `creative_factory` 已扩展到 `review + condition` 第三阶段闭环
+- `creative_factory` 第三阶段模板已通过 validate/run，并能正确命中 `pass / revise` 分支
+- `/editor/new` 已支持按模板创建新节点系统图
+- 旧 `hello_model` 图仍作为兼容路径保留，尚未完全退出主验证链路
 
 ### Changes
 

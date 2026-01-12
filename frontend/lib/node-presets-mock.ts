@@ -30,6 +30,38 @@ export const TEXT_INPUT_PRESET = {
   placeholder: "Enter text",
 } satisfies NodePresetDefinition;
 
+export const NAME_INPUT_PRESET = {
+  presetId: "preset.input.name.v1",
+  label: "Name Input",
+  description: "Provide a name used by greeting workflows.",
+  family: "input",
+  valueType: "text",
+  output: {
+    key: "name",
+    label: "Name",
+    valueType: "text",
+  },
+  defaultValue: "Abyss",
+  inputMode: "inline",
+  placeholder: "Enter a name",
+} satisfies NodePresetDefinition;
+
+export const TASK_INPUT_PRESET = {
+  presetId: "preset.input.task_input.v1",
+  label: "Task Input",
+  description: "Provide the workflow task or research question.",
+  family: "input",
+  valueType: "text",
+  output: {
+    key: "task_input",
+    label: "Task Input",
+    valueType: "text",
+  },
+  defaultValue: "Research current SLG mobile ad market hooks and summarize reusable signals.",
+  inputMode: "inline",
+  placeholder: "Describe the workflow task",
+} satisfies NodePresetDefinition;
+
 export const TEXT_OUTPUT_PRESET = {
   presetId: "preset.output.text.v1",
   label: "Text Output",
@@ -76,50 +108,262 @@ export const SUMMARY_AGENT_PRESET = {
   },
 } satisfies NodePresetDefinition;
 
-export const FETCH_NEWS_AGENT_PRESET = {
-  presetId: "preset.agent.fetch_news.v1",
-  label: "Fetch News",
-  description: "Use a news fetching skill and return normalized news items.",
+export const HELLO_GREETING_AGENT_PRESET = {
+  presetId: "preset.agent.hello_greeting.v1",
+  label: "Hello Greeting",
+  description: "Generate a short greeting by calling the hello greeting skill.",
   family: "agent",
   inputs: [
     {
-      key: "feed_urls",
-      label: "Feed URLs",
+      key: "name",
+      label: "Name",
+      valueType: "text",
+      required: true,
+    },
+  ],
+  outputs: [
+    {
+      key: "greeting",
+      label: "Greeting",
+      valueType: "text",
+    },
+  ],
+  systemInstruction: "You are a precise assistant.",
+  taskInstruction: "Return a short greeting for the provided name.",
+  skills: [
+    {
+      name: "generate_greeting",
+      skillKey: "generate_hello_greeting",
+      inputMapping: {
+        name: "$inputs.name",
+      },
+      contextBinding: {},
+      usage: "required",
+    },
+  ],
+  responseMode: "json",
+  outputBinding: {
+    greeting: "$skills.generate_greeting.greeting",
+  },
+} satisfies NodePresetDefinition;
+
+export const GREETING_OUTPUT_PRESET = {
+  presetId: "preset.output.greeting.v1",
+  label: "Greeting Output",
+  description: "Preview and optionally persist the generated greeting.",
+  family: "output",
+  input: {
+    key: "value",
+    label: "Greeting",
+    valueType: "text",
+    required: true,
+  },
+  displayMode: "auto",
+  persistEnabled: false,
+  persistFormat: "txt",
+  fileNameTemplate: "greeting",
+} satisfies NodePresetDefinition;
+
+export const FETCH_NEWS_AGENT_PRESET = {
+  presetId: "preset.agent.fetch_market_news_context.v1",
+  label: "Fetch Market News",
+  description: "Fetch market news signals for the current creative research task.",
+  family: "agent",
+  inputs: [
+    {
+      key: "task_input",
+      label: "Task Input",
+      valueType: "text",
+      required: true,
+    },
+  ],
+  outputs: [
+    {
+      key: "rss_items",
+      label: "RSS Items",
+      valueType: "json",
+    },
+  ],
+  systemInstruction: "You are a research workflow agent specialized in fetching market news signals.",
+  taskInstruction: "Fetch market news and trend references for the provided task.",
+  skills: [
+    {
+      name: "fetch_market_news",
+      skillKey: "fetch_market_news_context",
+      inputMapping: {
+        task_input: "$inputs.task_input",
+      },
+      contextBinding: {},
+      usage: "required",
+    },
+  ],
+  responseMode: "json",
+  outputBinding: {
+    rss_items: "$skills.fetch_market_news.rss_items",
+  },
+} satisfies NodePresetDefinition;
+
+export const CLEAN_MARKET_NEWS_AGENT_PRESET = {
+  presetId: "preset.agent.clean_market_news.v1",
+  label: "Clean Market News",
+  description: "Normalize fetched market news into cleaned items and a text research context.",
+  family: "agent",
+  inputs: [
+    {
+      key: "rss_items",
+      label: "RSS Items",
       valueType: "json",
       required: true,
     },
   ],
   outputs: [
     {
-      key: "news_items",
-      label: "News Items",
+      key: "clean_news_items",
+      label: "Clean News Items",
       valueType: "json",
     },
     {
-      key: "summary",
-      label: "Summary",
+      key: "news_context",
+      label: "News Context",
       valueType: "text",
     },
   ],
-  systemInstruction: "You are a research workflow agent specialized in fetching and organizing news items.",
-  taskInstruction: "Use the attached skill to fetch feeds, then summarize the retrieved items.",
+  systemInstruction: "You are a research normalization agent.",
+  taskInstruction: "Normalize fetched market news and return a concise research context.",
   skills: [
     {
-      name: "fetch_news",
-      skillKey: "fetch_news_feed",
+      name: "clean_market_news",
+      skillKey: "clean_market_news",
       inputMapping: {
-        feed_urls: "$inputs.feed_urls",
+        rss_items: "$inputs.rss_items",
       },
-      contextBinding: {
-        fetched_news: "$skills.fetch_news.news_items",
-      },
+      contextBinding: {},
       usage: "required",
     },
   ],
   responseMode: "json",
   outputBinding: {
-    news_items: "$context.fetched_news",
-    summary: "$response.summary",
+    clean_news_items: "$skills.clean_market_news.clean_news_items",
+    news_context: "$skills.clean_market_news.news_context",
+  },
+} satisfies NodePresetDefinition;
+
+export const BUILD_CREATIVE_BRIEF_AGENT_PRESET = {
+  presetId: "preset.agent.build_creative_brief.v1",
+  label: "Build Creative Brief",
+  description: "Assemble a concise creative brief from task input and research context.",
+  family: "agent",
+  inputs: [
+    {
+      key: "task_input",
+      label: "Task Input",
+      valueType: "text",
+      required: true,
+    },
+    {
+      key: "news_context",
+      label: "News Context",
+      valueType: "text",
+      required: true,
+    },
+  ],
+  outputs: [
+    {
+      key: "creative_brief",
+      label: "Creative Brief",
+      valueType: "text",
+    },
+  ],
+  systemInstruction: "You are a creative strategy agent.",
+  taskInstruction: "Build a concise creative brief from the task and research context.",
+  skills: [
+    {
+      name: "build_creative_brief",
+      skillKey: "build_creative_brief",
+      inputMapping: {
+        task_input: "$inputs.task_input",
+        news_context: "$inputs.news_context",
+        theme_config: "$graph.theme_config",
+      },
+      contextBinding: {},
+      usage: "required",
+    },
+  ],
+  responseMode: "json",
+  outputBinding: {
+    creative_brief: "$skills.build_creative_brief.creative_brief",
+  },
+} satisfies NodePresetDefinition;
+
+export const GENERATE_CREATIVE_VARIANTS_AGENT_PRESET = {
+  presetId: "preset.agent.generate_creative_variants.v1",
+  label: "Generate Creative Variants",
+  description: "Generate structured creative variants from task input and creative brief.",
+  family: "agent",
+  inputs: [
+    { key: "task_input", label: "Task Input", valueType: "text", required: true },
+    { key: "creative_brief", label: "Creative Brief", valueType: "text", required: true },
+  ],
+  outputs: [
+    { key: "script_variants", label: "Script Variants", valueType: "json" },
+  ],
+  systemInstruction: "You are a creative variant generator.",
+  taskInstruction: "Generate structured creative variants from the task and brief.",
+  skills: [
+    {
+      name: "generate_creative_variants",
+      skillKey: "generate_creative_variants",
+      inputMapping: {
+        task_input: "$inputs.task_input",
+        creative_brief: "$inputs.creative_brief",
+        theme_config: "$graph.theme_config",
+      },
+      contextBinding: {},
+      usage: "required",
+    },
+  ],
+  responseMode: "json",
+  outputBinding: {
+    script_variants: "$skills.generate_creative_variants.script_variants",
+  },
+} satisfies NodePresetDefinition;
+
+export const REVIEW_VARIANTS_AGENT_PRESET = {
+  presetId: "preset.agent.review_creative_variants.v1",
+  label: "Review Creative Variants",
+  description: "Review generated variants and return an evaluation result for downstream routing.",
+  family: "agent",
+  inputs: [
+    { key: "task_input", label: "Task Input", valueType: "text", required: true },
+    { key: "creative_brief", label: "Creative Brief", valueType: "text", required: true },
+    { key: "script_variants", label: "Script Variants", valueType: "json", required: true },
+  ],
+  outputs: [
+    { key: "evaluation_result", label: "Evaluation Result", valueType: "json" },
+    { key: "best_variant", label: "Best Variant", valueType: "json" },
+    { key: "revision_feedback", label: "Revision Feedback", valueType: "json" },
+  ],
+  systemInstruction: "You are a creative review agent.",
+  taskInstruction: "Review generated variants and return pass or revise guidance.",
+  skills: [
+    {
+      name: "review_creative_variants",
+      skillKey: "review_creative_variants",
+      inputMapping: {
+        task_input: "$inputs.task_input",
+        creative_brief: "$inputs.creative_brief",
+        script_variants: "$inputs.script_variants",
+        theme_config: "$graph.theme_config",
+      },
+      contextBinding: {},
+      usage: "required",
+    },
+  ],
+  responseMode: "json",
+  outputBinding: {
+    evaluation_result: "$skills.review_creative_variants.evaluation_result",
+    best_variant: "$skills.review_creative_variants.best_variant",
+    revision_feedback: "$skills.review_creative_variants.revision_feedback",
   },
 } satisfies NodePresetDefinition;
 
@@ -152,12 +396,74 @@ export const REVIEW_GATE_PRESET = {
   },
 } satisfies NodePresetDefinition;
 
+export const NEWS_CONTEXT_OUTPUT_PRESET = {
+  presetId: "preset.output.news_context.v1",
+  label: "Research Context Output",
+  description: "Preview and optionally persist normalized research context.",
+  family: "output",
+  input: {
+    key: "value",
+    label: "Research Context",
+    valueType: "text",
+    required: true,
+  },
+  displayMode: "auto",
+  persistEnabled: false,
+  persistFormat: "txt",
+  fileNameTemplate: "research_context",
+} satisfies NodePresetDefinition;
+
+export const CREATIVE_BRIEF_OUTPUT_PRESET = {
+  presetId: "preset.output.creative_brief.v1",
+  label: "Creative Brief Output",
+  description: "Preview and optionally persist generated creative brief text.",
+  family: "output",
+  input: {
+    key: "value",
+    label: "Creative Brief",
+    valueType: "text",
+    required: true,
+  },
+  displayMode: "auto",
+  persistEnabled: false,
+  persistFormat: "txt",
+  fileNameTemplate: "creative_brief",
+} satisfies NodePresetDefinition;
+
+export const DECISION_SIGNAL_OUTPUT_PRESET = {
+  presetId: "preset.output.decision_signal.v1",
+  label: "Decision Output",
+  description: "Preview a routed pass or revise branch signal.",
+  family: "output",
+  input: {
+    key: "value",
+    label: "Decision Signal",
+    valueType: "any",
+    required: true,
+  },
+  displayMode: "auto",
+  persistEnabled: false,
+  persistFormat: "txt",
+  fileNameTemplate: "decision_signal",
+} satisfies NodePresetDefinition;
+
 export const NODE_PRESETS_MOCK = [
   EMPTY_AGENT_PRESET,
+  NAME_INPUT_PRESET,
+  TASK_INPUT_PRESET,
   TEXT_INPUT_PRESET,
+  HELLO_GREETING_AGENT_PRESET,
   SUMMARY_AGENT_PRESET,
   FETCH_NEWS_AGENT_PRESET,
+  CLEAN_MARKET_NEWS_AGENT_PRESET,
+  BUILD_CREATIVE_BRIEF_AGENT_PRESET,
+  GENERATE_CREATIVE_VARIANTS_AGENT_PRESET,
+  REVIEW_VARIANTS_AGENT_PRESET,
   REVIEW_GATE_PRESET,
+  GREETING_OUTPUT_PRESET,
+  NEWS_CONTEXT_OUTPUT_PRESET,
+  CREATIVE_BRIEF_OUTPUT_PRESET,
+  DECISION_SIGNAL_OUTPUT_PRESET,
   TEXT_OUTPUT_PRESET,
 ] satisfies NodePresetDefinition[];
 
@@ -167,7 +473,7 @@ export function getNodePresetById(presetId: string) {
 
 export function getSuggestedPresets(valueType?: ValueType | null) {
   if (!valueType) {
-    return [EMPTY_AGENT_PRESET, TEXT_INPUT_PRESET, SUMMARY_AGENT_PRESET, FETCH_NEWS_AGENT_PRESET, REVIEW_GATE_PRESET, TEXT_OUTPUT_PRESET];
+    return [EMPTY_AGENT_PRESET, NAME_INPUT_PRESET, TASK_INPUT_PRESET, TEXT_INPUT_PRESET, HELLO_GREETING_AGENT_PRESET, SUMMARY_AGENT_PRESET, FETCH_NEWS_AGENT_PRESET, CLEAN_MARKET_NEWS_AGENT_PRESET, BUILD_CREATIVE_BRIEF_AGENT_PRESET, GENERATE_CREATIVE_VARIANTS_AGENT_PRESET, REVIEW_VARIANTS_AGENT_PRESET, REVIEW_GATE_PRESET, GREETING_OUTPUT_PRESET, NEWS_CONTEXT_OUTPUT_PRESET, CREATIVE_BRIEF_OUTPUT_PRESET, DECISION_SIGNAL_OUTPUT_PRESET, TEXT_OUTPUT_PRESET];
   }
 
   const supportsType = (preset: NodePresetDefinition) => {
