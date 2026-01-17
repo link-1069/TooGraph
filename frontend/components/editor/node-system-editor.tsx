@@ -168,11 +168,119 @@ const TYPE_COLORS: Record<ValueType, string> = {
   image: "#0f766e",
   audio: "#7c3aed",
   video: "#be185d",
+  file: "#475569",
   any: "#64748b",
 };
 
-const VALUE_TYPE_OPTIONS: ValueType[] = ["text", "json", "image", "audio", "video", "any"];
+const VALUE_TYPE_OPTIONS: ValueType[] = ["text", "json", "image", "audio", "video", "file", "any"];
 const RULE_OPERATOR_OPTIONS: ConditionRule["operator"][] = ["==", "!=", ">=", "<=", ">", "<", "exists"];
+
+const INPUT_VALUE_TYPE_OPTIONS: Array<{ value: ValueType; label: string; icon: ReactNode }> = [
+  {
+    value: "text",
+    label: "Text",
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
+        <path d="M3 4.5h10M8 4.5v7M5.5 11.5h5" />
+      </svg>
+    ),
+  },
+  {
+    value: "image",
+    label: "Image",
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
+        <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+        <circle cx="6" cy="6.5" r="1" />
+        <path d="m4 11 2.5-2.5L8.5 10l1.5-1.5L12 11" />
+      </svg>
+    ),
+  },
+  {
+    value: "audio",
+    label: "Audio",
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
+        <path d="M9.5 3.5v6.2a1.8 1.8 0 1 1-1-1.6V5.2l4-1v4.5a1.8 1.8 0 1 1-1-1.6V3.5Z" />
+      </svg>
+    ),
+  },
+  {
+    value: "video",
+    label: "Video",
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
+        <rect x="2.5" y="4" width="8.5" height="8" rx="1.5" />
+        <path d="m11 7 2.5-1.5v5L11 9" />
+      </svg>
+    ),
+  },
+  {
+    value: "file",
+    label: "File",
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
+        <path d="M5 2.5h4l2.5 2.5V12a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 3.5 12V4A1.5 1.5 0 0 1 5 2.5Z" />
+        <path d="M9 2.5V5h2.5" />
+      </svg>
+    ),
+  },
+];
+
+type UploadedAssetEnvelope = {
+  kind: "uploaded_file";
+  name: string;
+  mimeType: string;
+  size: number;
+  detectedType: ValueType;
+  content: string;
+  encoding: "text" | "data_url";
+};
+
+function detectInputValueTypeFromFileName(fileName: string): ValueType {
+  const normalized = fileName.toLowerCase();
+  if (/\.(png|jpg|jpeg|gif|webp|bmp|svg)$/.test(normalized)) return "image";
+  if (/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(normalized)) return "audio";
+  if (/\.(mp4|mov|webm|mkv|avi|m4v)$/.test(normalized)) return "video";
+  if (/\.(txt|md|py|js|ts|tsx|jsx|json|yaml|yml|toml|csv|log|xml)$/.test(normalized)) return "file";
+  return "file";
+}
+
+function tryParseUploadedAssetEnvelope(value: string): UploadedAssetEnvelope | null {
+  try {
+    const parsed = JSON.parse(value) as UploadedAssetEnvelope;
+    if (parsed && parsed.kind === "uploaded_file" && typeof parsed.name === "string") {
+      return parsed;
+    }
+  } catch {
+    // ignore invalid JSON
+  }
+  return null;
+}
+
+async function fileToEnvelope(file: File): Promise<UploadedAssetEnvelope> {
+  const detectedType = detectInputValueTypeFromFileName(file.name);
+  const encoding = detectedType === "file" ? "text" : "data_url";
+  const content =
+    encoding === "text"
+      ? await file.text()
+      : await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(reader.error ?? new Error("Failed to read file."));
+          reader.readAsDataURL(file);
+        });
+
+  return {
+    kind: "uploaded_file",
+    name: file.name,
+    mimeType: file.type || "application/octet-stream",
+    size: file.size,
+    detectedType,
+    content,
+    encoding,
+  };
+}
 
 function createEditorDefaults(templates: TemplateRecord[], defaultTemplateId?: string): GraphPayload {
   const preferredTemplate =
@@ -860,15 +968,39 @@ function PortRow({
   nodeId,
   port,
   side,
+  editable = false,
+  onRename,
 }: {
   nodeId: string;
   port: PortDefinition;
   side: "input" | "output";
+  editable?: boolean;
+  onRename?: (nextLabel: string) => void;
 }) {
   const color = TYPE_COLORS[port.valueType];
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftLabel, setDraftLabel] = useState(port.label);
+
+  useEffect(() => {
+    setDraftLabel(port.label);
+  }, [port.label]);
+
+  function startEditing() {
+    if (!editable) return;
+    setDraftLabel(port.label);
+    setIsEditing(true);
+  }
+
+  function commitEditing() {
+    const nextLabel = draftLabel.trim();
+    if (nextLabel && nextLabel !== port.label) {
+      onRename?.(nextLabel);
+    }
+    setIsEditing(false);
+  }
 
   return (
-    <div className={cn("relative flex h-6 items-center text-[0.9rem] text-[var(--text)]", side === "input" ? "justify-start" : "justify-end")}>
+    <div className={cn("group relative flex min-h-6 items-center text-[0.9rem] text-[var(--text)]", side === "input" ? "justify-start" : "justify-end")}>
       {side === "input" ? (
         <>
           <Handle
@@ -879,11 +1011,51 @@ function PortRow({
             style={{ backgroundColor: color }}
             isConnectable
           />
-          <span className="ml-2 truncate">{port.label}</span>
+          <span className="ml-2 truncate cursor-text" onDoubleClick={startEditing}>
+            {port.label}
+          </span>
+          {isEditing ? (
+            <div className="absolute left-5 top-full z-20 mt-2 w-[220px] rounded-[16px] border border-[rgba(154,52,18,0.16)] bg-[rgba(255,250,241,0.98)] p-2 shadow-[0_14px_32px_rgba(60,41,20,0.14)]">
+              <Input
+                className="h-9"
+                value={draftLabel}
+                autoFocus
+                onChange={(event) => setDraftLabel(event.target.value)}
+                onBlur={commitEditing}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitEditing();
+                  if (event.key === "Escape") {
+                    setDraftLabel(port.label);
+                    setIsEditing(false);
+                  }
+                }}
+              />
+            </div>
+          ) : null}
         </>
       ) : (
         <>
-          <span className="truncate text-right">{port.label}</span>
+          <span className="truncate text-right cursor-text" onDoubleClick={startEditing}>
+            {port.label}
+          </span>
+          {isEditing ? (
+            <div className="absolute right-5 top-full z-20 mt-2 w-[220px] rounded-[16px] border border-[rgba(154,52,18,0.16)] bg-[rgba(255,250,241,0.98)] p-2 shadow-[0_14px_32px_rgba(60,41,20,0.14)]">
+              <Input
+                className="h-9 text-right"
+                value={draftLabel}
+                autoFocus
+                onChange={(event) => setDraftLabel(event.target.value)}
+                onBlur={commitEditing}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") commitEditing();
+                  if (event.key === "Escape") {
+                    setDraftLabel(port.label);
+                    setIsEditing(false);
+                  }
+                }}
+              />
+            </div>
+          ) : null}
           <Handle
             id={buildHandleId("output", port.key)}
             type="source"
@@ -911,8 +1083,52 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
   const inputs = listInputPorts(config);
   const outputs = listOutputPorts(config);
   const minHeight = NODE_MIN_HEIGHT[config.family] ?? 80;
-  const isCollapsible = true;
-  const isExpanded = Boolean(data.isExpanded);
+  const isInputNode = config.family === "input";
+  const isCollapsible = config.family !== "input";
+  const isExpanded = config.family === "input" ? true : Boolean(data.isExpanded);
+  const [isEditingLabel, setIsEditingLabel] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [draftLabel, setDraftLabel] = useState(config.label);
+  const [draftDescription, setDraftDescription] = useState(config.description);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setDraftLabel(config.label);
+  }, [config.label]);
+
+  useEffect(() => {
+    setDraftDescription(config.description);
+  }, [config.description]);
+
+  function commitLabelEdit() {
+    const nextLabel = draftLabel.trim();
+    if (nextLabel && nextLabel !== config.label) {
+      data.onConfigChange?.((currentConfig) => ({ ...currentConfig, label: nextLabel }));
+    }
+    setIsEditingLabel(false);
+  }
+
+  function commitDescriptionEdit() {
+    const nextDescription = draftDescription.trim();
+    if (nextDescription !== config.description) {
+      data.onConfigChange?.((currentConfig) => ({ ...currentConfig, description: nextDescription }));
+    }
+    setIsEditingDescription(false);
+  }
+
+  async function handleInputFileSelection(file: File | null) {
+    if (!file || config.family !== "input") return;
+    const envelope = await fileToEnvelope(file);
+    data.onConfigChange?.((currentConfig) => ({
+      ...(currentConfig as InputBoundaryNode),
+      valueType: envelope.detectedType,
+      output: {
+        ...(currentConfig as InputBoundaryNode).output,
+        valueType: envelope.detectedType,
+      },
+      defaultValue: JSON.stringify(envelope),
+    }));
+  }
 
   return (
     <>
@@ -933,11 +1149,53 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
       >
         <div className="flex items-start justify-between gap-3 border-b border-[rgba(154,52,18,0.12)] px-4 py-3">
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="relative flex min-w-0 items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-[rgba(154,52,18,0.55)]" />
-              <div className="truncate text-sm font-semibold text-[var(--text)]">{config.label}</div>
+              <div className="truncate text-sm font-semibold text-[var(--text)] cursor-text" onDoubleClick={() => setIsEditingLabel(true)}>
+                {config.label}
+              </div>
+              {isEditingLabel ? (
+                <div className="absolute left-0 top-full z-20 mt-2 w-[260px] rounded-[16px] border border-[rgba(154,52,18,0.16)] bg-[rgba(255,250,241,0.98)] p-2 shadow-[0_14px_32px_rgba(60,41,20,0.14)]">
+                  <Input
+                    className="h-9"
+                    value={draftLabel}
+                    autoFocus
+                    onChange={(event) => setDraftLabel(event.target.value)}
+                    onBlur={commitLabelEdit}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") commitLabelEdit();
+                      if (event.key === "Escape") {
+                        setDraftLabel(config.label);
+                        setIsEditingLabel(false);
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
-            <div className="mt-1 line-clamp-2 text-xs leading-5 text-[var(--muted)]">{config.description || summarizeNode(config)}</div>
+            <div className="relative mt-1">
+              <div className="line-clamp-2 text-xs leading-5 text-[var(--muted)] cursor-text" onDoubleClick={() => setIsEditingDescription(true)}>
+                {config.description || summarizeNode(config)}
+              </div>
+              {isEditingDescription ? (
+                <div className="absolute left-0 top-full z-20 mt-2 w-[320px] rounded-[16px] border border-[rgba(154,52,18,0.16)] bg-[rgba(255,250,241,0.98)] p-2 shadow-[0_14px_32px_rgba(60,41,20,0.14)]">
+                  <Input
+                    className="h-9"
+                    value={draftDescription}
+                    autoFocus
+                    onChange={(event) => setDraftDescription(event.target.value)}
+                    onBlur={commitDescriptionEdit}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") commitDescriptionEdit();
+                      if (event.key === "Escape") {
+                        setDraftDescription(config.description);
+                        setIsEditingDescription(false);
+                      }
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="text-[0.68rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">{config.family}</div>
@@ -954,92 +1212,129 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
         </div>
 
         <div className="grid gap-3 px-4 py-3">
-          {isExpanded ? (
-            <div className="grid gap-2">
-              <Input
-                value={config.label}
-                onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...currentConfig, label: event.target.value }))}
-                placeholder="Node label"
-              />
-              <Input
-                value={config.description}
-                onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...currentConfig, description: event.target.value }))}
-                placeholder="Node description"
-              />
-            </div>
-          ) : null}
-
           {config.family === "input" ? (
             <>
-              <div className="grid gap-1">
-                {outputs.map((port) => (
-                  <PortRow key={`output-${port.key}`} nodeId={data.nodeId} port={port} side="output" />
-                ))}
-              </div>
-              {isExpanded ? (
-                <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-                      <span>Value Type</span>
-                      <select
-                        className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
-                        value={config.valueType}
-                        onChange={(event) =>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {INPUT_VALUE_TYPE_OPTIONS.map((option) => {
+                    const active = config.valueType === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        title={option.label}
+                        aria-label={option.label}
+                        className={cn(
+                          "inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors",
+                          active
+                            ? "border-[var(--accent)] bg-[rgba(154,52,18,0.12)] text-[var(--accent-strong)]"
+                            : "border-[rgba(154,52,18,0.16)] bg-[rgba(255,255,255,0.72)] text-[var(--muted)] hover:bg-[rgba(255,248,240,0.92)]",
+                        )}
+                        onClick={() =>
                           data.onConfigChange?.((currentConfig) => {
-                            const nextType = event.target.value as ValueType;
                             const currentInput = currentConfig as InputBoundaryNode;
                             return {
                               ...currentInput,
-                              valueType: nextType,
+                              valueType: option.value,
                               output: {
                                 ...currentInput.output,
-                                valueType: nextType,
+                                valueType: option.value,
                               },
                             };
                           })
                         }
                       >
-                        {VALUE_TYPE_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div />
-                  </div>
-                </>
-              ) : null}
-              <div className="grid gap-2">
-                {isExpanded ? (
-                  <>
-                    <Input
-                      value={config.output.label}
-                      onChange={(event) =>
+                        {option.icon}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="grid gap-1">
+                  {outputs.map((port) => (
+                    <PortRow
+                      key={`output-${port.key}`}
+                      nodeId={data.nodeId}
+                      port={port}
+                      side="output"
+                      editable
+                      onRename={(nextLabel) =>
                         data.onConfigChange?.((currentConfig) => ({
                           ...(currentConfig as InputBoundaryNode),
                           output: {
                             ...(currentConfig as InputBoundaryNode).output,
-                            label: event.target.value,
+                            label: nextLabel,
                           },
                         }))
                       }
-                      placeholder="Output label"
                     />
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-2">
+                {config.valueType === "text" ? (
+                  <textarea
+                    value={config.defaultValue}
+                    rows={5}
+                    placeholder={config.placeholder}
+                    onChange={(event) =>
+                      data.onConfigChange?.((currentConfig) => ({
+                        ...(currentConfig as InputBoundaryNode),
+                        defaultValue: event.target.value,
+                      }))
+                    }
+                    className="min-h-[120px] resize-none rounded-[16px] border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.88)] px-3 py-3 text-sm text-[var(--text)]"
+                  />
+                ) : (
+                  <>
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        void handleInputFileSelection(file);
+                        event.currentTarget.value = "";
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="grid min-h-[120px] place-items-center rounded-[16px] border border-dashed border-[rgba(154,52,18,0.24)] bg-[rgba(255,255,255,0.82)] px-4 py-5 text-center"
+                      onClick={() => uploadInputRef.current?.click()}
+                      onDragOver={(event) => {
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "copy";
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const file = event.dataTransfer.files?.[0] ?? null;
+                        void handleInputFileSelection(file);
+                      }}
+                    >
+                      {(() => {
+                        const asset = tryParseUploadedAssetEnvelope(config.defaultValue);
+                        if (!asset) {
+                          return (
+                            <div className="grid gap-2">
+                              <div className="text-sm font-medium text-[var(--text)]">Drop file here</div>
+                              <div className="text-xs leading-5 text-[var(--muted)]">Or click to choose a file from your device.</div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="grid gap-2 text-left">
+                            <div className="text-sm font-medium text-[var(--text)]">{asset.name}</div>
+                            <div className="text-xs leading-5 text-[var(--muted)]">
+                              {asset.detectedType} · {asset.mimeType} · {Math.max(1, Math.round(asset.size / 1024))} KB
+                            </div>
+                            <div className="text-xs leading-5 text-[var(--muted)]">
+                              Click or drop another file to replace it.
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </button>
                   </>
-                ) : null}
-                <textarea
-                  value={config.defaultValue}
-                  rows={5}
-                  placeholder={config.placeholder}
-                  onChange={(event) =>
-                    data.onConfigChange?.((currentConfig) => ({
-                      ...(currentConfig as InputBoundaryNode),
-                      defaultValue: event.target.value,
-                    }))
-                  }
-                  className="min-h-[120px] resize-none rounded-[16px] border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.88)] px-3 py-3 text-sm text-[var(--text)]"
-                />
+                )}
               </div>
             </>
           ) : null}
@@ -1234,7 +1529,22 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             <>
               <div className="grid gap-1">
                 {inputs.map((port) => (
-                  <PortRow key={`input-${port.key}`} nodeId={data.nodeId} port={port} side="input" />
+                  <PortRow
+                    key={`input-${port.key}`}
+                    nodeId={data.nodeId}
+                    port={port}
+                    side="input"
+                    editable
+                    onRename={(nextLabel) =>
+                      data.onConfigChange?.((currentConfig) => ({
+                        ...(currentConfig as OutputBoundaryNode),
+                        input: {
+                          ...(currentConfig as OutputBoundaryNode).input,
+                          label: nextLabel,
+                        },
+                      }))
+                    }
+                  />
                 ))}
               </div>
               {isExpanded ? (
@@ -1278,19 +1588,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                     </label>
                   </div>
                   <div className="grid gap-2">
-                    <Input
-                      value={config.input.label}
-                      onChange={(event) =>
-                        data.onConfigChange?.((currentConfig) => ({
-                          ...(currentConfig as OutputBoundaryNode),
-                          input: {
-                            ...(currentConfig as OutputBoundaryNode).input,
-                            label: event.target.value,
-                          },
-                        }))
-                      }
-                      placeholder="Input label"
-                    />
                     <Input
                       value={config.fileNameTemplate}
                       onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as OutputBoundaryNode), fileNameTemplate: event.target.value }))}
