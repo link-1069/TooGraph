@@ -1177,13 +1177,21 @@ function PortRow({
   );
 }
 
-// 各节点类型的最小高度，防止缩放导致内容显示不全
-const NODE_MIN_HEIGHT: Record<string, number> = {
-  input: 240,     // header + port row + textarea(min-h-120) + hint text + padding
-  output: 180,    // header + port row + preview area + padding
-  agent: 120,     // header + port rows + description + padding
-  condition: 100, // header + port rows + rule summary + padding
-};
+function getNodeMinHeight(config: NodePresetDefinition, isExpanded: boolean) {
+  if (config.family === "input") {
+    return 320;
+  }
+  if (config.family === "output") {
+    return isExpanded ? 280 : 240;
+  }
+  if (config.family === "agent") {
+    return isExpanded ? 420 : 280;
+  }
+  if (config.family === "condition") {
+    return isExpanded ? 340 : 240;
+  }
+  return 180;
+}
 
 const DEFAULT_NODE_WIDTH = 360;
 
@@ -1195,13 +1203,14 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
   const config = data.config;
   const inputs = listInputPorts(config);
   const outputs = listOutputPorts(config);
-  const minHeight = NODE_MIN_HEIGHT[config.family] ?? 80;
   const isInputNode = config.family === "input";
   const isCollapsible = config.family !== "input";
   const isExpanded = config.family === "input" ? true : Boolean(data.isExpanded);
+  const minHeight = getNodeMinHeight(config, isExpanded);
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isHoveringNode, setIsHoveringNode] = useState(false);
+  const [isResizingNode, setIsResizingNode] = useState(false);
   const [draftLabel, setDraftLabel] = useState(config.label);
   const [draftDescription, setDraftDescription] = useState(config.description);
   const [isDeleteConfirmActive, setIsDeleteConfirmActive] = useState(false);
@@ -1229,6 +1238,15 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
       }
     };
   }, []);
+
+  function showNodeResizeHandles() {
+    setIsHoveringNode(true);
+  }
+
+  function hideNodeResizeHandles() {
+    if (isResizingNode) return;
+    setIsHoveringNode(false);
+  }
 
   function clearDeleteConfirmState() {
     if (deleteConfirmTimeoutRef.current) {
@@ -1281,38 +1299,45 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
 
   return (
     <>
-      <NodeResizer
-        isVisible={selected || isHoveringNode}
-        minWidth={160}
-        minHeight={minHeight}
-        handleStyle={{ width: 8, height: 8, borderRadius: 4, background: "var(--accent)", border: "none" }}
-        lineStyle={{ borderColor: "var(--accent)", borderWidth: 1 }}
-        onResizeEnd={(_event, params) => data.onResizeEnd?.(params.width, params.height)}
-      />
-      <div
-        data-node-card="true"
-        className={cn(
-          "group/node relative h-full min-w-[160px] rounded-[18px] border bg-[linear-gradient(180deg,rgba(255,250,241,0.98)_0%,rgba(248,237,219,0.96)_100%)] shadow-[0_18px_36px_rgba(60,41,20,0.1)]",
-          selected ? "border-[var(--accent)]" : "border-[rgba(154,52,18,0.25)]",
-        )}
-        onPointerEnter={() => setIsHoveringNode(true)}
-        onPointerLeave={() => setIsHoveringNode(false)}
-        onDoubleClickCapture={(event) => {
+      <div className="relative h-full" onPointerEnter={showNodeResizeHandles} onPointerLeave={hideNodeResizeHandles}>
+        <div className="absolute inset-[-14px]" />
+        <NodeResizer
+          isVisible={selected || isHoveringNode || isResizingNode}
+          minWidth={160}
+          minHeight={minHeight}
+          handleStyle={{ width: 8, height: 8, borderRadius: 4, background: "var(--accent)", border: "none" }}
+          lineStyle={{ borderColor: "var(--accent)", borderWidth: 1 }}
+          onResizeStart={() => {
+            showNodeResizeHandles();
+            setIsResizingNode(true);
+          }}
+          onResizeEnd={(_event, params) => {
+            setIsResizingNode(false);
+            data.onResizeEnd?.(params.width, params.height);
+          }}
+        />
+        <div
+          data-node-card="true"
+          className={cn(
+            "group/node relative z-10 flex h-full min-w-[160px] flex-col overflow-hidden rounded-[18px] border bg-[linear-gradient(180deg,rgba(255,250,241,0.98)_0%,rgba(248,237,219,0.96)_100%)] shadow-[0_18px_36px_rgba(60,41,20,0.1)]",
+            selected ? "border-[var(--accent)]" : "border-[rgba(154,52,18,0.25)]",
+          )}
+          onDoubleClickCapture={(event) => {
           if (!isCollapsible || isExpanded) return;
           const target = event.target as HTMLElement | null;
           if (target?.closest("button, input, textarea, select, summary, [data-delete-surface='true']")) return;
           event.preventDefault();
           event.stopPropagation();
           data.onToggleExpanded?.();
-        }}
-        onClickCapture={(event) => {
+          }}
+          onClickCapture={(event) => {
           const target = event.target as HTMLElement | null;
           if (target?.closest("[data-delete-surface='true']")) return;
           if (isDeleteConfirmActive) {
             clearDeleteConfirmState();
           }
-        }}
-      >
+          }}
+        >
         <button
           type="button"
           aria-label={isDeleteConfirmActive ? "确认删除节点" : "删除节点"}
@@ -1441,7 +1466,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           </div>
         </div>
 
-        <div className="grid gap-3 px-4 py-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
           {config.family === "input" ? (
             <>
               <div className={cn("grid items-center gap-3", uploadedAsset ? "grid-cols-[1fr_auto]" : "grid-cols-[minmax(0,1fr)_auto]")}>
@@ -1506,7 +1531,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                   ))}
                 </div>
               </div>
-              <div className="grid gap-2">
+              <div className="flex flex-1 flex-col gap-2">
                 {config.valueType === "text" ? (
                   <textarea
                     value={config.defaultValue}
@@ -1518,7 +1543,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                         defaultValue: event.target.value,
                       }))
                     }
-                    className="min-h-[120px] resize-none rounded-[16px] border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.88)] px-3 py-3 text-sm text-[var(--text)]"
+                    className="min-h-[160px] h-full flex-1 resize-none rounded-[16px] border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.88)] px-3 py-3 text-sm text-[var(--text)]"
                   />
                 ) : (
                   <>
@@ -1535,7 +1560,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                     {!uploadedAsset ? (
                       <button
                         type="button"
-                        className="grid min-h-[120px] place-items-center rounded-[16px] border border-dashed border-[rgba(154,52,18,0.24)] bg-[rgba(255,255,255,0.82)] px-4 py-5 text-center"
+                        className="grid min-h-[160px] flex-1 place-items-center rounded-[16px] border border-dashed border-[rgba(154,52,18,0.24)] bg-[rgba(255,255,255,0.82)] px-4 py-5 text-center"
                         onClick={() => uploadInputRef.current?.click()}
                         onDragOver={(event) => {
                           event.preventDefault();
@@ -1554,7 +1579,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                       </button>
                     ) : (
                       <div
-                        className="grid min-h-[120px] gap-3 text-left"
+                        className="grid min-h-[160px] flex-1 gap-3 text-left"
                         onDragOver={(event) => {
                           event.preventDefault();
                           event.dataTransfer.dropEffect = "copy";
@@ -1618,7 +1643,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           {config.family === "agent" ? (
             <>
               {!isExpanded ? (
-                <div className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.78)] px-3 py-2 text-sm text-[var(--text)] break-words">
+                <div className="flex min-h-[140px] flex-1 items-center justify-center rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.78)] px-5 py-4 text-center text-sm text-[var(--text)] break-words">
                   {summarizeNode(config)}
                 </div>
               ) : (
@@ -1721,7 +1746,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           {config.family === "condition" ? (
             <>
               {!isExpanded ? (
-                <div className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.78)] px-3 py-3 text-sm leading-6 text-[var(--text)] break-words">
+                <div className="flex min-h-[120px] flex-1 items-center rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.78)] px-4 py-4 text-sm leading-6 text-[var(--text)] break-words">
                   {summarizeNode(config)}
                 </div>
               ) : (
@@ -1865,12 +1890,12 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                   </div>
                 </>
               ) : null}
-              <div className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.82)] p-3">
+              <div className="flex min-h-[160px] flex-1 flex-col rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.82)] p-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-[0.68rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">Preview</div>
                   <div className="text-[0.68rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">{config.displayMode}</div>
                 </div>
-                <div className="max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-[12px] bg-[rgba(248,242,234,0.8)] px-3 py-3 text-sm leading-6 text-[var(--text)]">
+                <div className="min-h-[120px] flex-1 overflow-auto whitespace-pre-wrap break-words rounded-[12px] bg-[rgba(248,242,234,0.8)] px-3 py-3 text-sm leading-6 text-[var(--text)]">
                   {data.previewText || "Connect an upstream output to preview/export it."}
                 </div>
               </div>
@@ -1890,6 +1915,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
               </Button>
             </div>
           ) : null}
+        </div>
         </div>
       </div>
     </>
