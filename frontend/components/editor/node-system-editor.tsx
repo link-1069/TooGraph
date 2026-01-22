@@ -112,9 +112,10 @@ type FlowNodeData = {
   skillDefinitions?: SkillDefinition[];
   skillDefinitionsLoading?: boolean;
   skillDefinitionsError?: string | null;
-  globalTextModel?: string;
+  globalTextModelRef?: string;
   globalThinkingEnabled?: boolean;
   defaultAgentTemperature?: number;
+  availableModelRefs?: string[];
 };
 
 type FlowNode = Node<FlowNodeData>;
@@ -140,12 +141,36 @@ type SkillDefinition = {
 type EditorSettingsPayload = {
   model: {
     text_model: string;
+    text_model_ref: string;
     video_model: string;
+    video_model_ref: string;
   };
   agent_runtime_defaults?: {
     model: string;
     thinking_enabled: boolean;
     temperature: number;
+  };
+  model_catalog?: {
+    default_text_model_ref: string;
+    default_video_model_ref: string;
+    providers: Array<{
+      provider_id: string;
+      label: string;
+      description: string;
+      transport: string;
+      configured: boolean;
+      base_url: string;
+      models: Array<{
+        model_ref: string;
+        model: string;
+        label: string;
+        reasoning: boolean;
+        modalities: string[];
+        context_window: number | null;
+        max_tokens: number | null;
+      }>;
+      example_model_refs: string[];
+    }>;
   };
 };
 
@@ -182,7 +207,7 @@ type PresetDocument = {
 };
 
 const HELLO_WORLD_TEMPLATE_ID = "hello_world";
-const DEFAULT_EDITOR_TEXT_MODEL = "qwen-local";
+const DEFAULT_EDITOR_TEXT_MODEL_REF = "local/lm-local";
 const DEFAULT_AGENT_THINKING_ENABLED = false;
 const DEFAULT_AGENT_TEMPERATURE = 0.2;
 const TYPE_COLORS: Record<ValueType, string> = {
@@ -243,18 +268,18 @@ function normalizeNodeConfig<T extends NodePresetDefinition>(config: T): T {
 function resolveAgentRuntimeConfig(
   config: AgentNode,
   defaults?: {
-    globalTextModel?: string;
+    globalTextModelRef?: string;
     globalThinkingEnabled?: boolean;
     defaultAgentTemperature?: number;
   },
 ) {
   const normalizedConfig = normalizeNodeConfig(config) as AgentNode;
-  const globalTextModel = defaults?.globalTextModel || DEFAULT_EDITOR_TEXT_MODEL;
+  const globalTextModelRef = defaults?.globalTextModelRef || DEFAULT_EDITOR_TEXT_MODEL_REF;
   const globalThinkingEnabled = defaults?.globalThinkingEnabled ?? DEFAULT_AGENT_THINKING_ENABLED;
   const defaultAgentTemperature = normalizeAgentTemperature(defaults?.defaultAgentTemperature);
   const overrideModel = normalizedConfig.model?.trim() ?? "";
   const resolvedModel =
-    normalizedConfig.modelSource === "override" && overrideModel ? overrideModel : globalTextModel;
+    normalizedConfig.modelSource === "override" && overrideModel ? overrideModel : globalTextModelRef;
   const resolvedThinking =
     normalizedConfig.thinkingMode === "inherit"
       ? globalThinkingEnabled
@@ -263,7 +288,7 @@ function resolveAgentRuntimeConfig(
 
   return {
     ...normalizedConfig,
-    globalTextModel,
+    globalTextModelRef,
     globalThinkingEnabled,
     defaultAgentTemperature,
     resolvedModel,
@@ -272,11 +297,161 @@ function resolveAgentRuntimeConfig(
   };
 }
 
-function RuntimeBadge({ label, value }: { label: string; value: string }) {
+function InlineRuntimeSelect({
+  label,
+  value,
+  onChange,
+  children,
+  title,
+}: {
+  label?: string;
+  value: string;
+  onChange: (value: string) => void;
+  children: ReactNode;
+  title?: string;
+}) {
   return (
-    <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.78)] px-2.5 py-1 text-[0.7rem] leading-none text-[var(--muted)] shadow-[0_8px_18px_rgba(60,41,20,0.05)]">
-      <span className="uppercase tracking-[0.14em] text-[var(--accent-strong)]">{label}</span>
-      <span className="truncate text-[var(--text)]">{value}</span>
+    <label
+      className="relative flex min-w-0 items-center gap-2 rounded-full border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.82)] px-3 pr-8 text-[0.74rem] shadow-[0_8px_18px_rgba(60,41,20,0.05)]"
+      title={title}
+    >
+      {label ? (
+        <span className="shrink-0 uppercase tracking-[0.14em] text-[var(--accent-strong)]">{label}</span>
+      ) : null}
+      <select
+        aria-label={label || title || "Runtime select"}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-w-0 appearance-none bg-transparent py-1.5 text-[var(--text)] outline-none"
+      >
+        {children}
+      </select>
+      <svg
+        viewBox="0 0 16 16"
+        className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 fill-none stroke-[var(--muted)]"
+        strokeWidth="1.5"
+      >
+        <path d="m4.5 6 3.5 4 3.5-4" />
+      </svg>
+    </label>
+  );
+}
+
+function formatModelChoiceLabel(modelRef: string) {
+  const trimmed = modelRef.trim();
+  if (!trimmed) return "";
+  const parts = trimmed.split("/");
+  return parts[parts.length - 1] || trimmed;
+}
+
+function buildModelSelectOptions(
+  agentRuntime: ReturnType<typeof resolveAgentRuntimeConfig>,
+  availableModelRefs: string[],
+) {
+  const currentOverrideModel = agentRuntime.model?.trim() ?? "";
+  const options: Array<{ value: string; label: string }> = [
+    {
+      value: "__global__",
+      label: formatModelChoiceLabel(agentRuntime.globalTextModelRef),
+    },
+  ];
+  const seen = new Set<string>(["__global__"]);
+  const candidates = currentOverrideModel
+    ? [currentOverrideModel, ...availableModelRefs]
+    : availableModelRefs;
+
+  for (const modelRef of candidates) {
+    const trimmed = modelRef.trim();
+    if (!trimmed || trimmed === agentRuntime.globalTextModelRef || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    options.push({
+      value: trimmed,
+      label: formatModelChoiceLabel(trimmed),
+    });
+  }
+
+  return options;
+}
+
+function buildThinkingSelectOptions(agentRuntime: ReturnType<typeof resolveAgentRuntimeConfig>) {
+  return [
+    {
+      value: "inherit",
+      label: `默认（当前${agentRuntime.globalThinkingEnabled ? "开" : "关"}）`,
+    },
+    {
+      value: "off",
+      label: "关闭",
+    },
+    {
+      value: "on",
+      label: "开启",
+    },
+  ];
+}
+
+function AgentInlineRuntimeControls({
+  agentRuntime,
+  availableModelRefs,
+  onConfigChange,
+}: {
+  agentRuntime: ReturnType<typeof resolveAgentRuntimeConfig>;
+  availableModelRefs: string[];
+  onConfigChange: (updater: (config: AgentNode) => AgentNode) => void;
+}) {
+  const modelOptions = buildModelSelectOptions(agentRuntime, availableModelRefs);
+  const thinkingOptions = buildThinkingSelectOptions(agentRuntime);
+  const currentOverrideModel = agentRuntime.model?.trim() ?? "";
+  const selectedModelValue =
+    agentRuntime.modelSource === "override" && currentOverrideModel
+      ? currentOverrideModel
+      : "__global__";
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <InlineRuntimeSelect
+        value={selectedModelValue}
+        title={`Resolved model: ${agentRuntime.resolvedModel}`}
+        onChange={(nextValue) =>
+          onConfigChange((currentConfig) => {
+            const currentAgent = currentConfig as AgentNode;
+            if (nextValue === "__global__") {
+              return {
+                ...currentAgent,
+                modelSource: "global",
+                model: "",
+              };
+            }
+            return {
+              ...currentAgent,
+              modelSource: "override",
+              model: nextValue,
+            };
+          })
+        }
+      >
+        {modelOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </InlineRuntimeSelect>
+      <InlineRuntimeSelect
+        value={agentRuntime.thinkingMode ?? "inherit"}
+        title={`Resolved thinking: ${agentRuntime.resolvedThinking ? "On" : "Off"}`}
+        onChange={(nextValue) =>
+          onConfigChange((currentConfig) => ({
+            ...(currentConfig as AgentNode),
+            thinkingMode: nextValue as AgentThinkingMode,
+          }))
+        }
+      >
+        {thinkingOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </InlineRuntimeSelect>
     </div>
   );
 }
@@ -1561,7 +1736,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
   const agentRuntime =
     config.family === "agent"
       ? resolveAgentRuntimeConfig(config, {
-          globalTextModel: data.globalTextModel,
+          globalTextModelRef: data.globalTextModelRef,
           globalThinkingEnabled: data.globalThinkingEnabled,
           defaultAgentTemperature: data.defaultAgentTemperature,
         })
@@ -1864,13 +2039,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
-          {config.family === "agent" && !isExpanded && agentRuntime ? (
-            <div className="flex flex-wrap gap-2">
-              <RuntimeBadge label="Model" value={agentRuntime.resolvedModel} />
-              <RuntimeBadge label="Thinking" value={agentRuntime.resolvedThinking ? "On" : "Off"} />
-            </div>
-          ) : null}
-
           {config.family === "input" ? (
             <>
               <div className={cn("grid items-center gap-3", uploadedAsset ? "grid-cols-[1fr_auto]" : "grid-cols-[minmax(0,1fr)_auto]")}>
@@ -2100,6 +2268,14 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             </div>
           ) : null}
 
+          {config.family === "agent" && !isExpanded && agentRuntime ? (
+            <AgentInlineRuntimeControls
+              agentRuntime={agentRuntime}
+              availableModelRefs={data.availableModelRefs ?? []}
+              onConfigChange={(updater) => data.onConfigChange?.((currentConfig) => updater(currentConfig as AgentNode))}
+            />
+          ) : null}
+
           {config.family === "agent" ? (
             <>
               {!isExpanded ? (
@@ -2148,7 +2324,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                   {agentRuntime ? (
                     <PanelSection
                       title="Advanced Runtime"
-                      description={`Global model: ${agentRuntime.globalTextModel} · Default thinking: ${agentRuntime.globalThinkingEnabled ? "on" : "off"}`}
+                      description={`Global model: ${agentRuntime.globalTextModelRef} · Default thinking: ${agentRuntime.globalThinkingEnabled ? "on" : "off"}`}
                     >
                       <div className="grid grid-cols-2 gap-3">
                         <label className="grid gap-1.5 text-sm text-[var(--muted)]">
@@ -2187,10 +2363,11 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                       </div>
                       {agentRuntime.modelSource === "override" ? (
                         <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-                          <span>Model</span>
+                          <span>Model Ref</span>
                           <Input
+                            list={`model-ref-options-${data.nodeId}`}
                             value={agentRuntime.model}
-                            placeholder={agentRuntime.globalTextModel}
+                            placeholder={agentRuntime.globalTextModelRef}
                             onChange={(event) =>
                               data.onConfigChange?.((currentConfig) => ({
                                 ...(currentConfig as AgentNode),
@@ -2198,6 +2375,11 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                               }))
                             }
                           />
+                          <datalist id={`model-ref-options-${data.nodeId}`}>
+                            {(data.availableModelRefs ?? []).map((modelRef) => (
+                              <option key={modelRef} value={modelRef} />
+                            ))}
+                          </datalist>
                         </label>
                       ) : null}
                       <label className="grid gap-1.5 text-sm text-[var(--muted)]">
@@ -2508,13 +2690,24 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
   }, [edges, nodes]);
   const agentRuntimeDefaults = useMemo(
     () => ({
-      globalTextModel:
-        editorSettings?.agent_runtime_defaults?.model || editorSettings?.model.text_model || DEFAULT_EDITOR_TEXT_MODEL,
+      globalTextModelRef:
+        editorSettings?.agent_runtime_defaults?.model || editorSettings?.model.text_model_ref || DEFAULT_EDITOR_TEXT_MODEL_REF,
       globalThinkingEnabled:
         editorSettings?.agent_runtime_defaults?.thinking_enabled ?? DEFAULT_AGENT_THINKING_ENABLED,
       defaultAgentTemperature:
         editorSettings?.agent_runtime_defaults?.temperature ?? DEFAULT_AGENT_TEMPERATURE,
     }),
+    [editorSettings],
+  );
+  const availableModelRefs = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (editorSettings?.model_catalog?.providers ?? [])
+            .filter((provider) => provider.configured)
+            .flatMap((provider) => provider.models.map((model) => model.model_ref)),
+        ),
+      ),
     [editorSettings],
   );
 
@@ -3013,9 +3206,10 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
                   skillDefinitions,
                   skillDefinitionsLoading,
                   skillDefinitionsError,
-                  globalTextModel: agentRuntimeDefaults.globalTextModel,
+                  globalTextModelRef: agentRuntimeDefaults.globalTextModelRef,
                   globalThinkingEnabled: agentRuntimeDefaults.globalThinkingEnabled,
                   defaultAgentTemperature: agentRuntimeDefaults.defaultAgentTemperature,
+                  availableModelRefs,
                 },
               }))}
               edges={edges}

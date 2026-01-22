@@ -3,16 +3,41 @@
 import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InfoBlock } from "@/components/ui/info-block";
-import { apiGet } from "@/lib/api";
+import { Input } from "@/components/ui/input";
+import { apiGet, apiPost } from "@/lib/api";
 import { useLanguage } from "@/components/providers/language-provider";
 
 type SettingsPayload = {
   model: {
     text_model: string;
+    text_model_ref: string;
     video_model: string;
+    video_model_ref: string;
+  };
+  agent_runtime_defaults?: {
+    model: string;
+    thinking_enabled: boolean;
+    temperature: number;
+  };
+  model_catalog?: {
+    providers: Array<{
+      provider_id: string;
+      label: string;
+      description: string;
+      transport: string;
+      configured: boolean;
+      base_url: string;
+      models: Array<{
+        model_ref: string;
+        model: string;
+        label: string;
+      }>;
+      example_model_refs: string[];
+    }>;
   };
   revision: {
     max_revision_round: number;
@@ -29,10 +54,29 @@ type SettingsPayload = {
   }>;
 };
 
+type SettingsDraft = {
+  text_model_ref: string;
+  video_model_ref: string;
+  thinking_enabled: boolean;
+  temperature: number;
+};
+
+function buildDraftFromSettings(settings: SettingsPayload): SettingsDraft {
+  return {
+    text_model_ref: settings.agent_runtime_defaults?.model ?? settings.model.text_model_ref,
+    video_model_ref: settings.model.video_model_ref,
+    thinking_enabled: settings.agent_runtime_defaults?.thinking_enabled ?? false,
+    temperature: settings.agent_runtime_defaults?.temperature ?? 0.2,
+  };
+}
+
 export function SettingsPanelClient() {
   const { t } = useLanguage();
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
+  const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +85,7 @@ export function SettingsPanelClient() {
         const payload = await apiGet<SettingsPayload>("/api/settings");
         if (!cancelled) {
           setSettings(payload);
+          setDraft(buildDraftFromSettings(payload));
           setError(null);
         }
       } catch (fetchError) {
@@ -55,6 +100,24 @@ export function SettingsPanelClient() {
     };
   }, []);
 
+  const configuredModelOptions = settings
+    ? Array.from(
+        new Map(
+          (settings.model_catalog?.providers ?? [])
+            .filter((provider) => provider.configured)
+            .flatMap((provider) =>
+              provider.models.map((model) => [
+                model.model_ref,
+                {
+                  value: model.model_ref,
+                  label: model.model_ref,
+                },
+              ]),
+            ),
+        ).values(),
+      )
+    : [];
+
   if (error) {
     return <EmptyState>{t("common.failed")}: {error}</EmptyState>;
   }
@@ -62,25 +125,162 @@ export function SettingsPanelClient() {
   if (!settings) {
     return <EmptyState>{t("common.loading")}</EmptyState>;
   }
+  const currentDraft = draft ?? buildDraftFromSettings(settings);
+  const isDirty =
+    JSON.stringify(currentDraft) !== JSON.stringify(buildDraftFromSettings(settings));
+
+  async function handleSave() {
+    try {
+      setIsSaving(true);
+      setSaveMessage(null);
+      const payload = await apiPost<SettingsPayload>("/api/settings", {
+        model: {
+          text_model_ref: currentDraft.text_model_ref,
+          video_model_ref: currentDraft.video_model_ref,
+        },
+        agent_runtime_defaults: {
+          model: currentDraft.text_model_ref,
+          thinking_enabled: currentDraft.thinking_enabled,
+          temperature: currentDraft.temperature,
+        },
+      });
+      setSettings(payload);
+      setDraft(buildDraftFromSettings(payload));
+      setError(null);
+      setSaveMessage("设置已保存。");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Failed to save settings.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   return (
     <section className="grid grid-cols-12 gap-[18px] max-[960px]:grid-cols-1">
       <Card className="col-span-4 max-[960px]:col-span-1">
-        <h2 className="mb-2.5">Model</h2>
+        <h2 className="mb-2.5">Default Runtime</h2>
         <div className="grid gap-3">
-          <InfoBlock title="Text model">{settings.model.text_model}</InfoBlock>
-          <InfoBlock title="Video model">{settings.model.video_model}</InfoBlock>
+          <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+            <span>Default model</span>
+            <select
+              className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
+              value={currentDraft.text_model_ref}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...(current ?? buildDraftFromSettings(settings)),
+                  text_model_ref: event.target.value,
+                }))
+              }
+            >
+              {configuredModelOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+            <span>Default video model</span>
+            <select
+              className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
+              value={currentDraft.video_model_ref}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...(current ?? buildDraftFromSettings(settings)),
+                  video_model_ref: event.target.value,
+                }))
+              }
+            >
+              {configuredModelOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
       </Card>
       <Card className="col-span-4 max-[960px]:col-span-1">
-        <h2 className="mb-2.5">Revision</h2>
-        <InfoBlock title="Max revision rounds">{settings.revision.max_revision_round}</InfoBlock>
+        <h2 className="mb-2.5">Agent Runtime</h2>
+        <div className="grid gap-3">
+          <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+            <span>Default thinking</span>
+            <select
+              className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
+              value={currentDraft.thinking_enabled ? "on" : "off"}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...(current ?? buildDraftFromSettings(settings)),
+                  thinking_enabled: event.target.value === "on",
+                }))
+              }
+            >
+              <option value="off">off</option>
+              <option value="on">on</option>
+            </select>
+          </label>
+          <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+            <span>Default temperature</span>
+            <Input
+              type="number"
+              min={0}
+              max={2}
+              step={0.1}
+              value={String(currentDraft.temperature)}
+              onChange={(event) => {
+                const nextValue = Number(event.target.value);
+                if (!Number.isFinite(nextValue)) return;
+                setDraft((current) => ({
+                  ...(current ?? buildDraftFromSettings(settings)),
+                  temperature: Math.min(2, Math.max(0, nextValue)),
+                }));
+              }}
+            />
+          </label>
+          <div className="rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.6)] px-3.5 py-3 text-sm text-[var(--muted)]">
+            Nodes with <span className="font-medium text-[var(--text)]">thinking = 默认</span> will follow this global switch.
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={handleSave} disabled={!isDirty || isSaving}>
+              {isSaving ? "Saving..." : "Save Settings"}
+            </Button>
+            {saveMessage ? <span className="text-sm text-[var(--muted)]">{saveMessage}</span> : null}
+          </div>
+        </div>
       </Card>
       <Card className="col-span-4 max-[960px]:col-span-1">
-        <h2 className="mb-2.5">Evaluator</h2>
+        <h2 className="mb-2.5">Revision & Evaluator</h2>
         <div className="grid gap-3">
+          <InfoBlock title="Max revision rounds">{settings.revision.max_revision_round}</InfoBlock>
           <InfoBlock title="Threshold">{settings.evaluator.default_score_threshold}</InfoBlock>
           <InfoBlock title="Routes">{settings.evaluator.routes.join(", ")}</InfoBlock>
+        </div>
+      </Card>
+      <Card className="col-span-12">
+        <h2 className="mb-2.5">Model Providers</h2>
+        <div className="grid gap-3">
+          {(settings.model_catalog?.providers ?? []).map((provider) => (
+            <div key={provider.provider_id} className="rounded-[18px] border border-[var(--line)] bg-[rgba(255,255,255,0.7)] p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="text-sm font-semibold">{provider.label}</div>
+                <Badge>{provider.provider_id}</Badge>
+                <Badge>{provider.transport}</Badge>
+                <Badge>{provider.configured ? "configured" : "planned"}</Badge>
+              </div>
+              <div className="mt-2 text-sm text-[var(--muted)]">{provider.description}</div>
+              <div className="mt-3 text-xs text-[var(--muted)]">Base URL: {provider.base_url}</div>
+              <div className="mt-3 flex flex-wrap gap-2.5">
+                {provider.models.map((model) => (
+                  <Badge key={model.model_ref}>{model.model_ref}</Badge>
+                ))}
+                {!provider.models.length
+                  ? provider.example_model_refs.map((modelRef) => (
+                      <Badge key={modelRef}>{modelRef}</Badge>
+                    ))
+                  : null}
+              </div>
+            </div>
+          ))}
         </div>
       </Card>
       <Card className="col-span-12">
