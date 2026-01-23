@@ -140,25 +140,25 @@ export const ONBOARDING_HELPER_AGENT_PRESET = {
       valueType: "text",
     },
   ],
-  systemInstruction:
-    "You are the official GraphiteUI onboarding assistant. Answer only with information grounded in the provided skill context. If the knowledge is insufficient, say so directly.",
-  taskInstruction:
-    "Use the retrieved official knowledge to answer the user's question. Explain what GraphiteUI is, what it can do, and how to get started when relevant. Keep the answer practical, concise, and in the same language as the question.",
-  skills: [
-    {
-      name: "official_docs",
-      skillKey: "search_knowledge_base",
-      inputMapping: {
-        query: "$inputs.question",
-        knowledge_base: "GraphiteUI-official",
-      },
-      contextBinding: {},
-      usage: "required",
-    },
-  ],
-  outputBinding: {
-    answer: "$response.answer",
+  systemInstruction: "",
+  taskInstruction: "",
+  skills: [],
+  outputBinding: {},
+} satisfies NodePresetDefinition;
+
+export const KNOWLEDGE_BASE_INPUT_PRESET = {
+  presetId: "preset.input.knowledge_base.v1",
+  label: "Knowledge Base",
+  description: "Select a knowledge base to provide to downstream agents.",
+  family: "input",
+  valueType: "knowledge_base",
+  output: {
+    key: "knowledge_base",
+    label: "Knowledge Base",
+    valueType: "knowledge_base",
   },
+  defaultValue: "GraphiteUI-official",
+  placeholder: "Knowledge base name",
 } satisfies NodePresetDefinition;
 
 export const ONBOARDING_ANSWER_OUTPUT_PRESET = {
@@ -641,10 +641,6 @@ export const FINAL_PACKAGE_OUTPUT_PRESET = {
 
 export const NODE_PRESETS_MOCK = [
   EMPTY_AGENT_PRESET,
-  NAME_INPUT_PRESET,
-  QUESTION_INPUT_PRESET,
-  TASK_INPUT_PRESET,
-  TEXT_INPUT_PRESET,
   ONBOARDING_HELPER_AGENT_PRESET,
   SUMMARY_AGENT_PRESET,
   FETCH_NEWS_AGENT_PRESET,
@@ -658,21 +654,31 @@ export const NODE_PRESETS_MOCK = [
   PREPARE_VIDEO_TODO_AGENT_PRESET,
   FINALIZE_CREATIVE_PACKAGE_AGENT_PRESET,
   REVIEW_GATE_PRESET,
+] satisfies NodePresetDefinition[];
+
+const STATIC_NODE_DEFINITIONS = [
+  EMPTY_AGENT_PRESET,
+  TEXT_INPUT_PRESET,
+  NAME_INPUT_PRESET,
+  QUESTION_INPUT_PRESET,
+  TASK_INPUT_PRESET,
+  KNOWLEDGE_BASE_INPUT_PRESET,
+  TEXT_OUTPUT_PRESET,
   ONBOARDING_ANSWER_OUTPUT_PRESET,
   NEWS_CONTEXT_OUTPUT_PRESET,
   CREATIVE_BRIEF_OUTPUT_PRESET,
   DECISION_SIGNAL_OUTPUT_PRESET,
   FINAL_PACKAGE_OUTPUT_PRESET,
-  TEXT_OUTPUT_PRESET,
+  ...NODE_PRESETS_MOCK,
 ] satisfies NodePresetDefinition[];
 
 export function getNodePresetById(presetId: string) {
-  return NODE_PRESETS_MOCK.find((preset) => preset.presetId === presetId);
+  return STATIC_NODE_DEFINITIONS.find((preset) => preset.presetId === presetId);
 }
 
 export function getSuggestedPresets(valueType?: ValueType | null) {
   if (!valueType) {
-    return [EMPTY_AGENT_PRESET, NAME_INPUT_PRESET, QUESTION_INPUT_PRESET, TASK_INPUT_PRESET, TEXT_INPUT_PRESET, ONBOARDING_HELPER_AGENT_PRESET, SUMMARY_AGENT_PRESET, FETCH_NEWS_AGENT_PRESET, CLEAN_MARKET_NEWS_AGENT_PRESET, BUILD_CREATIVE_BRIEF_AGENT_PRESET, GENERATE_CREATIVE_VARIANTS_AGENT_PRESET, REVIEW_VARIANTS_AGENT_PRESET, GENERATE_STORYBOARD_PACKAGES_AGENT_PRESET, GENERATE_VIDEO_PROMPT_PACKAGES_AGENT_PRESET, PREPARE_IMAGE_TODO_AGENT_PRESET, PREPARE_VIDEO_TODO_AGENT_PRESET, FINALIZE_CREATIVE_PACKAGE_AGENT_PRESET, REVIEW_GATE_PRESET, ONBOARDING_ANSWER_OUTPUT_PRESET, NEWS_CONTEXT_OUTPUT_PRESET, CREATIVE_BRIEF_OUTPUT_PRESET, DECISION_SIGNAL_OUTPUT_PRESET, FINAL_PACKAGE_OUTPUT_PRESET, TEXT_OUTPUT_PRESET];
+    return NODE_PRESETS_MOCK;
   }
 
   const supportsType = (preset: NodePresetDefinition) => {
@@ -681,9 +687,6 @@ export function getSuggestedPresets(valueType?: ValueType | null) {
     }
     if (preset.family === "condition") {
       return preset.inputs.some((input) => input.valueType === "any" || input.valueType === valueType);
-    }
-    if (preset.family === "output") {
-      return preset.input.valueType === "any" || preset.input.valueType === valueType;
     }
     return false;
   };

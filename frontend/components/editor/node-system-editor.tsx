@@ -26,6 +26,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { Button } from "@/components/ui/button";
+import { ReferenceTextarea, type AutocompleteOption } from "@/components/editor/reference-textarea";
 import { Input } from "@/components/ui/input";
 import { apiGet, apiPost } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -39,6 +40,7 @@ import {
   type ConditionNode,
   type ConditionRule,
   type InputBoundaryNode,
+  type NodeFamily,
   type NodePresetDefinition,
   type OutputBoundaryNode,
   type PortDefinition,
@@ -103,9 +105,11 @@ type FlowNodeData = {
   config: NodePresetDefinition;
   previewText: string;
   isExpanded?: boolean;
+  collapsedSize?: NodeViewportSize | null;
+  expandedSize?: NodeViewportSize | null;
   connectingSourceType?: ValueType | null;
   onConfigChange?: (updater: (config: NodePresetDefinition) => NodePresetDefinition) => void;
-  onResizeEnd?: (width: number, height: number) => void;
+  onResizeEnd?: (width: number, height: number, isExpanded: boolean) => void;
   onToggleExpanded?: () => void;
   onDelete?: () => void;
   onSavePreset?: () => void;
@@ -117,6 +121,7 @@ type FlowNodeData = {
   defaultAgentTemperature?: number;
   availableModelRefs?: string[];
   modelDisplayLookup?: Record<string, string>;
+  knowledgeBases?: Array<{ name: string }>;
 };
 
 type FlowNode = Node<FlowNodeData>;
@@ -208,6 +213,28 @@ type PresetDocument = {
   updatedAt?: string | null;
 };
 
+type CreationMenuEntry = {
+  id: string;
+  family: NodeFamily;
+  label: string;
+  description: string;
+  mode: "preset" | "node";
+  presetId?: string;
+  nodeKind?: "input" | "output";
+};
+
+type NodeViewportSize = {
+  width?: number;
+  height?: number;
+};
+
+const CREATION_MENU_FAMILY_PRIORITY: Record<NodeFamily, number> = {
+  input: 0,
+  output: 1,
+  agent: 2,
+  condition: 3,
+};
+
 const HELLO_WORLD_TEMPLATE_ID = "hello_world";
 const DEFAULT_EDITOR_TEXT_MODEL_REF = "local/lm-local";
 const DEFAULT_AGENT_THINKING_ENABLED = true;
@@ -219,16 +246,17 @@ const TYPE_COLORS: Record<ValueType, string> = {
   audio: "#7c3aed",
   video: "#be185d",
   file: "#475569",
+  knowledge_base: "#0369a1",
   any: "#64748b",
 };
 
-const VALUE_TYPE_OPTIONS: ValueType[] = ["text", "json", "image", "audio", "video", "file", "any"];
+const VALUE_TYPE_OPTIONS: ValueType[] = ["text", "json", "image", "audio", "video", "file", "knowledge_base", "any"];
 const RULE_OPERATOR_OPTIONS: ConditionRule["operator"][] = ["==", "!=", ">=", "<=", ">", "<", "exists"];
 
-const INPUT_VALUE_TYPE_OPTIONS: Array<{ value: ValueType; label: string; icon: ReactNode }> = [
+const INPUT_TYPE_BUTTONS: Array<{ value: ValueType; label: string; icon: ReactNode }> = [
   {
     value: "text",
-    label: "Text",
+    label: "文本",
     icon: (
       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
         <path d="M3 4.5h10M8 4.5v7M5.5 11.5h5" />
@@ -237,11 +265,22 @@ const INPUT_VALUE_TYPE_OPTIONS: Array<{ value: ValueType; label: string; icon: R
   },
   {
     value: "file",
-    label: "File",
+    label: "文件",
     icon: (
       <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
         <path d="M5 2.5h4l2.5 2.5V12a1.5 1.5 0 0 1-1.5 1.5h-5A1.5 1.5 0 0 1 3.5 12V4A1.5 1.5 0 0 1 5 2.5Z" />
         <path d="M9 2.5V5h2.5" />
+      </svg>
+    ),
+  },
+  {
+    value: "knowledge_base",
+    label: "知识库",
+    icon: (
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.5">
+        <path d="M3 3.5h10v9H3z" />
+        <path d="M5.5 3.5V2M8 3.5V2M10.5 3.5V2" />
+        <path d="M5.5 6.5h5M5.5 9h3" />
       </svg>
     ),
   },
@@ -684,6 +723,81 @@ function formatValueTypeLabel(valueType: ValueType) {
   }
 }
 
+function normalizeViewportSize(size: unknown): NodeViewportSize | null {
+  if (!size || typeof size !== "object") return null;
+  const candidate = size as Record<string, unknown>;
+  const width = typeof candidate.width === "number" && Number.isFinite(candidate.width) ? candidate.width : undefined;
+  const height = typeof candidate.height === "number" && Number.isFinite(candidate.height) ? candidate.height : undefined;
+  if (width === undefined && height === undefined) return null;
+  return { width, height };
+}
+
+function getInitialExpandedHeight(config: NodePresetDefinition) {
+  if (config.family === "agent") return 520;
+  if (config.family === "condition") return 440;
+  if (config.family === "output") return 360;
+  return getNodeMinHeight(config, true);
+}
+
+function buildNodeStyleFromState(
+  config: NodePresetDefinition,
+  isExpanded: boolean,
+  size: NodeViewportSize | null,
+  fallbackWidth?: number,
+  fallbackHeight?: number,
+) {
+  const width = size?.width ?? fallbackWidth ?? getDefaultNodeWidth(config);
+  const height = size?.height ?? fallbackHeight;
+  return {
+    background: "transparent",
+    border: "none",
+    padding: 0,
+    width,
+    ...(typeof height === "number" ? { height } : {}),
+  };
+}
+
+function isPresetEligibleFamily(family: NodeFamily) {
+  return family === "agent" || family === "condition";
+}
+
+function createGenericInputNodeConfig(): InputBoundaryNode {
+  const baseConfig = deepClonePreset(TEXT_INPUT_PRESET);
+  return {
+    ...baseConfig,
+    presetId: "node.input.generic",
+    label: "Input",
+    description: "Provide a value to the current workflow.",
+    output: {
+      ...baseConfig.output,
+      key: "value",
+      label: "Value",
+      valueType: "text",
+    },
+    valueType: "text",
+    placeholder: "Enter value",
+  } satisfies InputBoundaryNode;
+}
+
+function createGenericOutputNodeConfig(sourceType: ValueType | null = null): OutputBoundaryNode {
+  return {
+    presetId: "node.output.generic",
+    label: "Output",
+    description: "Preview or persist the current workflow result.",
+    family: "output",
+    input: {
+      key: "value",
+      label: "Value",
+      valueType: sourceType ?? "any",
+      required: true,
+    },
+    displayMode: sourceType === "json" ? "json" : "auto",
+    persistEnabled: false,
+    persistFormat: sourceType === "json" ? "json" : "txt",
+    fileNameTemplate: "result",
+  } satisfies OutputBoundaryNode;
+}
+
 async function fileToEnvelope(file: File): Promise<UploadedAssetEnvelope> {
   const detectedType = detectInputValueTypeFromFileName(file.name);
   const encoding = detectedType === "file" ? "text" : "data_url";
@@ -747,8 +861,13 @@ function createEditorDefaults(templates: TemplateRecord[], defaultTemplateId?: s
 }
 
 function createFlowNodeFromGraphNode(node: any): FlowNode {
-  const hasExplicitSize = typeof node.style?.width === "number" && typeof node.style?.height === "number";
   const config = normalizeNodeConfig(deepClonePreset(node.data?.config as NodePresetDefinition));
+  const isExpanded = config.family === "input" ? true : Boolean(node.data?.isExpanded);
+  const collapsedSize = normalizeViewportSize(node.data?.collapsedSize);
+  const expandedSize = normalizeViewportSize(node.data?.expandedSize);
+  const activeSize = isExpanded ? expandedSize : collapsedSize;
+  const fallbackWidth = typeof node.style?.width === "number" ? node.style.width : undefined;
+  const fallbackHeight = typeof node.style?.height === "number" ? node.style.height : undefined;
   const defaultWidth = getDefaultNodeWidth(config);
   return {
     id: node.id,
@@ -758,13 +877,13 @@ function createFlowNodeFromGraphNode(node: any): FlowNode {
       nodeId: node.data?.nodeId ?? node.id,
       config,
       previewText: node.data?.previewText ?? "",
-      isExpanded: false,
+      isExpanded,
+      collapsedSize,
+      expandedSize,
     },
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
-    style: hasExplicitSize
-      ? { background: "transparent", border: "none", padding: 0, width: node.style.width, height: node.style.height }
-      : { background: "transparent", border: "none", padding: 0, width: defaultWidth ?? "auto" },
+    style: buildNodeStyleFromState(config, isExpanded, activeSize, fallbackWidth ?? defaultWidth, fallbackHeight),
   } satisfies FlowNode;
 }
 
@@ -1087,62 +1206,88 @@ function SkillEditorList({
   }, [availableDefinitions, selectedSkillKey]);
 
   return (
-    <PanelSection title="Skills" description="这里只负责挂载或移除已有 skill，不在这里编辑 skill 配置。">
-      <div className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,250,241,0.64)] px-3 py-2 text-sm leading-6 text-[var(--muted)]">
-        {definitionsLoading ? "Loading skill definitions..." : definitionsError ? `Skill definitions unavailable: ${definitionsError}` : `Loaded ${definitions.length} skill definitions.`}
-      </div>
-      {skills.map((skill, index) => (
-        <div key={`${skill.name}-${index}`} className="grid gap-3 rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,250,241,0.72)] p-3">
-          {(() => {
+    <PanelSection title="Skills" description="挂载或移除已有 skill。">
+      {definitionsLoading ? (
+        <div className="px-1 py-1 text-xs text-[var(--muted)]">Loading skills...</div>
+      ) : definitionsError ? (
+        <div className="rounded-[12px] border border-[rgba(185,28,28,0.16)] bg-[rgba(255,248,248,0.8)] px-3 py-2 text-xs text-[rgb(153,27,27)]">{definitionsError}</div>
+      ) : null}
+      {skills.length > 0 ? (
+        <div className="grid gap-2">
+          {skills.map((skill, index) => {
             const definition = definitions.find((item) => item.skillKey === skill.skillKey);
-            return definition ? (
-              <>
-                <div className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.72)] px-3 py-3 text-sm leading-6 text-[var(--muted)]">
-                  <div className="font-medium text-[var(--text)]">{definition.label}</div>
-                  <div>{definition.description}</div>
-                  <div className="mt-2">Skill Key: {definition.skillKey}</div>
-                  <div>Supported Value Types: {definition.supportedValueTypes.join(", ") || "n/a"}</div>
-                  <div>Side Effects: {definition.sideEffects.join(", ") || "none"}</div>
-                  <div className="mt-2">Inputs: {definition.inputSchema.map((field) => `${field.key}:${field.valueType}`).join(", ") || "none"}</div>
-                  <div>Outputs: {definition.outputSchema.map((field) => `${field.key}:${field.valueType}`).join(", ") || "none"}</div>
+            return (
+              <div key={`${skill.name}-${index}`} className="group/skill rounded-[14px] border border-[rgba(37,99,235,0.14)] bg-[rgba(239,246,255,0.6)] px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 flex-shrink-0 fill-none stroke-[#2563eb]" strokeWidth="1.5">
+                    <path d="M8 2.5v4l2.5 1.5" />
+                    <circle cx="8" cy="8" r="5.5" />
+                  </svg>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-[var(--text)]">{definition?.label ?? skill.name}</span>
+                  {skill.usage === "required" ? (
+                    <span className="flex-shrink-0 rounded-full bg-[rgba(37,99,235,0.1)] px-1.5 py-px text-[0.6rem] font-medium uppercase tracking-wider text-[#2563eb]">required</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    title="Remove skill"
+                    className="grid h-5 w-5 flex-shrink-0 place-items-center rounded-full text-[var(--muted)] opacity-0 transition hover:bg-[rgba(185,28,28,0.08)] hover:text-[rgb(185,28,28)] group-hover/skill:opacity-100"
+                    onClick={() => onChange(skills.filter((_, i) => i !== index))}
+                  >
+                    <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.8">
+                      <path d="m5 5 6 6" />
+                      <path d="m11 5-6 6" />
+                    </svg>
+                  </button>
                 </div>
-                <div className="flex justify-end">
-                  <Button variant="ghost" onClick={() => onChange(skills.filter((_, skillIndex) => skillIndex !== index))}>
-                    Remove Skill
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.72)] px-3 py-3 text-sm leading-6 text-[var(--muted)]">
-                  No registered definition found for `{skill.skillKey}`. This skill can be removed here, but not edited.
-                </div>
-                <div className="flex justify-end">
-                  <Button variant="ghost" onClick={() => onChange(skills.filter((_, skillIndex) => skillIndex !== index))}>
-                    Remove Skill
-                  </Button>
-                </div>
-              </>
+                {definition ? (
+                  <>
+                    <div className="mt-1 line-clamp-1 text-xs text-[var(--muted)]">{definition.description}</div>
+                    {(definition.inputSchema.length > 0 || definition.outputSchema.length > 0) ? (
+                      <div className="mt-2 grid grid-cols-2 gap-x-4 text-[0.68rem]">
+                        {definition.inputSchema.length > 0 ? (
+                          <div>
+                            <div className="mb-0.5 font-medium uppercase tracking-wider text-[var(--muted)]">In</div>
+                            {definition.inputSchema.map((field) => (
+                              <div key={field.key} className="flex items-center gap-1 leading-5">
+                                <span className="text-[var(--text)]">{field.key}</span>
+                                <span style={{ color: TYPE_COLORS[field.valueType as ValueType] ?? TYPE_COLORS.any }}>{field.valueType}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <div />}
+                        {definition.outputSchema.length > 0 ? (
+                          <div>
+                            <div className="mb-0.5 font-medium uppercase tracking-wider text-[var(--muted)]">Out</div>
+                            {definition.outputSchema.map((field) => (
+                              <div key={field.key} className="flex items-center gap-1 leading-5">
+                                <span className="text-[var(--text)]">{field.key}</span>
+                                <span style={{ color: TYPE_COLORS[field.valueType as ValueType] ?? TYPE_COLORS.any }}>{field.valueType}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : <div />}
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="mt-1 text-xs text-[rgba(185,28,28,0.7)]">Definition not found: {skill.skillKey}</div>
+                )}
+              </div>
             );
-          })()}
+          })}
         </div>
-      ))}
+      ) : null}
       {availableDefinitions.length ? (
-        <div className="grid gap-3 rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,250,241,0.64)] p-3">
-          <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-            <span>Add Existing Skill</span>
-            <select
-              className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
-              value={selectedSkillKey}
-              onChange={(event) => setSelectedSkillKey(event.target.value)}
-            >
-              {availableDefinitions.map((definition) => (
-                <option key={definition.skillKey} value={definition.skillKey}>
-                  {definition.label} ({definition.skillKey})
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="flex items-center gap-2">
+          <select
+            className="min-w-0 flex-1 rounded-[12px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-2.5 py-2 text-sm text-[var(--text)]"
+            value={selectedSkillKey}
+            onChange={(event) => setSelectedSkillKey(event.target.value)}
+          >
+            {availableDefinitions.map((definition) => (
+              <option key={definition.skillKey} value={definition.skillKey}>{definition.label}</option>
+            ))}
+          </select>
           <Button
             variant="ghost"
             onClick={() => {
@@ -1159,7 +1304,7 @@ function SkillEditorList({
               );
             }}
           >
-            Add Skill
+            Add
           </Button>
         </div>
       ) : null}
@@ -1781,6 +1926,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
   const isInputNode = config.family === "input";
   const isCollapsible = config.family !== "input";
   const isExpanded = config.family === "input" ? true : Boolean(data.isExpanded);
+  const shouldUseCardScroll = isExpanded;
   const minHeight = getNodeMinHeight(config, isExpanded);
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -1803,6 +1949,25 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           defaultAgentTemperature: data.defaultAgentTemperature,
         })
       : null;
+
+  const refReadOptions = useMemo<AutocompleteOption[]>(() => {
+    if (config.family !== "agent") return [];
+    const opts: AutocompleteOption[] = [];
+    for (const port of config.inputs) opts.push({ category: "Inputs", label: port.label, path: `$inputs.${port.key}`, valueType: port.valueType });
+    for (const skill of config.skills) {
+      const def = (data.skillDefinitions ?? []).find((d) => d.skillKey === skill.skillKey);
+      if (def) {
+        for (const field of def.outputSchema) opts.push({ category: "Skills", label: `${skill.name}.${field.key}`, path: `$skills.${skill.name}.${field.key}`, valueType: field.valueType });
+      }
+    }
+    for (const port of config.outputs) opts.push({ category: "Response", label: port.label, path: `$response.${port.key}`, valueType: port.valueType });
+    return opts;
+  }, [config, data.skillDefinitions]);
+
+  const refWriteOptions = useMemo<AutocompleteOption[]>(() => {
+    if (config.family !== "agent") return [];
+    return config.outputs.map((port) => ({ category: "Outputs", label: port.label, path: `$output.${port.key}`, valueType: port.valueType }));
+  }, [config]);
 
   useEffect(() => {
     setDraftLabel(config.label);
@@ -1946,7 +2111,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           }}
           onResizeEnd={(_event, params) => {
             setIsResizingNode(false);
-            data.onResizeEnd?.(params.width, params.height);
+            data.onResizeEnd?.(params.width, params.height, isExpanded);
           }}
         />
         <div
@@ -2050,7 +2215,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                 </div>
               </FloatingLayer>
             </div>
-            {config.family !== "agent" ? (
+            {config.family ? (
               <div className="relative mt-1">
                 <div ref={descriptionAnchorRef} className="line-clamp-2 text-xs leading-5 text-[var(--muted)] cursor-text" onDoubleClick={() => setIsEditingDescription(true)}>
                   {config.description || summarizeNode(config)}
@@ -2100,73 +2265,214 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
+        <div className="flex flex-shrink-0 flex-col gap-3 px-4 pt-3">
+          {config.family === "input" ? (
+            <div className={cn("grid items-center gap-3", uploadedAsset ? "grid-cols-[1fr_auto]" : "grid-cols-[minmax(0,1fr)_auto]")}>
+              {!uploadedAsset ? (
+                <div className="flex gap-1.5">
+                  {INPUT_TYPE_BUTTONS.map((option) => {
+                    const active = config.valueType === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        title={option.label}
+                        aria-label={option.label}
+                        className={cn(
+                          "inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors",
+                          active
+                            ? "border-[var(--accent)] bg-[rgba(154,52,18,0.12)] text-[var(--accent-strong)]"
+                            : "border-[rgba(154,52,18,0.16)] bg-[rgba(255,255,255,0.72)] text-[var(--muted)] hover:bg-[rgba(255,248,240,0.92)]",
+                        )}
+                        onClick={() =>
+                          data.onConfigChange?.((currentConfig) => {
+                            const prev = currentConfig as InputBoundaryNode;
+                            if (option.value === "knowledge_base") {
+                              return {
+                                ...prev,
+                                valueType: option.value,
+                                defaultValue: (data.knowledgeBases ?? [])[0]?.name ?? "",
+                                output: { ...prev.output, key: "knowledge_base", label: "Knowledge Base", valueType: option.value },
+                              };
+                            }
+                            return {
+                              ...prev,
+                              valueType: option.value,
+                              defaultValue: option.value === "file" ? "" : (prev.valueType === "knowledge_base" ? "" : prev.defaultValue),
+                              output: { ...prev.output, valueType: option.value },
+                            };
+                          })
+                        }
+                      >
+                        {option.icon}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-xs leading-5 text-[var(--muted)]">
+                  Uploaded asset locked this input as <span className="font-medium text-[var(--text)]">{uploadedAsset.detectedType}</span>.
+                </div>
+              )}
+              <div className="grid gap-1">
+                {outputs.map((port) => (
+                  <PortRow
+                    key={`output-${port.key}`}
+                    nodeId={data.nodeId}
+                    port={port}
+                    side="output"
+                    editable
+                    onRename={(nextLabel) =>
+                      data.onConfigChange?.((currentConfig) => ({
+                        ...(currentConfig as InputBoundaryNode),
+                        output: {
+                          ...(currentConfig as InputBoundaryNode).output,
+                          label: nextLabel,
+                        },
+                      }))
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {config.family !== "input" && (config.family === "agent" || isExpanded) && (inputs.length > 0 || outputs.length > 0) ? (
+            <div className="grid grid-cols-2 items-start gap-x-6">
+              <div className="grid gap-1">
+                {inputs.map((port, index) => (
+                  <PortRow
+                    key={`input-${port.key}`}
+                    nodeId={data.nodeId}
+                    port={port}
+                    side="input"
+                    portEditor={
+                      config.family === "agent" || config.family === "condition"
+                        ? {
+                            onChange: (nextPort) => updateNodePort("input", index, nextPort),
+                            onRemove: inputs.length > 1 ? () => removeNodePort("input", index) : undefined,
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
+                {(config.family === "agent" || config.family === "condition") && data.connectingSourceType ? (
+                  <div className="group relative flex min-h-6 items-center justify-start text-[0.9rem] text-[var(--muted)]">
+                    <Handle
+                      id={buildHandleId("input", CREATE_INPUT_PORT_KEY)}
+                      type="target"
+                      position={Position.Left}
+                      className="!left-[-7px] !top-1/2 !m-0 !h-3 !w-3 !-translate-y-1/2 !border-2 !border-[rgba(154,52,18,0.18)] !bg-[rgba(255,255,255,0.96)] before:content-[''] before:absolute before:left-1/2 before:top-1/2 before:h-[1.5px] before:w-[7px] before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:bg-[var(--accent-strong)] after:content-[''] after:absolute after:left-1/2 after:top-1/2 after:h-[7px] after:w-[1.5px] after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-[var(--accent-strong)]"
+                      isConnectable
+                    />
+                    <span className="ml-2 inline-flex items-center gap-2 text-sm">
+                      <span>Add {formatValueTypeLabel(data.connectingSourceType)} input</span>
+                    </span>
+                  </div>
+                ) : null}
+                {config.family === "agent" || config.family === "condition" ? (
+                  <PortCreateButton
+                    side="input"
+                    visible={selected || isHoveringNode}
+                    initialPort={createDefaultPort("input", inputs)}
+                    onCreate={(nextPort) => addNodePort("input", nextPort)}
+                  />
+                ) : null}
+              </div>
+              <div className="grid gap-1">
+                {outputs.map((port, index) => (
+                  <PortRow
+                    key={`output-${port.key}`}
+                    nodeId={data.nodeId}
+                    port={port}
+                    side="output"
+                    portEditor={
+                      config.family === "agent"
+                        ? {
+                            onChange: (nextPort) => updateNodePort("output", index, nextPort),
+                            onRemove: outputs.length > 1 ? () => removeNodePort("output", index) : undefined,
+                          }
+                        : undefined
+                    }
+                  />
+                ))}
+                {config.family === "agent" ? (
+                  <PortCreateButton
+                    side="output"
+                    visible={selected || isHoveringNode}
+                    initialPort={createDefaultPort("output", outputs)}
+                    onCreate={(nextPort) => addNodePort("output", nextPort)}
+                  />
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          {config.family === "output" ? (
+            <div className="grid gap-1">
+              {inputs.map((port) => (
+                <PortRow
+                  key={`input-${port.key}`}
+                  nodeId={data.nodeId}
+                  port={port}
+                  side="input"
+                  editable
+                  onRename={(nextLabel) =>
+                    data.onConfigChange?.((currentConfig) => ({
+                      ...(currentConfig as OutputBoundaryNode),
+                      input: {
+                        ...(currentConfig as OutputBoundaryNode).input,
+                        label: nextLabel,
+                      },
+                    }))
+                  }
+                />
+              ))}
+            </div>
+          ) : null}
+
+          {config.family === "agent" && isExpanded ? (
+            <div className="max-h-[200px] overflow-y-auto overscroll-contain">
+              <SkillEditorList
+                skills={config.skills}
+                onChange={(nextSkills) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), skills: nextSkills }))}
+                definitions={data.skillDefinitions ?? []}
+                definitionsLoading={Boolean(data.skillDefinitionsLoading)}
+                definitionsError={data.skillDefinitionsError ?? null}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={cn("flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3", shouldUseCardScroll && "overflow-y-auto overscroll-contain")}
+          onWheelCapture={shouldUseCardScroll ? (event) => event.stopPropagation() : undefined}
+        >
           {config.family === "input" ? (
             <>
-              <div className={cn("grid items-center gap-3", uploadedAsset ? "grid-cols-[1fr_auto]" : "grid-cols-[minmax(0,1fr)_auto]")}>
-                {!uploadedAsset ? (
-                  <div className="flex flex-wrap gap-2">
-                    {INPUT_VALUE_TYPE_OPTIONS.map((option) => {
-                      const active = config.valueType === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          title={option.label}
-                          aria-label={option.label}
-                          className={cn(
-                            "inline-flex h-9 w-9 items-center justify-center rounded-full border transition-colors",
-                            active
-                              ? "border-[var(--accent)] bg-[rgba(154,52,18,0.12)] text-[var(--accent-strong)]"
-                              : "border-[rgba(154,52,18,0.16)] bg-[rgba(255,255,255,0.72)] text-[var(--muted)] hover:bg-[rgba(255,248,240,0.92)]",
-                          )}
-                          onClick={() =>
-                            data.onConfigChange?.((currentConfig) => {
-                              const currentInput = currentConfig as InputBoundaryNode;
-                              return {
-                                ...currentInput,
-                                valueType: option.value,
-                                output: {
-                                  ...currentInput.output,
-                                  valueType: option.value,
-                                },
-                              };
-                            })
-                          }
-                        >
-                          {option.icon}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="text-xs leading-5 text-[var(--muted)]">
-                    Uploaded asset locked this input as <span className="font-medium text-[var(--text)]">{uploadedAsset.detectedType}</span>.
-                  </div>
-                )}
-                <div className="grid gap-1">
-                  {outputs.map((port) => (
-                    <PortRow
-                      key={`output-${port.key}`}
-                      nodeId={data.nodeId}
-                      port={port}
-                      side="output"
-                      editable
-                      onRename={(nextLabel) =>
+              <div className="flex flex-1 flex-col gap-2">
+                {config.valueType === "knowledge_base" ? (
+                  (data.knowledgeBases ?? []).length > 0 ? (
+                    <select
+                      value={config.defaultValue}
+                      onChange={(event) =>
                         data.onConfigChange?.((currentConfig) => ({
                           ...(currentConfig as InputBoundaryNode),
-                          output: {
-                            ...(currentConfig as InputBoundaryNode).output,
-                            label: nextLabel,
-                          },
+                          defaultValue: event.target.value,
                         }))
                       }
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col gap-2">
-                {config.valueType === "text" ? (
+                      className="min-h-[48px] rounded-[16px] border border-[rgba(154,52,18,0.14)] bg-[rgba(255,255,255,0.88)] px-3 py-3 text-sm text-[var(--text)]"
+                    >
+                      {(data.knowledgeBases ?? []).map((kb) => (
+                        <option key={kb.name} value={kb.name}>{kb.name}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="grid min-h-[60px] place-items-center rounded-[16px] border border-dashed border-[rgba(154,52,18,0.18)] bg-[rgba(255,255,255,0.82)] px-4 py-4 text-center text-sm text-[var(--muted)]">
+                      No knowledge bases found
+                    </div>
+                  )
+                ) : config.valueType === "text" || config.valueType === "json" ? (
                   <textarea
                     value={config.defaultValue}
                     rows={5}
@@ -2259,77 +2565,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             </>
           ) : null}
 
-          {config.family !== "input" && (config.family === "agent" || isExpanded) && (inputs.length > 0 || outputs.length > 0) ? (
-            <div className="grid grid-cols-2 items-start gap-x-6">
-              <div className="grid gap-1">
-                {inputs.map((port, index) => (
-                  <PortRow
-                    key={`input-${port.key}`}
-                    nodeId={data.nodeId}
-                    port={port}
-                    side="input"
-                    portEditor={
-                      config.family === "agent" || config.family === "condition"
-                        ? {
-                            onChange: (nextPort) => updateNodePort("input", index, nextPort),
-                            onRemove: inputs.length > 1 ? () => removeNodePort("input", index) : undefined,
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
-                {(config.family === "agent" || config.family === "condition") && data.connectingSourceType ? (
-                  <div className="group relative flex min-h-6 items-center justify-start text-[0.9rem] text-[var(--muted)]">
-                    <Handle
-                      id={buildHandleId("input", CREATE_INPUT_PORT_KEY)}
-                      type="target"
-                      position={Position.Left}
-                      className="!left-[-7px] !top-1/2 !m-0 !h-3 !w-3 !-translate-y-1/2 !border-2 !border-[rgba(154,52,18,0.18)] !bg-[rgba(255,255,255,0.96)] before:content-[''] before:absolute before:left-1/2 before:top-1/2 before:h-[1.5px] before:w-[7px] before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:bg-[var(--accent-strong)] after:content-[''] after:absolute after:left-1/2 after:top-1/2 after:h-[7px] after:w-[1.5px] after:-translate-x-1/2 after:-translate-y-1/2 after:rounded-full after:bg-[var(--accent-strong)]"
-                      isConnectable
-                    />
-                    <span className="ml-2 inline-flex items-center gap-2 text-sm">
-                      <span>Add {formatValueTypeLabel(data.connectingSourceType)} input</span>
-                    </span>
-                  </div>
-                ) : null}
-                {config.family === "agent" || config.family === "condition" ? (
-                  <PortCreateButton
-                    side="input"
-                    visible={selected || isHoveringNode}
-                    initialPort={createDefaultPort("input", inputs)}
-                    onCreate={(nextPort) => addNodePort("input", nextPort)}
-                  />
-                ) : null}
-              </div>
-              <div className="grid gap-1">
-                {outputs.map((port, index) => (
-                  <PortRow
-                    key={`output-${port.key}`}
-                    nodeId={data.nodeId}
-                    port={port}
-                    side="output"
-                    portEditor={
-                      config.family === "agent"
-                        ? {
-                            onChange: (nextPort) => updateNodePort("output", index, nextPort),
-                            onRemove: outputs.length > 1 ? () => removeNodePort("output", index) : undefined,
-                          }
-                        : undefined
-                    }
-                  />
-                ))}
-                {config.family === "agent" ? (
-                  <PortCreateButton
-                    side="output"
-                    visible={selected || isHoveringNode}
-                    initialPort={createDefaultPort("output", outputs)}
-                    onCreate={(nextPort) => addNodePort("output", nextPort)}
-                  />
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
           {config.family === "agent" && !isExpanded && agentRuntime ? (
             <AgentInlineRuntimeControls
               agentRuntime={agentRuntime}
@@ -2339,50 +2574,45 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             />
           ) : null}
 
+          {config.family === "agent" && !isExpanded && config.skills.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {config.skills.map((skill) => {
+                const def = (data.skillDefinitions ?? []).find((d) => d.skillKey === skill.skillKey);
+                return (
+                  <span
+                    key={skill.skillKey}
+                    title={def?.description ?? skill.skillKey}
+                    className="inline-flex items-center gap-1 rounded-full border border-[rgba(37,99,235,0.18)] bg-[rgba(239,246,255,0.88)] px-2.5 py-0.5 text-[0.68rem] font-medium text-[#2563eb]"
+                  >
+                    <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.6">
+                      <path d="M8 2.5v4l2.5 1.5" />
+                      <circle cx="8" cy="8" r="5.5" />
+                    </svg>
+                    {def?.label ?? skill.name}
+                  </span>
+                );
+              })}
+            </div>
+          ) : null}
+
           {config.family === "agent" ? (
             <>
-              {!isExpanded ? (
-                <div className="flex min-h-[140px] flex-1 items-center justify-center rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.78)] px-5 py-4 text-center text-sm text-[var(--text)] break-words">
-                  {summarizeNode(config)}
-                </div>
-              ) : (
+              {!isExpanded ? null : (
                 <>
-                  <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-                    <span>Task Introduction</span>
-                    <textarea
-                      className="min-h-24 rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3.5 py-3 text-[var(--text)]"
-                      value={config.description}
-                      onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), description: event.target.value }))}
-                    />
-                  </label>
-                  <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-                    <span>System Instruction</span>
-                    <textarea
-                      className="min-h-24 rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3.5 py-3 text-[var(--text)]"
-                      value={config.systemInstruction}
-                      onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), systemInstruction: event.target.value }))}
-                    />
-                  </label>
-                  <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-                    <span>Task Instruction</span>
-                    <textarea
-                      className="min-h-28 rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3.5 py-3 text-[var(--text)]"
-                      value={config.taskInstruction}
-                      onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), taskInstruction: event.target.value }))}
-                    />
-                  </label>
-                  <SkillEditorList
-                    skills={config.skills}
-                    onChange={(nextSkills) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), skills: nextSkills }))}
-                    definitions={data.skillDefinitions ?? []}
-                    definitionsLoading={Boolean(data.skillDefinitionsLoading)}
-                    definitionsError={data.skillDefinitionsError ?? null}
-                  />
-                  <MappingEditor
-                    title="Output Binding"
-                    value={config.outputBinding}
-                    addLabel="Add Output Binding"
-                    onChange={(nextValue) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), outputBinding: nextValue }))}
+                  <ReferenceTextarea
+                    className="min-h-32"
+                    value={config.taskInstruction}
+                    placeholder="用 @ 引用输入和技能结果，用 # 指定输出字段"
+                    onChange={(nextValue) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), taskInstruction: nextValue }))}
+                    readOptions={refReadOptions}
+                    writeOptions={refWriteOptions}
+                    onOutputReference={(key) =>
+                      data.onConfigChange?.((currentConfig) => {
+                        const agent = currentConfig as AgentNode;
+                        if (agent.outputBinding[key]) return agent;
+                        return { ...agent, outputBinding: { ...agent.outputBinding, [key]: `$response.${key}` } };
+                      })
+                    }
                   />
                   {agentRuntime ? (
                     <PanelSection
@@ -2562,26 +2792,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
 
           {config.family === "output" ? (
             <>
-              <div className="grid gap-1">
-                {inputs.map((port) => (
-                  <PortRow
-                    key={`input-${port.key}`}
-                    nodeId={data.nodeId}
-                    port={port}
-                    side="input"
-                    editable
-                    onRename={(nextLabel) =>
-                      data.onConfigChange?.((currentConfig) => ({
-                        ...(currentConfig as OutputBoundaryNode),
-                        input: {
-                          ...(currentConfig as OutputBoundaryNode).input,
-                          label: nextLabel,
-                        },
-                      }))
-                    }
-                  />
-                ))}
-              </div>
               {isExpanded ? (
                 <>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3">
@@ -2649,7 +2859,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             </div>
           ) : null}
 
-          {selected && config.family !== "input" && config.family !== "output" ? (
+          {selected && isPresetEligibleFamily(config.family) ? (
             <div className="flex flex-wrap justify-end gap-2">
               <Button variant="ghost" onClick={() => void data.onSavePreset?.()}>
                 Save As Preset
@@ -2691,6 +2901,7 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
   const [skillDefinitions, setSkillDefinitions] = useState<SkillDefinition[]>([]);
   const [skillDefinitionsLoading, setSkillDefinitionsLoading] = useState(true);
   const [skillDefinitionsError, setSkillDefinitionsError] = useState<string | null>(null);
+  const [knowledgeBases, setKnowledgeBases] = useState<Array<{ name: string }>>([]);
   const [editorSettings, setEditorSettings] = useState<EditorSettingsPayload | null>(null);
   const [connectingSourceType, setConnectingSourceType] = useState<ValueType | null>(null);
   const [creationMenu, setCreationMenu] = useState<{
@@ -2712,7 +2923,10 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
   });
   const ignoreNextPaneClickRef = useRef(false);
 
-  const allPresets = useMemo(() => [...NODE_PRESETS_MOCK, ...persistedPresets], [persistedPresets]);
+  const allPresets = useMemo(
+    () => [...NODE_PRESETS_MOCK, ...persistedPresets].filter((preset) => isPresetEligibleFamily(preset.family)),
+    [persistedPresets],
+  );
   const getRecommendedPresets = useCallback(
     (sourceType: ValueType | null) => {
       if (!sourceType) {
@@ -2740,11 +2954,56 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
   const nodePalette = useMemo(() => {
     const query = search.trim().toLowerCase();
     const sourceType = creationMenu?.sourceValueType ?? null;
-    const recommended = getRecommendedPresets(sourceType);
-    return recommended.filter((preset) => {
-      if (!query) return true;
-      return [preset.label, preset.description, preset.presetId].some((value) => value.toLowerCase().includes(query));
-    });
+    const boundaryEntries: CreationMenuEntry[] = sourceType
+      ? [
+          {
+            id: `node-output-${sourceType}`,
+            family: "output",
+            label: "Output",
+            description: `Preview or persist the current ${formatValueTypeLabel(sourceType).toLowerCase()} result.`,
+            mode: "node",
+            nodeKind: "output",
+          },
+        ]
+      : [
+          {
+            id: "node-input",
+            family: "input",
+            label: "Input",
+            description: "Create a workflow input boundary for the current graph.",
+            mode: "node",
+            nodeKind: "input",
+          },
+          {
+            id: "node-output",
+            family: "output",
+            label: "Output",
+            description: "Create a workflow output boundary for the current graph.",
+            mode: "node",
+            nodeKind: "output",
+          },
+        ];
+    const presetEntries: CreationMenuEntry[] = getRecommendedPresets(sourceType).map((preset) => ({
+      id: `preset-${preset.presetId}`,
+      family: preset.family,
+      label: preset.label,
+      description: preset.description,
+      mode: "preset",
+      presetId: preset.presetId,
+    }));
+    return [...boundaryEntries, ...presetEntries]
+      .filter((entry) => {
+        if (!query) return true;
+        return [entry.label, entry.description, entry.family, entry.presetId ?? entry.nodeKind ?? entry.id].some((value) =>
+          value.toLowerCase().includes(query),
+        );
+      })
+      .sort((left, right) => {
+        const familyDelta = CREATION_MENU_FAMILY_PRIORITY[left.family] - CREATION_MENU_FAMILY_PRIORITY[right.family];
+        if (familyDelta !== 0) return familyDelta;
+        if (left.mode !== right.mode) return left.mode === "node" ? -1 : 1;
+        return left.label.localeCompare(right.label);
+      });
   }, [creationMenu?.sourceValueType, getRecommendedPresets, search]);
 
   const previewTextByNode = useMemo(() => {
@@ -2893,6 +3152,7 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
     }
 
     void loadSkillDefinitions();
+    apiGet<Array<{ name: string }>>("/api/knowledge/bases").then(setKnowledgeBases).catch(() => {});
 
     return () => {
       active = false;
@@ -2963,7 +3223,7 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
         setPresetsError(null);
         const payload = await apiGet<PresetDocument[]>("/api/presets");
         if (!active) return;
-        setPersistedPresets(payload.map((item) => item.definition));
+        setPersistedPresets(payload.map((item) => item.definition).filter((definition) => isPresetEligibleFamily(definition.family)));
       } catch (error) {
         if (!active) return;
         setPresetsError(error instanceof Error ? error.message : "Unknown error");
@@ -2999,6 +3259,7 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
     const normalizedConfig = normalizeNodeConfig(config);
     const id = `${config.family}_${crypto.randomUUID().slice(0, 8)}`;
     const defaultWidth = getDefaultNodeWidth(normalizedConfig);
+    const isExpanded = normalizedConfig.family === "input";
     return {
       id,
       type: "default",
@@ -3007,16 +3268,13 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
         nodeId: id,
         config: normalizedConfig,
         previewText: "",
-        isExpanded: false,
+        isExpanded,
+        collapsedSize: null,
+        expandedSize: isExpanded ? { width: defaultWidth } : null,
       },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      style: {
-        background: "transparent",
-        border: "none",
-        padding: 0,
-        width: defaultWidth ?? "auto",
-      },
+      style: buildNodeStyleFromState(normalizedConfig, isExpanded, isExpanded ? { width: defaultWidth } : null, defaultWidth),
     } satisfies FlowNode;
   }
 
@@ -3047,6 +3305,43 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
     setNodes((current) => current.concat(nextNode));
     setSelectedNodeId(nextNode.id);
     setStatusMessage(`Added ${inputConfig.label} from ${file.name}`);
+  }
+
+  function addGenericBoundaryNode(
+    nodeKind: "input" | "output",
+    position: { x: number; y: number },
+    connectionSource?: { sourceNodeId?: string; sourceHandle?: string; sourceValueType?: ValueType | null },
+  ) {
+    const config =
+      nodeKind === "input"
+        ? createGenericInputNodeConfig()
+        : createGenericOutputNodeConfig(connectionSource?.sourceValueType ?? null);
+    const nextNode = createNodeFromConfig(config, position);
+    setNodes((current) => current.concat(nextNode));
+    setSelectedNodeId(nextNode.id);
+
+    if (nodeKind === "output" && connectionSource?.sourceNodeId && connectionSource.sourceHandle && connectionSource.sourceValueType) {
+      const targetHandle = findFirstCompatibleInputHandle(nextNode.data.config, connectionSource.sourceValueType);
+      if (targetHandle) {
+        setEdges((current) =>
+          current.concat({
+            id: `edge_${crypto.randomUUID().slice(0, 8)}`,
+            source: connectionSource.sourceNodeId ?? "",
+            target: nextNode.id,
+            sourceHandle: connectionSource.sourceHandle ?? null,
+            targetHandle,
+            markerEnd: { type: MarkerType.ArrowClosed, color: TYPE_COLORS[connectionSource.sourceValueType ?? "any"] },
+            style: {
+              stroke: TYPE_COLORS[connectionSource.sourceValueType ?? "any"],
+              strokeWidth: 1.8,
+            },
+          }),
+        );
+      }
+    }
+
+    setStatusMessage(`Added ${config.label}`);
+    setCreationMenu(null);
   }
 
   function addNodeFromPresetId(presetId: string, position: { x: number; y: number }, connectionSource?: { sourceNodeId?: string; sourceHandle?: string; sourceValueType?: ValueType | null }) {
@@ -3107,9 +3402,27 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
     setCreationMenu(null);
   }
 
+  function addNodeFromCreationEntry(
+    entry: CreationMenuEntry,
+    position: { x: number; y: number },
+    connectionSource?: { sourceNodeId?: string; sourceHandle?: string; sourceValueType?: ValueType | null },
+  ) {
+    if (entry.mode === "node" && entry.nodeKind) {
+      addGenericBoundaryNode(entry.nodeKind, position, connectionSource);
+      return;
+    }
+    if (entry.mode === "preset" && entry.presetId) {
+      addNodeFromPresetId(entry.presetId, position, connectionSource);
+    }
+  }
+
   async function saveNodeAsPreset(nodeId: string) {
     const targetNode = nodes.find((node) => node.id === nodeId);
     if (!targetNode) return;
+    if (!isPresetEligibleFamily(targetNode.data.config.family)) {
+      setStatusMessage("Only agent and condition nodes can be saved as presets.");
+      return;
+    }
     const slug = targetNode.data.config.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "custom";
     const nextPreset = {
       ...deepClonePreset(targetNode.data.config),
@@ -3146,6 +3459,9 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
           nodeId: node.data.nodeId,
           config: node.data.config,
           previewText: node.data.previewText || previewTextByNode[node.id] || "",
+          isExpanded: node.data.config.family === "input" ? true : Boolean(node.data.isExpanded),
+          collapsedSize: node.data.collapsedSize ?? null,
+          expandedSize: node.data.expandedSize ?? null,
         },
       })),
       edges: edges.map((edge) => ({
@@ -3224,6 +3540,8 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
                   ...node.data,
                   previewText: node.data.previewText || previewTextByNode[node.id] || "",
                   isExpanded: node.data.isExpanded,
+                  collapsedSize: node.data.collapsedSize ?? null,
+                  expandedSize: node.data.expandedSize ?? null,
                   onConfigChange: (updater: (config: NodePresetDefinition) => NodePresetDefinition) => {
                     setNodes((current) =>
                       current.map((candidate) =>
@@ -3243,26 +3561,72 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
                     setNodes((current) =>
                       current.map((candidate) =>
                         candidate.id === node.id
-                          ? {
-                              ...candidate,
-                              style: {
-                                ...candidate.style,
-                                height: undefined,
-                              },
-                              data: {
-                                ...candidate.data,
-                                isExpanded: !candidate.data.isExpanded,
-                              },
-                            }
+                          ? (() => {
+                              const currentExpanded = Boolean(candidate.data.isExpanded);
+                              const nextExpanded = candidate.data.config.family === "input" ? true : !currentExpanded;
+                              const currentWidth =
+                                typeof candidate.style?.width === "number"
+                                  ? candidate.style.width
+                                  : candidate.data.expandedSize?.width
+                                    ?? candidate.data.collapsedSize?.width
+                                    ?? getDefaultNodeWidth(candidate.data.config);
+                              const currentHeight =
+                                typeof candidate.style?.height === "number" ? candidate.style.height : undefined;
+                              const preservedCollapsedSize =
+                                currentExpanded || candidate.data.config.family === "input"
+                                  ? candidate.data.collapsedSize ?? null
+                                  : candidate.data.collapsedSize ?? {
+                                      width: currentWidth,
+                                      ...(typeof currentHeight === "number" ? { height: currentHeight } : {}),
+                                    };
+                              const preservedExpandedSize =
+                                currentExpanded
+                                  ? candidate.data.expandedSize ?? {
+                                      width: currentWidth,
+                                      ...(typeof currentHeight === "number" ? { height: currentHeight } : {}),
+                                    }
+                                  : candidate.data.expandedSize ?? null;
+                              const targetSize = nextExpanded
+                                ? preservedExpandedSize ?? {
+                                    width: currentWidth,
+                                    height: getInitialExpandedHeight(candidate.data.config),
+                                  }
+                                : preservedCollapsedSize;
+
+                              return {
+                                ...candidate,
+                                style: buildNodeStyleFromState(
+                                  candidate.data.config,
+                                  nextExpanded,
+                                  targetSize,
+                                  currentWidth,
+                                  typeof currentHeight === "number" && !nextExpanded ? currentHeight : undefined,
+                                ),
+                                data: {
+                                  ...candidate.data,
+                                  isExpanded: nextExpanded,
+                                  collapsedSize: preservedCollapsedSize,
+                                  expandedSize: preservedExpandedSize ?? (nextExpanded ? targetSize : null),
+                                },
+                              };
+                            })()
                           : candidate,
                       ),
                     );
                   },
-                  onResizeEnd: (width: number, height: number) => {
+                  onResizeEnd: (width: number, height: number, isExpanded: boolean) => {
                     setNodes((current) =>
                       current.map((n) =>
                         n.id === node.id
-                          ? { ...n, style: { ...n.style, width, height } }
+                          ? {
+                              ...n,
+                              style: buildNodeStyleFromState(n.data.config, isExpanded, { width, height }, width, height),
+                              data: {
+                                ...n.data,
+                                collapsedSize: isExpanded ? n.data.collapsedSize ?? null : { width, height },
+                                expandedSize: isExpanded ? { width, height } : n.data.expandedSize ?? null,
+                              },
+                            }
                           : n,
                       ),
                     );
@@ -3282,6 +3646,7 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
                   defaultAgentTemperature: agentRuntimeDefaults.defaultAgentTemperature,
                   availableModelRefs,
                   modelDisplayLookup,
+                  knowledgeBases,
                 },
               }))}
               edges={edges}
@@ -3476,23 +3841,25 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
                 <div>
                   <div className="text-[0.72rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">Create Node</div>
                   <div className="mt-1 text-sm text-[var(--muted)]">
-                    {creationMenu.sourceValueType ? `Suggestions for ${creationMenu.sourceValueType}` : "Double click preset picker"}
+                    {creationMenu.sourceValueType
+                      ? `Choose a node for ${formatValueTypeLabel(creationMenu.sourceValueType)} output`
+                      : "Choose a node to create"}
                   </div>
                 </div>
                 <button type="button" className="text-sm text-[var(--muted)]" onClick={() => setCreationMenu(null)}>
                   Close
                 </button>
               </div>
-              <Input className="mt-3 h-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search presets" />
+              <Input className="mt-3 h-10" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search nodes and presets" />
               <div className="mt-3 grid gap-2">
-                {nodePalette.map((preset) => (
+                {nodePalette.map((entry) => (
                   <button
-                    key={`menu-${preset.presetId}`}
+                    key={`menu-${entry.id}`}
                     type="button"
                     className="rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.82)] px-3 py-2 text-left transition-colors hover:bg-[rgba(255,248,240,0.92)]"
                     onClick={() =>
-                      addNodeFromPresetId(
-                        preset.presetId,
+                      addNodeFromCreationEntry(
+                        entry,
                         { x: creationMenu.flowX, y: creationMenu.flowY },
                         {
                           sourceNodeId: creationMenu.sourceNodeId,
@@ -3502,9 +3869,11 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
                       )
                     }
                   >
-                    <div className="text-[0.7rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">{preset.family}</div>
-                    <div className="mt-0.5 text-sm font-semibold text-[var(--text)]">{preset.label}</div>
-                    <div className="mt-1 text-xs leading-5 text-[var(--muted)]">{preset.description}</div>
+                    <div className="text-[0.7rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">
+                      {entry.family}
+                    </div>
+                    <div className="mt-0.5 text-sm font-semibold text-[var(--text)]">{entry.label}</div>
+                    <div className="mt-1 text-xs leading-5 text-[var(--muted)]">{entry.description}</div>
                   </button>
                 ))}
               </div>

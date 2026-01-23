@@ -24,7 +24,7 @@ def _create_default_node_system_graph(theme_preset: dict[str, Any]) -> dict[str,
             {
                 "id": "input_1",
                 "type": "default",
-                "position": {"x": 80, "y": 200},
+                "position": {"x": 80, "y": 160},
                 "data": {
                     "nodeId": "input_1",
                     "config": {
@@ -40,6 +40,29 @@ def _create_default_node_system_graph(theme_preset: dict[str, Any]) -> dict[str,
                         },
                         "defaultValue": "什么是 GraphiteUI？你能做些什么？我该如何开始使用？",
                         "placeholder": "Ask about GraphiteUI",
+                    },
+                    "previewText": "",
+                },
+            },
+            {
+                "id": "input_kb",
+                "type": "default",
+                "position": {"x": 80, "y": 420},
+                "data": {
+                    "nodeId": "input_kb",
+                    "config": {
+                        "presetId": "preset.input.knowledge_base.v1",
+                        "label": "Knowledge Base",
+                        "description": "Select a knowledge base to provide to downstream agents.",
+                        "family": "input",
+                        "valueType": "knowledge_base",
+                        "output": {
+                            "key": "knowledge_base",
+                            "label": "Knowledge Base",
+                            "valueType": "knowledge_base",
+                        },
+                        "defaultValue": "GraphiteUI-official",
+                        "placeholder": "Knowledge base name",
                     },
                     "previewText": "",
                 },
@@ -61,7 +84,13 @@ def _create_default_node_system_graph(theme_preset: dict[str, Any]) -> dict[str,
                                 "label": "Question",
                                 "valueType": "text",
                                 "required": True,
-                            }
+                            },
+                            {
+                                "key": "knowledge_base",
+                                "label": "Knowledge Base",
+                                "valueType": "knowledge_base",
+                                "required": True,
+                            },
                         ],
                         "outputs": [
                             {
@@ -70,23 +99,10 @@ def _create_default_node_system_graph(theme_preset: dict[str, Any]) -> dict[str,
                                 "valueType": "text",
                             }
                         ],
-                        "systemInstruction": "You are the official GraphiteUI onboarding assistant. Answer only with information grounded in the provided skill context. If the knowledge is insufficient, say so directly.",
-                        "taskInstruction": "Use the retrieved official knowledge to answer the user's question. Explain what GraphiteUI is, what it can do, and how to get started when relevant. Keep the answer practical, concise, and in the same language as the question.",
-                        "skills": [
-                            {
-                                "name": "official_docs",
-                                "skillKey": "search_knowledge_base",
-                                "inputMapping": {
-                                    "query": "$inputs.question",
-                                    "knowledge_base": "GraphiteUI-official",
-                                },
-                                "contextBinding": {},
-                                "usage": "required",
-                            }
-                        ],
-                        "outputBinding": {
-                            "answer": "$response.answer",
-                        },
+                        "systemInstruction": "",
+                        "taskInstruction": "",
+                        "skills": [],
+                        "outputBinding": {},
                     },
                     "previewText": "",
                 },
@@ -124,6 +140,13 @@ def _create_default_node_system_graph(theme_preset: dict[str, Any]) -> dict[str,
                 "target": "agent_1",
                 "sourceHandle": "output:question",
                 "targetHandle": "input:question",
+            },
+            {
+                "id": "edge_kb",
+                "source": "input_kb",
+                "target": "agent_1",
+                "sourceHandle": "output:knowledge_base",
+                "targetHandle": "input:knowledge_base",
             },
             {
                 "id": "edge_2",
