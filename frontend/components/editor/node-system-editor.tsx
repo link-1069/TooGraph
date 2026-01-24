@@ -26,7 +26,6 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { Button } from "@/components/ui/button";
-import { ReferenceTextarea, type AutocompleteOption } from "@/components/editor/reference-textarea";
 import { Input } from "@/components/ui/input";
 import { apiGet, apiPost } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -736,7 +735,7 @@ function getInitialExpandedHeight(config: NodePresetDefinition) {
   if (config.family === "agent") return 520;
   if (config.family === "condition") return 440;
   if (config.family === "output") return 360;
-  return getNodeMinHeight(config, true);
+  return getNodeMinHeight(config);
 }
 
 function buildNodeStyleFromState(
@@ -1815,37 +1814,17 @@ function PortCreateButton({
   }
 
   return (
-    <div className={cn("group relative flex min-h-6 items-center", side === "input" ? "justify-start" : "justify-end")}>
+    <div className="group relative inline-flex items-center">
       <button
         ref={triggerRef}
         type="button"
-        className={cn(
-          "relative inline-flex min-h-6 max-w-full items-center gap-1.5 rounded-full border border-[rgba(154,52,18,0.16)] bg-[rgba(255,252,247,0.92)] py-0.5 text-sm text-[var(--muted)] shadow-[0_8px_18px_rgba(60,41,20,0.06)] transition hover:border-[rgba(154,52,18,0.24)] hover:bg-[rgba(255,248,240,0.92)] hover:text-[var(--accent)]",
-          side === "input" ? "ml-[-14px] pl-1 pr-2.5" : "mr-[-14px] pl-2.5 pr-1",
-        )}
+        className="inline-flex items-center gap-1 rounded-full border border-dashed border-[rgba(154,52,18,0.24)] bg-[rgba(255,252,247,0.5)] px-2.5 py-0.5 text-[0.68rem] font-medium text-[var(--muted)] transition hover:bg-[rgba(255,248,240,0.9)] hover:text-[var(--accent)]"
         onClick={openEditor}
       >
-        {side === "input" ? (
-          <>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[rgba(154,52,18,0.08)]">
-              <svg width="8" height="8" viewBox="0 0 8 8" className="text-[var(--accent-strong)]">
-                <line x1="4" y1="0.5" x2="4" y2="7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <line x1="0.5" y1="4" x2="7.5" y2="4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </span>
-            <span>Add input</span>
-          </>
-        ) : (
-          <>
-            <span>Add output</span>
-            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[rgba(154,52,18,0.08)]">
-              <svg width="8" height="8" viewBox="0 0 8 8" className="text-[var(--accent-strong)]">
-                <line x1="4" y1="0.5" x2="4" y2="7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                <line x1="0.5" y1="4" x2="7.5" y2="4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-            </span>
-          </>
-        )}
+        <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.8">
+          <path d="M8 3.5v9M3.5 8h9" />
+        </svg>
+        {side === "input" ? "input" : "output"}
       </button>
       <FloatingLayer anchorRef={triggerRef} open={isOpen} placement={side === "input" ? "bottom-start" : "bottom-end"}>
         <div className="w-[260px] rounded-[16px] border border-[rgba(154,52,18,0.16)] bg-[rgba(255,250,241,0.98)] p-3 shadow-[0_14px_32px_rgba(60,41,20,0.14)]">
@@ -1897,19 +1876,11 @@ function PortCreateButton({
   );
 }
 
-function getNodeMinHeight(config: NodePresetDefinition, isExpanded: boolean) {
-  if (config.family === "input") {
-    return 320;
-  }
-  if (config.family === "output") {
-    return isExpanded ? 280 : 240;
-  }
-  if (config.family === "agent") {
-    return isExpanded ? 420 : 280;
-  }
-  if (config.family === "condition") {
-    return isExpanded ? 340 : 240;
-  }
+function getNodeMinHeight(config: NodePresetDefinition) {
+  if (config.family === "input") return 320;
+  if (config.family === "output") return 280;
+  if (config.family === "agent") return 360;
+  if (config.family === "condition") return 300;
   return 180;
 }
 
@@ -1924,10 +1895,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
   const inputs = listInputPorts(config);
   const outputs = listOutputPorts(config);
   const isInputNode = config.family === "input";
-  const isCollapsible = config.family !== "input";
-  const isExpanded = config.family === "input" ? true : Boolean(data.isExpanded);
-  const shouldUseCardScroll = isExpanded;
-  const minHeight = getNodeMinHeight(config, isExpanded);
+  const minHeight = getNodeMinHeight(config);
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isHoveringNode, setIsHoveringNode] = useState(false);
@@ -1949,25 +1917,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           defaultAgentTemperature: data.defaultAgentTemperature,
         })
       : null;
-
-  const refReadOptions = useMemo<AutocompleteOption[]>(() => {
-    if (config.family !== "agent") return [];
-    const opts: AutocompleteOption[] = [];
-    for (const port of config.inputs) opts.push({ category: "Inputs", label: port.label, path: `$inputs.${port.key}`, valueType: port.valueType });
-    for (const skill of config.skills) {
-      const def = (data.skillDefinitions ?? []).find((d) => d.skillKey === skill.skillKey);
-      if (def) {
-        for (const field of def.outputSchema) opts.push({ category: "Skills", label: `${skill.name}.${field.key}`, path: `$skills.${skill.name}.${field.key}`, valueType: field.valueType });
-      }
-    }
-    for (const port of config.outputs) opts.push({ category: "Response", label: port.label, path: `$response.${port.key}`, valueType: port.valueType });
-    return opts;
-  }, [config, data.skillDefinitions]);
-
-  const refWriteOptions = useMemo<AutocompleteOption[]>(() => {
-    if (config.family !== "agent") return [];
-    return config.outputs.map((port) => ({ category: "Outputs", label: port.label, path: `$output.${port.key}`, valueType: port.valueType }));
-  }, [config]);
 
   useEffect(() => {
     setDraftLabel(config.label);
@@ -2111,7 +2060,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
           }}
           onResizeEnd={(_event, params) => {
             setIsResizingNode(false);
-            data.onResizeEnd?.(params.width, params.height, isExpanded);
+            data.onResizeEnd?.(params.width, params.height, true);
           }}
         />
         <div
@@ -2120,14 +2069,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             "group/node relative z-10 flex h-full min-w-[160px] flex-col overflow-hidden rounded-[18px] border bg-[linear-gradient(180deg,rgba(255,250,241,0.98)_0%,rgba(248,237,219,0.96)_100%)] shadow-[0_18px_36px_rgba(60,41,20,0.1)]",
             selected ? "border-[var(--accent)]" : "border-[rgba(154,52,18,0.25)]",
           )}
-          onDoubleClickCapture={(event) => {
-          if (!isCollapsible || isExpanded) return;
-          const target = event.target as HTMLElement | null;
-          if (target?.closest("button, input, textarea, select, summary, [data-delete-surface='true']")) return;
-          event.preventDefault();
-          event.stopPropagation();
-          data.onToggleExpanded?.();
-          }}
           onClickCapture={(event) => {
           const target = event.target as HTMLElement | null;
           if (target?.closest("[data-delete-surface='true']")) return;
@@ -2241,28 +2182,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
               </div>
             ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            {isCollapsible ? (
-              <button
-                type="button"
-                aria-label={isExpanded ? "折叠节点" : "展开节点"}
-                title={isExpanded ? "折叠节点" : "展开节点"}
-                className={cn(
-                  "grid h-8 w-8 place-items-center rounded-full border border-[rgba(154,52,18,0.14)] bg-[rgba(255,252,247,0.92)] text-[var(--muted)] shadow-[0_10px_24px_rgba(60,41,20,0.08)] transition hover:border-[rgba(154,52,18,0.24)] hover:bg-[rgba(255,248,240,0.92)] hover:text-[var(--accent)]",
-                  selected ? "opacity-100" : "opacity-0 group-hover/node:opacity-100",
-                )}
-                onClick={() => data.onToggleExpanded?.()}
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  className={cn("h-4 w-4 fill-none stroke-current transition-transform", isExpanded ? "" : "rotate-180")}
-                  strokeWidth="1.6"
-                >
-                  <path d="m4.5 10 3.5-4 3.5 4" />
-                </svg>
-              </button>
-            ) : null}
-          </div>
+          <div className="flex items-center gap-2" />
         </div>
 
         <div className="flex flex-shrink-0 flex-col gap-3 px-4 pt-3">
@@ -2337,7 +2257,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             </div>
           ) : null}
 
-          {config.family !== "input" && (config.family === "agent" || isExpanded) && (inputs.length > 0 || outputs.length > 0) ? (
+          {config.family !== "input" && (inputs.length > 0 || outputs.length > 0) ? (
             <div className="grid grid-cols-2 items-start gap-x-6">
               <div className="grid gap-1">
                 {inputs.map((port, index) => (
@@ -2370,14 +2290,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                     </span>
                   </div>
                 ) : null}
-                {config.family === "agent" || config.family === "condition" ? (
-                  <PortCreateButton
-                    side="input"
-                    visible={selected || isHoveringNode}
-                    initialPort={createDefaultPort("input", inputs)}
-                    onCreate={(nextPort) => addNodePort("input", nextPort)}
-                  />
-                ) : null}
+{/* hover add-input button removed — use the +input pill in the skill bar instead */}
               </div>
               <div className="grid gap-1">
                 {outputs.map((port, index) => (
@@ -2396,14 +2309,7 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                     }
                   />
                 ))}
-                {config.family === "agent" ? (
-                  <PortCreateButton
-                    side="output"
-                    visible={selected || isHoveringNode}
-                    initialPort={createDefaultPort("output", outputs)}
-                    onCreate={(nextPort) => addNodePort("output", nextPort)}
-                  />
-                ) : null}
+{/* hover add-output button removed — use the +output pill in the skill bar instead */}
               </div>
             </div>
           ) : null}
@@ -2431,22 +2337,12 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             </div>
           ) : null}
 
-          {config.family === "agent" && isExpanded ? (
-            <div className="max-h-[200px] overflow-y-auto overscroll-contain">
-              <SkillEditorList
-                skills={config.skills}
-                onChange={(nextSkills) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), skills: nextSkills }))}
-                definitions={data.skillDefinitions ?? []}
-                definitionsLoading={Boolean(data.skillDefinitionsLoading)}
-                definitionsError={data.skillDefinitionsError ?? null}
-              />
-            </div>
-          ) : null}
+          {/* skill pills moved to scrollable area */}
         </div>
 
         <div
-          className={cn("flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3", shouldUseCardScroll && "overflow-y-auto overscroll-contain")}
-          onWheelCapture={shouldUseCardScroll ? (event) => event.stopPropagation() : undefined}
+          className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-3 overflow-y-auto overscroll-contain"
+          onWheelCapture={(event) => event.stopPropagation()}
         >
           {config.family === "input" ? (
             <>
@@ -2565,169 +2461,168 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
             </>
           ) : null}
 
-          {config.family === "agent" && !isExpanded && agentRuntime ? (
-            <AgentInlineRuntimeControls
-              agentRuntime={agentRuntime}
-              availableModelRefs={data.availableModelRefs ?? []}
-              modelDisplayLookup={data.modelDisplayLookup ?? {}}
-              onConfigChange={(updater) => data.onConfigChange?.((currentConfig) => updater(currentConfig as AgentNode))}
-            />
-          ) : null}
-
-          {config.family === "agent" && !isExpanded && config.skills.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {config.skills.map((skill) => {
-                const def = (data.skillDefinitions ?? []).find((d) => d.skillKey === skill.skillKey);
-                return (
-                  <span
-                    key={skill.skillKey}
-                    title={def?.description ?? skill.skillKey}
-                    className="inline-flex items-center gap-1 rounded-full border border-[rgba(37,99,235,0.18)] bg-[rgba(239,246,255,0.88)] px-2.5 py-0.5 text-[0.68rem] font-medium text-[#2563eb]"
-                  >
-                    <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.6">
-                      <path d="M8 2.5v4l2.5 1.5" />
-                      <circle cx="8" cy="8" r="5.5" />
-                    </svg>
-                    {def?.label ?? skill.name}
-                  </span>
-                );
-              })}
-            </div>
-          ) : null}
-
           {config.family === "agent" ? (
             <>
-              {!isExpanded ? null : (
-                <>
-                  <ReferenceTextarea
-                    className="min-h-32"
-                    value={config.taskInstruction}
-                    placeholder="用 @ 引用输入和技能结果，用 # 指定输出字段"
-                    onChange={(nextValue) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), taskInstruction: nextValue }))}
-                    readOptions={refReadOptions}
-                    writeOptions={refWriteOptions}
-                    onOutputReference={(key) =>
-                      data.onConfigChange?.((currentConfig) => {
-                        const agent = currentConfig as AgentNode;
-                        if (agent.outputBinding[key]) return agent;
-                        return { ...agent, outputBinding: { ...agent.outputBinding, [key]: `$response.${key}` } };
-                      })
-                    }
-                  />
-                  {agentRuntime ? (
-                    <PanelSection
-                      title="Advanced Runtime"
-                      description={`Global model: ${getModelDisplayLabel(agentRuntime.globalTextModelRef, data.modelDisplayLookup ?? {})} · Default thinking: ${agentRuntime.globalThinkingEnabled ? "on" : "off"}`}
-                    >
-                      <div className="grid grid-cols-2 gap-3">
-                        <label className="grid gap-1.5 text-sm text-[var(--muted)]">
-                          <span>Model Source</span>
-                          <select
-                            className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
-                            value={agentRuntime.modelSource}
-                            onChange={(event) =>
+              {agentRuntime ? (
+                <AgentInlineRuntimeControls
+                  agentRuntime={agentRuntime}
+                  availableModelRefs={data.availableModelRefs ?? []}
+                  modelDisplayLookup={data.modelDisplayLookup ?? {}}
+                  onConfigChange={(updater) => data.onConfigChange?.((currentConfig) => updater(currentConfig as AgentNode))}
+                />
+              ) : null}
+              {/* ── action buttons row: +skill, +input, +output ── */}
+              <div className="flex items-center gap-1.5">
+                {/* +skill button */}
+                {(() => {
+                  const attachedKeys = new Set(config.skills.map((s) => s.skillKey));
+                  const available = (data.skillDefinitions ?? []).filter((d) => !attachedKeys.has(d.skillKey));
+                  if (!available.length) return null;
+                  return (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1 rounded-full border border-dashed border-[rgba(37,99,235,0.24)] bg-[rgba(239,246,255,0.5)] px-2.5 py-0.5 text-[0.68rem] font-medium text-[#2563eb] transition hover:bg-[rgba(239,246,255,0.9)]"
+                        onClick={(event) => {
+                          const button = event.currentTarget;
+                          const menu = button.nextElementSibling as HTMLElement | null;
+                          if (menu) menu.classList.toggle("hidden");
+                        }}
+                      >
+                        <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.8">
+                          <path d="M8 3.5v9M3.5 8h9" />
+                        </svg>
+                        skill
+                      </button>
+                      <div className="hidden absolute left-0 top-full z-50 mt-1 min-w-[200px] rounded-[14px] border border-[rgba(154,52,18,0.16)] bg-[rgba(255,250,241,0.98)] py-1 shadow-[0_14px_32px_rgba(60,41,20,0.14)]">
+                        {available.map((def) => (
+                          <button
+                            key={def.skillKey}
+                            type="button"
+                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-[rgba(154,52,18,0.06)]"
+                            onClick={(event) => {
                               data.onConfigChange?.((currentConfig) => ({
                                 ...(currentConfig as AgentNode),
-                                modelSource: event.target.value as AgentModelSource,
-                              }))
-                            }
+                                skills: [
+                                  ...(currentConfig as AgentNode).skills,
+                                  { name: def.skillKey, skillKey: def.skillKey, inputMapping: {}, contextBinding: {}, usage: "optional" as const },
+                                ],
+                              }));
+                              const menu = (event.currentTarget.parentElement) as HTMLElement | null;
+                              if (menu) menu.classList.add("hidden");
+                            }}
                           >
+                            <div className="min-w-0">
+                              <div className="font-medium text-[var(--text)]">{def.label}</div>
+                              <div className="line-clamp-1 text-xs text-[var(--muted)]">{def.description}</div>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* +input button */}
+                <PortCreateButton
+                  side="input"
+                  visible
+                  initialPort={createDefaultPort("input", inputs)}
+                  onCreate={(nextPort) => addNodePort("input", nextPort)}
+                />
+                {/* +output button */}
+                <PortCreateButton
+                  side="output"
+                  visible
+                  initialPort={createDefaultPort("output", outputs)}
+                  onCreate={(nextPort) => addNodePort("output", nextPort)}
+                />
+              </div>
+              {/* ── attached skill pills ── */}
+              {config.skills.length > 0 ? (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {config.skills.map((skill) => {
+                    const def = (data.skillDefinitions ?? []).find((d) => d.skillKey === skill.skillKey);
+                    return (
+                      <span
+                        key={skill.skillKey}
+                        title={def?.description ?? skill.skillKey}
+                        className="group/pill inline-flex items-center gap-1 rounded-full border border-[rgba(37,99,235,0.18)] bg-[rgba(239,246,255,0.88)] px-2.5 py-0.5 text-[0.68rem] font-medium text-[#2563eb]"
+                      >
+                        <svg viewBox="0 0 16 16" className="h-3 w-3 fill-none stroke-current" strokeWidth="1.6">
+                          <path d="M8 2.5v4l2.5 1.5" />
+                          <circle cx="8" cy="8" r="5.5" />
+                        </svg>
+                        {def?.label ?? skill.name}
+                        <button
+                          type="button"
+                          title="Remove skill"
+                          className="ml-0.5 grid h-3.5 w-3.5 place-items-center rounded-full opacity-0 transition hover:bg-[rgba(185,28,28,0.12)] hover:text-[rgb(185,28,28)] group-hover/pill:opacity-100"
+                          onClick={() => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), skills: (currentConfig as AgentNode).skills.filter((s) => s.skillKey !== skill.skillKey) }))}
+                        >
+                          <svg viewBox="0 0 16 16" className="h-2.5 w-2.5 fill-none stroke-current" strokeWidth="2">
+                            <path d="m5 5 6 6" />
+                            <path d="m11 5-6 6" />
+                          </svg>
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <textarea
+                className="min-h-20 rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3.5 py-3 text-sm text-[var(--text)]"
+                value={config.taskInstruction}
+                placeholder="描述这个节点应该做什么（可留空）"
+                onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), taskInstruction: event.target.value }))}
+              />
+              <details className="text-sm text-[var(--muted)]">
+                <summary className="cursor-pointer select-none py-1 text-xs font-medium uppercase tracking-wider">Advanced</summary>
+                <div className="mt-2 grid gap-3">
+                  {agentRuntime ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className="grid gap-1.5">
+                          <span>Model Source</span>
+                          <select className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-2 text-[var(--text)]" value={agentRuntime.modelSource} onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), modelSource: event.target.value as AgentModelSource }))}>
                             <option value="global">global</option>
                             <option value="override">override</option>
                           </select>
                         </label>
-                        <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+                        <label className="grid gap-1.5">
                           <span>Thinking</span>
-                          <select
-                            className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-3 text-[var(--text)]"
-                            value={agentRuntime.resolvedThinking ? "on" : "off"}
-                            onChange={(event) =>
-                              data.onConfigChange?.((currentConfig) => ({
-                                ...(currentConfig as AgentNode),
-                                thinkingMode: event.target.value as AgentThinkingMode,
-                              }))
-                            }
-                          >
+                          <select className="rounded-[14px] border border-[var(--line)] bg-[rgba(255,255,255,0.82)] px-3 py-2 text-[var(--text)]" value={agentRuntime.resolvedThinking ? "on" : "off"} onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), thinkingMode: event.target.value as AgentThinkingMode }))}>
                             <option value="off">off</option>
                             <option value="on">on</option>
                           </select>
                         </label>
                       </div>
                       {agentRuntime.modelSource === "override" ? (
-                        <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+                        <label className="grid gap-1.5">
                           <span>Model Ref</span>
-                          <Input
-                            list={`model-ref-options-${data.nodeId}`}
-                            value={agentRuntime.model}
-                            placeholder={agentRuntime.globalTextModelRef}
-                            onChange={(event) =>
-                              data.onConfigChange?.((currentConfig) => ({
-                                ...(currentConfig as AgentNode),
-                                model: event.target.value,
-                              }))
-                            }
-                          />
-                          <datalist id={`model-ref-options-${data.nodeId}`}>
-                            {(data.availableModelRefs ?? []).map((modelRef) => (
-                              <option key={modelRef} value={modelRef} />
-                            ))}
-                          </datalist>
+                          <Input list={`model-ref-options-${data.nodeId}`} value={agentRuntime.model} placeholder={agentRuntime.globalTextModelRef} onChange={(event) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), model: event.target.value }))} />
+                          <datalist id={`model-ref-options-${data.nodeId}`}>{(data.availableModelRefs ?? []).map((modelRef) => (<option key={modelRef} value={modelRef} />))}</datalist>
                         </label>
                       ) : null}
-                      <label className="grid gap-1.5 text-sm text-[var(--muted)]">
+                      <label className="grid gap-1.5">
                         <span>Temperature</span>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={2}
-                          step={0.1}
-                          value={String(agentRuntime.temperature)}
-                          onChange={(event) => {
-                            const nextValue =
-                              event.target.value === "" ? DEFAULT_AGENT_TEMPERATURE : Number(event.target.value);
-                            if (!Number.isFinite(nextValue)) return;
-                            data.onConfigChange?.((currentConfig) => ({
-                              ...(currentConfig as AgentNode),
-                              temperature: normalizeAgentTemperature(nextValue),
-                            }));
-                          }}
-                        />
+                        <Input type="number" min={0} max={2} step={0.1} value={String(agentRuntime.temperature)} onChange={(event) => { const v = event.target.value === "" ? DEFAULT_AGENT_TEMPERATURE : Number(event.target.value); if (Number.isFinite(v)) data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), temperature: normalizeAgentTemperature(v) })); }} />
                       </label>
-                    </PanelSection>
+                    </>
                   ) : null}
                   <AdvancedJsonSection
                     sections={[
-                      {
-                        label: "Inputs JSON",
-                        value: config.inputs,
-                        onChange: (nextValue) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), inputs: nextValue as PortDefinition[] })),
-                      },
-                      {
-                        label: "Outputs JSON",
-                        value: config.outputs,
-                        onChange: (nextValue) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), outputs: nextValue as PortDefinition[] })),
-                      },
-                      {
-                        label: "Output Binding JSON",
-                        value: config.outputBinding,
-                        onChange: (nextValue) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as AgentNode), outputBinding: nextValue as Record<string, string> })),
-                        minHeight: "min-h-24",
-                      },
+                      { label: "Inputs JSON", value: config.inputs, onChange: (v) => data.onConfigChange?.((c) => ({ ...(c as AgentNode), inputs: v as PortDefinition[] })) },
+                      { label: "Outputs JSON", value: config.outputs, onChange: (v) => data.onConfigChange?.((c) => ({ ...(c as AgentNode), outputs: v as PortDefinition[] })) },
+                      { label: "Output Binding JSON", value: config.outputBinding, onChange: (v) => data.onConfigChange?.((c) => ({ ...(c as AgentNode), outputBinding: v as Record<string, string> })), minHeight: "min-h-24" },
                     ]}
                   />
-                </>
-              )}
+                </div>
+              </details>
             </>
           ) : null}
 
           {config.family === "condition" ? (
             <>
-              {!isExpanded ? (
-                <div className="flex min-h-[120px] flex-1 items-center rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.78)] px-4 py-4 text-sm leading-6 text-[var(--text)] break-words">
-                  {summarizeNode(config)}
-                </div>
-              ) : (
-                <>
                   <BranchEditorList
                     branches={config.branches}
                     onChange={(nextBranches) => data.onConfigChange?.((currentConfig) => ({ ...(currentConfig as ConditionNode), branches: nextBranches }))}
@@ -2785,15 +2680,11 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                       },
                     ]}
                   />
-                </>
-              )}
             </>
           ) : null}
 
           {config.family === "output" ? (
             <>
-              {isExpanded ? (
-                <>
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3">
                     <label className="grid gap-1.5 text-sm text-[var(--muted)]">
                       <span>Display Mode</span>
@@ -2839,8 +2730,6 @@ function NodeCard({ data, selected }: NodeProps<FlowNode>) {
                       placeholder="File name template"
                     />
                   </div>
-                </>
-              ) : null}
               <div className="flex min-h-[160px] flex-1 flex-col rounded-[16px] border border-[rgba(154,52,18,0.12)] bg-[rgba(255,255,255,0.82)] p-3">
                 <div className="mb-2 flex items-center justify-between gap-3">
                   <div className="text-[0.68rem] uppercase tracking-[0.12em] text-[var(--accent-strong)]">Preview</div>
@@ -3259,7 +3148,6 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
     const normalizedConfig = normalizeNodeConfig(config);
     const id = `${config.family}_${crypto.randomUUID().slice(0, 8)}`;
     const defaultWidth = getDefaultNodeWidth(normalizedConfig);
-    const isExpanded = normalizedConfig.family === "input";
     return {
       id,
       type: "default",
@@ -3268,13 +3156,13 @@ function NodeSystemCanvas({ initialGraph, isNewFromTemplate }: { initialGraph: G
         nodeId: id,
         config: normalizedConfig,
         previewText: "",
-        isExpanded,
+        isExpanded: true,
         collapsedSize: null,
-        expandedSize: isExpanded ? { width: defaultWidth } : null,
+        expandedSize: { width: defaultWidth },
       },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      style: buildNodeStyleFromState(normalizedConfig, isExpanded, isExpanded ? { width: defaultWidth } : null, defaultWidth),
+      style: buildNodeStyleFromState(normalizedConfig, true, { width: defaultWidth }, defaultWidth),
     } satisfies FlowNode;
   }
 
