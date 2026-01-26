@@ -54,6 +54,8 @@ samp {
   line-height: 1.85;
   word-break: break-word;
   text-align: left !important;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .graphite-markdown > :first-child {
@@ -125,6 +127,8 @@ samp {
 .graphite-markdown td,
 .graphite-markdown th {
   text-align: left !important;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .graphite-markdown li > ul,
@@ -234,4 +238,62 @@ samp {
 .graphite-markdown input[type="checkbox"] {
   accent-color: var(--accent);
   margin-right: 0.5rem;
+}
+
+@keyframes nodeExecutionGlowPulse {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scale(0.992);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.004);
+  }
+}
+
+.node-execution-halo-running,
+.node-execution-halo-running-current {
+  opacity: 1;
+  filter: blur(10px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.node-execution-halo-running {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(52, 211, 153, 0.52) 0%, rgba(16, 185, 129, 0.28) 34%, rgba(16, 185, 129, 0) 64%);
+  animation: nodeExecutionGlowPulse 1.2s ease-in-out infinite;
+}
+
+.node-execution-halo-running-current {
+  background:
+    radial-gradient(circle at 50% 20%, rgba(110, 231, 183, 0.72) 0%, rgba(16, 185, 129, 0.38) 36%, rgba(16, 185, 129, 0) 66%);
+  animation: nodeExecutionGlowPulse 0.95s ease-in-out infinite;
+}
+
+.node-execution-shell-running {
+  box-shadow:
+    0 18px 36px rgba(60, 41, 20, 0.1),
+    0 0 0 1.5px rgba(16, 185, 129, 0.62),
+    0 0 14px rgba(16, 185, 129, 0.22);
+}
+
+.node-execution-shell-running-current {
+  box-shadow:
+    0 20px 40px rgba(60, 41, 20, 0.12),
+    0 0 0 1.5px rgba(16, 185, 129, 0.86),
+    0 0 18px rgba(16, 185, 129, 0.32);
+}
+
+.node-execution-shell-success {
+  box-shadow:
+    0 18px 36px rgba(60, 41, 20, 0.1),
+    0 0 0 1.5px rgba(180, 83, 9, 0.34);
+}
+
+.node-execution-shell-failed {
+  box-shadow:
+    0 18px 36px rgba(60, 41, 20, 0.1),
+    0 0 0 1.5px rgba(239, 68, 68, 0.56);
 }
