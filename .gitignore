@@ -78,15 +78,21 @@ backend/data/graphs/*.json
 backend/data/memories/runtime/
 backend/data/runs/
 
-# Generated demo artifacts
-demo/__pycache__/
-demo/outputs/
+# Demo files to exclude
+demo/
 
-# Future local data directories
-outputs/
-tmp/
-temp/
-.superpowers/
-
-# Local gateway/proxy experiment files
+# Scripts / Local experiments
 scripts/lm_core.py
+
+# Local outputs
+backend/data/outputs/
+
+# Claude Code / Dev tools
+.claude/
+.superpowers/
+.graphite/
+.dev_*.log
+.next/
+
+# Agent/dev-only configs (not for open source)
+AGENTS.md

@@ -60,21 +60,6 @@ class Position(BaseModel):
     y: float
 
 
-class ThemeConfig(BaseModel):
-    theme_preset: str = ""
-    domain: str = ""
-    genre: str = ""
-    market: str = ""
-    platform: str = ""
-    language: str = ""
-    creative_style: str = ""
-    tone: str = ""
-    language_constraints: list[str] = Field(default_factory=list)
-    evaluation_policy: dict[str, Any] = Field(default_factory=dict)
-    asset_source_policy: dict[str, Any] = Field(default_factory=dict)
-    strategy_profile: dict[str, Any] = Field(default_factory=dict)
-
-
 class StateField(BaseModel):
     key: str = Field(..., min_length=1)
     type: StateFieldType = StateFieldType.STRING
@@ -146,7 +131,7 @@ class GraphPayload(BaseModel):
     graph_id: str | None = None
     name: str = Field(..., min_length=1)
     template_id: str = ""
-    theme_config: ThemeConfig = Field(default_factory=ThemeConfig)
+    theme_config: dict[str, Any] = Field(default_factory=dict)
     state_schema: list[StateField] = Field(default_factory=list)
     nodes: list[GraphNode] = Field(default_factory=list)
     edges: list[GraphEdge] = Field(default_factory=list)
