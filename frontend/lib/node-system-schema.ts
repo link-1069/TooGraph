@@ -12,7 +12,7 @@ export type AgentThinkingMode = "off" | "on";
 export type StateWriteMode = "replace";
 
 export type StateFieldType =
-  | "string"
+  | "text"
   | "number"
   | "boolean"
   | "object"
@@ -83,7 +83,7 @@ export type ConditionNode = {
   family: "condition";
   inputs: PortDefinition[];
   branches: BranchDefinition[];
-  conditionMode: "rule" | "cycle";
+  loopLimit: number;
   rule: ConditionRule;
   branchMapping: Record<string, string>;
 };
@@ -262,6 +262,7 @@ export type NodeSystemRunDetail = {
   errors?: string[];
   output_previews?: OutputPreview[];
   artifacts: {
+    active_edge_ids?: string[];
     exported_outputs?: ExportedOutput[];
     state_events?: StateEvent[];
     state_values?: Record<string, unknown>;

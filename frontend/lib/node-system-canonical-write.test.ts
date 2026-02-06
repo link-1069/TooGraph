@@ -2,8 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { CanonicalGraphPayload } from "./node-system-canonical.ts";
-import type { AgentNode, ConditionNode, InputBoundaryNode, OutputBoundaryNode, PortDefinition } from "./node-system-schema.ts";
+import type { AgentNode, ConditionNode, InputBoundaryNode, OutputBoundaryNode } from "./node-system-schema.ts";
 import {
+  addCanonicalNodeToGraph,
   addEditorNodeToCanonicalGraph,
   bindStateToCanonicalNode,
   buildCanonicalFlowProjectionFromEditorState,
@@ -13,6 +14,8 @@ import {
   removeStateFromCanonicalNode,
   renameCanonicalNodeDescription,
   renameCanonicalNodeName,
+  renameConditionBranchKeyInCanonicalGraph,
+  updateConditionBranchInCanonicalGraph,
   renameStateKeyInCanonicalGraph,
   renameStateNameInCanonicalGraph,
   updateCanonicalReadBindingRequired,
@@ -20,8 +23,8 @@ import {
   updateCanonicalNode,
   updateCanonicalInputNodeStateType,
   updateCanonicalInputNodeValue,
-  replaceCanonicalNodeReadsFromPorts,
-  replaceCanonicalNodeWritesFromPorts,
+  replaceCanonicalNodeReads,
+  replaceCanonicalNodeWrites,
   upsertStateInCanonicalGraph,
 } from "./node-system-canonical-write.ts";
 
@@ -106,6 +109,171 @@ test("renameStateKeyInCanonicalGraph renames state schema, node bindings, and ed
   ]);
 });
 
+test("renameConditionBranchKeyInCanonicalGraph keeps condition config and conditional edges aligned", () => {
+  const graph: CanonicalGraphPayload = {
+    graph_id: "graph_test",
+    name: "Rename Condition Branch Test",
+    state_schema: {
+      decision: {
+        name: "Decision",
+        description: "",
+        type: "text",
+        value: "",
+        color: "#d97706",
+      },
+    },
+    nodes: {
+      decide_next: {
+        kind: "condition",
+        name: "Decide Next",
+        description: "",
+        ui: {
+          position: { x: 0, y: 0 },
+          collapsed: false,
+        },
+        reads: [{ state: "decision", required: true }],
+        writes: [],
+        config: {
+          branches: ["continue", "stop"],
+          loopLimit: 5,
+          rule: {
+            source: "decision",
+            operator: "exists",
+            value: null,
+          },
+          branchMapping: {
+            continue: "continue",
+            stop: "stop",
+          },
+        },
+      },
+      continue_node: {
+        kind: "agent",
+        name: "Continue",
+        description: "",
+        ui: {
+          position: { x: 260, y: 0 },
+          collapsed: false,
+        },
+        reads: [],
+        writes: [],
+        config: {
+          skills: [],
+          systemInstruction: "",
+          taskInstruction: "",
+          modelSource: "global",
+          model: "",
+          thinkingMode: "on",
+          temperature: 0.2,
+        },
+      },
+      stop_node: {
+        kind: "output",
+        name: "Stop",
+        description: "",
+        ui: {
+          position: { x: 260, y: 140 },
+          collapsed: false,
+        },
+        reads: [],
+        writes: [],
+        config: {
+          displayMode: "auto",
+          persistEnabled: false,
+          persistFormat: "auto",
+          fileNameTemplate: "",
+        },
+      },
+    },
+    edges: [],
+    conditional_edges: [
+      {
+        source: "decide_next",
+        branches: {
+          continue: "continue_node",
+          stop: "stop_node",
+        },
+      },
+    ],
+    metadata: {},
+  };
+
+  const next = renameConditionBranchKeyInCanonicalGraph(graph, "decide_next", "continue", "retry");
+
+  assert.equal(next.nodes.decide_next.kind, "condition");
+  const nextConditionNode = next.nodes.decide_next;
+  assert.deepEqual(nextConditionNode.config.branches, ["retry", "stop"]);
+  assert.deepEqual(nextConditionNode.config.branchMapping, {
+    retry: "continue",
+    stop: "stop",
+  });
+  assert.deepEqual(next.conditional_edges, [
+    {
+      source: "decide_next",
+      branches: {
+        retry: "continue_node",
+        stop: "stop_node",
+      },
+    },
+  ]);
+});
+
+test("updateConditionBranchInCanonicalGraph updates branch name and mapping values together", () => {
+  const graph: CanonicalGraphPayload = {
+    graph_id: "graph_test",
+    name: "Update Condition Branch Test",
+    state_schema: {},
+    nodes: {
+      route_result: {
+        kind: "condition",
+        name: "Route Result",
+        description: "",
+        ui: {
+          position: { x: 0, y: 0 },
+          collapsed: false,
+        },
+        reads: [],
+        writes: [],
+        config: {
+          branches: ["continue", "retry"],
+          loopLimit: -1,
+          rule: {
+            source: "result",
+            operator: "exists",
+            value: null,
+          },
+          branchMapping: {
+            true: "continue",
+            false: "retry",
+          },
+        },
+      },
+    },
+    edges: [],
+    conditional_edges: [
+      {
+        source: "route_result",
+        branches: {
+          continue: "next_agent",
+          retry: "retry_agent",
+        },
+      },
+    ],
+    metadata: {},
+  };
+
+  const next = updateConditionBranchInCanonicalGraph(graph, "route_result", "retry", "retry", ["false", "maybe"]);
+
+  assert.equal(next.nodes.route_result.kind, "condition");
+  const nextConditionNode = next.nodes.route_result;
+  assert.deepEqual(nextConditionNode.config.branches, ["continue", "retry"]);
+  assert.deepEqual(nextConditionNode.config.branchMapping, {
+    true: "continue",
+    false: "retry",
+    maybe: "retry",
+  });
+});
+
 test("addEditorNodeToCanonicalGraph inserts a new canonical node from editor config", () => {
   const graph: CanonicalGraphPayload = {
     graph_id: "graph_test",
@@ -159,6 +327,65 @@ test("addEditorNodeToCanonicalGraph inserts a new canonical node from editor con
     collapsed: false,
     expandedSize: { width: 360, height: 240 },
     collapsedSize: null,
+  });
+});
+
+test("addCanonicalNodeToGraph inserts a canonical node directly without rebuilding from editor config", () => {
+  const graph: CanonicalGraphPayload = {
+    graph_id: "graph_test",
+    name: "Insert Canonical Node Test",
+    state_schema: {},
+    nodes: {},
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  const next = addCanonicalNodeToGraph(graph, "agent_a", {
+    kind: "agent",
+    name: "Agent A",
+    description: "",
+    ui: {
+      position: { x: 128, y: 96 },
+      collapsed: false,
+      expandedSize: { width: 360, height: 320 },
+      collapsedSize: null,
+    },
+    reads: [],
+    writes: [],
+    config: {
+      skills: [],
+      systemInstruction: "",
+      taskInstruction: "",
+      modelSource: "global",
+      model: "",
+      thinkingMode: "on",
+      temperature: 0.2,
+    },
+  });
+
+  assert.notEqual(next, graph);
+  assert.deepEqual(next.nodes.agent_a, {
+    kind: "agent",
+    name: "Agent A",
+    description: "",
+    ui: {
+      position: { x: 128, y: 96 },
+      collapsed: false,
+      expandedSize: { width: 360, height: 320 },
+      collapsedSize: null,
+    },
+    reads: [],
+    writes: [],
+    config: {
+      skills: [],
+      systemInstruction: "",
+      taskInstruction: "",
+      modelSource: "global",
+      model: "",
+      thinkingMode: "on",
+      temperature: 0.2,
+    },
   });
 });
 
@@ -285,7 +512,7 @@ test("buildCanonicalFlowProjectionFromEditorState prefers canonical graph semant
         writes: [],
         config: {
           branches: ["done"],
-          conditionMode: "rule",
+          loopLimit: -1,
           branchMapping: {},
           rule: {
             source: "question",
@@ -323,19 +550,6 @@ test("buildCanonicalFlowProjectionFromEditorState prefers canonical graph semant
           isExpanded: true,
           expandedSize: { width: 320, height: 240 },
           collapsedSize: null,
-          config: {
-            presetId: "node.input.input_question",
-            family: "input",
-            name: "Input Question",
-            description: "",
-            valueType: "text",
-            output: {
-              key: "legacy_question",
-              label: "Legacy Question",
-              valueType: "text",
-            },
-            value: "",
-          },
         },
       },
       {
@@ -345,33 +559,6 @@ test("buildCanonicalFlowProjectionFromEditorState prefers canonical graph semant
           isExpanded: true,
           expandedSize: null,
           collapsedSize: null,
-          config: {
-            presetId: "node.condition.condition_route",
-            family: "condition",
-            name: "Condition Route",
-            description: "",
-            inputs: [
-              {
-                key: "legacy_question",
-                label: "Legacy Question",
-                valueType: "text",
-                required: true,
-              },
-            ],
-            branches: [
-              {
-                key: "done",
-                label: "",
-              },
-            ],
-            conditionMode: "rule",
-            branchMapping: {},
-            rule: {
-              source: "question",
-              operator: "exists",
-              value: null,
-            },
-          },
         },
       },
       {
@@ -381,22 +568,6 @@ test("buildCanonicalFlowProjectionFromEditorState prefers canonical graph semant
           isExpanded: true,
           expandedSize: null,
           collapsedSize: null,
-          config: {
-            presetId: "node.output.output_answer",
-            family: "output",
-            name: "Output Answer",
-            description: "",
-            input: {
-              key: "legacy_question",
-              label: "Legacy Question",
-              valueType: "text",
-              required: true,
-            },
-            displayMode: "auto",
-            persistEnabled: false,
-            persistFormat: "auto",
-            fileNameTemplate: "",
-          },
         },
       },
     ],
@@ -1164,7 +1335,7 @@ test("updateCanonicalNodeConfig updates condition and output config fields in pl
         writes: [],
         config: {
           branches: ["done"],
-          conditionMode: "rule",
+          loopLimit: -1,
           branchMapping: {},
           rule: {
             source: "answer",
@@ -1201,7 +1372,7 @@ test("updateCanonicalNodeConfig updates condition and output config fields in pl
     return {
       ...node.config,
       branches: ["approved", "rejected"],
-      conditionMode: "cycle",
+      loopLimit: 5,
       branchMapping: {
         approved: "output_answer",
       },
@@ -1232,7 +1403,7 @@ test("updateCanonicalNodeConfig updates condition and output config fields in pl
     assert.fail("expected condition node");
   }
   assert.deepEqual(next.nodes.route_result.config.branches, ["approved", "rejected"]);
-  assert.equal(next.nodes.route_result.config.conditionMode, "cycle");
+  assert.equal(next.nodes.route_result.config.loopLimit, 5);
   assert.deepEqual(next.nodes.route_result.config.branchMapping, { approved: "output_answer" });
   assert.deepEqual(next.nodes.route_result.config.rule, {
     source: "answer",
@@ -1309,7 +1480,7 @@ test("updateCanonicalReadBindingRequired updates only the targeted read binding"
   ]);
 });
 
-test("replaceCanonicalNodeReadsFromPorts rewrites reads and upserts missing states from port definitions", () => {
+test("replaceCanonicalNodeReads rewrites reads and ensures referenced states exist", () => {
   const graph: CanonicalGraphPayload = {
     graph_id: null,
     name: "Replace Reads Graph",
@@ -1346,34 +1517,34 @@ test("replaceCanonicalNodeReadsFromPorts rewrites reads and upserts missing stat
     metadata: {},
   };
 
-  const nextPorts: PortDefinition[] = [
-    { key: "question", label: "User Question", valueType: "text", required: true },
-    { key: "context_blob", label: "Context Blob", valueType: "json", required: false },
+  const nextReads = [
+    { state: "question", required: true },
+    { state: "context_blob", required: false },
   ];
 
-  const next = replaceCanonicalNodeReadsFromPorts(graph, "answer_helper", nextPorts);
+  const next = replaceCanonicalNodeReads(graph, "answer_helper", nextReads);
 
   assert.deepEqual(next.nodes.answer_helper.reads, [
     { state: "question", required: true },
     { state: "context_blob", required: false },
   ]);
   assert.deepEqual(next.state_schema.question, {
-    name: "User Question",
+    name: "Question",
     description: "",
     type: "text",
     value: "",
     color: "#d97706",
   });
   assert.deepEqual(next.state_schema.context_blob, {
-    name: "Context Blob",
+    name: "context_blob",
     description: "",
-    type: "json",
-    value: {},
+    type: "text",
+    value: "",
     color: "",
   });
 });
 
-test("replaceCanonicalNodeWritesFromPorts rewrites writes and upserts missing output states", () => {
+test("replaceCanonicalNodeWrites rewrites writes and ensures referenced states exist", () => {
   const graph: CanonicalGraphPayload = {
     graph_id: null,
     name: "Replace Writes Graph",
@@ -1410,28 +1581,28 @@ test("replaceCanonicalNodeWritesFromPorts rewrites writes and upserts missing ou
     metadata: {},
   };
 
-  const nextPorts: PortDefinition[] = [
-    { key: "answer", label: "Final Answer", valueType: "text" },
-    { key: "supporting_image", label: "Supporting Image", valueType: "image" },
+  const nextWrites = [
+    { state: "answer", mode: "replace" as const },
+    { state: "supporting_image", mode: "replace" as const },
   ];
 
-  const next = replaceCanonicalNodeWritesFromPorts(graph, "answer_helper", nextPorts);
+  const next = replaceCanonicalNodeWrites(graph, "answer_helper", nextWrites);
 
   assert.deepEqual(next.nodes.answer_helper.writes, [
     { state: "answer", mode: "replace" },
     { state: "supporting_image", mode: "replace" },
   ]);
   assert.deepEqual(next.state_schema.answer, {
-    name: "Final Answer",
+    name: "Answer",
     description: "",
     type: "text",
     value: "",
     color: "#d97706",
   });
   assert.deepEqual(next.state_schema.supporting_image, {
-    name: "Supporting Image",
+    name: "supporting_image",
     description: "",
-    type: "image",
+    type: "text",
     value: "",
     color: "",
   });

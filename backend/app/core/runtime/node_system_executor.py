@@ -66,21 +66,20 @@ class CycleDetector:
                     dfs(neighbor)
             color[node_name] = BLACK
 
-        nodes = {edge.source for edge in self.edges} | {edge.target for edge in self.edges}
-        for node_name in nodes:
+        ordered_nodes: list[str] = []
+        seen_nodes: set[str] = set()
+        for edge in self.edges:
+            for node_name in (edge.source, edge.target):
+                if node_name in seen_nodes:
+                    continue
+                seen_nodes.add(node_name)
+                ordered_nodes.append(node_name)
+
+        for node_name in ordered_nodes:
             if color[node_name] == WHITE:
                 dfs(node_name)
 
         return len(back_edges) > 0, back_edges
-
-
-def _resolve_cycle_max_iterations(metadata: dict[str, Any]) -> int:
-    raw_value = metadata.get("cycle_max_iterations", metadata.get("cycleMaxIterations", 12))
-    try:
-        numeric = int(raw_value)
-    except (TypeError, ValueError):
-        numeric = 12
-    return max(1, min(numeric, 128))
 
 
 def _persist_run_progress(
@@ -473,10 +472,11 @@ def _generate_agent_response(
     if not output_keys:
         return {"summary": ""}, "", [], runtime_config
 
-    system_prompt = (
-        node.config.system_instruction
-        if node.config.system_instruction
-        else _build_auto_system_prompt(output_keys, input_values, skill_context)
+    system_prompt = _build_effective_system_prompt(
+        output_keys,
+        input_values,
+        skill_context,
+        node.config.system_instruction,
     )
     user_prompt = (
         node.config.task_instruction
@@ -509,6 +509,25 @@ def _generate_agent_response(
         "provider_timings": llm_meta.get("timings"),
     }
     return response_payload, reasoning, llm_meta.get("warnings", []), updated_runtime_config
+
+
+def _build_effective_system_prompt(
+    output_keys: list[str],
+    input_values: dict[str, Any],
+    skill_context: dict[str, Any],
+    custom_system_instruction: str,
+) -> str:
+    base_prompt = _build_auto_system_prompt(output_keys, input_values, skill_context)
+    custom_instruction = str(custom_system_instruction or "").strip()
+    if not custom_instruction:
+        return base_prompt
+    return "\n".join(
+        [
+            base_prompt,
+            "\n== Node System Instruction ==",
+            custom_instruction,
+        ]
+    )
 
 
 def _build_auto_system_prompt(
