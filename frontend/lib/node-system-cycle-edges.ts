@@ -1,4 +1,5 @@
 import type { CanonicalGraphPayload } from "./node-system-canonical.ts";
+import { buildCanonicalOrdinaryEdgeId } from "./node-system-ordinary-edge.ts";
 
 type TraversalEdge = {
   id: string;
@@ -9,7 +10,7 @@ type TraversalEdge = {
 function collectTraversalEdges(graph: CanonicalGraphPayload): TraversalEdge[] {
   return [
     ...graph.edges.map((edge) => ({
-      id: `edge:${edge.source}:${edge.sourceHandle}:${edge.target}:${edge.targetHandle}`,
+      id: buildCanonicalOrdinaryEdgeId(graph, edge),
       source: edge.source,
       target: edge.target,
     })),
