@@ -1,13 +1,29 @@
 # Docs Index
 
-当前 `docs/` 只保留仍需继续推进、且方向已经确定的文档：
+`docs/` 现在只保留当前仍然有效的正式项目文档，不再继续保留已经完成使命的迁移计划、设计稿和阶段 backlog。
 
-- [current_engineering_backlog.md](/home/abyss/GraphiteUI/docs/current_engineering_backlog.md)
-- [README.md](/home/abyss/GraphiteUI/docs/README.md)
+## 当前状态
 
-使用原则：
+Vue 前端迁移已经完成，因此原先那批“为迁移服务”的设计 / 计划 / backlog 文档都已经从 `docs/` 中移除。后续如果继续迭代，优先维护这里列出的当前状态文档，以及仓库根目录里的闭环记录。
 
-- 当前系统行为以代码实现为准
-- 只保留尚未完成、仍需继续执行的文档
-- 已完成的设计稿、阶段方案、实现记录和历史讨论一律删除
-- 已落地能力不在 `docs/` 中重复归档
+## 当前保留
+
+- [current_project_status.md](/home/abyss/GraphiteUI/docs/current_project_status.md)
+  - 当前正式能力
+  - 当前技术栈
+  - 当前产品路线图
+  - 同时也是项目知识库导入会读取的一份正式状态文档
+
+## 根目录闭环记录
+
+- [task_plan.md](/home/abyss/GraphiteUI/task_plan.md)
+- [findings.md](/home/abyss/GraphiteUI/findings.md)
+- [progress.md](/home/abyss/GraphiteUI/progress.md)
+
+这些文件保留本次迁移和收尾审计的闭环过程，但它们不再是“当前还要继续执行的计划”。
+
+## 清理原则
+
+- 已完成的阶段计划删除
+- 已完成迁移后不再承担指导作用的设计稿删除
+- 只保留当前仍然描述“项目真实状态”的文档

@@ -1,97 +1,2524 @@
 <template>
   <article class="node-card" :class="{ 'node-card--selected': selected }">
-    <div class="node-card__eyebrow">{{ node.kind }}</div>
-    <h3 class="node-card__title">{{ node.name }}</h3>
-    <p class="node-card__description">{{ node.description || "No description yet." }}</p>
+    <header class="node-card__header">
+      <div class="node-card__eyebrow">{{ view.kindLabel }}</div>
+      <h3 class="node-card__title">{{ view.title }}</h3>
+    </header>
 
-    <dl class="node-card__stats">
-      <div>
-        <dt>Reads</dt>
-        <dd>{{ node.reads.length }}</dd>
+    <p class="node-card__description">{{ view.description }}</p>
+
+    <div
+      v-if="view.stateSummary && (view.stateSummary.reads.length > 0 || view.stateSummary.writes.length > 0)"
+      class="node-card__state-summary"
+    >
+      <div v-if="view.stateSummary.reads.length > 0" class="node-card__state-group">
+        <span class="node-card__state-group-label">Reads</span>
+        <div class="node-card__state-token-list">
+          <span v-for="stateLabel in view.stateSummary.reads" :key="`read-${stateLabel}`" class="node-card__state-token node-card__state-token--read">
+            {{ stateLabel }}
+          </span>
+        </div>
       </div>
-      <div>
-        <dt>Writes</dt>
-        <dd>{{ node.writes.length }}</dd>
+
+      <div v-if="view.stateSummary.writes.length > 0" class="node-card__state-group">
+        <span class="node-card__state-group-label">Writes</span>
+        <div class="node-card__state-token-list">
+          <span v-for="stateLabel in view.stateSummary.writes" :key="`write-${stateLabel}`" class="node-card__state-token node-card__state-token--write">
+            {{ stateLabel }}
+          </span>
+        </div>
       </div>
-      <div v-if="node.kind === 'condition'">
-        <dt>Branches</dt>
-        <dd>{{ node.config.branches.length }}</dd>
+    </div>
+
+    <section v-if="view.body.kind === 'input'" class="node-card__body node-card__body--input">
+      <div class="node-card__port-row node-card__port-row--single">
+        <span class="node-card__port-spacer" />
+        <div v-if="view.body.primaryOutput" class="node-card__port-stack node-card__port-stack--right">
+          <span class="node-card__port-label">{{ view.body.primaryOutput.label }}</span>
+          <span class="node-card__port-meta" :style="{ color: view.body.primaryOutput.stateColor }">
+            {{ view.body.primaryOutput.typeLabel }}
+          </span>
+        </div>
       </div>
-    </dl>
+      <div class="node-card__input-toolbar">
+        <div v-if="!inputAssetEnvelope" class="node-card__control-list">
+          <button
+            v-for="option in inputTypeOptions"
+            :key="option.value"
+            type="button"
+            class="node-card__control-button"
+            :class="{ 'node-card__control-button--active': isInputTypeOptionActive(option.value) }"
+            @pointerdown.stop
+            @click.stop="updateInputBoundaryType(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </div>
+        <div v-else class="node-card__input-lock">
+          Uploaded asset locked this input as {{ inputAssetEnvelope.detectedType }}.
+        </div>
+      </div>
+      <div v-if="showKnowledgeBaseInput" class="node-card__surface node-card__input-picker">
+        <label class="node-card__control-row">
+          <span class="node-card__control-label">Knowledge Base</span>
+          <select
+            class="node-card__control-select node-card__input-select"
+            :value="inputKnowledgeBaseValue"
+            :disabled="inputKnowledgeBaseOptions.length === 0"
+            @pointerdown.stop
+            @click.stop
+            @change="handleInputKnowledgeBaseChange"
+          >
+            <option value="">{{ inputKnowledgeBaseOptions.length === 0 ? "No knowledge bases found" : "Select knowledge base" }}</option>
+            <option v-for="option in inputKnowledgeBaseOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+        <div class="node-card__input-meta">
+          {{ selectedKnowledgeBaseDescription }}
+        </div>
+      </div>
+      <div v-else-if="showAssetUploadInput" class="node-card__input-upload">
+        <input
+          ref="inputAssetInputRef"
+          class="node-card__sr-only"
+          type="file"
+          :accept="inputAssetAccept"
+          @change="handleInputAssetFileChange"
+        />
+        <button
+          v-if="!inputAssetEnvelope"
+          type="button"
+          class="node-card__asset-dropzone"
+          @pointerdown.stop
+          @click.stop="openInputAssetPicker"
+          @dragover.prevent
+          @drop.prevent="handleInputAssetDrop"
+        >
+          <span class="node-card__asset-dropzone-title">Drop {{ inputAssetLabel }} here</span>
+          <span class="node-card__asset-dropzone-copy">Or click to choose a file from your device.</span>
+        </button>
+        <div
+          v-else
+          class="node-card__asset-preview-card"
+          @dragover.prevent
+          @drop.prevent="handleInputAssetDrop"
+        >
+          <div class="node-card__asset-actions">
+            <button
+              type="button"
+              class="node-card__asset-action"
+              @pointerdown.stop
+              @click.stop="openInputAssetPicker"
+            >
+              Replace
+            </button>
+            <button
+              type="button"
+              class="node-card__asset-action node-card__asset-action--danger"
+              @pointerdown.stop
+              @click.stop="clearInputAsset"
+            >
+              Remove
+            </button>
+          </div>
+
+          <div
+            v-if="inputAssetEnvelope.detectedType === 'image' && inputAssetEnvelope.encoding === 'data_url'"
+            class="node-card__asset-media-shell"
+          >
+            <img :src="inputAssetEnvelope.content" :alt="inputAssetEnvelope.name" class="node-card__asset-image" />
+          </div>
+          <div
+            v-else-if="inputAssetEnvelope.detectedType === 'audio' && inputAssetEnvelope.encoding === 'data_url'"
+            class="node-card__asset-media-shell node-card__asset-media-shell--audio"
+          >
+            <audio controls class="node-card__asset-audio">
+              <source :src="inputAssetEnvelope.content" :type="inputAssetEnvelope.mimeType" />
+            </audio>
+          </div>
+          <div
+            v-else-if="inputAssetEnvelope.detectedType === 'video' && inputAssetEnvelope.encoding === 'data_url'"
+            class="node-card__asset-media-shell"
+          >
+            <video controls class="node-card__asset-video">
+              <source :src="inputAssetEnvelope.content" :type="inputAssetEnvelope.mimeType" />
+            </video>
+          </div>
+          <div v-else class="node-card__asset-file">
+            <div class="node-card__asset-name">{{ inputAssetEnvelope.name }}</div>
+            <div class="node-card__asset-summary">{{ inputAssetSummary }}</div>
+            <pre v-if="inputAssetTextPreview" class="node-card__asset-text">{{ inputAssetTextPreview }}</pre>
+          </div>
+
+          <div class="node-card__input-meta">
+            {{ inputAssetDescription }}
+          </div>
+        </div>
+        <div v-if="showLegacyUploadedAssetHint" class="node-card__input-meta">
+          Current value is raw text. Uploading a file will replace it with an uploaded asset envelope.
+        </div>
+      </div>
+      <textarea
+        v-else-if="isInputValueEditable"
+        class="node-card__surface node-card__surface-textarea"
+        :value="inputValueText"
+        placeholder="Enter input value"
+        @pointerdown.stop
+        @click.stop
+        @input="handleInputValueInput"
+      />
+      <div v-else class="node-card__surface node-card__surface--tall">{{ view.body.valueText || "Empty input" }}</div>
+    </section>
+
+    <section v-else-if="view.body.kind === 'agent'" class="node-card__body node-card__body--agent">
+      <div class="node-card__port-grid">
+        <div class="node-card__port-column">
+          <div v-for="port in view.inputs" :key="port.key" class="node-card__port-stack">
+            <div class="node-card__port-label-row">
+              <span class="node-card__port-label">{{ port.label }}</span>
+              <span v-if="port.required" class="node-card__port-badge">Required</span>
+            </div>
+            <span class="node-card__port-meta" :style="{ color: port.stateColor }">{{ port.typeLabel }}</span>
+          </div>
+        </div>
+        <div class="node-card__port-column node-card__port-column--right">
+          <div v-for="port in view.outputs" :key="port.key" class="node-card__port-stack node-card__port-stack--right">
+            <span class="node-card__port-label">{{ port.label }}</span>
+            <span class="node-card__port-meta" :style="{ color: port.stateColor }">{{ port.typeLabel }}</span>
+          </div>
+        </div>
+      </div>
+      <div class="node-card__chip-row">
+        <span class="node-card__chip">{{ view.body.modelLabel }}</span>
+        <span class="node-card__chip">{{ view.body.thinkingLabel }}</span>
+        <span class="node-card__chip node-card__chip--muted">{{ view.body.skillLabel }}</span>
+      </div>
+      <div class="node-card__action-row">
+        <button
+          v-if="showSkillPickerTrigger"
+          type="button"
+          class="node-card__action-pill node-card__action-pill--skill node-card__action-pill-button"
+          @pointerdown.stop
+          @click.stop="toggleSkillPicker"
+        >
+          + skill
+        </button>
+        <span v-else class="node-card__action-pill node-card__action-pill--skill node-card__action-pill--disabled">+ skill</span>
+        <button
+          type="button"
+          class="node-card__action-pill node-card__action-pill--input node-card__action-pill-button"
+          @pointerdown.stop
+          @click.stop="openPortPicker('input')"
+        >
+          + input
+        </button>
+        <button
+          type="button"
+          class="node-card__action-pill node-card__action-pill--output node-card__action-pill-button"
+          @pointerdown.stop
+          @click.stop="openPortPicker('output')"
+        >
+          + output
+        </button>
+      </div>
+      <div v-if="activePortPickerSide" class="node-card__port-picker" @pointerdown.stop @click.stop>
+        <div class="node-card__port-picker-title">{{ portPickerTitle }}</div>
+        <div v-if="portStateDraft" class="node-card__port-picker-form">
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Name</span>
+            <input
+              class="node-card__control-input"
+              type="text"
+              :value="portStateDraft.definition.name"
+              @pointerdown.stop
+              @click.stop
+              @input="handlePortDraftNameInput"
+            />
+          </label>
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Key</span>
+            <input
+              class="node-card__control-input"
+              type="text"
+              :value="portStateDraft.key"
+              @pointerdown.stop
+              @click.stop
+              @input="handlePortDraftKeyInput"
+            />
+          </label>
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Type</span>
+            <select
+              class="node-card__control-select"
+              :value="portStateDraft.definition.type"
+              @pointerdown.stop
+              @click.stop
+              @change="handlePortDraftTypeChange"
+            >
+              <option v-for="typeOption in stateTypeOptions" :key="typeOption" :value="typeOption">{{ typeOption }}</option>
+            </select>
+          </label>
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Description</span>
+            <textarea
+              class="node-card__control-textarea"
+              :value="portStateDraft.definition.description"
+              @pointerdown.stop
+              @click.stop
+              @input="handlePortDraftDescriptionInput"
+            />
+          </label>
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Color</span>
+            <input
+              class="node-card__control-input"
+              type="text"
+              :value="portStateDraft.definition.color"
+              placeholder="#d97706"
+              @pointerdown.stop
+              @click.stop
+              @input="handlePortDraftColorInput"
+            />
+          </label>
+          <StateDefaultValueEditor
+            :field="portStateDraft.definition"
+            @update-value="updatePortDraftValue"
+          />
+          <div class="node-card__port-picker-hint" :class="{ 'node-card__port-picker-hint--error': Boolean(portStateError) }">
+            {{ portStateError ?? "Create the state and bind this port to it immediately." }}
+          </div>
+          <div class="node-card__port-picker-actions">
+            <button
+              type="button"
+              class="node-card__port-picker-button"
+              @pointerdown.stop
+              @click.stop="backPortDraft"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              class="node-card__port-picker-button node-card__port-picker-button--primary"
+              @pointerdown.stop
+              @click.stop="commitPortStateCreate"
+            >
+              Create
+            </button>
+          </div>
+        </div>
+        <div v-else class="node-card__port-picker-form">
+          <input
+            class="node-card__control-input"
+            type="text"
+            :value="portStateSearch"
+            :placeholder="activePortPickerSide === 'input' ? 'Search or create input state' : 'Search or create output state'"
+            @pointerdown.stop
+            @click.stop
+            @input="handlePortStateSearchInput"
+          />
+          <button
+            v-if="portStateSearch.trim()"
+            type="button"
+            class="node-card__port-create-option"
+            @pointerdown.stop
+            @click.stop="beginPortStateCreate"
+          >
+            <span class="node-card__port-create-label">Create</span>
+            <span class="node-card__port-create-title">新增 “{{ portStateSearch.trim() }}”</span>
+          </button>
+          <button
+            v-for="stateRow in portPickerMatchingStates"
+            :key="stateRow.key"
+            type="button"
+            class="node-card__port-state-option"
+            @pointerdown.stop
+            @click.stop="bindStateToPort(stateRow.key)"
+          >
+            <span class="node-card__port-state-type">{{ stateRow.definition.type }}</span>
+            <span class="node-card__port-state-title">{{ stateRow.label }}</span>
+            <span class="node-card__port-state-key">{{ stateRow.key }}</span>
+          </button>
+          <div class="node-card__port-picker-actions">
+            <button
+              type="button"
+              class="node-card__port-picker-button"
+              @pointerdown.stop
+              @click.stop="closePortPicker"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+      <div v-if="isSkillPickerOpen" class="node-card__skill-picker" @pointerdown.stop @click.stop>
+        <div class="node-card__skill-picker-title">Add Skill</div>
+        <div class="node-card__skill-picker-copy">这里只负责附加已有 skill，不在编排界面里编辑 skill 内容。</div>
+        <div v-if="skillDefinitionsLoading" class="node-card__skill-panel-message">
+          Loading skills...
+        </div>
+        <div v-else-if="skillDefinitionsError" class="node-card__skill-panel-message node-card__skill-panel-message--error">
+          {{ skillDefinitionsError }}
+        </div>
+        <div v-else-if="availableSkillDefinitions.length === 0" class="node-card__skill-panel-message">
+          No available skills to attach.
+        </div>
+        <button
+          v-for="definition in availableSkillDefinitions"
+          v-else
+          :key="definition.skillKey"
+          type="button"
+          class="node-card__skill-option"
+          @pointerdown.stop
+          @click.stop="attachAgentSkill(definition.skillKey)"
+        >
+          <div class="node-card__skill-option-title">{{ definition.label }}</div>
+          <div class="node-card__skill-option-copy">{{ definition.description }}</div>
+          <div class="node-card__skill-option-meta">
+            <span v-if="definition.inputSchema.length > 0">In {{ definition.inputSchema.length }}</span>
+            <span v-if="definition.outputSchema.length > 0">Out {{ definition.outputSchema.length }}</span>
+          </div>
+        </button>
+      </div>
+      <div v-if="attachedSkillBadges.length > 0" class="node-card__skill-badges">
+        <span
+          v-for="badge in attachedSkillBadges"
+          :key="badge.skillKey"
+          class="node-card__skill-badge"
+          :title="badge.description || badge.skillKey"
+        >
+          <span>{{ badge.label }}</span>
+          <button
+            type="button"
+            class="node-card__skill-badge-remove"
+            title="Remove skill"
+            @pointerdown.stop
+            @click.stop="removeAgentSkill(badge.skillKey)"
+          >
+            ×
+          </button>
+        </span>
+      </div>
+      <label class="node-card__control-row">
+        <span class="node-card__control-label">Model</span>
+        <select
+          class="node-card__control-select"
+          :value="agentResolvedModelValue"
+          :disabled="agentModelOptions.length === 0"
+          @pointerdown.stop
+          @click.stop
+          @change="handleAgentModelChange"
+        >
+          <option v-if="agentModelOptions.length === 0" value="">No configured models</option>
+          <option v-for="option in agentModelOptions" :key="option.value" :value="option.value">
+            {{ option.value === trimmedGlobalTextModelRef ? `${option.label} (Global)` : option.label }}
+          </option>
+        </select>
+      </label>
+      <div class="node-card__input-meta">
+        {{ agentModelSelectionDescription }}
+      </div>
+      <textarea
+        class="node-card__surface node-card__surface-textarea"
+        :value="view.body.taskInstruction"
+        placeholder="Describe what this node should do"
+        @pointerdown.stop
+        @click.stop
+        @input="handleAgentTaskInstructionInput"
+      />
+      <details class="node-card__advanced-panel" @pointerdown.stop>
+        <summary class="node-card__advanced-summary">Advanced</summary>
+        <div class="node-card__advanced-content">
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">System</span>
+            <textarea
+              class="node-card__control-textarea"
+              :value="view.body.systemInstruction"
+              placeholder="Add system guardrails or role guidance"
+              @pointerdown.stop
+              @click.stop
+              @input="handleAgentSystemInstructionInput"
+            />
+          </label>
+          <div class="node-card__control-row">
+            <span class="node-card__control-label">Thinking</span>
+            <div class="node-card__control-list">
+              <button
+                v-for="option in agentThinkingOptions"
+                :key="option.value"
+                type="button"
+                class="node-card__control-button"
+                :class="{ 'node-card__control-button--active': isAgentThinkingModeActive(option.value) }"
+                @pointerdown.stop
+                @click.stop="updateAgentThinkingMode(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Temperature</span>
+            <input
+              class="node-card__control-input"
+              type="number"
+              min="0"
+              max="2"
+              step="0.1"
+              :value="agentTemperatureInput"
+              @pointerdown.stop
+              @click.stop
+              @input="handleAgentTemperatureInput"
+            />
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <section v-else-if="view.body.kind === 'output'" class="node-card__body node-card__body--output">
+      <div class="node-card__output-toolbar">
+        <span class="node-card__port-label">{{ view.body.connectedStateLabel ?? "Unbound" }}</span>
+        <button
+          type="button"
+          class="node-card__persist-button"
+          :aria-pressed="view.body.persistEnabled"
+          @pointerdown.stop
+          @click.stop="toggleOutputPersist"
+        >
+          <span class="node-card__persist">
+            <span>{{ view.body.persistLabel }}</span>
+            <span class="node-card__toggle" :class="{ 'node-card__toggle--on': view.body.persistEnabled }">
+              <span class="node-card__toggle-thumb" />
+            </span>
+          </span>
+        </button>
+      </div>
+      <div class="node-card__surface node-card__surface--output">
+        <div class="node-card__surface-meta">
+          <span>{{ view.body.previewTitle.toUpperCase() }}</span>
+          <span>{{ view.body.displayModeLabel }}</span>
+        </div>
+        <div class="node-card__preview">{{ view.body.previewText || `Connected to ${view.body.connectedStateLabel ?? "state"}` }}</div>
+      </div>
+      <details class="node-card__advanced-panel" @pointerdown.stop>
+        <summary class="node-card__advanced-summary">Advanced</summary>
+        <div class="node-card__advanced-content">
+          <div class="node-card__control-row">
+            <span class="node-card__control-label">Display</span>
+            <div class="node-card__control-list">
+              <button
+                v-for="option in outputDisplayModeOptions"
+                :key="option.value"
+                type="button"
+                class="node-card__control-button"
+                :class="{ 'node-card__control-button--active': isOutputDisplayModeActive(option.value) }"
+                @pointerdown.stop
+                @click.stop="updateOutputDisplayMode(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+          <div class="node-card__control-row">
+            <span class="node-card__control-label">Format</span>
+            <div class="node-card__control-list">
+              <button
+                v-for="option in outputPersistFormatOptions"
+                :key="option.value"
+                type="button"
+                class="node-card__control-button"
+                :class="{ 'node-card__control-button--active': isOutputPersistFormatActive(option.value) }"
+                @pointerdown.stop
+                @click.stop="updateOutputPersistFormat(option.value)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">FileName</span>
+            <input
+              class="node-card__control-input"
+              type="text"
+              :value="view.body.fileNameTemplate"
+              :placeholder="view.title || 'Output'"
+              @pointerdown.stop
+              @click.stop
+              @input="handleOutputFileNameInput"
+            />
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <section v-else class="node-card__body node-card__body--condition">
+      <div class="node-card__condition-topline">
+        <div class="node-card__port-column">
+          <div v-for="port in view.inputs" :key="port.key" class="node-card__port-stack">
+            <div class="node-card__port-label-row">
+              <span class="node-card__port-label">{{ port.label }}</span>
+              <span v-if="port.required" class="node-card__port-badge">Required</span>
+            </div>
+            <span class="node-card__port-meta" :style="{ color: port.stateColor }">{{ port.typeLabel }}</span>
+          </div>
+        </div>
+        <label class="node-card__loop-control" @pointerdown.stop @click.stop>
+          <span class="node-card__loop-label">Loop</span>
+          <input
+            class="node-card__loop-input"
+            type="text"
+            inputmode="numeric"
+            :value="conditionLoopLimitDraft"
+            @pointerdown.stop
+            @click.stop
+            @input="handleConditionLoopLimitInput"
+            @blur="commitConditionLoopLimit"
+            @keydown.enter.prevent="handleConditionLoopLimitEnter"
+          />
+        </label>
+      </div>
+      <div class="node-card__surface">
+        <div class="node-card__condition-editor">
+          <label class="node-card__control-row">
+            <span class="node-card__control-label">Source</span>
+            <select
+              class="node-card__control-select"
+              :value="conditionRuleEditor?.resolvedSource ?? ''"
+              :disabled="!conditionRuleEditor || conditionRuleEditor.sourceOptions.length === 0"
+              @pointerdown.stop
+              @click.stop
+              @change="handleConditionRuleSourceChange"
+            >
+              <option v-if="!conditionRuleEditor || conditionRuleEditor.sourceOptions.length === 0" value="">No state</option>
+              <option v-for="option in conditionRuleEditor?.sourceOptions ?? []" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <div class="node-card__condition-editor-grid">
+            <label class="node-card__control-row">
+              <span class="node-card__control-label">Operator</span>
+              <select
+                class="node-card__control-select"
+                :value="node.kind === 'condition' ? node.config.rule.operator : ''"
+                @pointerdown.stop
+                @click.stop
+                @change="handleConditionRuleOperatorChange"
+              >
+                <option v-for="option in conditionRuleOperatorOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="node-card__control-row">
+              <span class="node-card__control-label">Value</span>
+              <input
+                class="node-card__control-input"
+                type="text"
+                :value="conditionRuleValueText"
+                :disabled="conditionRuleEditor?.isValueDisabled"
+                @pointerdown.stop
+                @click.stop
+                @input="handleConditionRuleValueInput"
+              />
+            </label>
+          </div>
+        </div>
+        <div class="node-card__condition-rule">{{ view.body.ruleSummary }}</div>
+        <div class="node-card__branch-list">
+          <div v-for="branch in view.body.branchMappings" :key="branch.branch" class="node-card__branch-editor">
+            <label class="node-card__branch-field">
+              <span class="node-card__branch-field-label">Branch</span>
+              <input
+                class="node-card__branch-input"
+                type="text"
+                autocomplete="off"
+                :value="conditionBranchDrafts[branch.branch]?.branchKey ?? branch.branch"
+                @pointerdown.stop
+                @click.stop
+                @input="handleConditionBranchKeyInput(branch.branch, $event)"
+                @blur="commitConditionBranch(branch.branch)"
+                @keydown.enter.prevent="handleConditionBranchEnter(branch.branch, $event)"
+              />
+            </label>
+            <label class="node-card__branch-field">
+              <span class="node-card__branch-field-label">Matches</span>
+              <input
+                class="node-card__branch-input node-card__branch-input--mapping"
+                type="text"
+                autocomplete="off"
+                :value="conditionBranchDrafts[branch.branch]?.mappingText ?? branch.matchValueLabel"
+                placeholder="true, false"
+                @pointerdown.stop
+                @click.stop
+                @input="handleConditionBranchMappingInput(branch.branch, $event)"
+                @blur="commitConditionBranch(branch.branch)"
+                @keydown.enter.prevent="handleConditionBranchEnter(branch.branch, $event)"
+              />
+            </label>
+            <button
+              v-if="canRemoveConditionBranch"
+              type="button"
+              class="node-card__branch-remove"
+              @pointerdown.stop
+              @click.stop="removeConditionBranch(branch.branch)"
+            >
+              Remove
+            </button>
+            <div
+              class="node-card__branch-route"
+              :class="{ 'node-card__branch-route--unrouted': !branch.routeTargetLabel }"
+            >
+              <span class="node-card__branch-route-label">Route</span>
+              <span class="node-card__branch-route-target">{{ branch.routeTargetLabel ?? "Unrouted" }}</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="node-card__branch-add"
+            @pointerdown.stop
+            @click.stop="addConditionBranch"
+          >
+            + branch
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div
+      v-if="view.runtimeNote"
+      class="node-card__runtime-note"
+      :class="`node-card__runtime-note--${view.runtimeNote.tone}`"
+    >
+      <span class="node-card__runtime-note-label">{{ view.runtimeNote.label }}</span>
+      <div class="node-card__runtime-note-text">{{ view.runtimeNote.text }}</div>
+    </div>
   </article>
 </template>
 
 <script setup lang="ts">
-import type { GraphNode } from "@/types/node-system";
+import { computed, ref, watch } from "vue";
 
-defineProps<{
+import StateDefaultValueEditor from "@/editor/workspace/StateDefaultValueEditor.vue";
+import { listConditionBranchMappingKeys, parseConditionBranchMappingDraft } from "@/lib/condition-branch-mapping";
+import type { KnowledgeBaseRecord } from "@/types/knowledge";
+import type { AgentNode, ConditionNode, GraphNode, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
+import type { SkillDefinition } from "@/types/skills";
+
+import { DEFAULT_AGENT_TEMPERATURE, buildAgentModelSelectOptions, normalizeAgentTemperature, resolveAgentModelSelection } from "./agentConfigModel";
+import { parseConditionLoopLimitDraft } from "./conditionLoopLimit";
+import { buildConditionRuleEditorModel, CONDITION_RULE_OPERATOR_OPTIONS } from "./conditionRuleEditorModel";
+import { isSwitchableInputBoundaryType, resolveNextInputValueForBoundaryType, resolveStateTypeForInputBoundary } from "./inputValueTypeModel";
+import { buildNodeCardViewModel } from "./nodeCardViewModel";
+import { listAttachableSkillDefinitions, resolveAttachedSkillBadges } from "./skillPickerModel";
+import { createStateDraftFromQuery, matchesStatePortSearch } from "./statePortCreateModel";
+import { createUploadedAssetEnvelope, resolveUploadedAssetInputAccept, tryParseUploadedAssetEnvelope } from "./uploadedAssetModel";
+import { defaultValueForStateType, STATE_FIELD_TYPE_OPTIONS, type StateFieldDraft, type StateFieldType } from "@/editor/workspace/statePanelFields";
+
+const props = defineProps<{
   nodeId: string;
   node: GraphNode;
+  stateSchema: Record<string, StateDefinition>;
+  knowledgeBases: KnowledgeBaseRecord[];
+  skillDefinitions: SkillDefinition[];
+  skillDefinitionsLoading: boolean;
+  skillDefinitionsError: string | null;
+  availableAgentModelRefs: string[];
+  agentModelDisplayLookup: Record<string, string>;
+  globalTextModelRef: string;
+  conditionRouteTargets?: Record<string, string | null>;
+  latestRunStatus?: string | null;
+  runOutputPreviewText?: string | null;
+  runOutputDisplayMode?: string | null;
+  runFailureMessage?: string | null;
   selected: boolean;
 }>();
+
+const emit = defineEmits<{
+  (event: "update-input-config", payload: { nodeId: string; patch: Partial<InputNode["config"]> }): void;
+  (event: "update-input-state", payload: { stateKey: string; patch: Partial<StateDefinition> }): void;
+  (event: "update-output-config", payload: { nodeId: string; patch: Partial<OutputNode["config"]> }): void;
+  (event: "update-agent-config", payload: { nodeId: string; patch: Partial<AgentNode["config"]> }): void;
+  (event: "update-condition-config", payload: { nodeId: string; patch: Partial<ConditionNode["config"]> }): void;
+  (event: "update-condition-branch", payload: { nodeId: string; currentKey: string; nextKey: string; mappingKeys: string[] }): void;
+  (event: "add-condition-branch", payload: { nodeId: string }): void;
+  (event: "remove-condition-branch", payload: { nodeId: string; branchKey: string }): void;
+  (event: "bind-port-state", payload: { nodeId: string; side: "input" | "output"; stateKey: string }): void;
+  (event: "create-port-state", payload: { nodeId: string; side: "input" | "output"; field: StateFieldDraft }): void;
+}>();
+
+const outputDisplayModeOptions: Array<{ value: OutputNode["config"]["displayMode"]; label: string }> = [
+  { value: "auto", label: "AUTO" },
+  { value: "plain", label: "PLAIN" },
+  { value: "markdown", label: "MD" },
+  { value: "json", label: "JSON" },
+];
+const outputPersistFormatOptions: Array<{ value: OutputNode["config"]["persistFormat"]; label: string }> = [
+  { value: "auto", label: "AUTO" },
+  { value: "txt", label: "TXT" },
+  { value: "md", label: "MD" },
+  { value: "json", label: "JSON" },
+];
+const agentThinkingOptions: Array<{ value: AgentNode["config"]["thinkingMode"]; label: string }> = [
+  { value: "on", label: "ON" },
+  { value: "off", label: "OFF" },
+];
+const inputTypeOptions: Array<{ value: "text" | "file" | "knowledge_base"; label: string }> = [
+  { value: "text", label: "Text" },
+  { value: "file", label: "File" },
+  { value: "knowledge_base", label: "KB" },
+];
+const stateTypeOptions = STATE_FIELD_TYPE_OPTIONS;
+const conditionRuleOperatorOptions = CONDITION_RULE_OPERATOR_OPTIONS;
+
+const view = computed(() =>
+  buildNodeCardViewModel(props.nodeId, props.node, props.stateSchema, {
+    conditionRouteTargets: props.conditionRouteTargets,
+    runtime: {
+      latestRunStatus: props.latestRunStatus ?? null,
+      outputPreviewText: props.runOutputPreviewText ?? null,
+      outputDisplayMode: props.runOutputDisplayMode ?? null,
+      failedMessage: props.runFailureMessage ?? null,
+    },
+  }),
+);
+const canRemoveConditionBranch = computed(() => props.node.kind === "condition" && props.node.config.branches.length > 1);
+const conditionLoopLimitDraft = ref("");
+const conditionBranchDrafts = ref<Record<string, { branchKey: string; mappingText: string }>>({});
+const inputAssetInputRef = ref<HTMLInputElement | null>(null);
+const isSkillPickerOpen = ref(false);
+const activePortPickerSide = ref<"input" | "output" | null>(null);
+const portStateSearch = ref("");
+const portStateDraft = ref<StateFieldDraft | null>(null);
+const portStateError = ref<string | null>(null);
+const conditionRuleEditor = computed(() =>
+  props.node.kind === "condition" ? buildConditionRuleEditorModel(props.node.config.rule, props.stateSchema) : null,
+);
+const showKnowledgeBaseInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "knowledge_base");
+const showAssetUploadInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "asset");
+const isInputValueEditable = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "text");
+const inputValueText = computed(() => {
+  if (props.node.kind !== "input") {
+    return "";
+  }
+  if (typeof props.node.config.value === "string") {
+    return props.node.config.value;
+  }
+  if (props.node.config.value === null || props.node.config.value === undefined) {
+    return "";
+  }
+  return view.value.body.kind === "input" ? view.value.body.valueText : "";
+});
+const inputKnowledgeBaseValue = computed(() => {
+  if (props.node.kind !== "input") {
+    return "";
+  }
+  return typeof props.node.config.value === "string" ? props.node.config.value : "";
+});
+const inputAssetType = computed(() => (view.value.body.kind === "input" ? view.value.body.assetType : null));
+const inputAssetEnvelope = computed(() => (props.node.kind === "input" ? tryParseUploadedAssetEnvelope(props.node.config.value) : null));
+const inputAssetAccept = computed(() => resolveUploadedAssetInputAccept(inputAssetType.value));
+const inputStateKey = computed(() => (view.value.body.kind === "input" ? view.value.body.primaryOutput?.key ?? null : null));
+const inputStateType = computed(() => {
+  const stateKey = inputStateKey.value;
+  return stateKey ? String(props.stateSchema[stateKey]?.type ?? "text") : "text";
+});
+const inputAssetLabel = computed(() => {
+  switch (inputAssetType.value) {
+    case "image":
+      return "image";
+    case "audio":
+      return "audio clip";
+    case "video":
+      return "video";
+    default:
+      return "file";
+  }
+});
+const inputAssetSummary = computed(() => {
+  const asset = inputAssetEnvelope.value;
+  if (!asset) {
+    return "";
+  }
+  return `${asset.mimeType} · ${Math.max(1, Math.round(asset.size / 1024))} KB`;
+});
+const inputAssetTextPreview = computed(() => {
+  const asset = inputAssetEnvelope.value;
+  if (!asset || asset.encoding !== "text") {
+    return "";
+  }
+  return asset.content.slice(0, 3000);
+});
+const inputAssetDescription = computed(() => {
+  const asset = inputAssetEnvelope.value;
+  if (asset) {
+    return `Stored as ${asset.detectedType} upload. ${inputAssetSummary.value}`;
+  }
+  switch (inputAssetType.value) {
+    case "image":
+      return "Upload a reference image for this workflow.";
+    case "audio":
+      return "Upload an audio clip that this workflow should read.";
+    case "video":
+      return "Upload a video asset that this workflow should inspect.";
+    default:
+      return "Upload a file to seed this workflow.";
+  }
+});
+const showLegacyUploadedAssetHint = computed(
+  () => showAssetUploadInput.value && !inputAssetEnvelope.value && inputValueText.value.trim().length > 0,
+);
+const inputKnowledgeBaseOptions = computed(() => {
+  const options = props.knowledgeBases.map((knowledgeBase) => ({
+    value: knowledgeBase.name,
+    label: knowledgeBase.label?.trim() || knowledgeBase.name,
+    description: knowledgeBase.description?.trim() || "",
+  }));
+
+  const currentValue = inputKnowledgeBaseValue.value.trim();
+  if (currentValue && !options.some((option) => option.value === currentValue)) {
+    return [
+      {
+        value: currentValue,
+        label: `${currentValue} (current)`,
+        description: "This knowledge base is no longer available in the imported catalog.",
+      },
+      ...options,
+    ];
+  }
+
+  return options;
+});
+const selectedKnowledgeBaseDescription = computed(() => {
+  if (!showKnowledgeBaseInput.value) {
+    return "";
+  }
+  const selectedOption = inputKnowledgeBaseOptions.value.find((option) => option.value === inputKnowledgeBaseValue.value);
+  if (selectedOption?.description) {
+    return selectedOption.description;
+  }
+  if (inputKnowledgeBaseOptions.value.length === 0) {
+    return "Import or sync knowledge bases to make this input selectable.";
+  }
+  return "Pick the knowledge base that should ground this workflow.";
+});
+const trimmedGlobalTextModelRef = computed(() => props.globalTextModelRef.trim());
+const agentResolvedModelValue = computed(() => {
+  if (props.node.kind !== "agent") {
+    return trimmedGlobalTextModelRef.value;
+  }
+  const overrideModel = props.node.config.model.trim();
+  return props.node.config.modelSource === "override" && overrideModel ? overrideModel : trimmedGlobalTextModelRef.value;
+});
+const agentModelOptions = computed(() =>
+  buildAgentModelSelectOptions(agentResolvedModelValue.value, props.availableAgentModelRefs, props.agentModelDisplayLookup),
+);
+const agentModelSelectionDescription = computed(() => {
+  if (props.node.kind !== "agent") {
+    return "";
+  }
+  const resolvedModel = agentResolvedModelValue.value.trim();
+  if (!resolvedModel) {
+    return "Load settings to choose from configured models.";
+  }
+  const resolvedLabel = props.agentModelDisplayLookup[resolvedModel] || resolvedModel;
+  return props.node.config.modelSource === "global"
+    ? `Using workspace default model: ${resolvedLabel}.`
+    : `Overriding the workspace default with ${resolvedLabel}.`;
+});
+const attachedSkillBadges = computed(() =>
+  props.node.kind === "agent" ? resolveAttachedSkillBadges(props.node.config.skills, props.skillDefinitions) : [],
+);
+const availableSkillDefinitions = computed(() =>
+  props.node.kind === "agent" ? listAttachableSkillDefinitions(props.skillDefinitions, props.node.config.skills) : [],
+);
+const showSkillPickerTrigger = computed(
+  () => availableSkillDefinitions.value.length > 0 || props.skillDefinitionsLoading || Boolean(props.skillDefinitionsError),
+);
+const portPickerMatchingStates = computed(() =>
+  Object.entries(props.stateSchema)
+    .map(([key, definition]) => ({
+      key,
+      definition,
+      label: definition.name.trim() || key,
+    }))
+    .filter(({ key, definition }) =>
+      matchesStatePortSearch(
+        {
+          key,
+          name: definition.name,
+          description: definition.description,
+        },
+        portStateSearch.value,
+      ),
+    )
+    .sort((left, right) => left.label.localeCompare(right.label) || left.key.localeCompare(right.key)),
+);
+const portPickerTitle = computed(() => {
+  if (!activePortPickerSide.value) {
+    return "";
+  }
+  if (portStateDraft.value) {
+    return activePortPickerSide.value === "input" ? "Create Input State" : "Create Output State";
+  }
+  return activePortPickerSide.value === "input" ? "Select Input State" : "Select Output State";
+});
+const conditionRuleValueText = computed(() => {
+  if (props.node.kind !== "condition") {
+    return "";
+  }
+  return props.node.config.rule.value === null ? "" : String(props.node.config.rule.value);
+});
+const agentTemperatureInput = computed(() => {
+  if (props.node.kind !== "agent") {
+    return String(DEFAULT_AGENT_TEMPERATURE);
+  }
+  return String(normalizeAgentTemperature(props.node.config.temperature));
+});
+
+watch(
+  () => (props.node.kind === "condition" ? props.node.config.loopLimit : null),
+  (loopLimit) => {
+    conditionLoopLimitDraft.value = loopLimit === null ? "" : String(loopLimit);
+  },
+  { immediate: true },
+);
+
+watch(
+  () =>
+    props.node.kind === "condition"
+      ? JSON.stringify({
+          branches: props.node.config.branches,
+          branchMapping: props.node.config.branchMapping,
+        })
+      : "",
+  () => {
+    conditionBranchDrafts.value = props.node.kind === "condition" ? buildConditionBranchDrafts(props.node) : {};
+  },
+  { immediate: true },
+);
+
+function emitOutputConfigPatch(patch: Partial<OutputNode["config"]>) {
+  if (props.node.kind !== "output") {
+    return;
+  }
+  emit("update-output-config", { nodeId: props.nodeId, patch });
+}
+
+function emitInputConfigPatch(patch: Partial<InputNode["config"]>) {
+  if (props.node.kind !== "input") {
+    return;
+  }
+  emit("update-input-config", { nodeId: props.nodeId, patch });
+}
+
+function emitInputStatePatch(stateKey: string, patch: Partial<StateDefinition>) {
+  emit("update-input-state", { stateKey, patch });
+}
+
+function emitAgentConfigPatch(patch: Partial<AgentNode["config"]>) {
+  if (props.node.kind !== "agent") {
+    return;
+  }
+  emit("update-agent-config", { nodeId: props.nodeId, patch });
+}
+
+function emitConditionConfigPatch(patch: Partial<ConditionNode["config"]>) {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+  emit("update-condition-config", { nodeId: props.nodeId, patch });
+}
+
+function emitConditionBranchUpdate(currentKey: string, nextKey: string, mappingKeys: string[]) {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+  emit("update-condition-branch", {
+    nodeId: props.nodeId,
+    currentKey,
+    nextKey,
+    mappingKeys,
+  });
+}
+
+function addConditionBranch() {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+  emit("add-condition-branch", {
+    nodeId: props.nodeId,
+  });
+}
+
+function removeConditionBranch(branchKey: string) {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+  emit("remove-condition-branch", {
+    nodeId: props.nodeId,
+    branchKey,
+  });
+}
+
+function toggleOutputPersist() {
+  if (props.node.kind !== "output") {
+    return;
+  }
+  emitOutputConfigPatch({ persistEnabled: !props.node.config.persistEnabled });
+}
+
+function updateOutputDisplayMode(displayMode: OutputNode["config"]["displayMode"]) {
+  emitOutputConfigPatch({ displayMode });
+}
+
+function isOutputDisplayModeActive(displayMode: OutputNode["config"]["displayMode"]) {
+  return props.node.kind === "output" && props.node.config.displayMode === displayMode;
+}
+
+function updateOutputPersistFormat(persistFormat: OutputNode["config"]["persistFormat"]) {
+  emitOutputConfigPatch({ persistFormat });
+}
+
+function isOutputPersistFormatActive(persistFormat: OutputNode["config"]["persistFormat"]) {
+  return props.node.kind === "output" && props.node.config.persistFormat === persistFormat;
+}
+
+function handleOutputFileNameInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  emitOutputConfigPatch({ fileNameTemplate: target.value });
+}
+
+function handleAgentTaskInstructionInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  emitAgentConfigPatch({ taskInstruction: target.value });
+}
+
+function handleAgentSystemInstructionInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  emitAgentConfigPatch({ systemInstruction: target.value });
+}
+
+function toggleSkillPicker() {
+  if (!showSkillPickerTrigger.value) {
+    return;
+  }
+  activePortPickerSide.value = null;
+  portStateDraft.value = null;
+  portStateSearch.value = "";
+  portStateError.value = null;
+  isSkillPickerOpen.value = !isSkillPickerOpen.value;
+}
+
+function attachAgentSkill(skillKey: string) {
+  if (props.node.kind !== "agent" || props.node.config.skills.includes(skillKey)) {
+    return;
+  }
+  emitAgentConfigPatch({ skills: [...props.node.config.skills, skillKey] });
+  isSkillPickerOpen.value = false;
+}
+
+function removeAgentSkill(skillKey: string) {
+  if (props.node.kind !== "agent" || !props.node.config.skills.includes(skillKey)) {
+    return;
+  }
+  emitAgentConfigPatch({ skills: props.node.config.skills.filter((candidateKey) => candidateKey !== skillKey) });
+}
+
+function openPortPicker(side: "input" | "output") {
+  isSkillPickerOpen.value = false;
+  portStateSearch.value = "";
+  portStateDraft.value = null;
+  portStateError.value = null;
+  activePortPickerSide.value = activePortPickerSide.value === side ? null : side;
+}
+
+function closePortPicker() {
+  activePortPickerSide.value = null;
+  portStateSearch.value = "";
+  portStateDraft.value = null;
+  portStateError.value = null;
+}
+
+function handlePortStateSearchInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  portStateSearch.value = target.value;
+}
+
+function beginPortStateCreate() {
+  portStateDraft.value = createStateDraftFromQuery(portStateSearch.value, Object.keys(props.stateSchema));
+  portStateError.value = null;
+}
+
+function backPortDraft() {
+  portStateDraft.value = null;
+  portStateError.value = null;
+}
+
+function handlePortDraftNameInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || !portStateDraft.value) {
+    return;
+  }
+  portStateDraft.value = {
+    ...portStateDraft.value,
+    definition: {
+      ...portStateDraft.value.definition,
+      name: target.value,
+    },
+  };
+}
+
+function handlePortDraftKeyInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || !portStateDraft.value) {
+    return;
+  }
+  portStateDraft.value = {
+    ...portStateDraft.value,
+    key: target.value,
+  };
+}
+
+function handlePortDraftTypeChange(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement) || !portStateDraft.value) {
+    return;
+  }
+  portStateDraft.value = {
+    ...portStateDraft.value,
+    definition: {
+      ...portStateDraft.value.definition,
+      type: target.value,
+      value: defaultValueForStateType(target.value as StateFieldType),
+    },
+  };
+}
+
+function handlePortDraftDescriptionInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement) || !portStateDraft.value) {
+    return;
+  }
+  portStateDraft.value = {
+    ...portStateDraft.value,
+    definition: {
+      ...portStateDraft.value.definition,
+      description: target.value,
+    },
+  };
+}
+
+function handlePortDraftColorInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || !portStateDraft.value) {
+    return;
+  }
+  portStateDraft.value = {
+    ...portStateDraft.value,
+    definition: {
+      ...portStateDraft.value.definition,
+      color: target.value,
+    },
+  };
+}
+
+function updatePortDraftValue(value: unknown) {
+  if (!portStateDraft.value) {
+    return;
+  }
+  portStateDraft.value = {
+    ...portStateDraft.value,
+    definition: {
+      ...portStateDraft.value.definition,
+      value,
+    },
+  };
+}
+
+function bindStateToPort(stateKey: string) {
+  if (!activePortPickerSide.value) {
+    return;
+  }
+  emit("bind-port-state", {
+    nodeId: props.nodeId,
+    side: activePortPickerSide.value,
+    stateKey,
+  });
+  closePortPicker();
+}
+
+function commitPortStateCreate() {
+  if (!activePortPickerSide.value || !portStateDraft.value) {
+    return;
+  }
+
+  const nextKey = portStateDraft.value.key.trim();
+  const nextName = portStateDraft.value.definition.name.trim() || nextKey;
+  if (!nextKey) {
+    portStateError.value = "State key cannot be empty.";
+    return;
+  }
+  if (props.stateSchema[nextKey]) {
+    portStateError.value = `State key '${nextKey}' already exists.`;
+    return;
+  }
+
+  emit("create-port-state", {
+    nodeId: props.nodeId,
+    side: activePortPickerSide.value,
+    field: {
+      key: nextKey,
+      definition: {
+        ...portStateDraft.value.definition,
+        name: nextName,
+      },
+    },
+  });
+  closePortPicker();
+}
+
+function handleAgentModelChange(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  const nextValue = target.value.trim();
+  if (!nextValue) {
+    return;
+  }
+  emitAgentConfigPatch(resolveAgentModelSelection(nextValue, trimmedGlobalTextModelRef.value));
+}
+
+function updateAgentThinkingMode(thinkingMode: AgentNode["config"]["thinkingMode"]) {
+  emitAgentConfigPatch({ thinkingMode });
+}
+
+function isAgentThinkingModeActive(thinkingMode: AgentNode["config"]["thinkingMode"]) {
+  return props.node.kind === "agent" && props.node.config.thinkingMode === thinkingMode;
+}
+
+function handleAgentTemperatureInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  const nextValue = target.value === "" ? DEFAULT_AGENT_TEMPERATURE : Number(target.value);
+  if (!Number.isFinite(nextValue)) {
+    return;
+  }
+  emitAgentConfigPatch({ temperature: normalizeAgentTemperature(nextValue) });
+}
+
+function handleInputValueInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLTextAreaElement)) {
+    return;
+  }
+  emitInputConfigPatch({ value: target.value });
+}
+
+function handleInputKnowledgeBaseChange(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  emitInputConfigPatch({ value: target.value });
+}
+
+function isInputTypeOptionActive(type: "text" | "file" | "knowledge_base") {
+  return inputStateType.value === type;
+}
+
+function updateInputBoundaryType(nextType: "text" | "file" | "knowledge_base") {
+  const stateKey = inputStateKey.value;
+  if (!stateKey || !isSwitchableInputBoundaryType(nextType)) {
+    return;
+  }
+  if (inputStateType.value === nextType) {
+    return;
+  }
+
+  emitInputStatePatch(stateKey, {
+    type: resolveStateTypeForInputBoundary(nextType),
+    value: defaultValueForStateType(resolveStateTypeForInputBoundary(nextType) as StateFieldType),
+  });
+  emitInputConfigPatch({
+    value: resolveNextInputValueForBoundaryType({
+      nextType,
+      currentType: inputStateType.value,
+      currentValue: props.node.kind === "input" ? props.node.config.value : "",
+      knowledgeBaseNames: props.knowledgeBases.map((knowledgeBase) => knowledgeBase.name),
+    }),
+  });
+}
+
+function openInputAssetPicker() {
+  inputAssetInputRef.value?.click();
+}
+
+function clearInputAsset() {
+  emitInputConfigPatch({ value: "" });
+}
+
+async function commitInputAssetFile(file: File | null) {
+  const stateKey = inputStateKey.value;
+  if (!file || !stateKey) {
+    return;
+  }
+
+  try {
+    const envelope = await createUploadedAssetEnvelope(file);
+    emitInputStatePatch(stateKey, {
+      type: resolveStateTypeForInputBoundary(envelope.detectedType),
+      value: defaultValueForStateType(resolveStateTypeForInputBoundary(envelope.detectedType) as StateFieldType),
+    });
+    emitInputConfigPatch({ value: JSON.stringify(envelope) });
+  } catch (error) {
+    console.error("Failed to read uploaded asset", error);
+  }
+}
+
+function handleInputAssetFileChange(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const file = target.files?.[0] ?? null;
+  void commitInputAssetFile(file);
+  target.value = "";
+}
+
+function handleInputAssetDrop(event: DragEvent) {
+  const file = event.dataTransfer?.files?.[0] ?? null;
+  void commitInputAssetFile(file);
+}
+
+function handleConditionLoopLimitInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  conditionLoopLimitDraft.value = target.value;
+}
+
+function commitConditionLoopLimit() {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+
+  const nextLoopLimit = parseConditionLoopLimitDraft(conditionLoopLimitDraft.value);
+  if (nextLoopLimit === null) {
+    conditionLoopLimitDraft.value = String(props.node.config.loopLimit ?? -1);
+    return;
+  }
+  if (nextLoopLimit === props.node.config.loopLimit) {
+    return;
+  }
+
+  emitConditionConfigPatch({ loopLimit: nextLoopLimit });
+}
+
+function handleConditionLoopLimitEnter(event: KeyboardEvent) {
+  const target = event.currentTarget;
+  if (target instanceof HTMLInputElement) {
+    target.blur();
+  }
+}
+
+function updateConditionRule(patch: Partial<ConditionNode["config"]["rule"]>) {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+  emitConditionConfigPatch({
+    rule: {
+      ...props.node.config.rule,
+      ...patch,
+    },
+  });
+}
+
+function handleConditionRuleSourceChange(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  updateConditionRule({ source: target.value });
+}
+
+function handleConditionRuleOperatorChange(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLSelectElement)) {
+    return;
+  }
+  updateConditionRule({ operator: target.value });
+}
+
+function handleConditionRuleValueInput(event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  updateConditionRule({ value: target.value });
+}
+
+function buildConditionBranchDrafts(node: ConditionNode) {
+  return Object.fromEntries(
+    node.config.branches.map((branchKey) => [
+      branchKey,
+      {
+        branchKey,
+        mappingText: listConditionBranchMappingKeys(node.config.branchMapping, branchKey).join(", "),
+      },
+    ]),
+  );
+}
+
+function handleConditionBranchKeyInput(currentKey: string, event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  conditionBranchDrafts.value = {
+    ...conditionBranchDrafts.value,
+    [currentKey]: {
+      branchKey: target.value,
+      mappingText: conditionBranchDrafts.value[currentKey]?.mappingText ?? "",
+    },
+  };
+}
+
+function handleConditionBranchMappingInput(currentKey: string, event: Event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement)) {
+    return;
+  }
+  conditionBranchDrafts.value = {
+    ...conditionBranchDrafts.value,
+    [currentKey]: {
+      branchKey: conditionBranchDrafts.value[currentKey]?.branchKey ?? currentKey,
+      mappingText: target.value,
+    },
+  };
+}
+
+function commitConditionBranch(currentKey: string) {
+  if (props.node.kind !== "condition") {
+    return;
+  }
+
+  const draft = conditionBranchDrafts.value[currentKey];
+  if (!draft) {
+    return;
+  }
+
+  const nextKey = draft.branchKey.trim();
+  if (!nextKey) {
+    conditionBranchDrafts.value = buildConditionBranchDrafts(props.node);
+    return;
+  }
+  if (nextKey !== currentKey && props.node.config.branches.includes(nextKey)) {
+    conditionBranchDrafts.value = buildConditionBranchDrafts(props.node);
+    return;
+  }
+
+  const currentMappingKeys = listConditionBranchMappingKeys(props.node.config.branchMapping, currentKey);
+  const nextMappingKeys = parseConditionBranchMappingDraft(draft.mappingText);
+  const branchChanged = nextKey !== currentKey;
+  const mappingChanged = JSON.stringify(currentMappingKeys) !== JSON.stringify(nextMappingKeys);
+
+  if (!branchChanged && !mappingChanged) {
+    return;
+  }
+
+  emitConditionBranchUpdate(currentKey, nextKey, nextMappingKeys);
+}
+
+function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
+  const target = event.currentTarget;
+  if (target instanceof HTMLInputElement) {
+    target.blur();
+  }
+}
 </script>
 
 <style scoped>
 .node-card {
-  width: 260px;
-  min-height: 160px;
-  border: 1px solid rgba(154, 52, 18, 0.16);
-  border-radius: 22px;
-  padding: 18px;
-  background: rgba(255, 252, 247, 0.96);
-  box-shadow: 0 18px 36px rgba(60, 41, 20, 0.08);
-  cursor: grab;
+  width: 460px;
+  min-height: 260px;
+  border: 1px solid rgba(154, 52, 18, 0.18);
+  border-radius: 28px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 250, 241, 0.98) 0%, rgba(248, 237, 219, 0.96) 100%);
+  box-shadow: 0 22px 40px rgba(60, 41, 20, 0.08);
   user-select: none;
 }
 
 .node-card--selected {
   border-color: rgba(154, 52, 18, 0.32);
-  box-shadow: 0 18px 36px rgba(154, 52, 18, 0.16);
+  box-shadow: 0 22px 40px rgba(154, 52, 18, 0.14);
+}
+
+.node-card__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 24px 8px;
 }
 
 .node-card__eyebrow {
-  font-size: 0.7rem;
+  border: 1px solid rgba(154, 52, 18, 0.18);
+  border-radius: 999px;
+  padding: 4px 14px;
+  font-size: 0.86rem;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(154, 52, 18, 0.78);
+  color: rgba(154, 52, 18, 0.84);
+  background: rgba(255, 255, 255, 0.78);
 }
 
 .node-card__title {
-  margin: 8px 0 10px;
-  font-size: 1.25rem;
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.15;
+  color: #1f2937;
 }
 
 .node-card__description {
   margin: 0;
-  min-height: 44px;
+  padding: 0 24px 20px;
+  font-size: 0.98rem;
   line-height: 1.55;
   color: rgba(60, 41, 20, 0.74);
 }
 
-.node-card__stats {
-  margin: 18px 0 0;
+.node-card__state-summary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+  gap: 10px;
+  padding: 0 24px 18px;
+}
+
+.node-card__state-group {
+  display: grid;
+  gap: 8px;
+}
+
+.node-card__state-group-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.72);
+}
+
+.node-card__state-token-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.node-card__state-token {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  padding: 0 10px;
+  font-size: 0.82rem;
+  color: rgba(60, 41, 20, 0.82);
+  background: rgba(255, 250, 241, 0.92);
+}
+
+.node-card__state-token--read {
+  border-color: rgba(37, 99, 235, 0.18);
+  color: rgba(37, 99, 235, 0.9);
+  background: rgba(239, 246, 255, 0.9);
+}
+
+.node-card__state-token--write {
+  border-color: rgba(217, 119, 6, 0.18);
+  color: rgba(217, 119, 6, 0.92);
+  background: rgba(255, 247, 237, 0.94);
+}
+
+.node-card__body {
+  border-top: 1px solid rgba(154, 52, 18, 0.14);
+  padding: 18px 24px 24px;
+  display: grid;
+  gap: 14px;
+}
+
+.node-card__port-row,
+.node-card__port-grid {
+  display: grid;
+  align-items: center;
+}
+
+.node-card__port-row--single {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.node-card__port-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.node-card__port-column {
+  display: grid;
+  gap: 6px;
+}
+
+.node-card__port-column--right {
+  text-align: right;
+}
+
+.node-card__port-stack {
+  display: grid;
+  gap: 3px;
+}
+
+.node-card__port-stack--right {
+  justify-items: end;
+}
+
+.node-card__port-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-card__port-spacer {
+  min-height: 1px;
+}
+
+.node-card__port-label {
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-card__port-meta {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.node-card__port-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  padding: 0 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.84);
+  background: rgba(255, 248, 240, 0.9);
+}
+
+.node-card__chip-row,
+.node-card__action-row,
+.node-card__output-toolbar,
+.node-card__condition-topline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.node-card__chip-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.node-card__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  border-radius: 22px;
+  padding: 0 18px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 1rem;
+  color: #3c2914;
+}
+
+.node-card__chip--muted {
+  color: rgba(60, 41, 20, 0.72);
+  background: rgba(250, 243, 231, 0.9);
+}
+
+.node-card__action-row {
+  justify-content: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.node-card__action-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 8px 16px;
+  border: 1px dashed rgba(154, 52, 18, 0.24);
+  font-size: 0.92rem;
+  font-weight: 500;
+}
+
+.node-card__action-pill-button {
+  cursor: pointer;
+}
+
+.node-card__action-pill--skill {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.28);
+  background: rgba(239, 246, 255, 0.84);
+}
+
+.node-card__action-pill--input {
+  color: #16a34a;
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(220, 252, 231, 0.72);
+}
+
+.node-card__action-pill--output {
+  color: #d97706;
+  border-color: rgba(217, 119, 6, 0.3);
+  background: rgba(254, 243, 199, 0.72);
+}
+
+.node-card__action-pill--disabled {
+  opacity: 0.58;
+}
+
+.node-card__skill-picker {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 20px;
+  padding: 14px;
+  background: rgba(239, 246, 255, 0.56);
+}
+
+.node-card__skill-picker-title {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-card__skill-picker-copy {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: rgba(60, 41, 20, 0.72);
+}
+
+.node-card__skill-panel-message {
+  border-radius: 16px;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.72);
+}
+
+.node-card__skill-panel-message--error {
+  border-color: rgba(185, 28, 28, 0.18);
+  background: rgba(254, 242, 242, 0.92);
+  color: rgb(153, 27, 27);
+}
+
+.node-card__skill-option {
+  display: grid;
+  gap: 6px;
+  border-radius: 16px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.node-card__skill-option-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-card__skill-option-copy {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.72);
+}
+
+.node-card__skill-option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+
+.node-card__skill-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.node-card__skill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  background: rgba(239, 246, 255, 0.88);
+  padding: 6px 10px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #2563eb;
+}
+
+.node-card__skill-badge-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+}
+
+.node-card__port-picker {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 20px;
+  padding: 14px;
+  background: rgba(255, 252, 247, 0.94);
+}
+
+.node-card__port-picker-title {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-card__port-picker-form {
+  display: grid;
   gap: 10px;
 }
 
-.node-card__stats div {
-  border: 1px solid rgba(154, 52, 18, 0.12);
-  border-radius: 16px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.8);
+.node-card__port-picker-hint {
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: rgba(60, 41, 20, 0.68);
 }
 
-.node-card__stats dt {
-  margin: 0;
+.node-card__port-picker-hint--error {
+  color: rgb(153, 27, 27);
+}
+
+.node-card__port-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.node-card__port-picker-button {
+  min-height: 32px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: rgba(60, 41, 20, 0.78);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.node-card__port-picker-button--primary {
+  border-color: rgba(21, 128, 61, 0.18);
+  background: rgba(240, 253, 244, 0.92);
+  color: #15803d;
+}
+
+.node-card__port-create-option,
+.node-card__port-state-option {
+  display: grid;
+  gap: 4px;
+  border-radius: 16px;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.84);
+  text-align: left;
+  cursor: pointer;
+}
+
+.node-card__port-create-label,
+.node-card__port-state-type {
   font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.88);
+}
+
+.node-card__port-create-title,
+.node-card__port-state-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-card__port-state-key {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.68);
+}
+
+.node-card__surface {
+  min-height: 120px;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  border-radius: 24px;
+  padding: 18px 20px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1f2937;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.node-card__surface--tall {
+  min-height: 180px;
+}
+
+.node-card__surface--output {
+  display: grid;
+  gap: 14px;
+}
+
+.node-card__input-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.node-card__input-upload {
+  display: grid;
+  gap: 10px;
+}
+
+.node-card__input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.node-card__input-lock {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.68);
+}
+
+.node-card__input-select {
+  min-height: 48px;
+}
+
+.node-card__input-meta {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.7);
+}
+
+.node-card__asset-dropzone {
+  display: grid;
+  min-height: 176px;
+  place-items: center;
+  gap: 8px;
+  border: 1px dashed rgba(154, 52, 18, 0.24);
+  border-radius: 24px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.84);
+  color: #3c2914;
+  text-align: center;
+  cursor: pointer;
+}
+
+.node-card__asset-dropzone-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.node-card__asset-dropzone-copy {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.68);
+}
+
+.node-card__asset-preview-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  border-radius: 24px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.88);
+}
+
+.node-card__asset-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.node-card__asset-action {
+  min-height: 30px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(255, 250, 241, 0.92);
+  color: rgba(60, 41, 20, 0.78);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.node-card__asset-action--danger {
+  border-color: rgba(185, 28, 28, 0.2);
+  color: rgb(153, 27, 27);
+  background: rgba(254, 242, 242, 0.94);
+}
+
+.node-card__asset-media-shell {
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  background: rgba(248, 242, 234, 0.84);
+}
+
+.node-card__asset-media-shell--audio {
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.node-card__asset-image,
+.node-card__asset-video {
+  display: block;
+  max-height: 240px;
+  width: 100%;
+  object-fit: contain;
+}
+
+.node-card__asset-audio {
+  width: 100%;
+}
+
+.node-card__asset-file {
+  display: grid;
+  gap: 8px;
+}
+
+.node-card__asset-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.node-card__asset-summary {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: rgba(60, 41, 20, 0.68);
+}
+
+.node-card__asset-text {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  border-radius: 16px;
+  background: rgba(248, 242, 234, 0.84);
+  padding: 14px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #1f2937;
+}
+
+.node-card__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.node-card__surface-textarea {
+  resize: vertical;
+  font: inherit;
+}
+
+.node-card__surface-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.88rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(154, 52, 18, 0.7);
+  color: rgba(154, 52, 18, 0.82);
 }
 
-.node-card__stats dd {
-  margin: 8px 0 0;
+.node-card__preview {
+  min-height: 146px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: rgba(248, 242, 234, 0.84);
+  padding: 18px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.node-card__runtime-note {
+  margin-top: 0.85rem;
+  border-radius: 14px;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: linear-gradient(180deg, rgba(255, 245, 245, 0.98), rgba(254, 242, 242, 0.94));
+}
+
+.node-card__runtime-note--danger {
+  color: #991b1b;
+}
+
+.node-card__runtime-note-label {
+  display: inline-flex;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(153, 27, 27, 0.72);
+}
+
+.node-card__runtime-note-text {
+  margin-top: 0.35rem;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.node-card__persist {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 1rem;
+  color: rgba(60, 41, 20, 0.8);
+}
+
+.node-card__persist-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.node-card__toggle {
+  width: 56px;
+  height: 32px;
+  border-radius: 999px;
+  background: rgba(154, 52, 18, 0.18);
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.node-card__toggle--on {
+  justify-content: flex-end;
+  background: rgba(154, 52, 18, 0.72);
+}
+
+.node-card__toggle-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.node-card__advanced {
+  display: flex;
+  justify-content: center;
+  font-size: 0.94rem;
+  letter-spacing: 0.12em;
+  color: rgba(60, 41, 20, 0.8);
+}
+
+.node-card__advanced-panel {
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 12px 14px;
+}
+
+.node-card__advanced-summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(60, 41, 20, 0.8);
+}
+
+.node-card__advanced-summary::-webkit-details-marker {
+  display: none;
+}
+
+.node-card__advanced-content {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.node-card__control-row {
+  display: grid;
+  gap: 8px;
+}
+
+.node-card__control-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.74);
+}
+
+.node-card__control-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.node-card__control-button {
+  min-height: 30px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.8);
+  color: rgba(60, 41, 20, 0.74);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.node-card__control-button--active {
+  border-color: rgba(154, 52, 18, 0.34);
+  background: rgba(154, 52, 18, 0.12);
+  color: rgba(154, 52, 18, 0.96);
+}
+
+.node-card__control-input {
+  min-height: 36px;
+  width: 100%;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 14px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1f2937;
+  font-size: 0.82rem;
+}
+
+.node-card__control-select {
+  min-height: 36px;
+  width: 100%;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 14px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1f2937;
+  font-size: 0.82rem;
+}
+
+.node-card__control-textarea {
+  min-height: 112px;
+  width: 100%;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1f2937;
+  font: inherit;
+  resize: vertical;
+}
+
+.node-card__condition-editor {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.node-card__condition-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.node-card__loop-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-card__loop-label {
+  font-size: 0.76rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.74);
+}
+
+.node-card__loop-input {
+  min-height: 36px;
+  width: 88px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 14px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #1f2937;
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.node-card__condition-rule {
+  font-size: 1rem;
+  color: #1f2937;
+}
+
+.node-card__branch-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.node-card__branch-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.35fr) auto;
+  gap: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  padding: 12px;
+  background: rgba(255, 248, 240, 0.84);
+}
+
+.node-card__branch-field {
+  display: grid;
+  gap: 6px;
+}
+
+.node-card__branch-field-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.72);
+}
+
+.node-card__branch-input {
+  min-height: 38px;
+  width: 100%;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 12px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: #1f2937;
+  font-size: 0.84rem;
+}
+
+.node-card__branch-input--mapping {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+.node-card__branch-remove {
+  align-self: end;
+  min-height: 38px;
+  border: 1px solid rgba(185, 28, 28, 0.16);
+  border-radius: 12px;
+  padding: 0 12px;
+  background: rgba(254, 242, 242, 0.9);
+  color: rgba(185, 28, 28, 0.9);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.node-card__branch-route {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  min-height: 34px;
+  border: 1px solid rgba(124, 58, 237, 0.16);
+  border-radius: 999px;
+  padding: 0 12px;
+  background: rgba(245, 243, 255, 0.92);
+  color: rgba(91, 33, 182, 0.9);
+}
+
+.node-card__branch-route-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.node-card__branch-route-target {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.node-card__branch-route--unrouted {
+  border-color: rgba(120, 53, 15, 0.14);
+  background: rgba(255, 251, 235, 0.94);
+  color: rgba(120, 53, 15, 0.72);
+}
+
+.node-card__branch-add {
+  min-height: 40px;
+  justify-self: end;
+  border: 1px dashed rgba(154, 52, 18, 0.24);
+  border-radius: 999px;
+  padding: 0 16px;
+  background: rgba(255, 252, 245, 0.92);
+  color: rgba(154, 52, 18, 0.9);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 </style>
