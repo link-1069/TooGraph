@@ -1,6 +1,7 @@
 import type { GraphDocument, GraphNode, GraphPayload } from "../../types/node-system.ts";
 import { buildAnchorModel } from "../anchors/anchorModel.ts";
 import { placeAnchors, type NodeFrame } from "../anchors/anchorPlacement.ts";
+import { buildConnectorCurvePath, resolveConnectorCurveLabelPoint } from "./connectionCurvePath.ts";
 import { buildRouteEdgePath, resolveRouteEdgeSourceOffset } from "./routeEdgePath.ts";
 
 export type ProjectedCanvasEdge = {
@@ -9,6 +10,11 @@ export type ProjectedCanvasEdge = {
   source: string;
   target: string;
   path: string;
+  color?: string;
+  label?: string;
+  labelColor?: string;
+  labelX?: number;
+  labelY?: number;
   state?: string;
   branch?: string;
 };
@@ -19,6 +25,8 @@ export type ProjectedCanvasAnchor = {
   kind: "flow-in" | "flow-out" | "state-in" | "state-out" | "route-out";
   x: number;
   y: number;
+  side: "left" | "right" | "top" | "bottom";
+  color?: string;
   stateKey?: string;
   branch?: string;
 };
@@ -85,11 +93,29 @@ export function projectCanvasEdges(document: GraphPayload | GraphDocument): Proj
       if (!sourceAnchor || !targetAnchor) {
         return null;
       }
+      const labelPoint = resolveConnectorCurveLabelPoint(
+        {
+          sourceX: sourceAnchor.x,
+          sourceY: sourceAnchor.y,
+          targetX: targetAnchor.x,
+          targetY: targetAnchor.y,
+          sourceSide: "right",
+          targetSide: "left",
+        },
+        0.5,
+        34,
+      );
+
       return {
         id: `data:${relation.source}:${relation.state}->${relation.target}`,
         kind: "data" as const,
         source: relation.source,
         target: relation.target,
+        color: document.state_schema[relation.state]?.color ?? undefined,
+        label: relation.state,
+        labelColor: document.state_schema[relation.state]?.color ?? undefined,
+        labelX: labelPoint.x,
+        labelY: labelPoint.y,
         state: relation.state,
         path: buildFlowPath(sourceAnchor.x, sourceAnchor.y, targetAnchor.x, targetAnchor.y),
       };
@@ -110,6 +136,7 @@ export function projectCanvasAnchors(document: GraphPayload | GraphDocument): Pr
             kind: "flow-in" as const,
             x: placement.flowIn.x,
             y: placement.flowIn.y,
+            side: placement.flowIn.side,
           },
         ]
       : []),
@@ -121,6 +148,7 @@ export function projectCanvasAnchors(document: GraphPayload | GraphDocument): Pr
             kind: "flow-out" as const,
             x: placement.flowOut.x,
             y: placement.flowOut.y,
+            side: placement.flowOut.side,
           },
         ]
       : []),
@@ -130,6 +158,8 @@ export function projectCanvasAnchors(document: GraphPayload | GraphDocument): Pr
       kind: "state-in" as const,
       x: anchor.x,
       y: anchor.y,
+      side: anchor.side,
+      color: document.state_schema[anchor.stateKey ?? ""]?.color ?? undefined,
       stateKey: anchor.stateKey,
     })),
     ...placement.stateOutputs.map((anchor) => ({
@@ -138,6 +168,8 @@ export function projectCanvasAnchors(document: GraphPayload | GraphDocument): Pr
       kind: "state-out" as const,
       x: anchor.x,
       y: anchor.y,
+      side: anchor.side,
+      color: document.state_schema[anchor.stateKey ?? ""]?.color ?? undefined,
       stateKey: anchor.stateKey,
     })),
     ...placement.routeOutputs.map((anchor) => ({
@@ -146,6 +178,7 @@ export function projectCanvasAnchors(document: GraphPayload | GraphDocument): Pr
       kind: "route-out" as const,
       x: anchor.x,
       y: anchor.y,
+      side: anchor.side,
       branch: anchor.branch,
     })),
   ]);
@@ -173,8 +206,14 @@ function buildNodeFrame(node: GraphNode): NodeFrame {
 }
 
 function buildFlowPath(startX: number, startY: number, endX: number, endY: number) {
-  const midX = startX + (endX - startX) / 2;
-  return `M ${startX} ${startY} L ${midX} ${startY} L ${midX} ${endY} L ${endX} ${endY}`;
+  return buildConnectorCurvePath({
+    sourceX: startX,
+    sourceY: startY,
+    targetX: endX,
+    targetY: endY,
+    sourceSide: "right",
+    targetSide: "left",
+  });
 }
 
 type ProjectedDataRelation = {

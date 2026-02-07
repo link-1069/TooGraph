@@ -10,36 +10,45 @@
       />
     </div>
 
-    <template v-else>
-      <div class="editor-workspace-shell__chrome">
-        <EditorTabBar
-          :tabs="workspace.tabs"
-          :active-tab-id="workspace.activeTabId"
-          :templates="templates"
-          :graphs="graphs"
-          :active-graph-name="activeTabTitle"
-          :active-state-count="activeStateCount"
-          :is-state-panel-open="activeStatePanelOpen"
-          @activate-tab="activateTab"
-          @close-tab="requestCloseTab"
-          @create-new="openNewTab(null)"
-          @create-from-template="openNewTab"
-          @open-graph="openExistingGraph"
-          @rename-active-graph="renameActiveGraph"
-          @toggle-state-panel="toggleActiveStatePanel"
-          @save-active-graph="saveActiveGraph"
-          @validate-active-graph="validateActiveGraph"
-          @run-active-graph="runActiveGraph"
-        />
-      </div>
+    <TabsRoot
+      v-else
+      as-child
+      :model-value="workspace.activeTabId ?? undefined"
+      activation-mode="manual"
+      :unmount-on-hide="false"
+      @update:model-value="handleWorkspaceTabsValueChange"
+    >
+      <div class="editor-workspace-shell__workspace">
+        <div class="editor-workspace-shell__chrome">
+          <EditorTabBar
+            :tabs="workspace.tabs"
+            :active-tab-id="workspace.activeTabId"
+            :templates="templates"
+            :graphs="graphs"
+            :active-state-count="activeStateCount"
+            :is-state-panel-open="activeStatePanelOpen"
+            @activate-tab="activateTab"
+            @close-tab="requestCloseTab"
+            @reorder-tab="reorderTab"
+            @create-new="openNewTab(null)"
+            @create-from-template="openNewTab"
+            @open-graph="openExistingGraph"
+            @rename-active-graph="renameActiveGraph"
+            @toggle-state-panel="toggleActiveStatePanel"
+            @save-active-graph="saveActiveGraph"
+            @validate-active-graph="validateActiveGraph"
+            @run-active-graph="runActiveGraph"
+          />
+        </div>
 
-      <div class="editor-workspace-shell__body">
-        <div
-          v-for="tab in workspace.tabs"
-          :key="tab.tabId"
-          class="editor-workspace-shell__editor"
-          :class="{ 'editor-workspace-shell__editor--active': tab.tabId === workspace.activeTabId }"
-        >
+        <div class="editor-workspace-shell__body">
+          <TabsContent
+            v-for="tab in workspace.tabs"
+            :key="tab.tabId"
+            :value="tab.tabId"
+            as-child
+          >
+            <div class="editor-workspace-shell__editor">
           <div class="editor-workspace-shell__editor-grid" :style="editorGridStyle(tab.tabId)">
             <div class="editor-workspace-shell__editor-main">
               <div v-if="loadingByTabId[tab.tabId]" class="editor-workspace-shell__status-card">
@@ -79,6 +88,7 @@
                 @remove-condition-branch="removeConditionBranchForTab(tab.tabId, $event.nodeId, $event.branchKey)"
                 @bind-port-state="bindNodePortStateForTab(tab.tabId, $event.nodeId, $event.side, $event.stateKey)"
                 @create-port-state="createNodePortStateForTab(tab.tabId, $event.nodeId, $event.side, $event.field)"
+                @connect-state="connectStateBindingForTab(tab.tabId, $event.sourceNodeId, $event.sourceStateKey, $event.targetNodeId, $event.targetStateKey)"
                 @connect-flow="connectFlowNodesForTab(tab.tabId, $event.sourceNodeId, $event.targetNodeId)"
                 @connect-route="connectConditionRouteForTab(tab.tabId, $event.sourceNodeId, $event.branchKey, $event.targetNodeId)"
                 @reconnect-flow="reconnectFlowEdgeForTab(tab.tabId, $event.sourceNodeId, $event.currentTargetNodeId, $event.nextTargetNodeId)"
@@ -130,9 +140,11 @@
               @remove-writer="removeStateWriterBinding(tab.tabId, $event.stateKey, $event.nodeId)"
             />
           </div>
+            </div>
+          </TabsContent>
         </div>
       </div>
-    </template>
+    </TabsRoot>
 
     <EditorCloseConfirmDialog
       :tab="pendingCloseTab"
@@ -147,6 +159,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { TabsContent, TabsRoot } from "reka-ui";
 import { useRoute, useRouter } from "vue-router";
 
 import { fetchKnowledgeBases } from "@/api/knowledge";
@@ -163,6 +176,7 @@ import {
   cloneGraphDocument,
   connectConditionRouteInDocument,
   connectFlowNodesInDocument,
+  connectStateBindingInDocument,
   createDraftFromTemplate,
   createEmptyDraftGraph,
   reconnectConditionRouteInDocument,
@@ -183,6 +197,7 @@ import {
   createUnsavedWorkspaceTab,
   ensureSavedGraphTab,
   readPersistedEditorWorkspace,
+  reorderWorkspaceTab,
   resolveEditorUrl,
   resolveWorkspaceTabUrl,
   writePersistedEditorWorkspace,
@@ -252,7 +267,6 @@ const activeTab = computed(() => workspace.value.tabs.find((tab) => tab.tabId ==
 const pendingCloseTab = computed(() =>
   pendingCloseTabId.value ? workspace.value.tabs.find((tab) => tab.tabId === pendingCloseTabId.value) ?? null : null,
 );
-const activeTabTitle = computed(() => activeTab.value?.title ?? "Untitled Graph");
 const activeStateCount = computed(() => {
   const tab = activeTab.value;
   if (!tab) {
@@ -267,6 +281,18 @@ const activeStateCount = computed(() => {
 const activeStatePanelOpen = computed(() => {
   const tab = activeTab.value;
   return tab ? statePanelOpenByTabId.value[tab.tabId] ?? false : false;
+});
+const activeTabRouteSignature = computed(() => {
+  const tab = activeTab.value;
+  if (!tab) {
+    return null;
+  }
+
+  if (tab.graphId) {
+    return `existing:${tab.graphId}`;
+  }
+
+  return `new:${tab.templateId ?? tab.defaultTemplateId ?? ""}`;
 });
 const routeSignature = computed(() => {
   if (props.routeMode === "existing") {
@@ -409,6 +435,7 @@ function applyCurrentRouteInstruction() {
     routeMode: props.routeMode,
     routeGraphId: props.routeGraphId ?? null,
     defaultTemplateId: props.defaultTemplateId ?? null,
+    activeTabRouteSignature: activeTabRouteSignature.value,
     routeSignature: routeSignature.value,
     handledRouteSignature: handledRouteSignature.value,
   });
@@ -629,6 +656,16 @@ function activateTab(tabId: string) {
   syncRouteToTab(tab);
 }
 
+function handleWorkspaceTabsValueChange(value: string | number) {
+  if (typeof value === "string") {
+    activateTab(value);
+  }
+}
+
+function reorderTab(sourceTabId: string, targetTabId: string, placement: "before" | "after") {
+  updateWorkspace(reorderWorkspaceTab(workspace.value, sourceTabId, targetTabId, placement));
+}
+
 function finalizeTabClose(tabId: string) {
   const transition = closeWorkspaceTabTransition(workspace.value, tabId);
   updateWorkspace(transition.workspace);
@@ -841,6 +878,27 @@ function connectFlowNodesForTab(tabId: string, sourceNodeId: string, targetNodeI
   }
 
   const nextDocument = connectFlowNodesInDocument(document, sourceNodeId, targetNodeId);
+  if (nextDocument === document) {
+    return;
+  }
+
+  markDocumentDirty(tabId, nextDocument);
+  focusNodeForTab(tabId, targetNodeId);
+}
+
+function connectStateBindingForTab(
+  tabId: string,
+  sourceNodeId: string,
+  sourceStateKey: string,
+  targetNodeId: string,
+  targetStateKey: string,
+) {
+  const document = documentsByTabId.value[tabId];
+  if (!document) {
+    return;
+  }
+
+  const nextDocument = connectStateBindingInDocument(document, sourceNodeId, sourceStateKey, targetNodeId, targetStateKey);
   if (nextDocument === document) {
     return;
   }
@@ -1399,25 +1457,24 @@ onMounted(() => {
   padding: 0;
 }
 
+.editor-workspace-shell__workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .editor-workspace-shell__body {
-  position: relative;
+  display: flex;
   flex: 1;
   min-height: 0;
   padding: 0;
 }
 
 .editor-workspace-shell__editor {
-  position: absolute;
-  inset: 0;
-  visibility: hidden;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.editor-workspace-shell__editor--active {
-  visibility: visible;
-  pointer-events: auto;
-  opacity: 1;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
 }
 
 .editor-workspace-shell__editor-grid {
