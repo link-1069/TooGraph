@@ -2,19 +2,31 @@
   <section
     ref="canvasRef"
     class="editor-canvas"
+    :class="{
+      'editor-canvas--connecting': Boolean(pendingConnection),
+      'editor-canvas--panning': viewport.isPanning.value,
+    }"
     :style="canvasSurfaceStyle"
     tabindex="0"
+    @dblclick="handleCanvasDoubleClick"
     @pointerdown="handleCanvasPointerDown"
     @pointermove="handleCanvasPointerMove"
     @pointerup="handleCanvasPointerUp"
-    @pointerleave="handleCanvasPointerUp"
+    @pointercancel="handleCanvasPointerUp"
     @keydown.delete.prevent="handleSelectedEdgeDelete"
     @keydown.backspace.prevent="handleSelectedEdgeDelete"
     @wheel.prevent="handleWheel"
+    @dragover.prevent="handleCanvasDragOver"
+    @drop.prevent="handleCanvasDrop"
   >
     <div class="editor-canvas__viewport" :style="viewportStyle">
       <div v-if="connectionHint" class="editor-canvas__connect-hint">
         {{ connectionHint }}
+      </div>
+      <div v-if="nodeEntries.length === 0" class="editor-canvas__empty-state">
+        <div class="editor-canvas__empty-eyebrow">Empty Canvas</div>
+        <div class="editor-canvas__empty-title">Double click to create your first node</div>
+        <div class="editor-canvas__empty-copy">Drag from an output handle into empty space to get type-aware preset suggestions.</div>
       </div>
       <svg class="editor-canvas__edges" viewBox="0 0 4000 3000" preserveAspectRatio="none" aria-hidden="true">
         <defs>
@@ -100,6 +112,8 @@
           :selected="selection.selectedNodeId.value === nodeId"
           @update-input-config="emit('update-input-config', $event)"
           @update-input-state="emit('update-input-state', $event)"
+          @rename-state="emit('rename-state', $event)"
+          @update-state="emit('update-state', $event)"
           @update-agent-config="emit('update-agent-config', $event)"
           @update-condition-config="emit('update-condition-config', $event)"
           @update-condition-branch="emit('update-condition-branch', $event)"
@@ -107,6 +121,8 @@
           @remove-condition-branch="emit('remove-condition-branch', $event)"
           @bind-port-state="emit('bind-port-state', $event)"
           @create-port-state="emit('create-port-state', $event)"
+          @delete-node="emit('delete-node', $event)"
+          @save-node-preset="emit('save-node-preset', $event)"
           @update-output-config="emit('update-output-config', $event)"
         />
       </div>
@@ -126,7 +142,7 @@
           }"
           @pointerenter="setHoveredFlowHandleNode(anchor.nodeId)"
           @pointerleave="clearHoveredFlowHandleNode(anchor.nodeId)"
-          @pointerdown.stop="handleAnchorPointerDown(anchor)"
+          @pointerdown.prevent.stop="handleAnchorPointerDown(anchor)"
         />
       </div>
       <svg class="editor-canvas__anchors" viewBox="0 0 4000 3000" preserveAspectRatio="none" aria-hidden="true">
@@ -144,7 +160,7 @@
             'editor-canvas__anchor--connect-target': eligibleTargetAnchorIds.has(anchor.id),
           }"
           r="5.5"
-          @pointerdown.stop="handleAnchorPointerDown(anchor)"
+          @pointerdown.prevent.stop="handleAnchorPointerDown(anchor)"
         />
       </svg>
     </div>
@@ -195,6 +211,8 @@ const emit = defineEmits<{
   (event: "select-node", nodeId: string | null): void;
   (event: "update-input-config", payload: { nodeId: string; patch: Partial<InputNode["config"]> }): void;
   (event: "update-input-state", payload: { stateKey: string; patch: Partial<StateDefinition> }): void;
+  (event: "rename-state", payload: { currentKey: string; nextKey: string }): void;
+  (event: "update-state", payload: { stateKey: string; patch: Partial<StateDefinition> }): void;
   (event: "update-agent-config", payload: { nodeId: string; patch: Partial<AgentNode["config"]> }): void;
   (event: "update-condition-config", payload: { nodeId: string; patch: Partial<ConditionNode["config"]> }): void;
   (event: "update-condition-branch", payload: { nodeId: string; currentKey: string; nextKey: string; mappingKeys: string[] }): void;
@@ -202,6 +220,8 @@ const emit = defineEmits<{
   (event: "remove-condition-branch", payload: { nodeId: string; branchKey: string }): void;
   (event: "bind-port-state", payload: { nodeId: string; side: "input" | "output"; stateKey: string }): void;
   (event: "create-port-state", payload: { nodeId: string; side: "input" | "output"; field: { key: string; definition: StateDefinition } }): void;
+  (event: "delete-node", payload: { nodeId: string }): void;
+  (event: "save-node-preset", payload: { nodeId: string }): void;
   (event: "update-output-config", payload: { nodeId: string; patch: Partial<OutputNode["config"]> }): void;
   (event: "connect-flow", payload: { sourceNodeId: string; targetNodeId: string }): void;
   (event: "connect-state", payload: { sourceNodeId: string; sourceStateKey: string; targetNodeId: string; targetStateKey: string }): void;
@@ -210,6 +230,8 @@ const emit = defineEmits<{
   (event: "reconnect-route", payload: { sourceNodeId: string; branchKey: string; nextTargetNodeId: string }): void;
   (event: "remove-flow", payload: { sourceNodeId: string; targetNodeId: string }): void;
   (event: "remove-route", payload: { sourceNodeId: string; branchKey: string }): void;
+  (event: "open-node-creation-menu", payload: { position: GraphPosition; sourceNodeId?: string; sourceAnchorKind?: "flow-out" | "route-out" | "state-out"; sourceBranchKey?: string; sourceStateKey?: string; sourceValueType?: string | null; clientX: number; clientY: number }): void;
+  (event: "create-node-from-file", payload: { file: File; position: GraphPosition; clientX: number; clientY: number }): void;
 }>();
 
 const canvasRef = ref<HTMLElement | null>(null);
@@ -630,6 +652,9 @@ function roundMeasuredOffset(value: number) {
 
 function handleCanvasPointerDown(event: PointerEvent) {
   canvasRef.value?.focus();
+  event.preventDefault();
+  window.getSelection()?.removeAllRanges();
+  canvasRef.value?.setPointerCapture(event.pointerId);
   pendingConnection.value = null;
   pendingConnectionPoint.value = null;
   selectedEdgeId.value = null;
@@ -657,10 +682,57 @@ function handleCanvasPointerMove(event: PointerEvent) {
 }
 
 function handleCanvasPointerUp(event: PointerEvent) {
+  if (canvasRef.value?.hasPointerCapture(event.pointerId)) {
+    canvasRef.value.releasePointerCapture(event.pointerId);
+  }
+  if (activeConnection.value) {
+    openCreationMenuFromPendingConnection(event);
+  }
   if (nodeDrag.value && nodeDrag.value.pointerId === event.pointerId) {
     nodeDrag.value = null;
   }
   viewport.endPan(event);
+}
+
+function handleCanvasDoubleClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  if (
+    target?.closest(
+      ".editor-canvas__node, .node-card, button, input, textarea, select, .el-input, .el-select, .el-switch",
+    )
+  ) {
+    return;
+  }
+
+  const position = resolveCanvasPoint(event);
+  emit("open-node-creation-menu", {
+    position,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+}
+
+function handleCanvasDragOver(event: DragEvent) {
+  event.dataTransfer!.dropEffect = event.dataTransfer?.files?.length ? "copy" : "none";
+}
+
+function handleCanvasDrop(event: DragEvent) {
+  const target = event.target as HTMLElement | null;
+  if (target?.closest(".editor-canvas__node, .node-card")) {
+    return;
+  }
+
+  const file = event.dataTransfer?.files?.[0] ?? null;
+  if (!file) {
+    return;
+  }
+
+  emit("create-node-from-file", {
+    file,
+    position: resolveCanvasPoint(event),
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
 }
 
 function handleNodePointerDown(nodeId: string, event: PointerEvent) {
@@ -752,6 +824,7 @@ function handleAnchorPointerDown(anchor: ProjectedCanvasAnchor) {
     return;
   }
 
+  window.getSelection()?.removeAllRanges();
   const nextPendingConnection = createPendingConnection(anchor);
   if (!nextPendingConnection) {
     return;
@@ -766,6 +839,35 @@ function handleAnchorPointerDown(anchor: ProjectedCanvasAnchor) {
 
   pendingConnection.value = nextPendingConnection;
   pendingConnectionPoint.value = { x: anchor.x, y: anchor.y };
+}
+
+function openCreationMenuFromPendingConnection(event: PointerEvent) {
+  if (!activeConnection.value) {
+    return;
+  }
+  const isStateCreationSource = activeConnection.value.sourceKind === "state-out";
+  const isFlowCreationSource = activeConnection.value.sourceKind === "flow-out";
+  const isRouteCreationSource = activeConnection.value.sourceKind === "route-out";
+  if (!isStateCreationSource && !isFlowCreationSource && !isRouteCreationSource) {
+    return;
+  }
+
+  emit("open-node-creation-menu", {
+    position: resolveCanvasPoint(event),
+    sourceNodeId: activeConnection.value.sourceNodeId,
+    sourceAnchorKind: activeConnection.value.sourceKind,
+    sourceBranchKey: activeConnection.value.branchKey,
+    sourceStateKey: activeConnection.value.sourceStateKey,
+    sourceValueType: activeConnection.value.sourceStateKey
+      ? props.document.state_schema[activeConnection.value.sourceStateKey]?.type ?? null
+      : null,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+
+  pendingConnection.value = null;
+  pendingConnectionPoint.value = null;
+  selectedEdgeId.value = null;
 }
 
 function focusNode(nodeId: string) {
@@ -912,7 +1014,7 @@ function handleSelectedEdgeDelete() {
   pendingConnectionPoint.value = null;
 }
 
-function resolveCanvasPoint(event: PointerEvent) {
+function resolveCanvasPoint(event: { clientX: number; clientY: number }) {
   const canvas = canvasRef.value;
   if (!canvas) {
     return pendingConnectionPoint.value ?? { x: 0, y: 0 };
@@ -970,6 +1072,18 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
   outline: none;
 }
 
+.editor-canvas--connecting,
+.editor-canvas--connecting * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.editor-canvas--panning,
+.editor-canvas--panning * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .editor-canvas__viewport {
   position: absolute;
   inset: 0;
@@ -990,6 +1104,45 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
   font-weight: 600;
   letter-spacing: 0.01em;
   box-shadow: 0 12px 28px rgba(120, 53, 15, 0.12);
+}
+
+.editor-canvas__empty-state {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.editor-canvas__empty-state > * {
+  pointer-events: none;
+}
+
+.editor-canvas__empty-eyebrow,
+.editor-canvas__empty-title,
+.editor-canvas__empty-copy {
+  text-align: center;
+}
+
+.editor-canvas__empty-eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.78);
+}
+
+.editor-canvas__empty-title {
+  margin-top: 12px;
+  font-size: 2rem;
+  font-weight: 600;
+  color: rgba(35, 25, 18, 0.94);
+}
+
+.editor-canvas__empty-copy {
+  margin-top: 8px;
+  max-width: 34rem;
+  color: rgba(60, 41, 20, 0.74);
 }
 
 .editor-canvas__edges {
