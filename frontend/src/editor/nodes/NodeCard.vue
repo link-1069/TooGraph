@@ -1,19 +1,27 @@
 <template>
-  <article class="node-card" :class="{ 'node-card--selected': selected }">
-    <div class="node-card__top-actions" :class="{ 'node-card__top-actions--visible': isTopActionVisible }" @pointerdown.stop @click.stop>
+  <article class="node-card" :class="{ 'node-card--selected': selected }" @click.capture="handleNodeCardClickCapture">
+    <div
+      class="node-card__top-actions"
+      :class="{ 'node-card__top-actions--visible': isTopActionVisible }"
+      data-top-action-surface="true"
+      @pointerdown.stop
+      @click.stop
+    >
       <ElPopover
         v-if="hasAdvancedSettings"
         :visible="activeTopAction === 'advanced'"
         placement="bottom-end"
         :width="view.body.kind === 'output' ? 340 : 280"
+        :show-arrow="false"
+        :popper-style="actionPopoverStyle"
         popper-class="node-card__action-popover"
       >
         <template #reference>
-          <ElButton circle class="node-card__top-action-button node-card__top-action-button--advanced" @click.stop="toggleAdvancedPanel">
+          <ElButton round class="node-card__top-action-button node-card__top-action-button--advanced" @click.stop="toggleAdvancedPanel">
             <ElIcon><Operation /></ElIcon>
           </ElButton>
         </template>
-        <div class="node-card__top-popover">
+        <div class="node-card__top-popover" data-node-popup-surface="true">
           <div class="node-card__top-popover-title">Advanced</div>
           <div v-if="view.body.kind === 'agent'" class="node-card__advanced-popover-content">
             <label class="node-card__control-row">
@@ -73,51 +81,100 @@
       <ElPopover
         v-if="canSavePreset"
         :visible="activeTopAction === 'preset'"
-        placement="bottom-end"
-        :width="220"
-        popper-class="node-card__action-popover"
+        placement="top"
+        :show-arrow="false"
+        :popper-style="confirmPopoverStyle"
+        popper-class="node-card__confirm-popover node-card__confirm-popover--preset"
       >
         <template #reference>
-          <ElButton circle class="node-card__top-action-button node-card__top-action-button--preset" @click.stop="openTopAction('preset')">
-            <ElIcon><CollectionTag /></ElIcon>
+          <ElButton
+            round
+            data-top-action-surface="true"
+            class="node-card__top-action-button node-card__top-action-button--preset"
+            :class="{ 'node-card__top-action-button--confirm node-card__top-action-button--confirm-success': activeTopAction === 'preset' }"
+            @click.stop="handlePresetActionClick"
+          >
+            <ElIcon v-if="activeTopAction === 'preset'"><Check /></ElIcon>
+            <ElIcon v-else><CollectionTag /></ElIcon>
           </ElButton>
         </template>
-        <div class="node-card__top-popover">
-          <div class="node-card__top-popover-title">Save preset?</div>
-          <div class="node-card__top-popover-copy">Create a reusable preset from this agent node.</div>
-          <div class="node-card__top-popover-actions">
-            <ElButton size="small" @click.stop="activeTopAction = null">Cancel</ElButton>
-            <ElButton size="small" type="primary" @click.stop="confirmSavePreset">Save</ElButton>
-          </div>
-        </div>
+        <div class="node-card__confirm-hint node-card__confirm-hint--preset">Save preset?</div>
       </ElPopover>
       <ElPopover
         :visible="activeTopAction === 'delete'"
-        placement="bottom-end"
-        :width="220"
-        popper-class="node-card__action-popover"
+        placement="top"
+        :show-arrow="false"
+        :popper-style="confirmPopoverStyle"
+        popper-class="node-card__confirm-popover node-card__confirm-popover--delete"
       >
         <template #reference>
-          <ElButton circle class="node-card__top-action-button node-card__top-action-button--delete" @click.stop="openTopAction('delete')">
-            <ElIcon><Delete /></ElIcon>
+          <ElButton
+            round
+            data-top-action-surface="true"
+            class="node-card__top-action-button node-card__top-action-button--delete"
+            :class="{ 'node-card__top-action-button--confirm node-card__top-action-button--confirm-danger': activeTopAction === 'delete' }"
+            @click.stop="handleDeleteActionClick"
+          >
+            <ElIcon v-if="activeTopAction === 'delete'"><Check /></ElIcon>
+            <ElIcon v-else><Delete /></ElIcon>
           </ElButton>
         </template>
-        <div class="node-card__top-popover">
-          <div class="node-card__top-popover-title">Delete node?</div>
-          <div class="node-card__top-popover-copy">This removes the node and prunes related flow links.</div>
-          <div class="node-card__top-popover-actions">
-            <ElButton size="small" @click.stop="activeTopAction = null">Cancel</ElButton>
-            <ElButton size="small" type="danger" @click.stop="confirmDeleteNode">Delete</ElButton>
-          </div>
-        </div>
+        <div class="node-card__confirm-hint node-card__confirm-hint--delete">Delete node?</div>
       </ElPopover>
     </div>
     <header class="node-card__header">
       <div class="node-card__eyebrow">{{ view.kindLabel }}</div>
-      <h3 class="node-card__title">{{ view.title }}</h3>
+      <ElPopover
+        :visible="activeTextEditor === 'title'"
+        placement="bottom-start"
+        :width="360"
+        :show-arrow="false"
+        :popper-style="stateEditorPopoverStyle"
+        popper-class="node-card__text-editor-popper"
+      >
+        <template #reference>
+          <h3 class="node-card__title" @dblclick.stop="openTextEditor('title')">{{ view.title }}</h3>
+        </template>
+        <div class="node-card__text-editor" data-node-popup-surface="true">
+          <div class="node-card__text-editor-title">Edit Name</div>
+          <ElInput
+            :model-value="titleEditorDraft"
+            autofocus
+            @update:model-value="handleTitleEditorDraftInput"
+            @blur="commitTitleEdit"
+            @keydown.enter.prevent="commitTitleEdit"
+            @keydown.esc.prevent="closeTextEditor()"
+          />
+        </div>
+      </ElPopover>
     </header>
 
-    <p class="node-card__description">{{ view.description }}</p>
+    <ElPopover
+      :visible="activeTextEditor === 'description'"
+      placement="bottom-start"
+      :width="420"
+      :show-arrow="false"
+      :popper-style="stateEditorPopoverStyle"
+      popper-class="node-card__text-editor-popper"
+    >
+      <template #reference>
+        <p class="node-card__description" @dblclick.stop="openTextEditor('description')">{{ view.description }}</p>
+      </template>
+      <div class="node-card__text-editor" data-node-popup-surface="true">
+        <div class="node-card__text-editor-title">Edit Description</div>
+        <ElInput
+          :model-value="descriptionEditorDraft"
+          type="textarea"
+          :autosize="{ minRows: 4, maxRows: 7 }"
+          autofocus
+          @update:model-value="handleDescriptionEditorDraftInput"
+          @blur="commitDescriptionEdit"
+          @keydown.ctrl.enter.prevent="commitDescriptionEdit"
+          @keydown.meta.enter.prevent="commitDescriptionEdit"
+          @keydown.esc.prevent="closeTextEditor()"
+        />
+      </div>
+    </ElPopover>
 
     <section v-if="view.body.kind === 'input'" class="node-card__body node-card__body--input">
       <div class="node-card__port-row node-card__port-row--single node-card__port-row--input-boundary">
@@ -142,7 +199,9 @@
           <ElPopover
             :visible="isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`)"
             placement="bottom-end"
-            :width="340"
+            :width="320"
+            :show-arrow="false"
+            :popper-style="stateEditorPopoverStyle"
             popper-class="node-card__state-editor-popper"
           >
             <template #reference>
@@ -163,42 +222,19 @@
                 />
               </span>
             </template>
-            <div v-if="stateEditorDraft" class="node-card__state-editor">
-              <div class="node-card__state-editor-title">Edit State</div>
-              <label class="node-card__control-row">
-                <span class="node-card__control-label">Name</span>
-                <ElInput :model-value="stateEditorDraft.definition.name" @update:model-value="handleStateEditorNameInput" />
-              </label>
-              <label class="node-card__control-row">
-                <span class="node-card__control-label">Key</span>
-                <ElInput :model-value="stateEditorDraft.key" @update:model-value="handleStateEditorKeyInput" />
-              </label>
-              <label class="node-card__control-row">
-                <span class="node-card__control-label">Type</span>
-                <select class="node-card__control-select" :value="stateEditorDraft.definition.type" @change="handleStateEditorTypeChange">
-                  <option v-for="typeOption in stateTypeOptions" :key="typeOption" :value="typeOption">{{ typeOption }}</option>
-                </select>
-              </label>
-              <label class="node-card__control-row">
-                <span class="node-card__control-label">Description</span>
-                <ElInput
-                  type="textarea"
-                  :rows="3"
-                  :model-value="stateEditorDraft.definition.description"
-                  @update:model-value="handleStateEditorDescriptionInput"
-                />
-              </label>
-              <label class="node-card__control-row">
-                <span class="node-card__control-label">Color</span>
-                <ElInput :model-value="stateEditorDraft.definition.color" @update:model-value="handleStateEditorColorInput" />
-              </label>
-              <StateDefaultValueEditor :field="stateEditorDraft.definition" @update-value="updateStateEditorValue" />
-              <div v-if="stateEditorError" class="node-card__port-picker-hint node-card__port-picker-hint--error">{{ stateEditorError }}</div>
-              <div class="node-card__top-popover-actions">
-                <ElButton size="small" @click="closeStateEditor">Cancel</ElButton>
-                <ElButton size="small" type="primary" @click="commitStateEditor">Save</ElButton>
-              </div>
-            </div>
+            <StateEditorPopover
+              v-if="stateEditorDraft"
+              class="node-card__state-editor"
+              :draft="stateEditorDraft"
+              :error="stateEditorError"
+              :type-options="stateTypeOptions"
+              :color-options="stateColorOptions"
+              @update:key="handleStateEditorKeyInput"
+              @update:name="handleStateEditorNameInput"
+              @update:type="handleStateEditorTypeValue"
+              @update:color="handleStateEditorColorInput"
+              @update:description="handleStateEditorDescriptionInput"
+            />
           </ElPopover>
         </div>
       </div>
@@ -323,7 +359,9 @@
             <ElPopover
               :visible="isStateEditorOpen(`agent-input:${port.key}`)"
               placement="bottom-start"
-              :width="340"
+              :width="320"
+              :show-arrow="false"
+              :popper-style="stateEditorPopoverStyle"
               popper-class="node-card__state-editor-popper"
             >
               <template #reference>
@@ -339,42 +377,19 @@
                   <span class="node-card__port-pill-label" @dblclick.stop="openStateEditor(`agent-input:${port.key}`, port.key)">{{ port.label }}</span>
                 </span>
               </template>
-              <div v-if="stateEditorDraft" class="node-card__state-editor">
-                <div class="node-card__state-editor-title">Edit State</div>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Name</span>
-                  <ElInput :model-value="stateEditorDraft.definition.name" @update:model-value="handleStateEditorNameInput" />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Key</span>
-                  <ElInput :model-value="stateEditorDraft.key" @update:model-value="handleStateEditorKeyInput" />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Type</span>
-                  <select class="node-card__control-select" :value="stateEditorDraft.definition.type" @change="handleStateEditorTypeChange">
-                    <option v-for="typeOption in stateTypeOptions" :key="typeOption" :value="typeOption">{{ typeOption }}</option>
-                  </select>
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Description</span>
-                  <ElInput
-                    type="textarea"
-                    :rows="3"
-                    :model-value="stateEditorDraft.definition.description"
-                    @update:model-value="handleStateEditorDescriptionInput"
-                  />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Color</span>
-                  <ElInput :model-value="stateEditorDraft.definition.color" @update:model-value="handleStateEditorColorInput" />
-                </label>
-                <StateDefaultValueEditor :field="stateEditorDraft.definition" @update-value="updateStateEditorValue" />
-                <div v-if="stateEditorError" class="node-card__port-picker-hint node-card__port-picker-hint--error">{{ stateEditorError }}</div>
-                <div class="node-card__top-popover-actions">
-                  <ElButton size="small" @click="closeStateEditor">Cancel</ElButton>
-                  <ElButton size="small" type="primary" @click="commitStateEditor">Save</ElButton>
-                </div>
-              </div>
+              <StateEditorPopover
+                v-if="stateEditorDraft"
+                class="node-card__state-editor"
+                :draft="stateEditorDraft"
+                :error="stateEditorError"
+                :type-options="stateTypeOptions"
+                :color-options="stateColorOptions"
+                @update:key="handleStateEditorKeyInput"
+                @update:name="handleStateEditorNameInput"
+                @update:type="handleStateEditorTypeValue"
+                @update:color="handleStateEditorColorInput"
+                @update:description="handleStateEditorDescriptionInput"
+              />
             </ElPopover>
           </div>
         </div>
@@ -383,7 +398,9 @@
             <ElPopover
               :visible="isStateEditorOpen(`agent-output:${port.key}`)"
               placement="bottom-end"
-              :width="340"
+              :width="320"
+              :show-arrow="false"
+              :popper-style="stateEditorPopoverStyle"
               popper-class="node-card__state-editor-popper"
             >
               <template #reference>
@@ -399,42 +416,19 @@
                   />
                 </span>
               </template>
-              <div v-if="stateEditorDraft" class="node-card__state-editor">
-                <div class="node-card__state-editor-title">Edit State</div>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Name</span>
-                  <ElInput :model-value="stateEditorDraft.definition.name" @update:model-value="handleStateEditorNameInput" />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Key</span>
-                  <ElInput :model-value="stateEditorDraft.key" @update:model-value="handleStateEditorKeyInput" />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Type</span>
-                  <select class="node-card__control-select" :value="stateEditorDraft.definition.type" @change="handleStateEditorTypeChange">
-                    <option v-for="typeOption in stateTypeOptions" :key="typeOption" :value="typeOption">{{ typeOption }}</option>
-                  </select>
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Description</span>
-                  <ElInput
-                    type="textarea"
-                    :rows="3"
-                    :model-value="stateEditorDraft.definition.description"
-                    @update:model-value="handleStateEditorDescriptionInput"
-                  />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Color</span>
-                  <ElInput :model-value="stateEditorDraft.definition.color" @update:model-value="handleStateEditorColorInput" />
-                </label>
-                <StateDefaultValueEditor :field="stateEditorDraft.definition" @update-value="updateStateEditorValue" />
-                <div v-if="stateEditorError" class="node-card__port-picker-hint node-card__port-picker-hint--error">{{ stateEditorError }}</div>
-                <div class="node-card__top-popover-actions">
-                  <ElButton size="small" @click="closeStateEditor">Cancel</ElButton>
-                  <ElButton size="small" type="primary" @click="commitStateEditor">Save</ElButton>
-                </div>
-              </div>
+              <StateEditorPopover
+                v-if="stateEditorDraft"
+                class="node-card__state-editor"
+                :draft="stateEditorDraft"
+                :error="stateEditorError"
+                :type-options="stateTypeOptions"
+                :color-options="stateColorOptions"
+                @update:key="handleStateEditorKeyInput"
+                @update:name="handleStateEditorNameInput"
+                @update:type="handleStateEditorTypeValue"
+                @update:color="handleStateEditorColorInput"
+                @update:description="handleStateEditorDescriptionInput"
+              />
             </ElPopover>
           </div>
         </div>
@@ -442,6 +436,7 @@
       <div class="node-card__agent-runtime-row">
         <div class="node-card__agent-model-select-shell" @pointerdown.stop @click.stop>
           <ElSelect
+            ref="agentModelSelectRef"
             class="node-card__agent-model-select"
             :model-value="agentResolvedModelValue || undefined"
             :placeholder="agentModelOptions.length === 0 ? 'No configured models' : 'Select model'"
@@ -507,7 +502,7 @@
           + output
         </button>
       </div>
-      <div v-if="activePortPickerSide" class="node-card__port-picker" @pointerdown.stop @click.stop>
+      <div v-if="activePortPickerSide" class="node-card__port-picker" data-node-popup-surface="true" @pointerdown.stop @click.stop>
         <div class="node-card__port-picker-title">{{ portPickerTitle }}</div>
         <div v-if="portStateDraft" class="node-card__port-picker-form">
           <label class="node-card__control-row">
@@ -636,7 +631,7 @@
           </div>
         </div>
       </div>
-      <div v-if="isSkillPickerOpen" class="node-card__skill-picker" @pointerdown.stop @click.stop>
+      <div v-if="isSkillPickerOpen" class="node-card__skill-picker" data-node-popup-surface="true" @pointerdown.stop @click.stop>
         <div class="node-card__skill-picker-title">Add Skill</div>
         <div class="node-card__skill-picker-copy">这里只负责附加已有 skill，不在编排界面里编辑 skill 内容。</div>
         <div v-if="skillDefinitionsLoading" class="node-card__skill-panel-message">
@@ -700,7 +695,9 @@
           v-if="view.body.connectedStateKey && view.body.connectedStateLabel"
           :visible="isStateEditorOpen(`output-input:${view.body.connectedStateKey}`)"
           placement="bottom-start"
-          :width="340"
+          :width="320"
+          :show-arrow="false"
+          :popper-style="stateEditorPopoverStyle"
           popper-class="node-card__state-editor-popper"
         >
           <template #reference>
@@ -721,42 +718,19 @@
               </span>
             </span>
           </template>
-          <div v-if="stateEditorDraft" class="node-card__state-editor">
-            <div class="node-card__state-editor-title">Edit State</div>
-            <label class="node-card__control-row">
-              <span class="node-card__control-label">Name</span>
-              <ElInput :model-value="stateEditorDraft.definition.name" @update:model-value="handleStateEditorNameInput" />
-            </label>
-            <label class="node-card__control-row">
-              <span class="node-card__control-label">Key</span>
-              <ElInput :model-value="stateEditorDraft.key" @update:model-value="handleStateEditorKeyInput" />
-            </label>
-            <label class="node-card__control-row">
-              <span class="node-card__control-label">Type</span>
-              <select class="node-card__control-select" :value="stateEditorDraft.definition.type" @change="handleStateEditorTypeChange">
-                <option v-for="typeOption in stateTypeOptions" :key="typeOption" :value="typeOption">{{ typeOption }}</option>
-              </select>
-            </label>
-            <label class="node-card__control-row">
-              <span class="node-card__control-label">Description</span>
-              <ElInput
-                type="textarea"
-                :rows="3"
-                :model-value="stateEditorDraft.definition.description"
-                @update:model-value="handleStateEditorDescriptionInput"
-              />
-            </label>
-            <label class="node-card__control-row">
-              <span class="node-card__control-label">Color</span>
-              <ElInput :model-value="stateEditorDraft.definition.color" @update:model-value="handleStateEditorColorInput" />
-            </label>
-            <StateDefaultValueEditor :field="stateEditorDraft.definition" @update-value="updateStateEditorValue" />
-            <div v-if="stateEditorError" class="node-card__port-picker-hint node-card__port-picker-hint--error">{{ stateEditorError }}</div>
-            <div class="node-card__top-popover-actions">
-              <ElButton size="small" @click="closeStateEditor">Cancel</ElButton>
-              <ElButton size="small" type="primary" @click="commitStateEditor">Save</ElButton>
-            </div>
-          </div>
+          <StateEditorPopover
+            v-if="stateEditorDraft"
+            class="node-card__state-editor"
+            :draft="stateEditorDraft"
+            :error="stateEditorError"
+            :type-options="stateTypeOptions"
+            :color-options="stateColorOptions"
+            @update:key="handleStateEditorKeyInput"
+            @update:name="handleStateEditorNameInput"
+            @update:type="handleStateEditorTypeValue"
+            @update:color="handleStateEditorColorInput"
+            @update:description="handleStateEditorDescriptionInput"
+          />
         </ElPopover>
         <span v-else class="node-card__port-label">Unbound</span>
         <button
@@ -790,7 +764,9 @@
             <ElPopover
               :visible="isStateEditorOpen(`condition-input:${port.key}`)"
               placement="bottom-start"
-              :width="340"
+              :width="320"
+              :show-arrow="false"
+              :popper-style="stateEditorPopoverStyle"
               popper-class="node-card__state-editor-popper"
             >
               <template #reference>
@@ -806,42 +782,19 @@
                   <span class="node-card__port-pill-label" @dblclick.stop="openStateEditor(`condition-input:${port.key}`, port.key)">{{ port.label }}</span>
                 </span>
               </template>
-              <div v-if="stateEditorDraft" class="node-card__state-editor">
-                <div class="node-card__state-editor-title">Edit State</div>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Name</span>
-                  <ElInput :model-value="stateEditorDraft.definition.name" @update:model-value="handleStateEditorNameInput" />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Key</span>
-                  <ElInput :model-value="stateEditorDraft.key" @update:model-value="handleStateEditorKeyInput" />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Type</span>
-                  <select class="node-card__control-select" :value="stateEditorDraft.definition.type" @change="handleStateEditorTypeChange">
-                    <option v-for="typeOption in stateTypeOptions" :key="typeOption" :value="typeOption">{{ typeOption }}</option>
-                  </select>
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Description</span>
-                  <ElInput
-                    type="textarea"
-                    :rows="3"
-                    :model-value="stateEditorDraft.definition.description"
-                    @update:model-value="handleStateEditorDescriptionInput"
-                  />
-                </label>
-                <label class="node-card__control-row">
-                  <span class="node-card__control-label">Color</span>
-                  <ElInput :model-value="stateEditorDraft.definition.color" @update:model-value="handleStateEditorColorInput" />
-                </label>
-                <StateDefaultValueEditor :field="stateEditorDraft.definition" @update-value="updateStateEditorValue" />
-                <div v-if="stateEditorError" class="node-card__port-picker-hint node-card__port-picker-hint--error">{{ stateEditorError }}</div>
-                <div class="node-card__top-popover-actions">
-                  <ElButton size="small" @click="closeStateEditor">Cancel</ElButton>
-                  <ElButton size="small" type="primary" @click="commitStateEditor">Save</ElButton>
-                </div>
-              </div>
+              <StateEditorPopover
+                v-if="stateEditorDraft"
+                class="node-card__state-editor"
+                :draft="stateEditorDraft"
+                :error="stateEditorError"
+                :type-options="stateTypeOptions"
+                :color-options="stateColorOptions"
+                @update:key="handleStateEditorKeyInput"
+                @update:name="handleStateEditorNameInput"
+                @update:type="handleStateEditorTypeValue"
+                @update:color="handleStateEditorColorInput"
+                @update:description="handleStateEditorDescriptionInput"
+              />
             </ElPopover>
           </div>
         </div>
@@ -980,11 +933,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElButton, ElIcon, ElInput, ElPopover } from "element-plus";
-import { Collection, CollectionTag, Delete, Document, FolderOpened, Operation, Opportunity } from "@element-plus/icons-vue";
+import { Check, Collection, CollectionTag, Delete, Document, FolderOpened, Operation, Opportunity } from "@element-plus/icons-vue";
 
 import StateDefaultValueEditor from "@/editor/workspace/StateDefaultValueEditor.vue";
+import StateEditorPopover from "./StateEditorPopover.vue";
 import { listConditionBranchMappingKeys, parseConditionBranchMappingDraft } from "@/lib/condition-branch-mapping";
 import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { AgentNode, ConditionNode, GraphNode, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
@@ -998,7 +952,13 @@ import { buildNodeCardViewModel } from "./nodeCardViewModel";
 import { listAttachableSkillDefinitions, resolveAttachedSkillBadges } from "./skillPickerModel";
 import { createStateDraftFromQuery, matchesStatePortSearch } from "./statePortCreateModel";
 import { createUploadedAssetEnvelope, resolveUploadedAssetInputAccept, tryParseUploadedAssetEnvelope } from "./uploadedAssetModel";
-import { defaultValueForStateType, STATE_FIELD_TYPE_OPTIONS, type StateFieldDraft, type StateFieldType } from "@/editor/workspace/statePanelFields";
+import {
+  defaultValueForStateType,
+  resolveStateColorOptions,
+  STATE_FIELD_TYPE_OPTIONS,
+  type StateFieldDraft,
+  type StateFieldType,
+} from "@/editor/workspace/statePanelFields";
 
 const props = defineProps<{
   nodeId: string;
@@ -1020,6 +980,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  (event: "update-node-metadata", payload: { nodeId: string; patch: Partial<Pick<GraphNode, "name" | "description">> }): void;
   (event: "update-input-config", payload: { nodeId: string; patch: Partial<InputNode["config"]> }): void;
   (event: "update-input-state", payload: { stateKey: string; patch: Partial<StateDefinition> }): void;
   (event: "rename-state", payload: { currentKey: string; nextKey: string }): void;
@@ -1057,6 +1018,32 @@ const inputTypeOptions: Array<{
   { value: "file", label: "File", icon: FolderOpened },
   { value: "knowledge_base", label: "Knowledge Base", icon: Collection },
 ];
+const confirmPopoverStyle = {
+  padding: "0",
+  border: "none",
+  background: "transparent",
+  boxShadow: "none",
+};
+const actionPopoverStyle = {
+  "--el-popover-bg-color": "transparent",
+  "--el-popover-border-color": "transparent",
+  "--el-popover-padding": "0px",
+  background: "transparent",
+  border: "none",
+  boxShadow: "none",
+  padding: "0",
+  "min-width": "0",
+} as const;
+const stateEditorPopoverStyle = {
+  "--el-popover-bg-color": "transparent",
+  "--el-popover-border-color": "transparent",
+  "--el-popover-padding": "0px",
+  background: "transparent",
+  border: "none",
+  boxShadow: "none",
+  padding: "0",
+  "min-width": "0",
+} as const;
 const stateTypeOptions = STATE_FIELD_TYPE_OPTIONS;
 const conditionRuleOperatorOptions = CONDITION_RULE_OPERATOR_OPTIONS;
 
@@ -1080,10 +1067,16 @@ const activePortPickerSide = ref<"input" | "output" | null>(null);
 const portStateSearch = ref("");
 const portStateDraft = ref<StateFieldDraft | null>(null);
 const portStateError = ref<string | null>(null);
+const agentModelSelectRef = ref<{ blur?: () => void; toggleMenu?: () => void; expanded?: boolean } | null>(null);
 const activeTopAction = ref<"advanced" | "delete" | "preset" | null>(null);
+const topActionTimeoutRef = ref<number | null>(null);
+const activeTextEditor = ref<"title" | "description" | null>(null);
+const titleEditorDraft = ref("");
+const descriptionEditorDraft = ref("");
 const activeStateEditorAnchorId = ref<string | null>(null);
 const stateEditorDraft = ref<StateFieldDraft | null>(null);
 const stateEditorError = ref<string | null>(null);
+const stateColorOptions = computed(() => resolveStateColorOptions(stateEditorDraft.value?.definition.color ?? ""));
 const conditionRuleEditor = computed(() =>
   props.node.kind === "condition" ? buildConditionRuleEditorModel(props.node.config.rule, props.stateSchema) : null,
 );
@@ -1268,6 +1261,14 @@ const agentTemperatureInput = computed(() => {
 const hasAdvancedSettings = computed(() => props.node.kind === "agent" || props.node.kind === "output");
 const canSavePreset = computed(() => props.node.kind === "agent");
 const isTopActionVisible = computed(() => props.selected || activeTopAction.value !== null);
+const hasFloatingPanelOpen = computed(
+  () =>
+    activeTopAction.value !== null ||
+    activeTextEditor.value !== null ||
+    activeStateEditorAnchorId.value !== null ||
+    activePortPickerSide.value !== null ||
+    isSkillPickerOpen.value,
+);
 
 watch(
   () => (props.node.kind === "condition" ? props.node.config.loopLimit : null),
@@ -1297,10 +1298,30 @@ watch(
     if (selected) {
       return;
     }
+    clearTopActionTimeout();
     activeTopAction.value = null;
     closeStateEditor();
   },
 );
+
+onBeforeUnmount(() => {
+  removeGlobalFloatingPanelListeners();
+  clearTopActionTimeout();
+});
+
+onMounted(() => {
+  if (hasFloatingPanelOpen.value) {
+    addGlobalFloatingPanelListeners();
+  }
+});
+
+watch(hasFloatingPanelOpen, (open) => {
+  if (open) {
+    addGlobalFloatingPanelListeners();
+    return;
+  }
+  removeGlobalFloatingPanelListeners();
+});
 
 function emitOutputConfigPatch(patch: Partial<OutputNode["config"]>) {
   if (props.node.kind !== "output") {
@@ -1415,7 +1436,9 @@ function toggleSkillPicker() {
   if (!showSkillPickerTrigger.value) {
     return;
   }
+  clearTopActionTimeout();
   activeTopAction.value = null;
+  commitOpenTextEditorIfNeeded();
   closeStateEditor();
   activePortPickerSide.value = null;
   portStateDraft.value = null;
@@ -1440,7 +1463,9 @@ function removeAgentSkill(skillKey: string) {
 }
 
 function openPortPicker(side: "input" | "output") {
+  clearTopActionTimeout();
   activeTopAction.value = null;
+  commitOpenTextEditorIfNeeded();
   closeStateEditor();
   isSkillPickerOpen.value = false;
   portStateSearch.value = "";
@@ -1615,6 +1640,66 @@ function buildStateDraftFromSchema(stateKey: string): StateFieldDraft | null {
   };
 }
 
+function syncTextEditorDraftsFromNode() {
+  titleEditorDraft.value = props.node.name;
+  descriptionEditorDraft.value = props.node.description;
+}
+
+function openTextEditor(field: "title" | "description") {
+  clearTopActionTimeout();
+  activeTopAction.value = null;
+  closeStateEditor();
+  closePortPicker();
+  isSkillPickerOpen.value = false;
+  syncTextEditorDraftsFromNode();
+  activeTextEditor.value = field;
+}
+
+function closeTextEditor() {
+  activeTextEditor.value = null;
+  syncTextEditorDraftsFromNode();
+}
+
+function commitTitleEdit() {
+  const nextTitle = titleEditorDraft.value.trim();
+  if (nextTitle && nextTitle !== props.node.name) {
+    emit("update-node-metadata", { nodeId: props.nodeId, patch: { name: nextTitle } });
+  }
+  closeTextEditor();
+}
+
+function commitDescriptionEdit() {
+  const nextDescription = descriptionEditorDraft.value.trim();
+  if (nextDescription !== props.node.description) {
+    emit("update-node-metadata", { nodeId: props.nodeId, patch: { description: nextDescription } });
+  }
+  closeTextEditor();
+}
+
+function handleTitleEditorDraftInput(value: string | number) {
+  if (typeof value !== "string") {
+    return;
+  }
+  titleEditorDraft.value = value;
+}
+
+function handleDescriptionEditorDraftInput(value: string | number) {
+  if (typeof value !== "string") {
+    return;
+  }
+  descriptionEditorDraft.value = value;
+}
+
+function commitOpenTextEditorIfNeeded() {
+  if (activeTextEditor.value === "title") {
+    commitTitleEdit();
+    return;
+  }
+  if (activeTextEditor.value === "description") {
+    commitDescriptionEdit();
+  }
+}
+
 function isStateEditorOpen(anchorId: string) {
   return activeStateEditorAnchorId.value === anchorId;
 }
@@ -1627,7 +1712,9 @@ function openStateEditor(anchorId: string, stateKey: string | null | undefined) 
   if (!nextDraft) {
     return;
   }
+  clearTopActionTimeout();
   activeTopAction.value = null;
+  commitOpenTextEditorIfNeeded();
   activePortPickerSide.value = null;
   isSkillPickerOpen.value = false;
   activeStateEditorAnchorId.value = anchorId;
@@ -1641,92 +1728,17 @@ function closeStateEditor() {
   stateEditorError.value = null;
 }
 
-function handleStateEditorNameInput(value: string | number) {
-  if (!stateEditorDraft.value || typeof value !== "string") {
-    return;
-  }
-  stateEditorDraft.value = {
-    ...stateEditorDraft.value,
-    definition: {
-      ...stateEditorDraft.value.definition,
-      name: value,
-    },
-  };
-}
-
-function handleStateEditorKeyInput(value: string | number) {
-  if (!stateEditorDraft.value || typeof value !== "string") {
-    return;
-  }
-  stateEditorDraft.value = {
-    ...stateEditorDraft.value,
-    key: value,
-  };
-}
-
-function handleStateEditorDescriptionInput(value: string | number) {
-  if (!stateEditorDraft.value || typeof value !== "string") {
-    return;
-  }
-  stateEditorDraft.value = {
-    ...stateEditorDraft.value,
-    definition: {
-      ...stateEditorDraft.value.definition,
-      description: value,
-    },
-  };
-}
-
-function handleStateEditorColorInput(value: string | number) {
-  if (!stateEditorDraft.value || typeof value !== "string") {
-    return;
-  }
-  stateEditorDraft.value = {
-    ...stateEditorDraft.value,
-    definition: {
-      ...stateEditorDraft.value.definition,
-      color: value,
-    },
-  };
-}
-
-function handleStateEditorTypeChange(event: Event) {
-  const target = event.target;
-  if (!(target instanceof HTMLSelectElement) || !stateEditorDraft.value) {
-    return;
-  }
-  stateEditorDraft.value = {
-    ...stateEditorDraft.value,
-    definition: {
-      ...stateEditorDraft.value.definition,
-      type: target.value,
-      value: defaultValueForStateType(target.value as StateFieldType),
-    },
-  };
-}
-
-function updateStateEditorValue(value: unknown) {
-  if (!stateEditorDraft.value) {
-    return;
-  }
-  stateEditorDraft.value = {
-    ...stateEditorDraft.value,
-    definition: {
-      ...stateEditorDraft.value.definition,
-      value,
-    },
-  };
-}
-
-function commitStateEditor() {
+function syncStateEditorDraft(nextDraft: StateFieldDraft, options?: { allowInvalidKey?: boolean }) {
   const currentAnchorId = activeStateEditorAnchorId.value;
-  const draft = stateEditorDraft.value;
-  if (!currentAnchorId || !draft) {
+  const currentDraft = stateEditorDraft.value;
+  if (!currentAnchorId || !currentDraft) {
     return;
   }
+
+  stateEditorDraft.value = nextDraft;
 
   const currentStateKey = currentAnchorId.split(":").at(-1) ?? "";
-  const nextKey = draft.key.trim();
+  const nextKey = nextDraft.key.trim();
   if (!nextKey) {
     stateEditorError.value = "State key cannot be empty.";
     return;
@@ -1736,47 +1748,252 @@ function commitStateEditor() {
     return;
   }
 
+  stateEditorError.value = null;
+
   if (nextKey !== currentStateKey) {
     emit("rename-state", { currentKey: currentStateKey, nextKey });
+    activeStateEditorAnchorId.value = [...currentAnchorId.split(":").slice(0, -1), nextKey].join(":");
   }
+
+  void options;
   emit("update-state", {
     stateKey: nextKey,
     patch: {
-      name: draft.definition.name.trim() || nextKey,
-      description: draft.definition.description,
-      type: draft.definition.type,
-      value: draft.definition.value,
-      color: draft.definition.color,
+      name: nextDraft.definition.name.trim() || nextKey,
+      description: nextDraft.definition.description,
+      type: nextDraft.definition.type,
+      value: nextDraft.definition.value,
+      color: nextDraft.definition.color,
     },
   });
-  closeStateEditor();
+}
+
+function handleStateEditorNameInput(value: string | number) {
+  if (!stateEditorDraft.value || typeof value !== "string") {
+    return;
+  }
+  syncStateEditorDraft({
+    ...stateEditorDraft.value,
+    definition: {
+      ...stateEditorDraft.value.definition,
+      name: value,
+    },
+  }, { allowInvalidKey: true });
+}
+
+function handleStateEditorKeyInput(value: string | number) {
+  if (!stateEditorDraft.value || typeof value !== "string") {
+    return;
+  }
+  syncStateEditorDraft({
+    ...stateEditorDraft.value,
+    key: value,
+  }, { allowInvalidKey: true });
+}
+
+function handleStateEditorDescriptionInput(value: string | number) {
+  if (!stateEditorDraft.value || typeof value !== "string") {
+    return;
+  }
+  syncStateEditorDraft({
+    ...stateEditorDraft.value,
+    definition: {
+      ...stateEditorDraft.value.definition,
+      description: value,
+    },
+  }, { allowInvalidKey: true });
+}
+
+function handleStateEditorColorInput(value: string | number) {
+  if (!stateEditorDraft.value || typeof value !== "string") {
+    return;
+  }
+  syncStateEditorDraft({
+    ...stateEditorDraft.value,
+    definition: {
+      ...stateEditorDraft.value.definition,
+      color: value,
+    },
+  }, { allowInvalidKey: true });
+}
+
+function handleStateEditorTypeValue(value: string | number | boolean | undefined) {
+  if (typeof value !== "string" || !stateEditorDraft.value) {
+    return;
+  }
+  syncStateEditorDraft({
+    ...stateEditorDraft.value,
+    definition: {
+      ...stateEditorDraft.value.definition,
+      type: value,
+      value: defaultValueForStateType(value as StateFieldType),
+    },
+  }, { allowInvalidKey: true });
 }
 
 function toggleAdvancedPanel() {
   if (!hasAdvancedSettings.value) {
     return;
   }
+  clearTopActionConfirmState();
   isSkillPickerOpen.value = false;
   closePortPicker();
   closeStateEditor();
+  commitOpenTextEditorIfNeeded();
   activeTopAction.value = activeTopAction.value === "advanced" ? null : "advanced";
 }
 
-function openTopAction(action: "delete" | "preset") {
+function isFloatingPanelSurfaceTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      [
+        "[data-top-action-surface='true']",
+        "[data-node-popup-surface='true']",
+        ".node-card__top-popover",
+        ".node-card__text-editor",
+        ".node-card__state-editor",
+        ".node-card__confirm-hint",
+        ".node-card__action-popover",
+        ".node-card__confirm-popover",
+        ".node-card__text-editor-popper",
+        ".node-card__state-editor-popper",
+        ".node-card__agent-model-popper",
+      ].join(", "),
+    ),
+  );
+}
+
+function closeFloatingPanels(options?: { commitTextEditor?: boolean }) {
+  clearTopActionConfirmState();
+  if (activeTopAction.value === "advanced") {
+    activeTopAction.value = null;
+  }
+  if (activeTextEditor.value === "title") {
+    if (options?.commitTextEditor) {
+      commitTitleEdit();
+    } else {
+      closeTextEditor();
+    }
+  } else if (activeTextEditor.value === "description") {
+    if (options?.commitTextEditor) {
+      commitDescriptionEdit();
+    } else {
+      closeTextEditor();
+    }
+  }
+  closeStateEditor();
+  closePortPicker();
+  isSkillPickerOpen.value = false;
+}
+
+function handleGlobalFloatingPanelPointerDown(event: PointerEvent) {
+  if (!hasFloatingPanelOpen.value || isFloatingPanelSurfaceTarget(event.target)) {
+    return;
+  }
+  closeFloatingPanels({ commitTextEditor: true });
+}
+
+function handleGlobalFloatingPanelFocusIn(event: FocusEvent) {
+  if (!hasFloatingPanelOpen.value || isFloatingPanelSurfaceTarget(event.target)) {
+    return;
+  }
+  closeFloatingPanels({ commitTextEditor: true });
+}
+
+function handleGlobalFloatingPanelKeyDown(event: KeyboardEvent) {
+  if (!hasFloatingPanelOpen.value || event.key !== "Escape") {
+    return;
+  }
+  closeFloatingPanels({ commitTextEditor: false });
+}
+
+function addGlobalFloatingPanelListeners() {
+  document.addEventListener("pointerdown", handleGlobalFloatingPanelPointerDown);
+  document.addEventListener("focusin", handleGlobalFloatingPanelFocusIn);
+  document.addEventListener("keydown", handleGlobalFloatingPanelKeyDown);
+}
+
+function removeGlobalFloatingPanelListeners() {
+  document.removeEventListener("pointerdown", handleGlobalFloatingPanelPointerDown);
+  document.removeEventListener("focusin", handleGlobalFloatingPanelFocusIn);
+  document.removeEventListener("keydown", handleGlobalFloatingPanelKeyDown);
+}
+
+function clearTopActionTimeout() {
+  if (topActionTimeoutRef.value !== null) {
+    window.clearTimeout(topActionTimeoutRef.value);
+    topActionTimeoutRef.value = null;
+  }
+}
+
+function clearTopActionConfirmState() {
+  clearTopActionTimeout();
+  if (activeTopAction.value === "delete" || activeTopAction.value === "preset") {
+    activeTopAction.value = null;
+  }
+}
+
+function startTopActionConfirmWindow(action: "delete" | "preset") {
+  clearTopActionTimeout();
+  activeTopAction.value = action;
+  topActionTimeoutRef.value = window.setTimeout(() => {
+    topActionTimeoutRef.value = null;
+    if (activeTopAction.value === action) {
+      activeTopAction.value = null;
+    }
+  }, 2000);
+}
+
+function handlePresetActionClick() {
   isSkillPickerOpen.value = false;
   closePortPicker();
   closeStateEditor();
-  activeTopAction.value = activeTopAction.value === action ? null : action;
+  commitOpenTextEditorIfNeeded();
+  if (activeTopAction.value === "preset") {
+    confirmSavePreset();
+    return;
+  }
+  startTopActionConfirmWindow("preset");
+}
+
+function handleDeleteActionClick() {
+  isSkillPickerOpen.value = false;
+  closePortPicker();
+  closeStateEditor();
+  commitOpenTextEditorIfNeeded();
+  if (activeTopAction.value === "delete") {
+    confirmDeleteNode();
+    return;
+  }
+  startTopActionConfirmWindow("delete");
+}
+
+function handleNodeCardClickCapture(event: Event) {
+  if (activeTopAction.value !== "delete" && activeTopAction.value !== "preset") {
+    return;
+  }
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  if (target.closest("[data-top-action-surface='true']")) {
+    return;
+  }
+  clearTopActionConfirmState();
 }
 
 function confirmDeleteNode() {
+  clearTopActionConfirmState();
   emit("delete-node", { nodeId: props.nodeId });
-  activeTopAction.value = null;
 }
 
 function confirmSavePreset() {
+  clearTopActionConfirmState();
   emit("save-node-preset", { nodeId: props.nodeId });
-  activeTopAction.value = null;
 }
 
 function handleAgentModelValueChange(nextValue: string | number | boolean | undefined) {
@@ -1788,6 +2005,14 @@ function handleAgentModelValueChange(nextValue: string | number | boolean | unde
     return;
   }
   emitAgentConfigPatch(resolveAgentModelSelection(normalizedValue, trimmedGlobalTextModelRef.value));
+  collapseAgentModelSelect();
+}
+
+function collapseAgentModelSelect() {
+  if (agentModelSelectRef.value?.expanded) {
+    agentModelSelectRef.value.toggleMenu?.();
+  }
+  agentModelSelectRef.value?.blur?.();
 }
 
 function handleAgentThinkingToggle(nextValue: string | number | boolean) {
@@ -2065,7 +2290,7 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   min-height: 260px;
   border: 1px solid rgba(154, 52, 18, 0.18);
   border-radius: 28px;
-  overflow: hidden;
+  overflow: visible;
   background: linear-gradient(180deg, rgba(255, 250, 241, 0.98) 0%, rgba(248, 237, 219, 0.96) 100%);
   box-shadow: 0 22px 40px rgba(60, 41, 20, 0.08);
   user-select: none;
@@ -2078,15 +2303,30 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
 
 .node-card__top-actions {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 3;
+  top: 0;
+  right: 18px;
+  z-index: 12;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 250, 241, 0.94);
+  box-shadow: none;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 160ms ease;
+  transform: translateY(calc(-100% - 8px));
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.node-card__top-actions::after {
+  content: "";
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: -12px;
+  height: 12px;
 }
 
 .node-card:hover .node-card__top-actions,
@@ -2096,14 +2336,24 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   pointer-events: auto;
 }
 
+.node-card__top-actions:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .node-card__top-action-button {
   --el-color-primary: #c96b1f;
-  width: 34px;
-  height: 34px;
+  width: 56px;
+  height: 40px;
   border: 1px solid rgba(154, 52, 18, 0.14);
   background: rgba(255, 252, 247, 0.94);
   color: rgba(90, 58, 28, 0.82);
-  box-shadow: 0 10px 24px rgba(60, 41, 20, 0.08);
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.node-card__top-action-button :deep(.el-icon) {
+  font-size: 1.18rem;
 }
 
 .node-card__top-action-button:hover {
@@ -2116,11 +2366,33 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   color: rgb(185, 28, 28);
 }
 
+.node-card__top-action-button--confirm {
+  color: #fff;
+}
+
+.node-card__top-action-button--confirm:hover {
+  color: #fff;
+}
+
+.node-card__top-action-button--confirm-success,
+.node-card__top-action-button--confirm-success:hover {
+  border-color: rgba(34, 197, 94, 0.34);
+  background: rgb(34, 197, 94);
+  color: #fff;
+}
+
+.node-card__top-action-button--confirm-danger,
+.node-card__top-action-button--confirm-danger:hover {
+  border-color: rgba(185, 28, 28, 0.3);
+  background: rgb(185, 28, 28);
+  color: #fff;
+}
+
 .node-card__header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 18px calc(var(--node-card-inline-padding) + 112px) 8px var(--node-card-inline-padding);
+  padding: 18px var(--node-card-inline-padding) 8px var(--node-card-inline-padding);
 }
 
 .node-card__eyebrow {
@@ -2139,6 +2411,7 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   font-size: 2rem;
   line-height: 1.15;
   color: #1f2937;
+  cursor: text;
 }
 
 .node-card__description {
@@ -2147,6 +2420,46 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   font-size: 0.98rem;
   line-height: 1.55;
   color: rgba(60, 41, 20, 0.74);
+  cursor: text;
+}
+
+.node-card__text-editor {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 244, 232, 0.96);
+  box-shadow: 0 16px 34px rgba(60, 41, 20, 0.12);
+}
+
+.node-card__text-editor-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(154, 52, 18, 0.8);
+}
+
+.node-card__text-editor :deep(.el-input__wrapper),
+.node-card__text-editor :deep(.el-textarea__inner) {
+  background: rgba(255, 252, 246, 0.98);
+  border-color: rgba(154, 52, 18, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(154, 52, 18, 0.08);
+}
+
+.node-card__text-editor :deep(.el-input__wrapper.is-focus),
+.node-card__text-editor :deep(.el-textarea__inner:focus) {
+  box-shadow:
+    inset 0 0 0 1px rgba(217, 119, 6, 0.28),
+    0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+
+:deep(.node-card__text-editor-popper.el-popper) {
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 .node-card__state-summary {
@@ -2538,10 +2851,11 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
 .node-card__skill-picker {
   display: grid;
   gap: 10px;
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  border-radius: 20px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 18px;
   padding: 14px;
-  background: rgba(239, 246, 255, 0.56);
+  background: rgba(255, 250, 241, 0.98);
+  box-shadow: 0 20px 40px rgba(60, 41, 20, 0.12);
 }
 
 .node-card__skill-picker-title {
@@ -2576,11 +2890,18 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   display: grid;
   gap: 6px;
   border-radius: 16px;
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  background: rgba(255, 255, 255, 0.88);
   padding: 12px 14px;
   text-align: left;
   cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.node-card__skill-option:hover {
+  border-color: rgba(154, 52, 18, 0.22);
+  background: rgba(255, 252, 247, 0.98);
+  transform: translateY(-1px);
 }
 
 .node-card__skill-option-title {
@@ -2640,10 +2961,11 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
 .node-card__port-picker {
   display: grid;
   gap: 12px;
-  border: 1px solid rgba(154, 52, 18, 0.14);
-  border-radius: 20px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 18px;
   padding: 14px;
-  background: rgba(255, 252, 247, 0.94);
+  background: rgba(255, 250, 241, 0.98);
+  box-shadow: 0 20px 40px rgba(60, 41, 20, 0.12);
 }
 
 .node-card__port-picker-title {
@@ -2700,19 +3022,24 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
 
 .node-card__state-editor-title,
 .node-card__top-popover-title {
-  font-size: 0.98rem;
+  font-size: 0.96rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #2f2114;
 }
 
 .node-card__top-popover {
   display: grid;
-  gap: 12px;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 244, 232, 0.96);
+  box-shadow: 0 16px 34px rgba(60, 41, 20, 0.12);
 }
 
 .node-card__advanced-popover-content {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .node-card__top-popover-copy {
@@ -2727,33 +3054,95 @@ function handleConditionBranchEnter(_currentKey: string, event: KeyboardEvent) {
   gap: 8px;
 }
 
-:deep(.node-card__action-popover.el-popper),
-:deep(.node-card__state-editor-popper.el-popper) {
+.node-card__confirm-hint {
+  white-space: nowrap;
+  border-radius: 999px;
   border: 1px solid rgba(154, 52, 18, 0.16);
-  border-radius: 18px;
-  background: rgba(255, 250, 241, 0.98);
-  box-shadow: 0 20px 40px rgba(60, 41, 20, 0.12);
+  padding: 6px 14px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  box-shadow: 0 14px 32px rgba(60, 41, 20, 0.14);
 }
 
-:deep(.node-card__action-popover .el-popover),
-:deep(.node-card__state-editor-popper .el-popover) {
-  padding: 14px;
+.node-card__confirm-hint--preset {
+  border-color: rgba(34, 197, 94, 0.16);
+  background: rgba(220, 252, 231, 0.98);
+  color: rgb(22, 163, 74);
 }
 
-:deep(.node-card__state-editor-popper .el-input__wrapper),
-:deep(.node-card__action-popover .el-input__wrapper) {
-  min-height: 38px;
-  border-radius: 14px;
-  border: 1px solid rgba(154, 52, 18, 0.16);
-  background: rgba(255, 255, 255, 0.88);
+.node-card__confirm-hint--delete {
+  border-color: rgba(185, 28, 28, 0.16);
+  background: rgba(255, 248, 248, 0.98);
+  color: rgb(153, 27, 27);
+}
+
+:deep(.node-card__action-popover.el-popper) {
+  border: none;
+  border-radius: 16px;
+  padding: 0;
+  background: transparent;
   box-shadow: none;
 }
 
-:deep(.node-card__state-editor-popper .el-textarea__inner),
+:deep(.node-card__state-editor-popper.el-popper) {
+  border: none;
+  border-radius: 16px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+:deep(.node-card__action-popover .el-popover) {
+  padding: 0;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:deep(.node-card__state-editor-popper .el-popover) {
+  padding: 0;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:deep(.node-card__action-popover .el-input__wrapper) {
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  background: rgba(255, 251, 246, 0.88);
+  box-shadow: none;
+}
+
+:deep(.node-card__action-popover .el-input__wrapper.is-focus) {
+  border-color: rgba(201, 107, 31, 0.28);
+  box-shadow: 0 0 0 3px rgba(201, 107, 31, 0.08);
+}
+
 :deep(.node-card__action-popover .el-textarea__inner) {
-  border-radius: 14px;
+  border-radius: 12px;
   border-color: rgba(154, 52, 18, 0.16);
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 251, 246, 0.88);
+  box-shadow: none;
+}
+
+:deep(.node-card__action-popover .el-textarea__inner:focus) {
+  border-color: rgba(201, 107, 31, 0.28);
+  box-shadow: 0 0 0 3px rgba(201, 107, 31, 0.08);
+}
+
+:deep(.node-card__confirm-popover.el-popper) {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+:deep(.node-card__confirm-popover .el-popover) {
+  padding: 0;
+  background: transparent;
   box-shadow: none;
 }
 
