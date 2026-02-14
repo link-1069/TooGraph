@@ -1,10 +1,19 @@
 <template>
   <section class="editor-workspace-shell">
+    <input
+      ref="pythonGraphImportInput"
+      class="editor-workspace-shell__file-input"
+      type="file"
+      accept=".py,text/x-python,text/plain"
+      @change="handlePythonGraphImportSelection"
+    />
+
     <div v-if="workspace.tabs.length === 0" class="editor-workspace-shell__welcome">
       <EditorWelcomeState
         :templates="templates"
         :graphs="graphs"
         @create-new="openNewTab(null)"
+        @import-python-graph="openPythonGraphImportDialog"
         @open-template="openNewTab"
         @open-graph="openExistingGraph"
       />
@@ -29,6 +38,7 @@
           @toggle-state-panel="toggleActiveStatePanel"
           @save-active-graph="saveActiveGraph"
           @validate-active-graph="validateActiveGraph"
+          @import-python-graph="openPythonGraphImportDialog"
           @export-active-graph="exportActiveGraph"
           @run-active-graph="runActiveGraph"
         />
@@ -71,6 +81,7 @@
                 :run-output-preview-by-node-id="runOutputPreviewByTabId[tab.tabId] ?? undefined"
                 :run-failure-message-by-node-id="runFailureMessageByTabId[tab.tabId] ?? undefined"
                 :active-run-edge-ids="activeRunEdgeIdsByTabId[tab.tabId] ?? undefined"
+                :interaction-locked="isGraphInteractionLocked(tab.tabId)"
                 @select-node="focusNodeForTab(tab.tabId, $event)"
                 @update-node-metadata="updateNodeMetadataForTab(tab.tabId, $event.nodeId, $event.patch)"
                 @update-input-config="updateInputConfigForTab(tab.tabId, $event.nodeId, $event.patch)"
@@ -79,6 +90,8 @@
                 @update-state="updateStateField(tab.tabId, $event.stateKey, $event.patch)"
                 @remove-port-state="removeNodePortStateForTab(tab.tabId, $event.nodeId, $event.side, $event.stateKey)"
                 @update-agent-config="updateAgentConfigForTab(tab.tabId, $event.nodeId, $event.patch)"
+                @toggle-agent-breakpoint="toggleAgentBreakpointForTab(tab.tabId, $event.nodeId, $event.enabled)"
+                @update-agent-breakpoint-timing="updateAgentBreakpointTimingForTab(tab.tabId, $event.nodeId, $event.timing)"
                 @update-condition-config="updateConditionConfigForTab(tab.tabId, $event.nodeId, $event.patch)"
                 @update-condition-branch="updateConditionBranchForTab(tab.tabId, $event.nodeId, $event.currentKey, $event.nextKey, $event.mappingKeys)"
                 @add-condition-branch="addConditionBranchForTab(tab.tabId, $event.nodeId)"
@@ -98,6 +111,7 @@
                 @update:node-position="(payload) => handleNodePositionUpdate(tab.tabId, payload)"
                 @open-node-creation-menu="openNodeCreationMenuForTab(tab.tabId, $event)"
                 @create-node-from-file="createNodeFromFileForTab(tab.tabId, $event)"
+                @open-human-review="openHumanReviewPanelForTab(tab.tabId, $event.nodeId)"
               />
               <EditorNodeCreationMenu
                 :open="Boolean(nodeCreationMenuState(tab.tabId)?.open)"
@@ -134,8 +148,21 @@
               </div>
             </div>
 
+            <EditorHumanReviewPanel
+              v-if="sidePanelMode(tab.tabId) === 'human-review' && documentsByTabId[tab.tabId]"
+              :open="isStatePanelOpen(tab.tabId)"
+              :document="documentsByTabId[tab.tabId]!"
+              :run="latestRunDetailByTabId[tab.tabId] ?? null"
+              :focused-node-id="focusedNodeIdByTabId[tab.tabId] ?? null"
+              :busy="humanReviewBusyByTabId[tab.tabId] ?? false"
+              :error="humanReviewErrorByTabId[tab.tabId] ?? null"
+              @toggle="toggleStatePanel(tab.tabId)"
+              @focus-node="requestNodeFocusForTab(tab.tabId, $event)"
+              @resume="resumeHumanReviewRun(tab.tabId, $event)"
+            />
+
             <EditorStatePanel
-              v-if="documentsByTabId[tab.tabId]"
+              v-else-if="documentsByTabId[tab.tabId]"
               :open="isStatePanelOpen(tab.tabId)"
               :document="documentsByTabId[tab.tabId]!"
               :focused-node-id="focusedNodeIdByTabId[tab.tabId] ?? null"
@@ -172,10 +199,10 @@ import { useRoute, useRouter } from "vue-router";
 
 import { fetchPreset, fetchPresets, savePreset } from "@/api/presets";
 import { fetchKnowledgeBases } from "@/api/knowledge";
-import { fetchRun } from "@/api/runs";
+import { fetchRun, resumeRun } from "@/api/runs";
 import { fetchSettings } from "@/api/settings";
 import { fetchSkillDefinitions } from "@/api/skills";
-import { exportLangGraphPython, fetchGraph, runGraph, saveGraph, validateGraph } from "@/api/graphs";
+import { exportLangGraphPython, fetchGraph, importGraphFromPythonSource, runGraph, saveGraph, validateGraph } from "@/api/graphs";
 import { resolveAgentRuntimeCatalog } from "@/editor/nodes/agentConfigModel";
 import EditorCanvas from "@/editor/canvas/EditorCanvas.vue";
 import type { NodeFocusRequest } from "@/editor/canvas/useNodeSelectionFocus";
@@ -189,8 +216,7 @@ import {
   connectConditionRouteInDocument,
   connectFlowNodesInDocument,
   connectStateBindingInDocument,
-  createDraftFromTemplate,
-  createEmptyDraftGraph,
+  createEditorSeedDraftGraph,
   reconnectConditionRouteInDocument,
   reconnectFlowEdgeInDocument,
   removeConditionRouteFromDocument,
@@ -198,7 +224,10 @@ import {
   removeFlowEdgeFromDocument,
   removeNodeFromDocument,
   pruneUnreferencedStateSchemaInDocument,
+  resolveEditorSeedTemplate,
   syncKnowledgeBaseSkillsInDocument,
+  updateAgentBreakpointInDocument,
+  updateAgentBreakpointTimingInDocument,
   updateAgentNodeConfigInDocument,
   updateConditionBranchInDocument,
   updateConditionNodeConfigInDocument,
@@ -221,6 +250,7 @@ import {
 } from "@/lib/editor-workspace";
 import { useGraphDocumentStore } from "@/stores/graphDocument";
 import type { KnowledgeBaseRecord } from "@/types/knowledge";
+import type { RunDetail } from "@/types/run";
 import type { SettingsPayload } from "@/types/settings";
 import type { SkillDefinition } from "@/types/skills";
 import type {
@@ -240,6 +270,7 @@ import type {
 } from "@/types/node-system";
 
 import EditorCloseConfirmDialog from "./EditorCloseConfirmDialog.vue";
+import EditorHumanReviewPanel from "./EditorHumanReviewPanel.vue";
 import EditorNodeCreationMenu from "./EditorNodeCreationMenu.vue";
 import EditorStatePanel from "./EditorStatePanel.vue";
 import EditorTabBar from "./EditorTabBar.vue";
@@ -249,6 +280,7 @@ import { buildRunNodeArtifactsModel } from "./runNodeArtifactsModel.ts";
 import { addStateBindingToDocument, removeStateBindingFromDocument } from "./statePanelBindings.ts";
 import { addStateFieldToDocument, deleteStateFieldFromDocument, insertStateFieldIntoDocument, renameStateFieldInDocument, updateStateFieldInDocument, type StateFieldDraft } from "./statePanelFields.ts";
 import { buildPythonExportFileName, downloadPythonSource } from "./pythonExportModel.ts";
+import { isGraphiteUiPythonExportFile, isGraphiteUiPythonExportSource } from "./pythonImportModel.ts";
 
 const props = defineProps<{
   routeMode: "root" | "new" | "existing";
@@ -271,14 +303,19 @@ const documentsByTabId = ref<Record<string, GraphPayload | GraphDocument>>({});
 const loadingByTabId = ref<Record<string, boolean>>({});
 const errorByTabId = ref<Record<string, string | null>>({});
 const pendingCloseTabId = ref<string | null>(null);
+const pythonGraphImportInput = ref<HTMLInputElement | null>(null);
 const closeBusy = ref(false);
 const closeError = ref<string | null>(null);
 const handledRouteSignature = ref<string | null>(null);
 const statePanelOpenByTabId = ref<Record<string, boolean>>({});
+const sidePanelModeByTabId = ref<Record<string, "state" | "human-review">>({});
 const focusedNodeIdByTabId = ref<Record<string, string | null>>({});
 const focusRequestByTabId = ref<Record<string, NodeFocusRequest | null>>({});
 const runNodeStatusByTabId = ref<Record<string, Record<string, string>>>({});
 const currentRunNodeIdByTabId = ref<Record<string, string | null>>({});
+const latestRunDetailByTabId = ref<Record<string, RunDetail | null>>({});
+const humanReviewBusyByTabId = ref<Record<string, boolean>>({});
+const humanReviewErrorByTabId = ref<Record<string, string | null>>({});
 const runOutputPreviewByTabId = ref<Record<string, Record<string, { text: string; displayMode: string | null }>>>({});
 const runFailureMessageByTabId = ref<Record<string, Record<string, string>>>({});
 const activeRunEdgeIdsByTabId = ref<Record<string, string[]>>({});
@@ -426,6 +463,10 @@ async function pollRunForTab(tabId: string, runId: string, generation = runPollG
       nodeLabelLookup,
     });
     const runArtifactsModel = buildRunNodeArtifactsModel(run);
+    latestRunDetailByTabId.value = {
+      ...latestRunDetailByTabId.value,
+      [tabId]: run,
+    };
     runNodeStatusByTabId.value = {
       ...runNodeStatusByTabId.value,
       [tabId]: run.node_status_map ?? {},
@@ -451,6 +492,10 @@ async function pollRunForTab(tabId: string, runId: string, generation = runPollG
       activeRunId: run.run_id,
       activeRunStatus: run.status,
     });
+
+    if (run.status === "awaiting_human" && run.current_node_id) {
+      openHumanReviewPanelForTab(tabId, run.current_node_id);
+    }
 
     if (run.status === "queued" || run.status === "running" || run.status === "resuming") {
       scheduleRunPoll(tabId, runId, 500, generation);
@@ -559,6 +604,8 @@ function clearTabRuntime(tabId: string) {
   delete nextFeedback[tabId];
   const nextPanels = { ...statePanelOpenByTabId.value };
   delete nextPanels[tabId];
+  const nextSidePanelModes = { ...sidePanelModeByTabId.value };
+  delete nextSidePanelModes[tabId];
   const nextFocusedNodes = { ...focusedNodeIdByTabId.value };
   delete nextFocusedNodes[tabId];
   const nextFocusRequests = { ...focusRequestByTabId.value };
@@ -567,6 +614,12 @@ function clearTabRuntime(tabId: string) {
   delete nextRunNodeStatus[tabId];
   const nextCurrentRunNode = { ...currentRunNodeIdByTabId.value };
   delete nextCurrentRunNode[tabId];
+  const nextLatestRuns = { ...latestRunDetailByTabId.value };
+  delete nextLatestRuns[tabId];
+  const nextHumanReviewBusy = { ...humanReviewBusyByTabId.value };
+  delete nextHumanReviewBusy[tabId];
+  const nextHumanReviewErrors = { ...humanReviewErrorByTabId.value };
+  delete nextHumanReviewErrors[tabId];
   const nextOutputPreviews = { ...runOutputPreviewByTabId.value };
   delete nextOutputPreviews[tabId];
   const nextFailureMessages = { ...runFailureMessageByTabId.value };
@@ -578,10 +631,14 @@ function clearTabRuntime(tabId: string) {
   errorByTabId.value = nextErrors;
   feedbackByTabId.value = nextFeedback;
   statePanelOpenByTabId.value = nextPanels;
+  sidePanelModeByTabId.value = nextSidePanelModes;
   focusedNodeIdByTabId.value = nextFocusedNodes;
   focusRequestByTabId.value = nextFocusRequests;
   runNodeStatusByTabId.value = nextRunNodeStatus;
   currentRunNodeIdByTabId.value = nextCurrentRunNode;
+  latestRunDetailByTabId.value = nextLatestRuns;
+  humanReviewBusyByTabId.value = nextHumanReviewBusy;
+  humanReviewErrorByTabId.value = nextHumanReviewErrors;
   runOutputPreviewByTabId.value = nextOutputPreviews;
   runFailureMessageByTabId.value = nextFailureMessages;
   activeRunEdgeIdsByTabId.value = nextActiveEdges;
@@ -591,12 +648,12 @@ function createDraftForTab(tab: EditorWorkspaceTab): GraphPayload {
   if (tab.templateId) {
     const template = templateById.value.get(tab.templateId);
     if (template) {
-      const draft = createDraftFromTemplate(template);
+      const draft = createEditorSeedDraftGraph(props.templates, template.template_id, tab.title);
       draft.name = tab.title;
       return draft;
     }
   }
-  return createEmptyDraftGraph(tab.title);
+  return createEditorSeedDraftGraph(props.templates, tab.defaultTemplateId ?? null, tab.title);
 }
 
 function ensureUnsavedTabDocuments() {
@@ -610,14 +667,16 @@ function ensureUnsavedTabDocuments() {
 
 function openNewTab(templateId: string | null, navigation: "push" | "replace" | "none" = "push") {
   const template = templateId ? templateById.value.get(templateId) ?? null : null;
+  const seedTemplate = resolveEditorSeedTemplate(props.templates, template?.template_id ?? null);
+  const draft = createEditorSeedDraftGraph(props.templates, template?.template_id ?? null);
   const tab = createUnsavedWorkspaceTab({
     kind: template ? "template" : "new",
-    title: template?.label ?? "Untitled Graph",
+    title: template?.label ?? seedTemplate?.default_graph_name ?? draft.name,
     templateId: template?.template_id ?? null,
     defaultTemplateId: template?.template_id ?? null,
   });
 
-  registerDocumentForTab(tab.tabId, template ? createDraftFromTemplate(template) : createEmptyDraftGraph(tab.title));
+  registerDocumentForTab(tab.tabId, draft);
   updateWorkspace({
     activeTabId: tab.tabId,
     tabs: [...workspace.value.tabs, tab],
@@ -627,6 +686,33 @@ function openNewTab(templateId: string | null, navigation: "push" | "replace" | 
     syncRouteToTab(tab, navigation === "replace" ? "replace" : "push");
   }
   handledRouteSignature.value = templateId ? `new:${templateId}` : "new:";
+}
+
+function openImportedGraphTab(graph: GraphPayload, fileName: string) {
+  const importedGraph = cloneGraphDocument({
+    ...graph,
+    graph_id: null,
+    name: graph.name?.trim() || fileName.replace(/\.py$/i, "") || "Imported Graph",
+  });
+  const tab = {
+    ...createUnsavedWorkspaceTab({
+      kind: "new",
+      title: importedGraph.name,
+    }),
+    dirty: true,
+  };
+
+  registerDocumentForTab(tab.tabId, importedGraph);
+  updateWorkspace({
+    activeTabId: tab.tabId,
+    tabs: [...workspace.value.tabs, tab],
+  });
+  syncRouteToTab(tab);
+  handledRouteSignature.value = "new:";
+  setMessageFeedbackForTab(tab.tabId, {
+    tone: "success",
+    message: `Imported graph from ${fileName}.`,
+  });
 }
 
 async function loadExistingGraphIntoTab(tabId: string, graphId: string) {
@@ -758,11 +844,46 @@ function isStatePanelOpen(tabId: string) {
   return statePanelOpenByTabId.value[tabId] ?? false;
 }
 
+function sidePanelMode(tabId: string) {
+  return sidePanelModeByTabId.value[tabId] ?? "state";
+}
+
 function toggleStatePanel(tabId: string) {
   statePanelOpenByTabId.value = {
     ...statePanelOpenByTabId.value,
     [tabId]: !isStatePanelOpen(tabId),
   };
+}
+
+function openHumanReviewPanelForTab(tabId: string, nodeId: string | null) {
+  closeNodeCreationMenu(tabId);
+  sidePanelModeByTabId.value = {
+    ...sidePanelModeByTabId.value,
+    [tabId]: "human-review",
+  };
+  statePanelOpenByTabId.value = {
+    ...statePanelOpenByTabId.value,
+    [tabId]: true,
+  };
+  focusNodeForTab(tabId, nodeId);
+}
+
+function isGraphInteractionLocked(tabId: string) {
+  return latestRunDetailByTabId.value[tabId]?.status === "awaiting_human";
+}
+
+function guardGraphEditForTab(tabId: string) {
+  if (!isGraphInteractionLocked(tabId)) {
+    return false;
+  }
+  const run = latestRunDetailByTabId.value[tabId] ?? null;
+  setMessageFeedbackForTab(tabId, {
+    tone: "warning",
+    message: "Run is paused for human review. Continue or cancel the paused run before editing the graph.",
+    activeRunId: run?.run_id ?? undefined,
+    activeRunStatus: run?.status ?? "awaiting_human",
+  });
+  return true;
 }
 
 function focusNodeForTab(tabId: string, nodeId: string | null) {
@@ -796,7 +917,23 @@ function toggleActiveStatePanel() {
   if (!activeTab.value) {
     return;
   }
-  toggleStatePanel(activeTab.value.tabId);
+  const tabId = activeTab.value.tabId;
+  if (sidePanelMode(tabId) !== "state") {
+    sidePanelModeByTabId.value = {
+      ...sidePanelModeByTabId.value,
+      [tabId]: "state",
+    };
+    statePanelOpenByTabId.value = {
+      ...statePanelOpenByTabId.value,
+      [tabId]: true,
+    };
+    return;
+  }
+  sidePanelModeByTabId.value = {
+    ...sidePanelModeByTabId.value,
+    [tabId]: "state",
+  };
+  toggleStatePanel(tabId);
 }
 
 function editorGridStyle(tabId: string) {
@@ -823,6 +960,9 @@ function nodeCreationEntriesForTab(tabId: string): NodeCreationEntry[] {
 }
 
 function openNodeCreationMenuForTab(tabId: string, context: NodeCreationContext) {
+  if (guardGraphEditForTab(tabId)) {
+    return;
+  }
   nodeCreationMenuByTabId.value = {
     ...nodeCreationMenuByTabId.value,
     [tabId]: {
@@ -863,6 +1003,10 @@ function updateNodeCreationQuery(tabId: string, query: string) {
 }
 
 function createNodeFromMenuForTab(tabId: string, _entry: NodeCreationEntry) {
+  if (guardGraphEditForTab(tabId)) {
+    closeNodeCreationMenu(tabId);
+    return;
+  }
   const document = documentsByTabId.value[tabId];
   const menuState = nodeCreationMenuState(tabId);
   if (!document || !menuState?.context) {
@@ -891,6 +1035,10 @@ function createNodeFromMenuForTab(tabId: string, _entry: NodeCreationEntry) {
 }
 
 async function createNodeFromFileForTab(tabId: string, _payload: { file: File; position: GraphPosition }) {
+  if (guardGraphEditForTab(tabId)) {
+    closeNodeCreationMenu(tabId);
+    return;
+  }
   const document = documentsByTabId.value[tabId];
   if (!document) {
     closeNodeCreationMenu(tabId);
@@ -898,6 +1046,11 @@ async function createNodeFromFileForTab(tabId: string, _payload: { file: File; p
   }
 
   try {
+    if (isGraphiteUiPythonExportFile(_payload.file) && (await importPythonGraphFile(_payload.file, { fallbackToFileNode: true }))) {
+      closeNodeCreationMenu(tabId);
+      return;
+    }
+
     const result = await createNodeFromDroppedFile(document, {
       file: _payload.file,
       position: _payload.position,
@@ -916,7 +1069,57 @@ async function createNodeFromFileForTab(tabId: string, _payload: { file: File; p
   closeNodeCreationMenu(tabId);
 }
 
+function openPythonGraphImportDialog() {
+  pythonGraphImportInput.value?.click();
+}
+
+async function handlePythonGraphImportSelection(event: Event) {
+  const input = event.currentTarget instanceof HTMLInputElement ? event.currentTarget : null;
+  const file = input?.files?.[0] ?? null;
+  if (input) {
+    input.value = "";
+  }
+  if (!file) {
+    return;
+  }
+  await importPythonGraphFile(file, { fallbackToFileNode: false });
+}
+
+async function importPythonGraphFile(file: File, options: { fallbackToFileNode: boolean }) {
+  const source = await file.text();
+  if (!isGraphiteUiPythonExportSource(source)) {
+    if (!options.fallbackToFileNode) {
+      const tab = activeTab.value;
+      if (tab) {
+        setMessageFeedbackForTab(tab.tabId, {
+          tone: "warning",
+          message: `${file.name} is not a GraphiteUI Python export.`,
+        });
+      }
+    }
+    return false;
+  }
+
+  try {
+    const importedGraph = await importGraphFromPythonSource(source);
+    openImportedGraphTab(importedGraph, file.name);
+    return true;
+  } catch (error) {
+    const tab = activeTab.value;
+    if (tab) {
+      setMessageFeedbackForTab(tab.tabId, {
+        tone: "warning",
+        message: error instanceof Error ? error.message : "Failed to import GraphiteUI Python export.",
+      });
+    }
+    return true;
+  }
+}
+
 function handleNodePositionUpdate(tabId: string, payload: { nodeId: string; position: GraphPosition }) {
+  if (guardGraphEditForTab(tabId)) {
+    return;
+  }
   const document = documentsByTabId.value[tabId];
   if (!document?.nodes[payload.nodeId]) {
     return;
@@ -936,6 +1139,9 @@ function handleNodePositionUpdate(tabId: string, payload: { nodeId: string; posi
 }
 
 function markDocumentDirty(tabId: string, nextDocument: GraphPayload | GraphDocument) {
+  if (guardGraphEditForTab(tabId)) {
+    return;
+  }
   setDocumentForTab(tabId, nextDocument);
   updateWorkspace(
     applyDocumentMetaToWorkspaceTab(workspace.value, tabId, {
@@ -1295,6 +1501,36 @@ function updateAgentConfigForTab(tabId: string, nodeId: string, patch: Partial<A
   focusNodeForTab(tabId, nodeId);
 }
 
+function toggleAgentBreakpointForTab(tabId: string, nodeId: string, enabled: boolean) {
+  const document = documentsByTabId.value[tabId];
+  if (!document) {
+    return;
+  }
+
+  const nextDocument = updateAgentBreakpointInDocument(document, nodeId, enabled);
+  if (nextDocument === document) {
+    return;
+  }
+
+  markDocumentDirty(tabId, nextDocument);
+  focusNodeForTab(tabId, nodeId);
+}
+
+function updateAgentBreakpointTimingForTab(tabId: string, nodeId: string, timing: "before" | "after") {
+  const document = documentsByTabId.value[tabId];
+  if (!document) {
+    return;
+  }
+
+  const nextDocument = updateAgentBreakpointTimingInDocument(document, nodeId, timing);
+  if (nextDocument === document) {
+    return;
+  }
+
+  markDocumentDirty(tabId, nextDocument);
+  focusNodeForTab(tabId, nodeId);
+}
+
 function updateConditionConfigForTab(tabId: string, nodeId: string, patch: Partial<ConditionNode["config"]>) {
   const document = documentsByTabId.value[tabId];
   if (!document) {
@@ -1430,6 +1666,9 @@ function removeStateWriterBinding(tabId: string, stateKey: string, nodeId: strin
 function renameActiveGraph(name: string) {
   const tab = activeTab.value;
   if (!tab) {
+    return;
+  }
+  if (guardGraphEditForTab(tab.tabId)) {
     return;
   }
   const document = documentsByTabId.value[tab.tabId];
@@ -1617,6 +1856,14 @@ async function runActiveGraph() {
       ...activeRunEdgeIdsByTabId.value,
       [tab.tabId]: [],
     };
+    latestRunDetailByTabId.value = {
+      ...latestRunDetailByTabId.value,
+      [tab.tabId]: null,
+    };
+    humanReviewErrorByTabId.value = {
+      ...humanReviewErrorByTabId.value,
+      [tab.tabId]: null,
+    };
     setFeedbackForTab(tab.tabId, {
       tone: "warning",
       message: `Run ${response.run_id} queued. Pending ${Object.keys(document.nodes).length} nodes.`,
@@ -1637,6 +1884,53 @@ async function runActiveGraph() {
       tone: "danger",
       message: error instanceof Error ? error.message : "Failed to run graph.",
     });
+  }
+}
+
+async function resumeHumanReviewRun(tabId: string, payload: Record<string, unknown>) {
+  const run = latestRunDetailByTabId.value[tabId];
+  if (!run) {
+    return;
+  }
+
+  humanReviewBusyByTabId.value = {
+    ...humanReviewBusyByTabId.value,
+    [tabId]: true,
+  };
+  humanReviewErrorByTabId.value = {
+    ...humanReviewErrorByTabId.value,
+    [tabId]: null,
+  };
+
+  try {
+    const response = await resumeRun(run.run_id, payload);
+    cancelRunPolling(tabId);
+    const generation = runPollGenerationByTabId.get(tabId) ?? 0;
+    latestRunDetailByTabId.value = {
+      ...latestRunDetailByTabId.value,
+      [tabId]: {
+        ...run,
+        run_id: response.run_id,
+        status: response.status,
+      },
+    };
+    setMessageFeedbackForTab(tabId, {
+      tone: "warning",
+      message: `Run ${response.run_id} resuming.`,
+      activeRunId: response.run_id,
+      activeRunStatus: response.status,
+    });
+    void pollRunForTab(tabId, response.run_id, generation);
+  } catch (error) {
+    humanReviewErrorByTabId.value = {
+      ...humanReviewErrorByTabId.value,
+      [tabId]: error instanceof Error ? error.message : "Failed to resume run.",
+    };
+  } finally {
+    humanReviewBusyByTabId.value = {
+      ...humanReviewBusyByTabId.value,
+      [tabId]: false,
+    };
   }
 }
 
@@ -1751,6 +2045,10 @@ onMounted(() => {
   overflow: hidden;
   background: radial-gradient(circle at top, rgba(154, 52, 18, 0.1), transparent 22%),
     linear-gradient(180deg, #f5efe2 0%, #ede4d2 100%);
+}
+
+.editor-workspace-shell__file-input {
+  display: none;
 }
 
 .editor-workspace-shell__welcome {

@@ -31,7 +31,7 @@ test("EditorCanvas does not animate node transforms while dragging", () => {
 });
 
 test("EditorCanvas raises hovered and selected nodes above sibling cards", () => {
-  assert.match(componentSource, /:class="\{ 'editor-canvas__node--selected': selection\.selectedNodeId\.value === nodeId \}"/);
+  assert.match(componentSource, /:class="\{ 'editor-canvas__node--selected': isNodeVisuallySelected\(nodeId\) \}"/);
   assert.match(componentSource, /<NodeCard[\s\S]*:class="resolveRunNodeClassList\(nodeId\)"/);
   assert.match(componentSource, /\.editor-canvas__node:hover,\n\.editor-canvas__node:focus-within,\n\.editor-canvas__node--selected \{[\s\S]*z-index:\s*8;/);
 });
@@ -62,6 +62,32 @@ test("EditorCanvas restores legacy runtime feedback styling on node cards and ac
   assert.match(componentSource, /\.editor-canvas__edge--active-run \{[\s\S]*opacity:\s*1;/);
   assert.doesNotMatch(componentSource, /\.editor-canvas__edge--active-run \{[^}]*stroke:/);
   assert.doesNotMatch(componentSource, /\.editor-canvas__edge--active-run \{[^}]*filter:/);
+});
+
+test("EditorCanvas treats awaiting-human current node as a persistent review node", () => {
+  assert.match(componentSource, /:class="\{ 'editor-canvas__node--selected': isNodeVisuallySelected\(nodeId\) \}"/);
+  assert.match(componentSource, /:human-review-pending="isHumanReviewNode\(nodeId\)"/);
+  assert.match(componentSource, /@open-human-review="emit\('open-human-review', \$event\)"/);
+  assert.match(componentSource, /function isHumanReviewNode\(nodeId: string\)/);
+  assert.match(componentSource, /props\.latestRunStatus === "awaiting_human" && props\.currentRunNodeId === nodeId/);
+  assert.match(componentSource, /function isNodeVisuallySelected\(nodeId: string\)/);
+  assert.match(componentSource, /return selection\.selectedNodeId\.value === nodeId \|\| isHumanReviewNode\(nodeId\);/);
+});
+
+test("EditorCanvas keeps paused human-review graphs viewable but read-only", () => {
+  assert.match(componentSource, /interactionLocked\?: boolean;/);
+  assert.match(componentSource, /'editor-canvas--locked': interactionLocked/);
+  assert.match(componentSource, /v-if="interactionLocked"/);
+  assert.match(componentSource, /class="editor-canvas__lock-banner"/);
+  assert.match(componentSource, /function isGraphEditingLocked\(\)/);
+  assert.match(componentSource, /return Boolean\(props\.interactionLocked\);/);
+  assert.match(componentSource, /function handleLockedNodePointerCapture\(nodeId: string, event: PointerEvent\)/);
+  assert.match(componentSource, /target\.closest\("\[data-human-review-action='true'\]"\)/);
+  assert.match(componentSource, /if \(isGraphEditingLocked\(\)\) \{/);
+  assert.match(componentSource, /function handleCanvasDoubleClick\(event: MouseEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
+  assert.match(componentSource, /function handleCanvasDrop\(event: DragEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
+  assert.match(componentSource, /function handleEdgePointerDown\(edge: ProjectedCanvasEdge, event: PointerEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
+  assert.match(componentSource, /function handleAnchorPointerDown\(anchor: ProjectedCanvasAnchor\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
 });
 
 test("EditorCanvas renders condition route outputs as right-side floating branch handles", () => {
@@ -256,11 +282,12 @@ test("EditorCanvas restores empty-canvas onboarding copy for node creation", () 
 
 test("EditorCanvas constrains empty-canvas onboarding text inside narrow canvas widths", () => {
   assert.match(componentSource, /\.editor-canvas__empty-state \{[\s\S]*padding-inline:\s*clamp\(16px,\s*6vw,\s*56px\);/);
-  assert.match(componentSource, /\.editor-canvas__empty-title \{[\s\S]*max-width:\s*min\(100%,\s*34rem\);/);
+  assert.match(componentSource, /class="editor-canvas__empty-card"/);
+  assert.match(componentSource, /\.editor-canvas__empty-card \{[\s\S]*width:\s*min\(100%,\s*34rem\);/);
+  assert.match(componentSource, /\.editor-canvas__empty-card \{[\s\S]*border-radius:\s*28px;/);
   assert.match(componentSource, /\.editor-canvas__empty-title \{[\s\S]*overflow-wrap:\s*anywhere;/);
   assert.match(componentSource, /\.editor-canvas__empty-title \{[\s\S]*font-size:\s*clamp\(1\.35rem,\s*5vw,\s*2rem\);/);
-  assert.match(componentSource, /@media \(max-width:\s*640px\) \{[\s\S]*\.editor-canvas__empty-title \{[\s\S]*max-width:\s*min\(100%,\s*18rem\);/);
-  assert.match(componentSource, /@media \(max-width:\s*640px\) \{[\s\S]*\.editor-canvas__empty-copy \{[\s\S]*max-width:\s*min\(100%,\s*18rem\);/);
+  assert.match(componentSource, /@media \(max-width:\s*640px\) \{[\s\S]*\.editor-canvas__empty-card \{[\s\S]*max-width:\s*min\(100%,\s*18rem\);/);
 });
 
 test("EditorCanvas emits node-creation intents for empty-canvas double click and dropped files", () => {

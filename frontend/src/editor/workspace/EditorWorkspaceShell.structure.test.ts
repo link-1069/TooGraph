@@ -33,6 +33,14 @@ test("EditorWorkspaceShell loads persisted presets for the node creation menu", 
   assert.match(componentSource, /persistedPresets\.value = await fetchPresets\(\)/);
 });
 
+test("EditorWorkspaceShell seeds plain new tabs from the baseline default template", () => {
+  assert.match(componentSource, /createEditorSeedDraftGraph/);
+  assert.match(componentSource, /resolveEditorSeedTemplate/);
+  assert.match(componentSource, /return createEditorSeedDraftGraph\(props\.templates, tab\.defaultTemplateId \?\? null, tab\.title\);/);
+  assert.match(componentSource, /const seedTemplate = resolveEditorSeedTemplate\(props\.templates, template\?\.template_id \?\? null\);/);
+  assert.match(componentSource, /const draft = createEditorSeedDraftGraph\(props\.templates, template\?\.template_id \?\? null\);/);
+});
+
 test("EditorWorkspaceShell wires node top-action events into state updates, node deletion, and preset persistence", () => {
   assert.match(componentSource, /import \{ fetchPreset, fetchPresets, savePreset \} from "@\/api\/presets";/);
   assert.match(componentSource, /@update-node-metadata="updateNodeMetadataForTab\(tab\.tabId, \$event\.nodeId, \$event\.patch\)"/);
@@ -70,4 +78,32 @@ test("EditorWorkspaceShell routes menu selections and dropped files through the 
   assert.doesNotMatch(componentSource, /focusNodeForTab\(tabId, result\.createdNodeId\)/);
   assert.doesNotMatch(componentSource, /requestNodeFocusForTab\(tabId, result\.createdNodeId\)/);
   assert.match(componentSource, /closeNodeCreationMenu\(tabId\)/);
+});
+
+test("EditorWorkspaceShell imports marked GraphiteUI Python files as new graph tabs", () => {
+  assert.match(componentSource, /@import-python-graph="openPythonGraphImportDialog"/);
+  assert.match(componentSource, /ref="pythonGraphImportInput"/);
+  assert.match(componentSource, /async function importPythonGraphFile\(/);
+  assert.match(componentSource, /isGraphiteUiPythonExportSource\(source\)/);
+  assert.match(componentSource, /openImportedGraphTab\(importedGraph, file\.name\)/);
+});
+
+test("EditorWorkspaceShell opens the right sidebar in Human Review mode for awaiting-human runs", () => {
+  assert.match(componentSource, /import EditorHumanReviewPanel from "\.\/EditorHumanReviewPanel\.vue";/);
+  assert.match(componentSource, /const sidePanelModeByTabId = ref<Record<string, "state" \| "human-review">>\(\{\}\);/);
+  assert.match(componentSource, /function openHumanReviewPanelForTab\(tabId: string, nodeId: string \| null\)/);
+  assert.match(componentSource, /@open-human-review="openHumanReviewPanelForTab\(tab\.tabId, \$event\.nodeId\)"/);
+  assert.match(componentSource, /<EditorHumanReviewPanel/);
+  assert.match(componentSource, /v-if="sidePanelMode\(tab\.tabId\) === 'human-review' && documentsByTabId\[tab\.tabId\]"/);
+  assert.match(componentSource, /:run="latestRunDetailByTabId\[tab\.tabId\] \?\? null"/);
+  assert.match(componentSource, /if \(run\.status === "awaiting_human" && run\.current_node_id\) \{/);
+  assert.match(componentSource, /openHumanReviewPanelForTab\(tabId, run\.current_node_id\);/);
+});
+
+test("EditorWorkspaceShell locks graph editing while a run is awaiting human review", () => {
+  assert.match(componentSource, /:interaction-locked="isGraphInteractionLocked\(tab\.tabId\)"/);
+  assert.match(componentSource, /function isGraphInteractionLocked\(tabId: string\)/);
+  assert.match(componentSource, /return latestRunDetailByTabId\.value\[tabId\]\?\.status === "awaiting_human";/);
+  assert.match(componentSource, /function guardGraphEditForTab\(tabId: string\)/);
+  assert.match(componentSource, /if \(guardGraphEditForTab\(tabId\)\) \{/);
 });
