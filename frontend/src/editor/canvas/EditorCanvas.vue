@@ -164,31 +164,6 @@
           @update:color="handleDataEdgeStateEditorColorInput"
           @update:description="handleDataEdgeStateEditorDescriptionInput"
         />
-        <div class="editor-canvas__edge-state-editor-actions">
-          <button
-            v-if="canRemoveDataEdgeSourceBinding()"
-            type="button"
-            class="editor-canvas__edge-state-editor-action"
-            @pointerdown.stop
-            @click.stop="removeDataEdgeSourceBinding"
-          >
-            <ElIcon><Delete /></ElIcon>
-            <span>Remove source ref</span>
-          </button>
-          <button type="button" class="editor-canvas__edge-state-editor-action" @pointerdown.stop @click.stop="removeDataEdgeTargetBinding">
-            <ElIcon><Delete /></ElIcon>
-            <span>Remove target ref</span>
-          </button>
-        </div>
-        <button
-          type="button"
-          class="editor-canvas__edge-state-editor-action editor-canvas__edge-state-editor-action--danger"
-          @pointerdown.stop
-          @click.stop="removeDataEdgeBindings"
-        >
-          <ElIcon><Delete /></ElIcon>
-          <span>Remove both refs</span>
-        </button>
       </div>
       <div
         v-for="[nodeId, node] in nodeEntries"
@@ -324,7 +299,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
-import { Check, Delete } from "@element-plus/icons-vue";
+import { Check } from "@element-plus/icons-vue";
 
 import { buildAnchorModel } from "@/editor/anchors/anchorModel";
 import EditorMinimap from "./EditorMinimap.vue";
@@ -453,6 +428,14 @@ const nodeDrag = ref<{
   originY: number;
   captureElement: HTMLElement | null;
   moved: boolean;
+} | null>(null);
+const activeCanvasPointers = new Map<number, { clientX: number; clientY: number; pointerType: string }>();
+const pinchZoom = ref<{
+  pointerIds: [number, number];
+  startDistance: number;
+  startScale: number;
+  centerClientX: number;
+  centerClientY: number;
 } | null>(null);
 const suppressedNodeClickId = ref<string | null>(null);
 const suppressedNodeClickTimeoutRef = ref<number | null>(null);
@@ -1124,60 +1107,6 @@ function handleDataEdgeStateEditorTypeValue(value: string | number | boolean | u
   });
 }
 
-function canRemoveDataEdgeSourceBinding() {
-  if (!activeDataEdgeStateEditor.value) {
-    return false;
-  }
-  return props.document.nodes[activeDataEdgeStateEditor.value.source]?.kind === "agent";
-}
-
-function removeDataEdgeSourceBinding() {
-  if (!activeDataEdgeStateEditor.value) {
-    return;
-  }
-  if (!canRemoveDataEdgeSourceBinding()) {
-    return;
-  }
-  emit("remove-port-state", {
-    nodeId: activeDataEdgeStateEditor.value.source,
-    side: "output",
-    stateKey: activeDataEdgeStateEditor.value.stateKey,
-  });
-  clearDataEdgeStateInteraction();
-}
-
-function removeDataEdgeTargetBinding() {
-  if (!activeDataEdgeStateEditor.value) {
-    return;
-  }
-  emit("remove-port-state", {
-    nodeId: activeDataEdgeStateEditor.value.target,
-    side: "input",
-    stateKey: activeDataEdgeStateEditor.value.stateKey,
-  });
-  clearDataEdgeStateInteraction();
-}
-
-function removeDataEdgeBindings() {
-  if (!activeDataEdgeStateEditor.value) {
-    return;
-  }
-
-  if (canRemoveDataEdgeSourceBinding()) {
-    emit("remove-port-state", {
-      nodeId: activeDataEdgeStateEditor.value.source,
-      side: "output",
-      stateKey: activeDataEdgeStateEditor.value.stateKey,
-    });
-  }
-  emit("remove-port-state", {
-    nodeId: activeDataEdgeStateEditor.value.target,
-    side: "input",
-    stateKey: activeDataEdgeStateEditor.value.stateKey,
-  });
-  clearDataEdgeStateInteraction();
-}
-
 function nodeStyle(position: GraphPosition) {
   return {
     transform: `translate(${position.x}px, ${position.y}px)`,
@@ -1632,7 +1561,100 @@ function roundMeasuredOffset(value: number) {
   return Math.round(value * 1000) / 1000;
 }
 
+function clearPinchZoom() {
+  pinchZoom.value = null;
+  activeCanvasPointers.clear();
+}
+
+function resolvePointerDistance(left: { clientX: number; clientY: number }, right: { clientX: number; clientY: number }) {
+  return Math.hypot(right.clientX - left.clientX, right.clientY - left.clientY);
+}
+
+function resolvePointerCenter(left: { clientX: number; clientY: number }, right: { clientX: number; clientY: number }) {
+  return {
+    clientX: (left.clientX + right.clientX) / 2,
+    clientY: (left.clientY + right.clientY) / 2,
+  };
+}
+
+function beginPinchZoomIfReady() {
+  const touchPointers = Array.from(activeCanvasPointers.entries()).filter(([, pointer]) => pointer.pointerType === "touch");
+  if (touchPointers.length < 2) {
+    return false;
+  }
+
+  const [leftEntry, rightEntry] = touchPointers;
+  if (!leftEntry || !rightEntry) {
+    return false;
+  }
+
+  const [, leftPointer] = leftEntry;
+  const [, rightPointer] = rightEntry;
+  const startDistance = resolvePointerDistance(leftPointer, rightPointer);
+  if (startDistance <= 0) {
+    return false;
+  }
+
+  const center = resolvePointerCenter(leftPointer, rightPointer);
+  viewport.endPan();
+  pinchZoom.value = {
+    pointerIds: [leftEntry[0], rightEntry[0]],
+    startDistance,
+    startScale: viewport.viewport.scale,
+    centerClientX: center.clientX,
+    centerClientY: center.clientY,
+  };
+  return true;
+}
+
+function updatePinchZoom() {
+  const pinch = pinchZoom.value;
+  if (!pinch) {
+    return;
+  }
+
+  const leftPointer = activeCanvasPointers.get(pinch.pointerIds[0]);
+  const rightPointer = activeCanvasPointers.get(pinch.pointerIds[1]);
+  const canvas = canvasRef.value;
+  if (!leftPointer || !rightPointer || !canvas) {
+    clearPinchZoom();
+    return;
+  }
+
+  const nextDistance = resolvePointerDistance(leftPointer, rightPointer);
+  if (nextDistance <= 0) {
+    return;
+  }
+
+  const center = resolvePointerCenter(leftPointer, rightPointer);
+  const rect = canvas.getBoundingClientRect();
+  viewport.zoomAt({
+    clientX: center.clientX,
+    clientY: center.clientY,
+    canvasLeft: rect.left,
+    canvasTop: rect.top,
+    nextScale: pinch.startScale * (nextDistance / pinch.startDistance),
+  });
+}
+
 function handleCanvasPointerDown(event: PointerEvent) {
+  if (event.pointerType === "touch") {
+    activeCanvasPointers.set(event.pointerId, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      pointerType: event.pointerType,
+    });
+    if (beginPinchZoomIfReady()) {
+      event.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      clearCanvasTransientState();
+      pendingConnection.value = null;
+      pendingConnectionPoint.value = null;
+      selectedEdgeId.value = null;
+      selection.clearSelection();
+      return;
+    }
+  }
   canvasRef.value?.focus();
   event.preventDefault();
   window.getSelection()?.removeAllRanges();
@@ -1647,6 +1669,20 @@ function handleCanvasPointerDown(event: PointerEvent) {
 }
 
 function handleCanvasPointerMove(event: PointerEvent) {
+  if (event.pointerType === "touch" && activeCanvasPointers.has(event.pointerId)) {
+    activeCanvasPointers.set(event.pointerId, {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      pointerType: event.pointerType,
+    });
+    if (pinchZoom.value) {
+      event.preventDefault();
+      scheduleDragFrame(() => {
+        updatePinchZoom();
+      });
+      return;
+    }
+  }
   if (activeConnection.value) {
     scheduleDragFrame(() => {
       autoSnappedTargetAnchor.value = resolveAutoSnappedTargetAnchor(event);
@@ -1664,6 +1700,9 @@ function handleCanvasPointerMove(event: PointerEvent) {
         return;
       }
       nodeDrag.value.moved = true;
+      if (nodeDrag.value.captureElement && !nodeDrag.value.captureElement.hasPointerCapture(event.pointerId)) {
+        nodeDrag.value.captureElement.setPointerCapture(event.pointerId);
+      }
     }
     const deltaX = pointerDeltaX / viewport.viewport.scale;
     const deltaY = pointerDeltaY / viewport.viewport.scale;
@@ -1689,6 +1728,12 @@ function handleCanvasPointerMove(event: PointerEvent) {
 
 function handleCanvasPointerUp(event: PointerEvent) {
   flushScheduledDragFrame();
+  activeCanvasPointers.delete(event.pointerId);
+  if (pinchZoom.value?.pointerIds.includes(event.pointerId)) {
+    clearPinchZoom();
+    viewport.endPan();
+    return;
+  }
   if (canvasRef.value?.hasPointerCapture(event.pointerId)) {
     canvasRef.value.releasePointerCapture(event.pointerId);
   }
@@ -1919,12 +1964,14 @@ function handleNodePointerDown(nodeId: string, event: PointerEvent) {
   }
   if (!preserveInlineEditorFocus) {
     canvasRef.value?.focus();
+    event.preventDefault();
   }
-  event.preventDefault();
   let captureElement: HTMLElement | null = null;
   if (event.currentTarget instanceof HTMLElement) {
-    event.currentTarget.setPointerCapture(event.pointerId);
     captureElement = event.currentTarget;
+    if (!preserveInlineEditorFocus) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    }
   }
   clearCanvasTransientState();
   pendingConnection.value = null;
@@ -2585,48 +2632,6 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
   gap: 10px;
   transform: translate(-50%, calc(-100% - 18px));
   pointer-events: auto;
-}
-
-.editor-canvas__edge-state-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-.editor-canvas__edge-state-editor-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgba(185, 28, 28, 0.14);
-  border-radius: 999px;
-  background: rgba(255, 248, 248, 0.96);
-  color: rgba(127, 29, 29, 0.92);
-  font-size: 0.76rem;
-  font-weight: 600;
-  box-shadow: 0 10px 20px rgba(120, 53, 15, 0.08);
-}
-
-.editor-canvas__edge-state-editor-action:hover {
-  border-color: rgba(185, 28, 28, 0.22);
-  background: rgba(255, 242, 242, 0.98);
-}
-
-.editor-canvas__edge-state-editor-action--danger {
-  width: 100%;
-  justify-content: center;
-  min-height: 38px;
-  margin-top: 2px;
-  border-color: rgba(185, 28, 28, 0.18);
-  background: rgba(255, 241, 241, 0.98);
-  color: rgba(127, 29, 29, 0.94);
-  font-size: 0.8rem;
-}
-
-.editor-canvas__edge-state-editor-action--danger:hover {
-  border-color: rgba(185, 28, 28, 0.28);
-  background: rgba(254, 226, 226, 0.98);
 }
 
 .editor-canvas__anchors {

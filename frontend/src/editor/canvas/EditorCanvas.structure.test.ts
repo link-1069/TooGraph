@@ -225,7 +225,7 @@ test("EditorCanvas tints route edge outlines from the branch palette", () => {
   assert.match(componentSource, /\.editor-canvas__edge-delete-highlight \{[\s\S]*stroke:\s*var\(--editor-edge-outline, rgba\(201,\s*107,\s*31,\s*0\.16\)\);/);
 });
 
-test("EditorCanvas gives data edges the same two-step state editing entry pattern as state ports", () => {
+test("EditorCanvas gives data edges the same two-step state editing entry pattern as state ports without binding deletion actions", () => {
   assert.match(componentSource, /import StateEditorPopover from "@\/editor\/nodes\/StateEditorPopover\.vue";/);
   assert.match(componentSource, /const activeDataEdgeStateConfirm = ref<\{/);
   assert.match(componentSource, /const activeDataEdgeStateEditor = ref<\{/);
@@ -235,9 +235,6 @@ test("EditorCanvas gives data edges the same two-step state editing entry patter
   assert.match(componentSource, /function startDataEdgeStateConfirm\(edge: ProjectedCanvasEdge, event: PointerEvent\)/);
   assert.match(componentSource, /function openDataEdgeStateEditor\(\)/);
   assert.match(componentSource, /function syncDataEdgeStateDraft\(nextDraft: StateFieldDraft\)/);
-  assert.match(componentSource, /function canRemoveDataEdgeSourceBinding\(\)/);
-  assert.match(componentSource, /function removeDataEdgeSourceBinding\(\)/);
-  assert.match(componentSource, /function removeDataEdgeTargetBinding\(\)/);
   assert.match(componentSource, /if \(edge\.kind === "data"\) \{[\s\S]*startDataEdgeStateConfirm\(edge, event\);[\s\S]*return;/);
   assert.match(componentSource, /<div[\s\S]*v-if="activeDataEdgeStateConfirm"[\s\S]*class="editor-canvas__edge-state-confirm"/);
   assert.match(componentSource, /<div class="editor-canvas__confirm-hint editor-canvas__confirm-hint--state">Edit state\?<\/div>/);
@@ -250,16 +247,15 @@ test("EditorCanvas gives data edges the same two-step state editing entry patter
   assert.match(componentSource, /@update:type="handleDataEdgeStateEditorTypeValue"/);
   assert.match(componentSource, /@update:color="handleDataEdgeStateEditorColorInput"/);
   assert.match(componentSource, /@update:description="handleDataEdgeStateEditorDescriptionInput"/);
-  assert.match(componentSource, /v-if="canRemoveDataEdgeSourceBinding\(\)"/);
-  assert.match(componentSource, /class="editor-canvas__edge-state-editor-action"/);
-  assert.match(componentSource, /Remove source ref/);
-  assert.match(componentSource, /Remove target ref/);
-  assert.match(componentSource, /class="editor-canvas__edge-state-editor-action editor-canvas__edge-state-editor-action--danger"/);
-  assert.match(componentSource, /Remove both refs/);
-  assert.match(componentSource, /function removeDataEdgeBindings\(\)/);
-  assert.match(componentSource, /if \(!canRemoveDataEdgeSourceBinding\(\)\) \{[\s\S]*return;[\s\S]*\}/);
-  assert.match(componentSource, /if \(canRemoveDataEdgeSourceBinding\(\)\) \{[\s\S]*emit\("remove-port-state", \{[\s\S]*nodeId: activeDataEdgeStateEditor\.value\.source,[\s\S]*side: "output",[\s\S]*stateKey: activeDataEdgeStateEditor\.value\.stateKey,[\s\S]*\}\);[\s\S]*\}/);
-  assert.match(componentSource, /emit\("remove-port-state", \{[\s\S]*nodeId: activeDataEdgeStateEditor\.value\.target,[\s\S]*side: "input",[\s\S]*stateKey: activeDataEdgeStateEditor\.value\.stateKey,[\s\S]*\}\);/);
+  assert.doesNotMatch(componentSource, /v-if="canRemoveDataEdgeSourceBinding\(\)"/);
+  assert.doesNotMatch(componentSource, /class="editor-canvas__edge-state-editor-action"/);
+  assert.doesNotMatch(componentSource, /Remove source ref/);
+  assert.doesNotMatch(componentSource, /Remove target ref/);
+  assert.doesNotMatch(componentSource, /Remove both refs/);
+  assert.doesNotMatch(componentSource, /function canRemoveDataEdgeSourceBinding\(\)/);
+  assert.doesNotMatch(componentSource, /function removeDataEdgeSourceBinding\(\)/);
+  assert.doesNotMatch(componentSource, /function removeDataEdgeTargetBinding\(\)/);
+  assert.doesNotMatch(componentSource, /function removeDataEdgeBindings\(\)/);
 });
 
 test("EditorCanvas tints data edge outlines from the data edge state color", () => {
@@ -392,8 +388,24 @@ test("EditorCanvas opts mobile touch drags out of browser gestures", () => {
   assert.match(flowHotspotCssBlock, /touch-action:\s*none;/);
 });
 
+test("EditorCanvas supports two-finger pinch zoom on mobile without changing single-pointer gestures", () => {
+  assert.match(componentSource, /const activeCanvasPointers = new Map<number, \{ clientX: number; clientY: number; pointerType: string \}>\(\);/);
+  assert.match(componentSource, /const pinchZoom = ref<\{/);
+  assert.match(componentSource, /function beginPinchZoomIfReady\(\)/);
+  assert.match(componentSource, /pointer\.pointerType === "touch"/);
+  assert.match(componentSource, /viewport\.endPan\(\);/);
+  assert.match(componentSource, /startScale: viewport\.viewport\.scale/);
+  assert.match(componentSource, /function updatePinchZoom\(\)/);
+  assert.match(componentSource, /viewport\.zoomAt\(\{/);
+  assert.match(componentSource, /nextScale: pinch\.startScale \* \(nextDistance \/ pinch\.startDistance\)/);
+  assert.match(componentSource, /if \(event\.pointerType === "touch"\) \{/);
+  assert.match(componentSource, /if \(pinchZoom\.value\) \{[\s\S]*event\.preventDefault\(\);[\s\S]*scheduleDragFrame\(\(\) => \{[\s\S]*updatePinchZoom\(\);/);
+  assert.match(componentSource, /if \(pinchZoom\.value\?\.pointerIds\.includes\(event\.pointerId\)\) \{[\s\S]*clearPinchZoom\(\);[\s\S]*viewport\.endPan\(\);[\s\S]*return;/);
+});
+
 test("EditorCanvas captures node drags and batches drag writes with animation frames", () => {
-  assert.match(componentSource, /event\.preventDefault\(\);[\s\S]*event\.currentTarget\.setPointerCapture\(event\.pointerId\);[\s\S]*nodeDrag\.value = \{/);
+  assert.match(componentSource, /if \(!preserveInlineEditorFocus\) \{[\s\S]*event\.preventDefault\(\);[\s\S]*\}/);
+  assert.match(componentSource, /if \(!preserveInlineEditorFocus\) \{[\s\S]*event\.currentTarget\.setPointerCapture\(event\.pointerId\);[\s\S]*\}/);
   assert.match(componentSource, /let scheduledDragFrame: number \| null = null;/);
   assert.match(componentSource, /function scheduleDragFrame/);
   assert.match(componentSource, /window\.requestAnimationFrame\(\(\) => \{/);
@@ -428,5 +440,6 @@ test("EditorCanvas suppresses the residual click after a node drag so inline edi
   assert.match(componentSource, /event\.preventDefault\(\);/);
   assert.match(componentSource, /event\.stopPropagation\(\);/);
   assert.match(componentSource, /const preserveInlineEditorFocus =[\s\S]*target\.closest\("\[data-text-editor-trigger='true'\]"\)/);
-  assert.match(componentSource, /if \(!preserveInlineEditorFocus\) \{\s*canvasRef\.value\?\.focus\(\);\s*\}/);
+  assert.match(componentSource, /if \(!preserveInlineEditorFocus\) \{\s*canvasRef\.value\?\.focus\(\);\s*event\.preventDefault\(\);\s*\}/);
+  assert.match(componentSource, /if \(nodeDrag\.value\.captureElement && !nodeDrag\.value\.captureElement\.hasPointerCapture\(event\.pointerId\)\) \{[\s\S]*nodeDrag\.value\.captureElement\.setPointerCapture\(event\.pointerId\);[\s\S]*\}/);
 });
