@@ -115,6 +115,10 @@ watch(selectedGraphId, (nextValue) => {
   padding: 0 4px 4px;
 }
 
+.editor-tab-launcher-panel__picker:empty {
+  display: none;
+}
+
 .editor-tab-launcher-panel__entry-title {
   font-weight: 700;
   color: rgba(96, 63, 36, 0.96);
