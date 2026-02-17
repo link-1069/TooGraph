@@ -5,7 +5,9 @@
       'node-card--selected': selected,
       'node-card--condition': view.body.kind === 'condition',
     }"
-    @click.capture="handleNodeCardClickCapture"
+    @pointerdown.capture="handleLockedNodeCardInteractionCapture"
+    @click.capture="handleLockedNodeCardInteractionCapture"
+    @keydown.capture="handleLockedNodeCardInteractionCapture"
   >
     <div
       class="node-card__top-actions"
@@ -20,7 +22,7 @@
         data-top-action-surface="true"
         data-human-review-action="true"
         class="node-card__human-review-button"
-        @click.stop="$emit('open-human-review', { nodeId })"
+        @click.stop="handleHumanReviewActionClick"
       >
         Human Review
       </ElButton>
@@ -1248,6 +1250,7 @@ const props = defineProps<{
   pendingStateInputSource?: { stateKey: string; label: string; stateColor: string } | null;
   humanReviewPending: boolean;
   selected: boolean;
+  interactionLocked?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -1270,6 +1273,7 @@ const emit = defineEmits<{
   (event: "delete-node", payload: { nodeId: string }): void;
   (event: "save-node-preset", payload: { nodeId: string }): void;
   (event: "open-human-review", payload: { nodeId: string }): void;
+  (event: "locked-edit-attempt"): void;
 }>();
 
 const outputDisplayModeOptions: Array<{ value: OutputNode["config"]["displayMode"]; label: string }> = [
@@ -1623,6 +1627,15 @@ watch(
   },
 );
 
+watch(
+  () => props.interactionLocked,
+  (locked) => {
+    if (locked) {
+      closeLockedFloatingPanels();
+    }
+  },
+);
+
 onBeforeUnmount(() => {
   removeGlobalFloatingPanelListeners();
   clearTopActionTimeout();
@@ -1647,7 +1660,72 @@ watch(hasFloatingPanelOpen, (open) => {
   removeGlobalFloatingPanelListeners();
 });
 
+function closeLockedFloatingPanels() {
+  clearTopActionTimeout();
+  activeTopAction.value = null;
+  clearTextTriggerPointerState();
+  clearTextEditorConfirmState();
+  clearStateEditorConfirmState();
+  clearRemovePortStateConfirmState();
+  isSkillPickerOpen.value = false;
+  closePortPicker();
+  closeStateEditor();
+  closeTextEditor();
+}
+
+function guardLockedGraphInteraction() {
+  if (!props.interactionLocked) {
+    return false;
+  }
+  closeLockedFloatingPanels();
+  emit("locked-edit-attempt");
+  return true;
+}
+
+function isLockedInteractiveTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      [
+        "button",
+        "input",
+        "textarea",
+        "select",
+        "[role='button']",
+        "[data-top-action-surface='true']",
+        "[data-state-editor-trigger='true']",
+        "[data-text-editor-trigger='true']",
+        "[data-node-popup-surface='true']",
+        ".el-switch",
+        ".el-select",
+        ".el-input",
+      ].join(", "),
+    ),
+  );
+}
+
+function handleLockedNodeCardInteractionCapture(event: Event) {
+  if (!props.interactionLocked) {
+    if (event.type === "click") {
+      handleNodeCardClickCapture(event);
+    }
+    return;
+  }
+  if (!isLockedInteractiveTarget(event.target)) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  guardLockedGraphInteraction();
+}
+
 function emitOutputConfigPatch(patch: Partial<OutputNode["config"]>) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "output") {
     return;
   }
@@ -1655,6 +1733,9 @@ function emitOutputConfigPatch(patch: Partial<OutputNode["config"]>) {
 }
 
 function emitInputConfigPatch(patch: Partial<InputNode["config"]>) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "input") {
     return;
   }
@@ -1662,10 +1743,16 @@ function emitInputConfigPatch(patch: Partial<InputNode["config"]>) {
 }
 
 function emitInputStatePatch(stateKey: string, patch: Partial<StateDefinition>) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   emit("update-input-state", { stateKey, patch });
 }
 
 function emitInputValuePatch(value: unknown) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const stateKey = inputStateKey.value;
   if (stateKey) {
     emitInputStatePatch(stateKey, { value });
@@ -1674,6 +1761,9 @@ function emitInputValuePatch(value: unknown) {
 }
 
 function emitAgentConfigPatch(patch: Partial<AgentNode["config"]>) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "agent") {
     return;
   }
@@ -1681,6 +1771,9 @@ function emitAgentConfigPatch(patch: Partial<AgentNode["config"]>) {
 }
 
 function emitConditionConfigPatch(patch: Partial<ConditionNode["config"]>) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "condition") {
     return;
   }
@@ -1688,6 +1781,9 @@ function emitConditionConfigPatch(patch: Partial<ConditionNode["config"]>) {
 }
 
 function emitConditionBranchUpdate(currentKey: string, nextKey: string, mappingKeys: string[]) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "condition") {
     return;
   }
@@ -1700,6 +1796,9 @@ function emitConditionBranchUpdate(currentKey: string, nextKey: string, mappingK
 }
 
 function addConditionBranch() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "condition") {
     return;
   }
@@ -1709,6 +1808,9 @@ function addConditionBranch() {
 }
 
 function removeConditionBranch(branchKey: string) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "condition") {
     return;
   }
@@ -1765,6 +1867,9 @@ function handleAgentTaskInstructionInput(event: Event) {
 }
 
 function toggleSkillPicker() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!showSkillPickerTrigger.value) {
     return;
   }
@@ -1783,6 +1888,9 @@ function toggleSkillPicker() {
 }
 
 function attachAgentSkill(skillKey: string) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "agent" || props.node.config.skills.includes(skillKey)) {
     return;
   }
@@ -1791,6 +1899,9 @@ function attachAgentSkill(skillKey: string) {
 }
 
 function removeAgentSkill(skillKey: string) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "agent" || !props.node.config.skills.includes(skillKey)) {
     return;
   }
@@ -1798,6 +1909,9 @@ function removeAgentSkill(skillKey: string) {
 }
 
 function openPortPicker(side: "input" | "output") {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   clearTopActionTimeout();
   activeTopAction.value = null;
   clearTextEditorConfirmState();
@@ -1828,15 +1942,24 @@ function handlePortStateSearchInput(event: Event) {
 }
 
 function handlePortStateSearchValue(value: string | number) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   portStateSearch.value = String(value ?? "");
 }
 
 function beginPortStateCreate() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   portStateDraft.value = createStateDraftFromQuery(portStateSearch.value, Object.keys(props.stateSchema));
   portStateError.value = null;
 }
 
 function backPortDraft() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   portStateDraft.value = null;
   portStateError.value = null;
 }
@@ -1850,6 +1973,9 @@ function handlePortDraftNameInput(event: Event) {
 }
 
 function handlePortDraftNameValue(value: string | number) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!portStateDraft.value) {
     return;
   }
@@ -1871,6 +1997,9 @@ function handlePortDraftKeyInput(event: Event) {
 }
 
 function handlePortDraftKeyValue(value: string | number) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!portStateDraft.value) {
     return;
   }
@@ -1881,6 +2010,9 @@ function handlePortDraftKeyValue(value: string | number) {
 }
 
 async function handlePortDraftTypeSelect(value: string | number | boolean | undefined) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!portStateDraft.value) {
     return;
   }
@@ -1905,6 +2037,9 @@ function handlePortDraftDescriptionInput(event: Event) {
 }
 
 function handlePortDraftDescriptionValue(value: string | number) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!portStateDraft.value) {
     return;
   }
@@ -1926,11 +2061,17 @@ function handlePortDraftColorInput(event: Event) {
 }
 
 async function handlePortDraftColorSelect(value: string | number | boolean | undefined) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   updatePortDraftColor(String(value ?? ""));
   await collapsePortDraftColorSelect();
 }
 
 function updatePortDraftColor(color: string) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!portStateDraft.value) {
     return;
   }
@@ -1966,6 +2107,9 @@ function resolveFirstSelectExpose(select: SelectExpose | SelectExpose[] | null) 
 }
 
 function updatePortDraftValue(value: unknown) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!portStateDraft.value) {
     return;
   }
@@ -1979,6 +2123,9 @@ function updatePortDraftValue(value: unknown) {
 }
 
 function bindStateToPort(stateKey: string) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!activePortPickerSide.value) {
     return;
   }
@@ -1991,6 +2138,9 @@ function bindStateToPort(stateKey: string) {
 }
 
 function commitPortStateCreate() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!activePortPickerSide.value || !portStateDraft.value) {
     return;
   }
@@ -2074,6 +2224,9 @@ function clearTextTriggerPointerState() {
 }
 
 function handleTextTriggerPointerDown(field: TextEditorField, event: PointerEvent) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (event.button !== 0) {
     return;
   }
@@ -2100,6 +2253,9 @@ function handleTextTriggerPointerMove(field: TextEditorField, event: PointerEven
 }
 
 function handleTextTriggerPointerUp(field: TextEditorField, event: PointerEvent) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const pointerState = textTriggerPointerState.value;
   clearTextTriggerPointerState();
   if (!pointerState || pointerState.field !== field || pointerState.pointerId !== event.pointerId) {
@@ -2166,6 +2322,9 @@ function isTextEditorConfirmOpen(field: TextEditorField) {
 }
 
 function handleTextEditorAction(field: TextEditorField) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (isTextEditorOpen(field)) {
     return;
   }
@@ -2181,6 +2340,9 @@ function handleTextEditorAction(field: TextEditorField) {
 }
 
 function openTextEditor(field: TextEditorField) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   clearTopActionTimeout();
   activeTopAction.value = null;
   clearTextEditorConfirmState();
@@ -2201,6 +2363,9 @@ function closeTextEditor() {
 }
 
 function handleTextEditorDraftInput(field: TextEditorField, value: string | number) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (typeof value !== "string") {
     return;
   }
@@ -2208,6 +2373,9 @@ function handleTextEditorDraftInput(field: TextEditorField, value: string | numb
 }
 
 function commitTextEditor(field: TextEditorField | null = activeTextEditor.value) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!field) {
     return;
   }
@@ -2308,6 +2476,9 @@ function handleStateEditorActionClick(anchorId: string, stateKey: string | null 
   if (!stateKey) {
     return;
   }
+  if (guardLockedStateEditAttempt()) {
+    return;
+  }
   if (isStateEditorOpen(anchorId)) {
     return;
   }
@@ -2323,6 +2494,9 @@ function handleStateEditorActionClick(anchorId: string, stateKey: string | null 
 
 function handleRemovePortStateClick(anchorId: string, side: "input" | "output", stateKey: string | null | undefined) {
   if (!stateKey) {
+    return;
+  }
+  if (guardLockedStateEditAttempt()) {
     return;
   }
   clearStateEditorConfirmState();
@@ -2368,7 +2542,14 @@ function closeStateEditor() {
   stateEditorError.value = null;
 }
 
+function guardLockedStateEditAttempt() {
+  return guardLockedGraphInteraction();
+}
+
 function syncStateEditorDraft(nextDraft: StateFieldDraft, options?: { allowInvalidKey?: boolean }) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const currentAnchorId = activeStateEditorAnchorId.value;
   const currentDraft = stateEditorDraft.value;
   if (!currentAnchorId || !currentDraft) {
@@ -2472,6 +2653,9 @@ function handleStateEditorTypeValue(value: string | number | boolean | undefined
 }
 
 function toggleAdvancedPanel() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (!hasAdvancedSettings.value) {
     return;
   }
@@ -2593,6 +2777,9 @@ function startTopActionConfirmWindow(action: "delete" | "preset") {
 }
 
 function handlePresetActionClick() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   isSkillPickerOpen.value = false;
   closePortPicker();
   closeStateEditor();
@@ -2608,6 +2795,9 @@ function handlePresetActionClick() {
 }
 
 function handleDeleteActionClick() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   isSkillPickerOpen.value = false;
   closePortPicker();
   closeStateEditor();
@@ -2636,12 +2826,25 @@ function handleNodeCardClickCapture(event: Event) {
   clearTopActionConfirmState();
 }
 
+function handleHumanReviewActionClick() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
+  emit("open-human-review", { nodeId: props.nodeId });
+}
+
 function confirmDeleteNode() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   clearTopActionConfirmState();
   emit("delete-node", { nodeId: props.nodeId });
 }
 
 function confirmSavePreset() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   clearTopActionConfirmState();
   emit("save-node-preset", { nodeId: props.nodeId });
 }
@@ -2677,6 +2880,9 @@ function updateAgentThinkingMode(thinkingMode: AgentNode["config"]["thinkingMode
 }
 
 function handleAgentBreakpointToggle() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "agent") {
     return;
   }
@@ -2684,6 +2890,9 @@ function handleAgentBreakpointToggle() {
 }
 
 function handleAgentBreakpointToggleValue(value: string | number | boolean) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "agent" || typeof value !== "boolean") {
     return;
   }
@@ -2691,6 +2900,9 @@ function handleAgentBreakpointToggleValue(value: string | number | boolean) {
 }
 
 function handleAgentBreakpointTimingSelect(nextValue: string | number | boolean | undefined) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (nextValue !== "before" && nextValue !== "after") {
     return;
   }
@@ -2730,6 +2942,9 @@ function handleInputKnowledgeBaseSelect(value: string | number | boolean | undef
 }
 
 function handleInputBoundarySelection(nextType: string | number | boolean) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (typeof nextType !== "string" || !isSwitchableInputBoundaryType(nextType)) {
     return;
   }
@@ -2737,6 +2952,9 @@ function handleInputBoundarySelection(nextType: string | number | boolean) {
 }
 
 function updateInputBoundaryType(nextType: "text" | "file" | "knowledge_base") {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const stateKey = inputStateKey.value;
   if (!stateKey || !isSwitchableInputBoundaryType(nextType)) {
     return;
@@ -2760,14 +2978,23 @@ function updateInputBoundaryType(nextType: "text" | "file" | "knowledge_base") {
 }
 
 function openInputAssetPicker() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   inputAssetInputRef.value?.click();
 }
 
 function clearInputAsset() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   emitInputValuePatch("");
 }
 
 async function commitInputAssetFile(file: File | null) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const stateKey = inputStateKey.value;
   if (!file || !stateKey) {
     return;
@@ -2786,6 +3013,9 @@ async function commitInputAssetFile(file: File | null) {
 }
 
 function handleInputAssetFileChange(event: Event) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
     return;
@@ -2797,11 +3027,17 @@ function handleInputAssetFileChange(event: Event) {
 }
 
 function handleInputAssetDrop(event: DragEvent) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const file = event.dataTransfer?.files?.[0] ?? null;
   void commitInputAssetFile(file);
 }
 
 function handleConditionLoopLimitInput(event: Event) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
     return;
@@ -2810,6 +3046,9 @@ function handleConditionLoopLimitInput(event: Event) {
 }
 
 function commitConditionLoopLimit() {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "condition") {
     return;
   }
@@ -2834,6 +3073,9 @@ function handleConditionLoopLimitEnter(event: KeyboardEvent) {
 }
 
 function updateConditionRule(patch: Partial<ConditionNode["config"]["rule"]>) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   if (props.node.kind !== "condition") {
     return;
   }
@@ -2850,6 +3092,9 @@ function handleConditionRuleOperatorSelect(value: string | number | boolean | un
 }
 
 function handleConditionRuleValueInput(event: Event) {
+  if (guardLockedGraphInteraction()) {
+    return;
+  }
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
     return;

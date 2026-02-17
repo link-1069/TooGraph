@@ -62,21 +62,45 @@ test("EditorCanvas renders anchors in a dedicated overlay layer above nodes", ()
 });
 
 test("EditorCanvas restores legacy runtime feedback styling on node cards and active edges", () => {
-  assert.match(componentSource, /@keyframes editor-canvas-node-execution-glow-pulse/);
+  assert.match(componentSource, /@keyframes editor-canvas-running-halo-breathe/);
+  assert.match(componentSource, /@keyframes editor-canvas-paused-halo-breathe/);
+  assert.match(componentSource, /@keyframes editor-canvas-running-card-breathe/);
+  assert.match(componentSource, /@keyframes editor-canvas-paused-card-breathe/);
+  assert.match(componentSource, /@keyframes editor-canvas-active-run-edge-breathe/);
   assert.match(componentSource, /\.editor-canvas__node-halo--running \{[\s\S]*rgba\(52,\s*211,\s*153,\s*0\.52\)/);
+  assert.match(componentSource, /\.editor-canvas__node-halo--running \{[\s\S]*animation:\s*editor-canvas-running-halo-breathe 2\.2s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node-halo--running-current \{[\s\S]*rgba\(110,\s*231,\s*183,\s*0\.72\)/);
+  assert.match(componentSource, /\.editor-canvas__node-halo--running-current \{[\s\S]*animation:\s*editor-canvas-running-halo-breathe 1\.85s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node-halo--paused \{[\s\S]*rgba\(245,\s*158,\s*11,\s*0\.5\)/);
+  assert.match(componentSource, /\.editor-canvas__node-halo--paused \{[\s\S]*animation:\s*editor-canvas-paused-halo-breathe 2\.45s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node-halo--paused-current \{[\s\S]*rgba\(251,\s*191,\s*36,\s*0\.7\)/);
+  assert.match(componentSource, /\.editor-canvas__node-halo--paused-current \{[\s\S]*animation:\s*editor-canvas-paused-halo-breathe 2\.05s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node--running \{[\s\S]*0 0 0 1\.5px rgba\(16,\s*185,\s*129,\s*0\.62\)/);
+  assert.match(componentSource, /\.editor-canvas__node--running \{[\s\S]*animation:\s*editor-canvas-running-card-breathe 2\.2s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node--running-current \{[\s\S]*0 0 0 1\.5px rgba\(16,\s*185,\s*129,\s*0\.86\)/);
+  assert.match(componentSource, /\.editor-canvas__node--running-current \{[\s\S]*animation:\s*editor-canvas-running-card-breathe 1\.85s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node--paused \{[\s\S]*0 0 0 1\.5px rgba\(245,\s*158,\s*11,\s*0\.62\)/);
+  assert.match(componentSource, /\.editor-canvas__node--paused \{[\s\S]*animation:\s*editor-canvas-paused-card-breathe 2\.45s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node--paused-current \{[\s\S]*0 0 0 1\.5px rgba\(245,\s*158,\s*11,\s*0\.86\)/);
+  assert.match(componentSource, /\.editor-canvas__node--paused-current \{[\s\S]*animation:\s*editor-canvas-paused-card-breathe 2\.05s ease-in-out infinite;/);
   assert.match(componentSource, /\.editor-canvas__node--success \{[\s\S]*0 0 0 1\.5px rgba\(180,\s*83,\s*9,\s*0\.34\)/);
   assert.match(componentSource, /\.editor-canvas__node--failed \{[\s\S]*0 0 0 1\.5px rgba\(239,\s*68,\s*68,\s*0\.56\)/);
   assert.match(componentSource, /\.editor-canvas__edge--active-run \{[\s\S]*stroke-width:\s*3px;/);
   assert.match(componentSource, /\.editor-canvas__edge--active-run \{[\s\S]*opacity:\s*1;/);
+  assert.match(componentSource, /\.editor-canvas__edge--active-run \{[\s\S]*filter:\s*drop-shadow\(0 0 10px var\(--editor-edge-stroke,\s*rgba\(16,\s*185,\s*129,\s*0\.38\)\)\);/);
+  assert.match(
+    componentSource,
+    /\.editor-canvas__edge--flow\.editor-canvas__edge--active-run,\s*\.editor-canvas__edge--route\.editor-canvas__edge--active-run \{[\s\S]*animation:\s*editor-canvas-flow-line 1\.8s linear infinite,\s*editor-canvas-active-run-edge-breathe 2\.2s ease-in-out infinite;/,
+  );
+  assert.match(
+    componentSource,
+    /\.editor-canvas__edge--data\.editor-canvas__edge--active-run \{[\s\S]*animation:\s*editor-canvas-ant-line 1\.2s linear infinite,\s*editor-canvas-active-run-edge-breathe 2\.2s ease-in-out infinite;/,
+  );
   assert.doesNotMatch(componentSource, /\.editor-canvas__edge--active-run \{[^}]*stroke:/);
-  assert.doesNotMatch(componentSource, /\.editor-canvas__edge--active-run \{[^}]*filter:/);
+  assert.match(
+    componentSource,
+    /@media \(prefers-reduced-motion:\s*reduce\) \{[\s\S]*\.editor-canvas__node-halo--running,[\s\S]*\.editor-canvas__edge--active-run \{[\s\S]*animation:\s*none;/,
+  );
 });
 
 test("EditorCanvas treats awaiting-human current node as a persistent review node", () => {
@@ -95,19 +119,50 @@ test("EditorCanvas keeps paused human-review graphs viewable but read-only", () 
   assert.match(componentSource, /'editor-canvas--locked': interactionLocked/);
   assert.match(componentSource, /v-if="interactionLocked"/);
   assert.match(componentSource, /class="editor-canvas__lock-banner"/);
+  assert.match(componentSource, /<button[\s\S]*v-if="interactionLocked"[\s\S]*type="button"[\s\S]*class="editor-canvas__lock-banner"/);
+  assert.match(componentSource, /@click\.stop="handleLockBannerClick"/);
+  assert.match(componentSource, /@keydown\.enter\.prevent="handleLockBannerClick"/);
+  assert.match(componentSource, /@keydown\.space\.prevent="handleLockBannerClick"/);
+  assert.match(componentSource, /Human Review Paused · Graph Locked/);
+  assert.match(componentSource, /@keyframes editor-canvas-lock-banner-breathe/);
+  assert.match(componentSource, /function handleLockBannerClick\(\)[\s\S]*emit\("open-human-review", \{ nodeId: props\.currentRunNodeId \}\);/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 64px\);/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*min-width:\s*min\(420px,\s*calc\(100vw - 56px\)\);/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*justify-content:\s*center;/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*padding:\s*14px 28px;/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*font-size:\s*0\.92rem;/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*border:\s*1px solid rgba\(255,\s*247,\s*237,\s*0\.34\);/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*background:\s*linear-gradient\(135deg,\s*rgba\(154,\s*52,\s*18,\s*0\.96\),\s*rgba\(131,\s*43,\s*13,\s*0\.94\)\);/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*color:\s*#fff7ed;/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*cursor:\s*pointer;/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*pointer-events:\s*auto;/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*animation:\s*editor-canvas-lock-banner-breathe 2\.4s ease-in-out infinite;/);
   assert.match(componentSource, /function isGraphEditingLocked\(\)/);
   assert.match(componentSource, /return Boolean\(props\.interactionLocked\);/);
   assert.match(componentSource, /function handleLockedNodePointerCapture\(nodeId: string, event: PointerEvent\)/);
   assert.match(componentSource, /target\.closest\("\[data-human-review-action='true'\]"\)/);
+  assert.match(componentSource, /\(event: "locked-edit-attempt"\): void;/);
+  assert.match(componentSource, /:interaction-locked="isGraphEditingLocked\(\)"/);
+  assert.match(componentSource, /@locked-edit-attempt="emit\('locked-edit-attempt'\)"/);
+  assert.match(componentSource, /function isLockedNodeEditTarget\(target: EventTarget \| null\)/);
+  assert.match(componentSource, /function guardLockedCanvasInteraction\(\)/);
+  assert.match(componentSource, /@click\.stop="handleEdgeVisibilityModeClick\(option\.mode\)"/);
+  assert.match(componentSource, /function handleEdgeVisibilityModeClick\(mode: EdgeVisibilityMode\)[\s\S]*if \(guardLockedCanvasInteraction\(\)\) \{[\s\S]*return;/);
+  assert.match(componentSource, /watch\(\s*\(\) => props\.interactionLocked,[\s\S]*clearCanvasTransientState\(\);/);
+  assert.match(componentSource, /\[data-state-editor-trigger='true'\]/);
+  assert.match(componentSource, /isLockedNodeEditTarget\(target\)[\s\S]*emit\("locked-edit-attempt"\);/);
   assert.match(componentSource, /if \(isGraphEditingLocked\(\)\) \{/);
-  assert.match(componentSource, /function handleCanvasDoubleClick\(event: MouseEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
-  assert.match(componentSource, /function handleCanvasDrop\(event: DragEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
-  assert.match(componentSource, /function handleEdgePointerDown\(edge: ProjectedCanvasEdge, event: PointerEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
-  assert.match(componentSource, /function handleAnchorPointerDown\(anchor: ProjectedCanvasAnchor\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{/);
+  assert.match(componentSource, /function confirmFlowEdgeDelete\(\)[\s\S]*if \(guardLockedCanvasInteraction\(\)\) \{[\s\S]*return;/);
+  assert.match(componentSource, /function openDataEdgeStateEditor\(\)[\s\S]*if \(guardLockedCanvasInteraction\(\)\) \{[\s\S]*return;/);
+  assert.match(componentSource, /function handleCanvasDoubleClick\(event: MouseEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{[\s\S]*emit\("locked-edit-attempt"\);/);
+  assert.match(componentSource, /function handleCanvasDrop\(event: DragEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{[\s\S]*emit\("locked-edit-attempt"\);/);
+  assert.match(componentSource, /function handleEdgePointerDown\(edge: ProjectedCanvasEdge, event: PointerEvent\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{[\s\S]*emit\("locked-edit-attempt"\);/);
+  assert.match(componentSource, /function handleAnchorPointerDown\(anchor: ProjectedCanvasAnchor\)[\s\S]*if \(isGraphEditingLocked\(\)\) \{[\s\S]*emit\("locked-edit-attempt"\);/);
+  assert.match(componentSource, /function handleSelectedEdgeDelete\(\)[\s\S]*if \(guardLockedCanvasInteraction\(\)\) \{[\s\S]*return;/);
 });
 
 test("EditorCanvas lets top-left floating tools respect workspace overlay clearance", () => {
-  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*top:\s*var\(--editor-canvas-floating-top-clearance,\s*18px\);/);
+  assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 64px\);/);
   assert.match(componentSource, /\.editor-canvas__edge-view-toolbar \{[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 18px\);/);
 });
 
@@ -207,7 +262,7 @@ test("EditorCanvas exposes a top-left capsule toolbar for edge visibility modes"
   assert.match(componentSource, /function isProjectedEdgeVisible\(edge: ProjectedCanvasEdge\)/);
   assert.match(componentSource, /class="editor-canvas__edge-view-toolbar"/);
   assert.match(componentSource, /v-for="option in EDGE_VISIBILITY_MODE_OPTIONS"/);
-  assert.match(componentSource, /setEdgeVisibilityMode\(option\.mode\)/);
+  assert.match(componentSource, /handleEdgeVisibilityModeClick\(option\.mode\)/);
   assert.match(componentSource, /\{\{ option\.label \}\}/);
   assert.match(componentSource, /v-show="isProjectedEdgeVisible\(edge\)"/);
   assert.match(

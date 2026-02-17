@@ -39,14 +39,23 @@
         :class="{ 'editor-canvas__edge-view-button--active': edgeVisibilityMode === option.mode }"
         :title="option.title"
         :aria-pressed="edgeVisibilityMode === option.mode"
-        @click.stop="setEdgeVisibilityMode(option.mode)"
+        @click.stop="handleEdgeVisibilityModeClick(option.mode)"
       >
         {{ option.label }}
       </button>
     </div>
-    <div v-if="interactionLocked" class="editor-canvas__lock-banner" aria-live="polite">
-      Run paused · Graph locked
-    </div>
+    <button
+      v-if="interactionLocked"
+      type="button"
+      class="editor-canvas__lock-banner"
+      aria-live="polite"
+      @pointerdown.stop
+      @click.stop="handleLockBannerClick"
+      @keydown.enter.prevent="handleLockBannerClick"
+      @keydown.space.prevent="handleLockBannerClick"
+    >
+      Human Review Paused · Graph Locked
+    </button>
     <div class="editor-canvas__viewport" :style="viewportStyle">
       <div v-if="nodeEntries.length === 0" class="editor-canvas__empty-state">
         <div class="editor-canvas__empty-card">
@@ -205,6 +214,7 @@
           :pending-state-input-source="pendingAgentInputSourceByNodeId[nodeId] ?? null"
           :human-review-pending="isHumanReviewNode(nodeId)"
           :selected="isNodeVisuallySelected(nodeId)"
+          :interaction-locked="isGraphEditingLocked()"
           @update-node-metadata="emit('update-node-metadata', $event)"
           @update-input-config="emit('update-input-config', $event)"
           @update-input-state="emit('update-input-state', $event)"
@@ -223,6 +233,7 @@
           @delete-node="emit('delete-node', $event)"
           @save-node-preset="emit('save-node-preset', $event)"
           @open-human-review="emit('open-human-review', $event)"
+          @locked-edit-attempt="emit('locked-edit-attempt')"
           @update-output-config="emit('update-output-config', $event)"
         />
       </div>
@@ -378,6 +389,7 @@ const emit = defineEmits<{
   (event: "save-node-preset", payload: { nodeId: string }): void;
   (event: "open-human-review", payload: { nodeId: string }): void;
   (event: "update-output-config", payload: { nodeId: string; patch: Partial<OutputNode["config"]> }): void;
+  (event: "locked-edit-attempt"): void;
   (event: "connect-flow", payload: { sourceNodeId: string; targetNodeId: string }): void;
   (event: "connect-state", payload: { sourceNodeId: string; sourceStateKey: string; targetNodeId: string; targetStateKey: string }): void;
   (event: "connect-route", payload: { sourceNodeId: string; branchKey: string; targetNodeId: string }): void;
@@ -795,6 +807,13 @@ function setEdgeVisibilityMode(mode: EdgeVisibilityMode) {
   clearCanvasTransientState();
 }
 
+function handleEdgeVisibilityModeClick(mode: EdgeVisibilityMode) {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
+  setEdgeVisibilityMode(mode);
+}
+
 watch(projectedEdges, (edges) => {
   if (selectedEdgeId.value && !edges.some((edge) => edge.id === selectedEdgeId.value)) {
     selectedEdgeId.value = null;
@@ -815,6 +834,19 @@ watch(projectedEdges, (edges) => {
     closeDataEdgeStateEditor();
   }
 });
+
+watch(
+  () => props.interactionLocked,
+  (locked) => {
+    if (locked) {
+      clearCanvasTransientState();
+      pendingConnection.value = null;
+      pendingConnectionPoint.value = null;
+      autoSnappedTargetAnchor.value = null;
+      selectedEdgeId.value = null;
+    }
+  },
+);
 
 watch(pendingAgentInputSourceByNodeId, () => {
   void nextTick().then(() => {
@@ -954,6 +986,9 @@ function startFlowEdgeDeleteConfirm(edge: ProjectedCanvasEdge, event: PointerEve
 }
 
 function confirmFlowEdgeDelete() {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (!activeFlowEdgeDeleteConfirm.value) {
     return;
   }
@@ -1017,6 +1052,9 @@ function buildStateDraftFromSchema(stateKey: string): StateFieldDraft | null {
 }
 
 function openDataEdgeStateEditor() {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (!activeDataEdgeStateConfirm.value) {
     return;
   }
@@ -1082,6 +1120,9 @@ function syncDataEdgeStateDraft(nextDraft: StateFieldDraft) {
 }
 
 function handleDataEdgeStateEditorKeyInput(value: string | number) {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (typeof value !== "string" || !dataEdgeStateDraft.value) {
     return;
   }
@@ -1092,6 +1133,9 @@ function handleDataEdgeStateEditorKeyInput(value: string | number) {
 }
 
 function handleDataEdgeStateEditorNameInput(value: string | number) {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (typeof value !== "string" || !dataEdgeStateDraft.value) {
     return;
   }
@@ -1105,6 +1149,9 @@ function handleDataEdgeStateEditorNameInput(value: string | number) {
 }
 
 function handleDataEdgeStateEditorDescriptionInput(value: string | number) {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (typeof value !== "string" || !dataEdgeStateDraft.value) {
     return;
   }
@@ -1118,6 +1165,9 @@ function handleDataEdgeStateEditorDescriptionInput(value: string | number) {
 }
 
 function handleDataEdgeStateEditorColorInput(value: string | number) {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (typeof value !== "string" || !dataEdgeStateDraft.value) {
     return;
   }
@@ -1131,6 +1181,9 @@ function handleDataEdgeStateEditorColorInput(value: string | number) {
 }
 
 function handleDataEdgeStateEditorTypeValue(value: string | number | boolean | undefined) {
+  if (guardLockedCanvasInteraction()) {
+    return;
+  }
   if (typeof value !== "string" || !dataEdgeStateDraft.value) {
     return;
   }
@@ -1829,6 +1882,7 @@ function handleNodeClickCapture(nodeId: string, event: MouseEvent) {
 
 function handleCanvasDoubleClick(event: MouseEvent) {
   if (isGraphEditingLocked()) {
+    emit("locked-edit-attempt");
     return;
   }
   const target = event.target as HTMLElement | null;
@@ -1953,6 +2007,7 @@ function handleCanvasDragOver(event: DragEvent) {
 
 function handleCanvasDrop(event: DragEvent) {
   if (isGraphEditingLocked()) {
+    emit("locked-edit-attempt");
     return;
   }
   const target = event.target as HTMLElement | null;
@@ -2068,6 +2123,7 @@ function handleWheel(event: WheelEvent) {
 function handleEdgePointerDown(edge: ProjectedCanvasEdge, event: PointerEvent) {
   if (isGraphEditingLocked()) {
     event.preventDefault();
+    emit("locked-edit-attempt");
     return;
   }
   canvasRef.value?.focus();
@@ -2099,6 +2155,7 @@ function handleEdgePointerDown(edge: ProjectedCanvasEdge, event: PointerEvent) {
 
 function handleAnchorPointerDown(anchor: ProjectedCanvasAnchor) {
   if (isGraphEditingLocked()) {
+    emit("locked-edit-attempt");
     return;
   }
   canvasRef.value?.focus();
@@ -2296,7 +2353,7 @@ function completePendingConnection(targetAnchor: ProjectedCanvasAnchor) {
 }
 
 function handleSelectedEdgeDelete() {
-  if (isGraphEditingLocked()) {
+  if (guardLockedCanvasInteraction()) {
     return;
   }
   const edge = selectedEdgeId.value ? projectedEdges.value.find((candidate) => candidate.id === selectedEdgeId.value) : null;
@@ -2366,13 +2423,65 @@ function isGraphEditingLocked() {
   return Boolean(props.interactionLocked);
 }
 
+function handleLockBannerClick() {
+  if (!props.currentRunNodeId) {
+    emit("locked-edit-attempt");
+    return;
+  }
+  emit("open-human-review", { nodeId: props.currentRunNodeId });
+}
+
+function guardLockedCanvasInteraction() {
+  if (!isGraphEditingLocked()) {
+    return false;
+  }
+  clearCanvasTransientState();
+  pendingConnection.value = null;
+  pendingConnectionPoint.value = null;
+  autoSnappedTargetAnchor.value = null;
+  selectedEdgeId.value = null;
+  emit("locked-edit-attempt");
+  return true;
+}
+
+function isLockedNodeEditTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return Boolean(
+    target.closest(
+      [
+        "button",
+        "input",
+        "textarea",
+        "select",
+        "[role='button']",
+        "[data-top-action-surface='true']",
+        "[data-state-editor-trigger='true']",
+        "[data-text-editor-trigger='true']",
+        "[data-node-popup-surface='true']",
+        ".node-card__port-pill-remove",
+        ".node-card__state-editor",
+        ".node-card__state-editor-popper",
+        ".el-switch",
+        ".el-select",
+        ".el-input",
+      ].join(", "),
+    ),
+  );
+}
+
 function handleLockedNodePointerCapture(nodeId: string, event: PointerEvent) {
   if (!isGraphEditingLocked()) {
     return;
   }
   const target = event.target;
-  if (target instanceof HTMLElement && target.closest("[data-human-review-action='true']")) {
-    return;
+  if (
+    (target instanceof HTMLElement && target.closest("[data-human-review-action='true']")) ||
+    isLockedNodeEditTarget(target)
+  ) {
+    emit("locked-edit-attempt");
   }
   event.preventDefault();
   event.stopPropagation();
@@ -2422,21 +2531,43 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
 
 .editor-canvas__lock-banner {
   position: absolute;
-  top: var(--editor-canvas-floating-top-clearance, 18px);
+  top: calc(var(--editor-canvas-floating-top-clearance, 18px) + 64px);
   left: 50%;
-  z-index: 25;
+  z-index: 33;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: min(420px, calc(100vw - 56px));
+  appearance: none;
   transform: translateX(-50%);
-  padding: 7px 14px;
-  border: 1px solid rgba(154, 52, 18, 0.16);
+  padding: 14px 28px;
+  border: 1px solid rgba(255, 247, 237, 0.34);
   border-radius: 999px;
-  background: var(--graphite-glass-bg);
-  color: #9a3412;
-  font-size: 0.76rem;
+  background: linear-gradient(135deg, rgba(154, 52, 18, 0.96), rgba(131, 43, 13, 0.94));
+  color: #fff7ed;
+  font-size: 0.92rem;
   font-weight: 800;
+  line-height: 1.1;
   letter-spacing: 0.06em;
-  box-shadow: var(--graphite-glass-shadow), var(--graphite-glass-highlight);
-  backdrop-filter: blur(18px) saturate(1.4);
-  pointer-events: none;
+  text-transform: uppercase;
+  box-shadow:
+    0 0 0 1px rgba(255, 247, 237, 0.16) inset,
+    0 18px 42px rgba(124, 45, 18, 0.24),
+    0 0 34px rgba(217, 119, 6, 0.24);
+  backdrop-filter: blur(28px) saturate(1.4) contrast(1.08);
+  animation: editor-canvas-lock-banner-breathe 2.4s ease-in-out infinite;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.editor-canvas__lock-banner:hover,
+.editor-canvas__lock-banner:focus-visible {
+  border-color: rgba(255, 247, 237, 0.54);
+  outline: none;
+  box-shadow:
+    0 0 0 1px rgba(255, 247, 237, 0.22) inset,
+    0 20px 46px rgba(124, 45, 18, 0.3),
+    0 0 42px rgba(234, 88, 12, 0.34);
 }
 
 .editor-canvas__edge-view-toolbar {
@@ -2820,6 +2951,16 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
 .editor-canvas__edge--active-run {
   stroke-width: 3px;
   opacity: 1;
+  filter: drop-shadow(0 0 10px var(--editor-edge-stroke, rgba(16, 185, 129, 0.38)));
+}
+
+.editor-canvas__edge--flow.editor-canvas__edge--active-run,
+.editor-canvas__edge--route.editor-canvas__edge--active-run {
+  animation: editor-canvas-flow-line 1.8s linear infinite, editor-canvas-active-run-edge-breathe 2.2s ease-in-out infinite;
+}
+
+.editor-canvas__edge--data.editor-canvas__edge--active-run {
+  animation: editor-canvas-ant-line 1.2s linear infinite, editor-canvas-active-run-edge-breathe 2.2s ease-in-out infinite;
 }
 
 @keyframes editor-canvas-ant-line {
@@ -3082,16 +3223,145 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
   z-index: 8;
 }
 
-@keyframes editor-canvas-node-execution-glow-pulse {
+@keyframes editor-canvas-lock-banner-breathe {
   0%,
   100% {
-    opacity: 0.82;
-    transform: scale(0.992);
+    transform: translateX(-50%) scale(1);
+    box-shadow:
+      0 0 0 1px rgba(255, 247, 237, 0.16) inset,
+      0 18px 42px rgba(124, 45, 18, 0.24),
+      0 0 28px rgba(217, 119, 6, 0.22);
   }
 
-  50% {
+  48% {
+    transform: translateX(-50%) scale(1.018);
+    box-shadow:
+      0 0 0 1px rgba(255, 247, 237, 0.26) inset,
+      0 22px 50px rgba(124, 45, 18, 0.32),
+      0 0 42px rgba(234, 88, 12, 0.34);
+  }
+
+  58% {
+    transform: translateX(-50%) scale(1.006);
+    box-shadow:
+      0 0 0 1px rgba(255, 247, 237, 0.2) inset,
+      0 18px 42px rgba(124, 45, 18, 0.26),
+      0 0 32px rgba(217, 119, 6, 0.26);
+  }
+}
+
+@keyframes editor-canvas-active-run-edge-breathe {
+  0%,
+  100% {
+    opacity: 0.78;
+    filter: drop-shadow(0 0 6px var(--editor-edge-stroke, rgba(16, 185, 129, 0.28)));
+  }
+
+  44% {
     opacity: 1;
-    transform: scale(1.004);
+    filter: drop-shadow(0 0 14px var(--editor-edge-stroke, rgba(16, 185, 129, 0.5)));
+  }
+
+  56% {
+    opacity: 0.86;
+    filter: drop-shadow(0 0 9px var(--editor-edge-stroke, rgba(16, 185, 129, 0.36)));
+  }
+
+  66% {
+    opacity: 0.97;
+    filter: drop-shadow(0 0 12px var(--editor-edge-stroke, rgba(16, 185, 129, 0.46)));
+  }
+}
+
+@keyframes editor-canvas-running-halo-breathe {
+  0%,
+  100% {
+    opacity: 0.64;
+    transform: scale(0.986);
+    filter: blur(8px);
+  }
+
+  44% {
+    opacity: 1;
+    transform: scale(1.012);
+    filter: blur(12px);
+  }
+
+  55% {
+    opacity: 0.78;
+    transform: scale(1.002);
+    filter: blur(10px);
+  }
+
+  66% {
+    opacity: 0.96;
+    transform: scale(1.008);
+    filter: blur(11px);
+  }
+}
+
+@keyframes editor-canvas-paused-halo-breathe {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.988);
+    filter: blur(8px);
+  }
+
+  46% {
+    opacity: 1;
+    transform: scale(1.014);
+    filter: blur(13px);
+  }
+
+  58% {
+    opacity: 0.8;
+    transform: scale(1.002);
+    filter: blur(10px);
+  }
+
+  70% {
+    opacity: 0.95;
+    transform: scale(1.008);
+    filter: blur(12px);
+  }
+}
+
+@keyframes editor-canvas-running-card-breathe {
+  0%,
+  100% {
+    box-shadow: var(--editor-canvas-node-card-shadow-rest);
+  }
+
+  46% {
+    box-shadow: var(--editor-canvas-node-card-shadow-peak);
+  }
+
+  56% {
+    box-shadow: var(--editor-canvas-node-card-shadow-flicker);
+  }
+
+  66% {
+    box-shadow: var(--editor-canvas-node-card-shadow-peak);
+  }
+}
+
+@keyframes editor-canvas-paused-card-breathe {
+  0%,
+  100% {
+    box-shadow: var(--editor-canvas-node-card-shadow-rest);
+  }
+
+  48% {
+    box-shadow: var(--editor-canvas-node-card-shadow-peak);
+  }
+
+  60% {
+    box-shadow: var(--editor-canvas-node-card-shadow-flicker);
+  }
+
+  70% {
+    box-shadow: var(--editor-canvas-node-card-shadow-peak);
   }
 }
 
@@ -3110,6 +3380,7 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
   opacity: 1;
   filter: blur(10px);
   transition: opacity 180ms ease, transform 180ms ease;
+  will-change: opacity, transform, filter;
 }
 
 .editor-canvas__node-halo--running {
@@ -3120,7 +3391,7 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
       rgba(16, 185, 129, 0.28) 34%,
       rgba(16, 185, 129, 0) 64%
     );
-  animation: editor-canvas-node-execution-glow-pulse 1.2s ease-in-out infinite;
+  animation: editor-canvas-running-halo-breathe 2.2s ease-in-out infinite;
 }
 
 .editor-canvas__node-halo--running-current {
@@ -3131,7 +3402,7 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
       rgba(16, 185, 129, 0.38) 36%,
       rgba(16, 185, 129, 0) 66%
     );
-  animation: editor-canvas-node-execution-glow-pulse 0.95s ease-in-out infinite;
+  animation: editor-canvas-running-halo-breathe 1.85s ease-in-out infinite;
 }
 
 .editor-canvas__node-halo--paused {
@@ -3142,7 +3413,7 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
       rgba(217, 119, 6, 0.25) 34%,
       rgba(217, 119, 6, 0) 64%
     );
-  animation: editor-canvas-node-execution-glow-pulse 1.35s ease-in-out infinite;
+  animation: editor-canvas-paused-halo-breathe 2.45s ease-in-out infinite;
 }
 
 .editor-canvas__node-halo--paused-current {
@@ -3153,35 +3424,93 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
       rgba(245, 158, 11, 0.34) 36%,
       rgba(245, 158, 11, 0) 66%
     );
-  animation: editor-canvas-node-execution-glow-pulse 1.05s ease-in-out infinite;
+  animation: editor-canvas-paused-halo-breathe 2.05s ease-in-out infinite;
 }
 
 .editor-canvas__node--running {
-  box-shadow:
+  --editor-canvas-node-card-shadow-rest:
     0 18px 36px rgba(60, 41, 20, 0.1),
     0 0 0 1.5px rgba(16, 185, 129, 0.62),
     0 0 14px rgba(16, 185, 129, 0.22);
+  --editor-canvas-node-card-shadow-peak:
+    0 22px 44px rgba(60, 41, 20, 0.12),
+    0 0 0 1.5px rgba(16, 185, 129, 0.78),
+    0 0 24px rgba(16, 185, 129, 0.36);
+  --editor-canvas-node-card-shadow-flicker:
+    0 18px 36px rgba(60, 41, 20, 0.1),
+    0 0 0 1.5px rgba(16, 185, 129, 0.66),
+    0 0 16px rgba(16, 185, 129, 0.26);
+  box-shadow: var(--editor-canvas-node-card-shadow-rest);
+  animation: editor-canvas-running-card-breathe 2.2s ease-in-out infinite;
 }
 
 .editor-canvas__node--running-current {
-  box-shadow:
+  --editor-canvas-node-card-shadow-rest:
     0 20px 40px rgba(60, 41, 20, 0.12),
     0 0 0 1.5px rgba(16, 185, 129, 0.86),
     0 0 18px rgba(16, 185, 129, 0.32);
+  --editor-canvas-node-card-shadow-peak:
+    0 24px 48px rgba(60, 41, 20, 0.14),
+    0 0 0 1.5px rgba(16, 185, 129, 0.94),
+    0 0 30px rgba(16, 185, 129, 0.48);
+  --editor-canvas-node-card-shadow-flicker:
+    0 20px 40px rgba(60, 41, 20, 0.12),
+    0 0 0 1.5px rgba(16, 185, 129, 0.82),
+    0 0 20px rgba(16, 185, 129, 0.36);
+  box-shadow: var(--editor-canvas-node-card-shadow-rest);
+  animation: editor-canvas-running-card-breathe 1.85s ease-in-out infinite;
 }
 
 .editor-canvas__node--paused {
-  box-shadow:
+  --editor-canvas-node-card-shadow-rest:
     0 18px 36px rgba(60, 41, 20, 0.1),
     0 0 0 1.5px rgba(245, 158, 11, 0.62),
     0 0 14px rgba(245, 158, 11, 0.2);
+  --editor-canvas-node-card-shadow-peak:
+    0 22px 44px rgba(60, 41, 20, 0.12),
+    0 0 0 1.5px rgba(245, 158, 11, 0.78),
+    0 0 24px rgba(245, 158, 11, 0.34);
+  --editor-canvas-node-card-shadow-flicker:
+    0 18px 36px rgba(60, 41, 20, 0.1),
+    0 0 0 1.5px rgba(245, 158, 11, 0.66),
+    0 0 16px rgba(245, 158, 11, 0.24);
+  box-shadow: var(--editor-canvas-node-card-shadow-rest);
+  animation: editor-canvas-paused-card-breathe 2.45s ease-in-out infinite;
 }
 
 .editor-canvas__node--paused-current {
-  box-shadow:
+  --editor-canvas-node-card-shadow-rest:
     0 20px 40px rgba(60, 41, 20, 0.12),
     0 0 0 1.5px rgba(245, 158, 11, 0.86),
     0 0 18px rgba(245, 158, 11, 0.3);
+  --editor-canvas-node-card-shadow-peak:
+    0 24px 48px rgba(60, 41, 20, 0.14),
+    0 0 0 1.5px rgba(245, 158, 11, 0.94),
+    0 0 30px rgba(245, 158, 11, 0.46);
+  --editor-canvas-node-card-shadow-flicker:
+    0 20px 40px rgba(60, 41, 20, 0.12),
+    0 0 0 1.5px rgba(245, 158, 11, 0.82),
+    0 0 20px rgba(245, 158, 11, 0.34);
+  box-shadow: var(--editor-canvas-node-card-shadow-rest);
+  animation: editor-canvas-paused-card-breathe 2.05s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .editor-canvas__lock-banner,
+  .editor-canvas__node-halo--running,
+  .editor-canvas__node-halo--running-current,
+  .editor-canvas__node-halo--paused,
+  .editor-canvas__node-halo--paused-current,
+  .editor-canvas__node--running,
+  .editor-canvas__node--running-current,
+  .editor-canvas__node--paused,
+  .editor-canvas__node--paused-current,
+  .editor-canvas__edge--active-run,
+  .editor-canvas__edge--flow.editor-canvas__edge--active-run,
+  .editor-canvas__edge--route.editor-canvas__edge--active-run,
+  .editor-canvas__edge--data.editor-canvas__edge--active-run {
+    animation: none;
+  }
 }
 
 .editor-canvas__node--success {

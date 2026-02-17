@@ -75,7 +75,7 @@ test("EditorWorkspaceShell wires node top-action events into state updates, node
 
 test("EditorWorkspaceShell floats the right side panel above the canvas while preserving responsive panel widths", () => {
   assert.match(componentSource, /\.editor-workspace-shell \{[\s\S]*--editor-state-panel-open-width:\s*clamp\(340px,\s*32vw,\s*480px\);/);
-  assert.match(componentSource, /\.editor-workspace-shell \{[\s\S]*--editor-human-review-panel-open-width:\s*clamp\(360px,\s*34vw,\s*520px\);/);
+  assert.match(componentSource, /\.editor-workspace-shell \{[\s\S]*--editor-human-review-panel-open-width:\s*var\(--editor-state-panel-open-width\);/);
   assert.match(componentSource, /\.editor-workspace-shell \{[\s\S]*height:\s*100%;/);
   assert.doesNotMatch(componentSource, /\.editor-workspace-shell \{[\s\S]*height:\s*100vh;/);
   assert.match(componentSource, /class="editor-workspace-shell__side-panel-layer"/);
@@ -90,7 +90,7 @@ test("EditorWorkspaceShell floats the right side panel above the canvas while pr
   assert.match(componentSource, /width:\s*sidePanelOpenWidth\(tabId\),/);
   assert.doesNotMatch(componentSource, /56px/);
   assert.match(componentSource, /@media \(max-width:\s*760px\) \{[\s\S]*\.editor-workspace-shell \{[\s\S]*--editor-state-panel-open-width:\s*min\(320px,\s*calc\(100vw - var\(--app-sidebar-width\) - 24px\)\);/);
-  assert.match(componentSource, /@media \(max-width:\s*760px\) \{[\s\S]*\.editor-workspace-shell \{[\s\S]*--editor-human-review-panel-open-width:\s*min\(360px,\s*calc\(100vw - var\(--app-sidebar-width\) - 24px\)\);/);
+  assert.match(componentSource, /@media \(max-width:\s*760px\) \{[\s\S]*\.editor-workspace-shell \{[\s\S]*--editor-human-review-panel-open-width:\s*var\(--editor-state-panel-open-width\);/);
   assert.match(componentSource, /\.editor-workspace-shell__editor-grid \{[\s\S]*position:\s*relative;[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   assert.match(componentSource, /\.editor-workspace-shell \{[\s\S]*--editor-workspace-floating-top-clearance:\s*72px;/);
   assert.match(componentSource, /\.editor-workspace-shell__side-panel-layer \{[\s\S]*position:\s*absolute;[\s\S]*top:\s*var\(--editor-workspace-floating-top-clearance\);[\s\S]*right:\s*12px;[\s\S]*bottom:\s*12px;[\s\S]*z-index:\s*30;/);
@@ -148,11 +148,37 @@ test("EditorWorkspaceShell resumes restored pause snapshots against their origin
 });
 
 test("EditorWorkspaceShell locks graph editing while a run is awaiting human review", () => {
+  const guardFunctionSource = componentSource.match(/function guardGraphEditForTab\(tabId: string\) \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+  assert.match(componentSource, /import \{ ElMessage \} from "element-plus";/);
   assert.match(componentSource, /:interaction-locked="isGraphInteractionLocked\(tab\.tabId\)"/);
   assert.match(componentSource, /function isGraphInteractionLocked\(tabId: string\)/);
   assert.match(componentSource, /return latestRunDetailByTabId\.value\[tabId\]\?\.status === "awaiting_human";/);
   assert.match(componentSource, /function guardGraphEditForTab\(tabId: string\)/);
+  assert.match(componentSource, /function showGraphLockedEditToast\(\)/);
+  assert.match(
+    componentSource,
+    /ElMessage\(\{[\s\S]*customClass:\s*"editor-workspace-shell__locked-toast",[\s\S]*type:\s*"warning",[\s\S]*duration:\s*4200,[\s\S]*grouping:\s*true,/,
+  );
+  assert.match(componentSource, /图已锁定。请在右侧 Human Review 面板填写需要的输入，然后点击 Continue Run 继续。/);
+  assert.match(componentSource, /@locked-edit-attempt="showGraphLockedEditToast"/);
+  assert.match(componentSource, /:global\(\.editor-workspace-shell__locked-toast\.el-message\) \{[\s\S]*top:\s*50% !important;/);
+  assert.match(componentSource, /:global\(\.editor-workspace-shell__locked-toast\.el-message\) \{[\s\S]*min-width:\s*min\(620px,\s*calc\(100vw - 40px\)\);/);
+  assert.match(componentSource, /:global\(\.editor-workspace-shell__locked-toast\.el-message\) \{[\s\S]*border:\s*1px solid rgba\(154,\s*52,\s*18,\s*0\.56\);/);
+  assert.match(componentSource, /:global\(\.editor-workspace-shell__locked-toast \.el-message__content\) \{[\s\S]*font-size:\s*1\.08rem;/);
+  assert.match(componentSource, /:global\(\.editor-workspace-shell__locked-toast\.el-message\) \{[\s\S]*animation:\s*editor-workspace-shell-locked-toast-float 4\.2s ease forwards;/);
+  assert.match(componentSource, /76% \{[\s\S]*transform:\s*translate\(-50%, -50%\) scale\(1\);/);
+  assert.match(componentSource, /@keyframes editor-workspace-shell-locked-toast-float/);
   assert.match(componentSource, /if \(guardGraphEditForTab\(tabId\)\) \{/);
+  assert.match(guardFunctionSource, /showGraphLockedEditToast\(\);/);
+  assert.doesNotMatch(guardFunctionSource, /setMessageFeedbackForTab/);
+});
+
+test("EditorWorkspaceShell removes the persistent bottom-left status feedback overlay", () => {
+  assert.doesNotMatch(componentSource, /class="editor-workspace-shell__feedback"/);
+  assert.doesNotMatch(componentSource, /editor-workspace-shell__feedback--/);
+  assert.doesNotMatch(componentSource, /\.editor-workspace-shell__feedback/);
+  assert.match(componentSource, /:latest-run-status="feedbackForTab\(tab\.tabId\)\?\.activeRunStatus \?\? null"/);
 });
 
 test("EditorWorkspaceShell renders the graph action controls as a detached capsule instead of passing them through EditorTabBar", () => {
