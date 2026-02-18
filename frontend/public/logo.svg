@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="-256 -256 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">GraphiteUI cat logo</title>
+  <desc id="desc">A black cat head with warm gold eyes revealed through a circular gold ring.</desc>
+  <defs>
+    <radialGradient id="paper" cx="0" cy="-112" r="352" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="72%" stop-color="#fffefd"/>
+      <stop offset="100%" stop-color="#fbf8f1"/>
+    </radialGradient>
+    <linearGradient id="ringGold" x1="-168" y1="-224" x2="168" y2="224" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#d49c44"/>
+      <stop offset="36%" stop-color="#e2b65f"/>
+      <stop offset="68%" stop-color="#c89136"/>
+      <stop offset="100%" stop-color="#e1b75f"/>
+    </linearGradient>
+    <linearGradient id="eyeGold" x1="-104" y1="32" x2="104" y2="136" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#efbd61"/>
+      <stop offset="52%" stop-color="#d8a650"/>
+      <stop offset="100%" stop-color="#cf963d"/>
+    </linearGradient>
+    <radialGradient id="catBlack" cx="-44" cy="-132" r="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#282928"/>
+      <stop offset="44%" stop-color="#222222"/>
+      <stop offset="100%" stop-color="#171818"/>
+    </radialGradient>
+    <clipPath id="innerWindow">
+      <circle cx="0" cy="0" r="240"/>
+    </clipPath>
+    <filter id="catSoftness" x="-256" y="-256" width="512" height="512" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="6" stdDeviation="4" flood-color="#000000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <circle cx="0" cy="0" r="240" fill="url(#paper)"/>
+  <g clip-path="url(#innerWindow)">
+    <path
+      fill="url(#catBlack)"
+      filter="url(#catSoftness)"
+      d="M-146-143
+         C-116-135-82-106-55-61
+         C-25-66 25-66 55-61
+         C82-106 116-135 146-143
+         C164-106 174-52 168-4
+         C196 22 214 66 218 116
+         C226 208 145 264 0 264
+         C-145 264-226 208-218 116
+         C-214 66-196 22-168-4
+         C-174-52-164-106-146-143Z"
+    />
+    <ellipse cx="-80" cy="82" rx="24" ry="52" fill="url(#eyeGold)"/>
+    <ellipse cx="80" cy="82" rx="24" ry="52" fill="url(#eyeGold)"/>
+  </g>
+  <circle cx="0" cy="0" r="248" fill="none" stroke="url(#ringGold)" stroke-width="16"/>
+</svg>
