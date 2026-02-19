@@ -11,6 +11,7 @@ const presets: PresetDocument[] = [
     sourcePresetId: null,
     createdAt: "2026-04-20T08:00:00Z",
     updatedAt: "2026-04-21T08:00:00Z",
+    status: "active",
     definition: {
       label: "Writing Agent",
       description: "Drafts polished copy.",
@@ -40,6 +41,7 @@ const presets: PresetDocument[] = [
     sourcePresetId: "output",
     createdAt: "2026-04-19T08:00:00Z",
     updatedAt: "2026-04-19T08:00:00Z",
+    status: "disabled",
     definition: {
       label: "Plain Output",
       description: "Shows final text.",
@@ -86,6 +88,6 @@ test("buildPresetOverview summarizes operational preset inventory", () => {
   });
 });
 
-test("buildPresetKindOptions keeps the all option ahead of node families", () => {
-  assert.deepEqual(buildPresetKindOptions(), ["all", "input", "agent", "condition", "output"]);
+test("buildPresetKindOptions keeps preset management focused on agent presets", () => {
+  assert.deepEqual(buildPresetKindOptions(), ["all", "agent"]);
 });

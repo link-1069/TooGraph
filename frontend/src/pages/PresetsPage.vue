@@ -38,11 +38,26 @@
         </label>
         <div class="presets-page__kind-filter">
           <span>{{ t("presets.kindFilter") }}</span>
-          <ElSegmented v-model="kindFilter" class="presets-page__segments" :options="kindOptions" />
+          <div role="tablist" class="presets-page__filter-tabs" :aria-label="t('presets.kindFilter')">
+            <button
+              v-for="option in kindOptions"
+              :key="option.value"
+              type="button"
+              role="tab"
+              class="presets-page__filter-tab"
+              :class="{ 'presets-page__filter-tab--active': kindFilter === option.value }"
+              :aria-selected="kindFilter === option.value"
+              :tabindex="kindFilter === option.value ? 0 : -1"
+              @click="kindFilter = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
         </div>
       </section>
 
       <section class="presets-page__list">
+        <article v-if="actionError" class="presets-page__notice">{{ t("presets.actionFailed", { error: actionError }) }}</article>
         <article v-if="loading" class="presets-page__empty">{{ t("common.loading") }}</article>
         <article v-else-if="error" class="presets-page__empty">{{ t("common.failedToLoad", { error }) }}</article>
         <article v-else-if="filteredPresets.length === 0" class="presets-page__empty">
@@ -58,7 +73,10 @@
                   <div class="presets-page__id">{{ preset.presetId }}</div>
                   <h3>{{ preset.definition.label }}</h3>
                 </div>
-                <span class="presets-page__kind">{{ t(`presets.${preset.definition.node.kind}`) }}</span>
+                <div class="presets-page__status">
+                  <span class="presets-page__kind">{{ t(`presets.${preset.definition.node.kind}`) }}</span>
+                  <span class="presets-page__kind">{{ t(`presets.${preset.status}`) }}</span>
+                </div>
               </div>
               <p>{{ preset.definition.description }}</p>
               <div class="presets-page__meta">
@@ -66,6 +84,35 @@
                 <span>{{ t("presets.sourcePreset") }}: {{ preset.sourcePresetId ?? t("common.none") }}</span>
                 <span>{{ t("presets.updated") }}: {{ formatTimestamp(preset.updatedAt) }}</span>
                 <span>{{ t("presets.created") }}: {{ formatTimestamp(preset.createdAt) }}</span>
+              </div>
+              <div class="presets-page__actions" :aria-label="t('presets.actions')">
+                <button
+                  v-if="preset.status === 'disabled'"
+                  type="button"
+                  class="presets-page__action"
+                  :disabled="actionPresetId === preset.presetId"
+                  @click="setPresetStatus(preset, 'active')"
+                >
+                  {{ t("presets.enable") }}
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="presets-page__action"
+                  :disabled="actionPresetId === preset.presetId"
+                  @click="setPresetStatus(preset, 'disabled')"
+                >
+                  {{ t("presets.disable") }}
+                </button>
+                <button
+                  type="button"
+                  class="presets-page__action"
+                  :class="{ 'presets-page__action--danger': confirmingPresetDeleteId === preset.presetId }"
+                  :disabled="actionPresetId === preset.presetId"
+                  @click="deletePresetFromCatalog(preset)"
+                >
+                  {{ confirmingPresetDeleteId === preset.presetId ? t("presets.confirmDelete") : t("presets.delete") }}
+                </button>
               </div>
             </div>
 
@@ -108,10 +155,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ElInput, ElSegmented } from "element-plus";
+import { ElInput } from "element-plus";
 import { useI18n } from "vue-i18n";
 
-import { fetchPresets } from "@/api/presets";
+import { deletePreset, fetchPresets, updatePresetStatus } from "@/api/presets";
 import AppShell from "@/layouts/AppShell.vue";
 import type { PresetDocument } from "@/types/node-system";
 
@@ -125,6 +172,9 @@ import {
 const presets = ref<PresetDocument[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const actionError = ref<string | null>(null);
+const actionPresetId = ref<string | null>(null);
+const confirmingPresetDeleteId = ref<string | null>(null);
 const query = ref("");
 const kindFilter = ref<PresetKindFilter>("all");
 const { t, locale } = useI18n();
@@ -141,8 +191,9 @@ const kindOptions = computed(() =>
 async function loadPresets() {
   loading.value = true;
   try {
-    presets.value = await fetchPresets();
+    presets.value = await fetchPresets({ includeDisabled: true });
     error.value = null;
+    actionError.value = null;
   } catch (fetchError) {
     error.value = fetchError instanceof Error ? fetchError.message : t("common.loading");
   } finally {
@@ -168,11 +219,49 @@ function presetSkills(preset: PresetDocument) {
   return preset.definition.node.kind === "agent" ? preset.definition.node.config.skills : [];
 }
 
+function replacePreset(updatedPreset: PresetDocument) {
+  presets.value = presets.value.map((preset) => (preset.presetId === updatedPreset.presetId ? updatedPreset : preset));
+}
+
+async function setPresetStatus(preset: PresetDocument, status: PresetDocument["status"]) {
+  actionPresetId.value = preset.presetId;
+  actionError.value = null;
+  confirmingPresetDeleteId.value = null;
+  try {
+    replacePreset(await updatePresetStatus(preset.presetId, status));
+  } catch (updateError) {
+    actionError.value = updateError instanceof Error ? updateError.message : t("common.loading");
+  } finally {
+    actionPresetId.value = null;
+  }
+}
+
+async function deletePresetFromCatalog(preset: PresetDocument) {
+  if (confirmingPresetDeleteId.value !== preset.presetId) {
+    confirmingPresetDeleteId.value = preset.presetId;
+    return;
+  }
+  actionPresetId.value = preset.presetId;
+  actionError.value = null;
+  try {
+    await deletePreset(preset.presetId);
+    presets.value = presets.value.filter((item) => item.presetId !== preset.presetId);
+    confirmingPresetDeleteId.value = null;
+  } catch (deleteError) {
+    actionError.value = deleteError instanceof Error ? deleteError.message : t("common.loading");
+  } finally {
+    actionPresetId.value = null;
+  }
+}
+
 onMounted(loadPresets);
 </script>
 
 <style scoped>
 .presets-page {
+  --presets-page-panel-shadow: 0 10px 24px rgba(61, 43, 24, 0.04);
+  --presets-page-card-shadow: 0 4px 12px rgba(61, 43, 24, 0.026);
+
   display: grid;
   gap: 16px;
   width: 100%;
@@ -184,12 +273,13 @@ onMounted(loadPresets);
 .presets-page__toolbar,
 .presets-page__metric,
 .presets-page__card,
-.presets-page__empty {
+.presets-page__empty,
+.presets-page__notice {
   min-width: 0;
   border: 1px solid var(--graphite-border);
   border-radius: 24px;
   background: var(--graphite-surface-panel);
-  box-shadow: var(--graphite-shadow-panel);
+  box-shadow: var(--presets-page-panel-shadow);
 }
 
 .presets-page__hero > *,
@@ -230,6 +320,7 @@ onMounted(loadPresets);
 .presets-page__card p,
 .presets-page__meta,
 .presets-page__empty,
+.presets-page__notice,
 .presets-page__result-count {
   color: rgba(60, 41, 20, 0.72);
   line-height: 1.6;
@@ -242,28 +333,45 @@ onMounted(loadPresets);
 }
 
 .presets-page__refresh,
-.presets-page__empty-action {
+.presets-page__empty-action,
+.presets-page__action {
   border: 1px solid rgba(154, 52, 18, 0.2);
   border-radius: 14px;
   padding: 10px 14px;
   background: rgba(255, 248, 240, 0.96);
   color: rgb(154, 52, 18);
   cursor: pointer;
+  font: inherit;
   text-decoration: none;
   transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
 }
 
 .presets-page__refresh:hover,
-.presets-page__empty-action:hover {
+.presets-page__empty-action:hover,
+.presets-page__action:hover {
   border-color: rgba(154, 52, 18, 0.28);
   background: rgba(255, 250, 242, 1);
   transform: translateY(-1px);
 }
 
-.presets-page__refresh:disabled {
+.presets-page__refresh:disabled,
+.presets-page__action:disabled {
   cursor: not-allowed;
   opacity: 0.62;
   transform: none;
+}
+
+.presets-page__action--danger {
+  border-color: rgba(185, 28, 28, 0.24);
+  background: rgba(255, 245, 242, 0.96);
+  color: rgb(153, 27, 27);
+}
+
+.presets-page__refresh:focus-visible,
+.presets-page__empty-action:focus-visible,
+.presets-page__action:focus-visible {
+  outline: 2px solid rgba(216, 166, 80, 0.5);
+  outline-offset: 2px;
 }
 
 .presets-page__overview {
@@ -275,6 +383,11 @@ onMounted(loadPresets);
 .presets-page__metric {
   padding: 16px;
   background: rgba(255, 255, 255, 0.62);
+}
+
+.presets-page__metric,
+.presets-page__card {
+  box-shadow: var(--presets-page-card-shadow);
 }
 
 .presets-page__metric span {
@@ -309,20 +422,45 @@ onMounted(loadPresets);
   width: 100%;
 }
 
-.presets-page__segments {
-  display: block;
+.presets-page__filter-tabs {
+  display: flex;
+  gap: 4px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   overflow-x: auto;
+  border: 1px solid rgba(154, 52, 18, 0.08);
+  border-radius: 14px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.42);
 }
 
-.presets-page__segments :deep(.el-segmented__group) {
-  gap: 4px;
+.presets-page__filter-tab {
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 10px;
+  padding: 6px 10px;
+  background: transparent;
+  color: rgba(60, 41, 20, 0.68);
+  cursor: pointer;
+  font: inherit;
+  transition: background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.presets-page__segments :deep(.el-segmented__item.is-selected) {
-  color: var(--graphite-accent-strong);
+.presets-page__filter-tab:hover {
+  color: rgb(154, 52, 18);
+  background: rgba(255, 248, 240, 0.68);
+}
+
+.presets-page__filter-tab--active {
+  background: rgba(255, 248, 240, 0.96);
+  color: rgb(154, 52, 18);
+  box-shadow: inset 0 0 0 1px rgba(154, 52, 18, 0.1), 0 4px 10px rgba(154, 52, 18, 0.06);
+}
+
+.presets-page__filter-tab:focus-visible {
+  outline: 2px solid rgba(216, 166, 80, 0.5);
+  outline-offset: 2px;
 }
 
 .presets-page__list {
@@ -330,7 +468,8 @@ onMounted(loadPresets);
   gap: 12px;
 }
 
-.presets-page__empty {
+.presets-page__empty,
+.presets-page__notice {
   padding: 24px;
 }
 
@@ -345,6 +484,17 @@ onMounted(loadPresets);
   display: flex;
   justify-content: space-between;
   gap: 16px;
+}
+
+.presets-page__status,
+.presets-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.presets-page__actions {
+  margin-top: 14px;
 }
 
 .presets-page__card h3,
@@ -418,6 +568,10 @@ onMounted(loadPresets);
 
   .presets-page__refresh {
     width: 100%;
+  }
+
+  .presets-page__action {
+    flex: 1 1 120px;
   }
 
   .presets-page__title {

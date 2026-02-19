@@ -15,7 +15,7 @@ export type PresetOverview = {
 };
 
 export function buildPresetKindOptions(): PresetKindFilter[] {
-  return ["all", "input", "agent", "condition", "output"];
+  return ["all", "agent"];
 }
 
 export function filterPresetsForManagement(
@@ -56,6 +56,7 @@ function buildPresetSearchText(preset: PresetDocument): string {
   return [
     preset.presetId,
     preset.sourcePresetId ?? "",
+    preset.status,
     preset.definition.label,
     preset.definition.description,
     node.kind,
