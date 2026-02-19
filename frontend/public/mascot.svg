@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="560" viewBox="-260 -180 640 560" role="img" aria-labelledby="title desc">
-  <title id="title">GraphiteUI cat mascot</title>
-  <desc id="desc">A borderless black cat mascot with warm gold eyes, a gold sparkle, and a curled tail.</desc>
+  <title id="title">GraphiteUI cat mascot simple short-tail variant</title>
+  <desc id="desc">A simple short-tail variant of the borderless black cat mascot with warm gold eyes and a gold sparkle.</desc>
   <defs>
     <radialGradient id="sparkleGold" cx="0" cy="-106" r="56" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#f2c968"/>
@@ -27,13 +27,11 @@
       id="mascotTail"
       fill="none"
       stroke="url(#catBlack)"
-      stroke-width="30"
+      stroke-width="38"
       stroke-linecap="round"
       stroke-linejoin="round"
-      d="M204 154
-         C260 156 314 112 322 48
-         C330 -18 282 -58 238 -42
-         C210 -30 216 2 250 8"
+      d="M206 154
+         C240 154 268 136 282 108"
     />
     <path
       id="mascotSparkle"
