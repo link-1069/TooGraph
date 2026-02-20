@@ -10,6 +10,14 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.core.schemas.node_system import (
+    NodeSystemAgentConfig,
+    NodeSystemAgentNode,
+    NodeSystemNodeUi,
+    NodeSystemWriteBinding,
+    Position,
+)
+
 
 LOCAL_PROVIDER_ENV_KEYS = (
     "LOCAL_BASE_URL",
@@ -159,6 +167,75 @@ class OpenAiCompatibleProviderRuntimeTests(unittest.TestCase):
         local_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "local")
         self.assertEqual(catalog["default_text_model_ref"], "local/gemma-4-26b-a4b-it")
         self.assertEqual([model["model"] for model in local_provider["models"]], ["gemma-4-26b-a4b-it"])
+
+    def test_build_model_catalog_includes_enabled_openai_provider_models(self) -> None:
+        saved_settings = {
+            "text_model_ref": "openai/gpt-4.1",
+            "video_model_ref": "openai/gpt-4.1",
+            "model_providers": {
+                "openai": {
+                    "label": "OpenAI",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-openai",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "gpt-4.1", "label": "GPT 4.1"}],
+                }
+            },
+        }
+
+        with self._patched_local_provider_env(LOCAL_BASE_URL="http://127.0.0.1:8888/v1"):
+            _local_llm, model_catalog = self._reload_target_modules()
+
+            with patch.object(model_catalog, "load_app_settings", return_value=saved_settings):
+                with patch.object(model_catalog, "get_local_gateway_runtime_config", return_value={"cloud": None, "llama": None}):
+                    with patch.object(model_catalog, "get_local_route_model_names", return_value=["local-model"]):
+                        catalog = model_catalog.build_model_catalog(force_refresh=False)
+
+        openai_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "openai")
+
+        self.assertEqual(catalog["default_text_model_ref"], "openai/gpt-4.1")
+        self.assertTrue(openai_provider["configured"])
+        self.assertTrue(openai_provider["enabled"])
+        self.assertEqual(openai_provider["models"][0]["model_ref"], "openai/gpt-4.1")
+        self.assertEqual(openai_provider["models"][0]["label"], "GPT 4.1")
+
+    def test_agent_response_uses_provider_aware_client_for_openai_ref(self) -> None:
+        from app.core.runtime import node_system_executor
+
+        runtime_config = {
+            "runtime_model_name": "gpt-4.1",
+            "resolved_model_ref": "openai/gpt-4.1",
+            "resolved_provider_id": "openai",
+            "resolved_temperature": 0.2,
+            "resolved_thinking": False,
+        }
+
+        node = NodeSystemAgentNode(
+            ui=NodeSystemNodeUi(position=Position(x=0, y=0)),
+            writes=[NodeSystemWriteBinding(state="answer")],
+            config=NodeSystemAgentConfig(taskInstruction="Answer as JSON."),
+        )
+
+        with patch.object(
+            node_system_executor,
+            "chat_with_model_ref_with_meta",
+            return_value=('{"answer":"ok"}', {"model": "gpt-4.1", "provider_id": "openai", "temperature": 0.2, "warnings": []}),
+        ) as chat:
+            payload, reasoning, warnings, updated = node_system_executor._generate_agent_response(
+                node=node,
+                input_values={"question": "hi"},
+                skill_context={},
+                runtime_config=runtime_config,
+            )
+
+        self.assertEqual(payload["answer"], "ok")
+        self.assertEqual(reasoning, "")
+        self.assertEqual(warnings, [])
+        self.assertEqual(updated["provider_id"], "openai")
+        chat.assert_called_once()
 
 
 if __name__ == "__main__":
