@@ -18,6 +18,18 @@ test("ModelLogsPage renders a themed paginated raw model request log", () => {
   assert.match(pageSource, /model-logs-page__response-raw/);
   assert.match(pageSource, /JSON\.stringify\(selectedLog\.request_raw, null, 2\)/);
   assert.match(pageSource, /JSON\.stringify\(selectedLog\.response_raw, null, 2\)/);
+  assert.match(pageSource, /v-html="highlightJson\(formatRequestRaw\(selectedLog\)\)"/);
+  assert.match(pageSource, /v-html="highlightJson\(formatResponseRaw\(selectedLog\)\)"/);
+  assert.match(pageSource, /import \{ highlightJson \} from "\.\/modelLogsJsonHighlight\.ts";/);
+  assert.match(pageSource, /model-logs-page__json-key/);
+  assert.match(pageSource, /model-logs-page__json-string/);
+  assert.match(pageSource, /model-logs-page__json-number/);
+  assert.match(pageSource, /model-logs-page__json-boolean/);
+  assert.match(pageSource, /model-logs-page__json-null/);
+  assert.match(pageSource, /model-logs-page__json-string--multiline/);
+  assert.match(pageSource, /model-logs-page__json-string-lines/);
+  assert.match(pageSource, /model-logs-page__json-string-line/);
+  assert.doesNotMatch(pageSource, /model-logs-page__json-line-break/);
   assert.match(pageSource, /v-for="message in selectedLog\.messages"/);
   assert.match(pageSource, /selectedLog\.reasoning/);
   assert.match(pageSource, /selectedLog\.content/);

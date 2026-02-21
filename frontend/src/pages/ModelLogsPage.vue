@@ -97,11 +97,11 @@
           <section class="model-logs-page__raw-grid">
             <article class="model-logs-page__raw-panel model-logs-page__request-raw">
               <h4>{{ t("modelLogs.rawRequest") }}</h4>
-              <pre>{{ formatRequestRaw(selectedLog) }}</pre>
+              <pre v-html="highlightJson(formatRequestRaw(selectedLog))"></pre>
             </article>
             <article class="model-logs-page__raw-panel model-logs-page__response-raw">
               <h4>{{ t("modelLogs.rawResponse") }}</h4>
-              <pre>{{ formatResponseRaw(selectedLog) }}</pre>
+              <pre v-html="highlightJson(formatResponseRaw(selectedLog))"></pre>
             </article>
           </section>
         </section>
@@ -135,6 +135,7 @@ import { useI18n } from "vue-i18n";
 import { fetchModelLogs } from "@/api/modelLogs";
 import AppShell from "@/layouts/AppShell.vue";
 import type { ModelLogEntry } from "@/types/model-log";
+import { highlightJson } from "./modelLogsJsonHighlight.ts";
 
 const { t } = useI18n();
 const pageSize = 12;
@@ -602,6 +603,57 @@ onBeforeUnmount(() => {
 .model-logs-page__raw-panel pre {
   max-height: 460px;
   padding: 12px;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-key) {
+  color: rgb(37, 99, 235);
+  font-weight: 800;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-string) {
+  color: rgb(4, 120, 87);
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-string--multiline) {
+  display: inline-grid;
+  max-width: min(100%, 78ch);
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  vertical-align: top;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-string-quote) {
+  color: rgba(4, 120, 87, 0.62);
+  font-weight: 700;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-string-lines) {
+  display: grid;
+  min-width: 0;
+  border-left: 1px solid rgba(4, 120, 87, 0.18);
+  margin: 0 2px;
+  padding-left: 8px;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-string-line) {
+  display: block;
+  min-height: 1.45em;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-number) {
+  color: rgb(147, 51, 234);
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-boolean) {
+  color: rgb(194, 65, 12);
+  font-weight: 800;
+}
+
+.model-logs-page__raw-panel pre :deep(.model-logs-page__json-null) {
+  color: rgba(60, 41, 20, 0.48);
+  font-style: italic;
 }
 
 .model-logs-page__pagination {
