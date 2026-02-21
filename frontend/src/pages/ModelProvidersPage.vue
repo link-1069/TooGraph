@@ -107,22 +107,9 @@
                     <div class="model-providers-page__badges">
                       <span>{{ provider.provider_id }}</span>
                       <span>{{ provider.transport }}</span>
-                      <span>{{ provider.enabled ? t("settings.enabledProvider") : t("settings.disabledProvider") }}</span>
-                      <span v-if="isLoginProvider(provider)">{{ providerAuthStatusLabel(provider) }}</span>
-                      <span v-if="provider.api_key_configured">{{ t("settings.apiKeyStored") }}</span>
                     </div>
                   </div>
                   <div class="model-providers-page__provider-card-controls">
-                    <button
-                      type="button"
-                      class="model-providers-page__icon-button model-providers-page__refresh-icon-button"
-                      :disabled="discoveringProviderId === provider.provider_id || (isLoginProvider(provider) && !provider.auth_status?.authenticated)"
-                      :aria-label="t('settings.refreshModels')"
-                      :title="t('settings.refreshModels')"
-                      @click="handleDiscoverModels(provider.provider_id)"
-                    >
-                      <ElIcon aria-hidden="true"><Refresh /></ElIcon>
-                    </button>
                     <ElSwitch
                       v-model="provider.enabled"
                       class="model-providers-page__switch"
@@ -164,7 +151,7 @@
                 </div>
                 <div v-if="isLoginProvider(provider)" class="model-providers-page__provider-actions">
                   <ElPopover
-                    trigger="click"
+                    :trigger="manualPopoverTrigger"
                     :visible="activeModelPickerProviderId === provider.provider_id"
                     placement="bottom-start"
                     :width="360"
@@ -186,12 +173,16 @@
                     </template>
                     <div class="model-providers-page__model-picker" @pointerdown.stop @click.stop>
                       <div class="model-providers-page__model-picker-title">{{ provider.label || provider.provider_id }}</div>
-                      <div v-if="providerModelOptions(provider).length === 0" class="model-providers-page__model-picker-empty">
+                      <div v-if="isProviderModelPickerLoading(provider)" class="model-providers-page__model-picker-loading" role="status">
+                        <span class="model-providers-page__model-picker-spinner" aria-hidden="true"></span>
+                        <span>{{ t("settings.discoveringModels") }}</span>
+                      </div>
+                      <div v-else-if="providerModelOptions(provider).length === 0" class="model-providers-page__model-picker-empty">
                         {{ t("settings.noModelsDiscovered") }}
                       </div>
                       <button
-                        v-for="modelName in providerModelOptions(provider)"
                         v-else
+                        v-for="modelName in providerModelOptions(provider)"
                         :key="`${provider.provider_id}-model-option-${modelName}`"
                         type="button"
                         class="model-providers-page__model-picker-option"
@@ -250,7 +241,7 @@
                 </div>
                 <div v-else class="model-providers-page__provider-actions">
                   <ElPopover
-                    trigger="click"
+                    :trigger="manualPopoverTrigger"
                     :visible="activeModelPickerProviderId === provider.provider_id"
                     placement="bottom-start"
                     :width="360"
@@ -272,12 +263,16 @@
                     </template>
                     <div class="model-providers-page__model-picker" @pointerdown.stop @click.stop>
                       <div class="model-providers-page__model-picker-title">{{ provider.label || provider.provider_id }}</div>
-                      <div v-if="providerModelOptions(provider).length === 0" class="model-providers-page__model-picker-empty">
+                      <div v-if="isProviderModelPickerLoading(provider)" class="model-providers-page__model-picker-loading" role="status">
+                        <span class="model-providers-page__model-picker-spinner" aria-hidden="true"></span>
+                        <span>{{ t("settings.discoveringModels") }}</span>
+                      </div>
+                      <div v-else-if="providerModelOptions(provider).length === 0" class="model-providers-page__model-picker-empty">
                         {{ t("settings.noModelsDiscovered") }}
                       </div>
                       <button
-                        v-for="modelName in providerModelOptions(provider)"
                         v-else
+                        v-for="modelName in providerModelOptions(provider)"
                         :key="`${provider.provider_id}-model-option-${modelName}`"
                         type="button"
                         class="model-providers-page__model-picker-option"
@@ -291,9 +286,145 @@
                       </button>
                     </div>
                   </ElPopover>
-                  <button type="button" class="model-providers-page__button" @click="openProviderEditor(provider.provider_id)">
-                    {{ t("settings.configureProvider") }}
-                  </button>
+                  <ElPopover
+                    :trigger="manualPopoverTrigger"
+                    :visible="activeProviderConfigProviderId === provider.provider_id"
+                    placement="bottom-end"
+                    :width="430"
+                    :show-arrow="false"
+                    :popper-style="providerConfigPopoverStyle"
+                    popper-class="model-providers-page__provider-editor-popper"
+                    @update:visible="(visible: boolean) => handleProviderConfigVisibleChange(provider, visible)"
+                  >
+                    <template #reference>
+                      <button type="button" class="model-providers-page__button" @click.stop="openProviderEditor(provider.provider_id)">
+                        {{ t("settings.configureProvider") }}
+                      </button>
+                    </template>
+                    <div class="model-providers-page__provider-editor-panel model-providers-page__provider-editor-panel--popover" @pointerdown.stop @click.stop>
+                      <div class="model-providers-page__provider-editor-header">
+                        <div>
+                          <strong>{{ provider.label || provider.provider_id }}</strong>
+                          <div class="model-providers-page__badges">
+                            <span>{{ provider.provider_id }}</span>
+                            <span>{{ provider.transport }}</span>
+                          </div>
+                        </div>
+                        <ElSwitch
+                          v-model="provider.enabled"
+                          class="model-providers-page__switch"
+                          :width="54"
+                          inline-prompt
+                          :active-text="t('common.on')"
+                          :inactive-text="t('common.off')"
+                          :aria-label="provider.enabled ? t('settings.enabledProvider') : t('settings.disabledProvider')"
+                          @change="handleProviderDraftChange"
+                        />
+                      </div>
+                      <div class="model-providers-page__provider-fields">
+                        <label class="model-providers-page__provider-form-field">
+                          <span class="model-providers-page__provider-field-label">{{ t("settings.providerLabel") }}</span>
+                          <input
+                            v-model.trim="provider.label"
+                            class="model-providers-page__provider-text-input"
+                            type="text"
+                            @change="handleProviderDraftChange"
+                          />
+                        </label>
+                        <label v-if="showBaseUrlInPrimaryFields(provider)" class="model-providers-page__provider-form-field">
+                          <span class="model-providers-page__provider-field-label">{{ t("settings.providerBaseUrl") }}</span>
+                          <input
+                            v-model.trim="provider.base_url"
+                            class="model-providers-page__provider-text-input"
+                            type="url"
+                            @change="handleProviderDraftChange"
+                          />
+                        </label>
+                        <label class="model-providers-page__provider-form-field">
+                          <span class="model-providers-page__provider-field-label">{{ t("settings.providerApiKey") }}</span>
+                          <input
+                            v-model.trim="provider.api_key"
+                            class="model-providers-page__provider-text-input"
+                            type="password"
+                            autocomplete="off"
+                            :placeholder="provider.api_key_configured ? t('settings.keepExistingApiKey') : t('settings.optionalApiKey')"
+                            @change="handleProviderDraftChange"
+                          />
+                        </label>
+                      </div>
+                      <details class="model-providers-page__advanced-provider">
+                        <summary>{{ t("settings.advancedProviderSettings") }}</summary>
+                        <div class="model-providers-page__provider-fields">
+                          <template v-if="showBaseUrlInPrimaryFields(provider)"></template>
+                          <label v-else class="model-providers-page__provider-form-field">
+                            <span class="model-providers-page__provider-field-label">{{ t("settings.providerBaseUrl") }}</span>
+                            <input
+                              v-model.trim="provider.base_url"
+                              class="model-providers-page__provider-text-input"
+                              type="url"
+                              @change="handleProviderDraftChange"
+                            />
+                          </label>
+                          <label class="model-providers-page__provider-form-field">
+                            <span class="model-providers-page__provider-field-label">{{ t("settings.providerId") }}</span>
+                            <input :value="provider.provider_id" class="model-providers-page__provider-text-input" type="text" disabled />
+                          </label>
+                          <label class="model-providers-page__provider-form-field">
+                            <span class="model-providers-page__provider-field-label">{{ t("settings.providerTransport") }}</span>
+                            <ElSelect
+                              v-model="provider.transport"
+                              class="model-providers-page__select model-providers-page__provider-select graphite-select"
+                              :teleported="false"
+                              popper-class="graphite-select-popper"
+                              @change="handleProviderDraftChange"
+                            >
+                              <ElOption label="OpenAI-compatible" value="openai-compatible" />
+                              <ElOption label="Anthropic Messages" value="anthropic-messages" />
+                              <ElOption label="Gemini generateContent" value="gemini-generate-content" />
+                              <ElOption label="Codex Responses" value="codex-responses" />
+                            </ElSelect>
+                          </label>
+                          <label class="model-providers-page__provider-form-field">
+                            <span class="model-providers-page__provider-field-label">{{ t("settings.providerAuthHeader") }}</span>
+                            <input
+                              v-model.trim="provider.auth_header"
+                              class="model-providers-page__provider-text-input"
+                              type="text"
+                              @change="handleProviderDraftChange"
+                            />
+                          </label>
+                          <label class="model-providers-page__provider-form-field">
+                            <span class="model-providers-page__provider-field-label">{{ t("settings.providerAuthScheme") }}</span>
+                            <input
+                              v-model.trim="provider.auth_scheme"
+                              class="model-providers-page__provider-text-input"
+                              type="text"
+                              @change="handleProviderDraftChange"
+                            />
+                          </label>
+                        </div>
+                      </details>
+                      <div class="model-providers-page__provider-editor-footer">
+                        <span v-if="providerMessages[provider.provider_id]" class="model-providers-page__provider-message">
+                          {{ providerMessages[provider.provider_id] }}
+                        </span>
+                        <span v-else></span>
+                        <div class="model-providers-page__provider-editor-footer-actions">
+                          <button
+                            v-if="provider.provider_id !== 'local'"
+                            type="button"
+                            class="model-providers-page__button model-providers-page__button--danger"
+                            @click="handleRemoveProvider(provider.provider_id)"
+                          >
+                            {{ t("settings.removeProvider") }}
+                          </button>
+                          <button type="button" class="model-providers-page__button" @click="closeProviderEditorPanel">
+                            {{ t("common.close") }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </ElPopover>
                   <button
                     v-if="provider.provider_id !== 'local'"
                     type="button"
@@ -398,15 +529,13 @@
               <p v-if="addableProviderTemplates.length === 0" class="model-providers-page__hint">{{ t("settings.noProviderTemplates") }}</p>
             </section>
 
-            <section v-if="providerEditorDraft" class="model-providers-page__provider-editor-panel">
+            <section v-if="providerEditorDraft && providerEditorMode === 'add'" class="model-providers-page__provider-editor-panel">
               <div class="model-providers-page__provider-editor-header">
                 <div>
                   <strong>{{ providerEditorDraft.label || providerEditorDraft.provider_id }}</strong>
                   <div class="model-providers-page__badges">
                     <span>{{ providerEditorDraft.provider_id }}</span>
                     <span>{{ providerEditorDraft.transport }}</span>
-                    <span>{{ providerEditorDraft.enabled ? t("settings.enabledProvider") : t("settings.disabledProvider") }}</span>
-                    <span v-if="providerEditorDraft.api_key_configured">{{ t("settings.apiKeyStored") }}</span>
                   </div>
                 </div>
                 <ElSwitch
@@ -514,28 +643,12 @@
 
                 <div class="model-providers-page__provider-actions">
                   <button
-                    type="button"
-                    class="model-providers-page__button model-providers-page__button--primary"
-                    :disabled="discoveringProviderId === providerEditorDraft.provider_id || (isLoginProvider(providerEditorDraft) && !providerEditorDraft.auth_status?.authenticated)"
-                    @click="handleDiscoverModels(providerEditorDraft.provider_id)"
-                  >
-                    {{ discoveringProviderId === providerEditorDraft.provider_id ? t("settings.discoveringModels") : t("settings.refreshModels") }}
-                  </button>
-                  <button
                     v-if="providerEditorMode === 'add'"
                     type="button"
                     class="model-providers-page__button"
                     @click="commitPendingProvider"
                   >
                     {{ t("settings.addProviderToList") }}
-                  </button>
-                  <button
-                    v-if="providerEditorMode === 'edit' && providerEditorDraft.provider_id !== 'local'"
-                    type="button"
-                    class="model-providers-page__button"
-                    @click="handleRemoveProvider(providerEditorDraft.provider_id)"
-                  >
-                    {{ t("settings.removeProvider") }}
                   </button>
                   <button type="button" class="model-providers-page__button" @click="closeProviderEditorPanel">
                     {{ t("common.close") }}
@@ -556,7 +669,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { ElIcon, ElMessage, ElOption, ElPopover, ElSelect, ElSwitch } from "element-plus";
-import { Check, CircleCheck, Close, CopyDocument, Plus, Refresh } from "@element-plus/icons-vue";
+import { Check, CircleCheck, Close, CopyDocument, Plus } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 
 import {
@@ -600,6 +713,8 @@ const providerMessages = ref<Record<string, string>>({});
 const isSaving = ref(false);
 const discoveringProviderId = ref<string | null>(null);
 const activeModelPickerProviderId = ref<string | null>(null);
+const refreshingModelPickerProviderId = ref<string | null>(null);
+const activeProviderConfigProviderId = ref<string | null>(null);
 const activeLogoutConfirmProviderId = ref<string | null>(null);
 const logoutConfirmTimeoutRef = ref<number | null>(null);
 const codexLoginSession = ref<OpenAICodexAuthStartResponse | null>(null);
@@ -607,7 +722,17 @@ const codexAuthBusy = ref(false);
 let codexPollTimer: number | null = null;
 let saveMessageTimer: number | null = null;
 const { t } = useI18n();
+const manualPopoverTrigger = [] as [];
 const modelPickerPopoverStyle = {
+  "--el-popover-bg-color": "transparent",
+  "--el-popover-border-color": "transparent",
+  "--el-popover-padding": "0px",
+  background: "transparent",
+  border: "none",
+  boxShadow: "none",
+  padding: "0",
+} as const;
+const providerConfigPopoverStyle = {
   "--el-popover-bg-color": "transparent",
   "--el-popover-border-color": "transparent",
   "--el-popover-padding": "0px",
@@ -806,6 +931,10 @@ function isProviderModelSelected(provider: ProviderDraft, modelName: string) {
   return provider.selected_models.some((selectedModel) => selectedModel.trim().toLowerCase() === identity);
 }
 
+function isProviderModelPickerLoading(provider: ProviderDraft) {
+  return refreshingModelPickerProviderId.value === provider.provider_id || discoveringProviderId.value === provider.provider_id;
+}
+
 function toggleProviderModel(provider: ProviderDraft, modelName: string) {
   const normalizedModel = modelName.trim();
   if (!normalizedModel) {
@@ -840,14 +969,44 @@ function removeProviderModel(provider: ProviderDraft, modelName: string) {
 }
 
 function handleModelPickerVisibleChange(provider: ProviderDraft, visible: boolean) {
-  activeModelPickerProviderId.value = visible ? provider.provider_id : null;
+  if (visible) {
+    activeModelPickerProviderId.value = provider.provider_id;
+    activeProviderConfigProviderId.value = null;
+    return;
+  }
+  if (
+    refreshingModelPickerProviderId.value === provider.provider_id ||
+    discoveringProviderId.value === provider.provider_id
+  ) {
+    activeModelPickerProviderId.value = provider.provider_id;
+    return;
+  }
+  if (activeModelPickerProviderId.value === provider.provider_id) {
+    activeModelPickerProviderId.value = null;
+  }
 }
 
 async function handleAddProviderModel(provider: ProviderDraft) {
   activeModelPickerProviderId.value = provider.provider_id;
-  await handleDiscoverModels(provider.provider_id, { selectDiscovered: false });
-  if (providerModelOptions(provider).length > 0) {
+  activeProviderConfigProviderId.value = null;
+  refreshingModelPickerProviderId.value = provider.provider_id;
+  try {
+    await handleDiscoverModels(provider.provider_id, { selectDiscovered: false });
+  } finally {
     activeModelPickerProviderId.value = provider.provider_id;
+    if (refreshingModelPickerProviderId.value === provider.provider_id) {
+      refreshingModelPickerProviderId.value = null;
+    }
+  }
+}
+
+function handleProviderConfigVisibleChange(provider: ProviderDraft, visible: boolean) {
+  if (visible) {
+    openProviderEditor(provider.provider_id);
+    return;
+  }
+  if (activeProviderConfigProviderId.value === provider.provider_id) {
+    closeProviderEditorPanel();
   }
 }
 
@@ -961,7 +1120,7 @@ async function persistSettings() {
   if (!draft.value) {
     return;
   }
-  const editingId = editingProviderId.value;
+  const editingId = activeProviderConfigProviderId.value || editingProviderId.value;
   const previousProviderDrafts = providerDrafts.value;
   try {
     isSaving.value = true;
@@ -992,6 +1151,7 @@ async function persistSettings() {
     if (editingId && providerDrafts.value[editingId]) {
       editingProviderId.value = editingId;
       providerEditorMode.value = "edit";
+      activeProviderConfigProviderId.value = editingId;
     } else if (providerEditorMode.value === "edit") {
       closeProviderEditorPanel();
     }
@@ -1028,6 +1188,8 @@ function handleProviderDraftChange() {
 function openAddProviderPanel() {
   providerEditorMode.value = "add";
   editingProviderId.value = null;
+  activeProviderConfigProviderId.value = null;
+  activeModelPickerProviderId.value = null;
   pendingTemplateId.value = "";
   pendingProviderDraft.value = null;
 }
@@ -1038,6 +1200,8 @@ function openProviderEditor(providerId: string) {
   }
   providerEditorMode.value = "edit";
   editingProviderId.value = providerId;
+  activeProviderConfigProviderId.value = providerId;
+  activeModelPickerProviderId.value = null;
   pendingTemplateId.value = "";
   pendingProviderDraft.value = null;
 }
@@ -1045,6 +1209,7 @@ function openProviderEditor(providerId: string) {
 function closeProviderEditorPanel() {
   providerEditorMode.value = "none";
   editingProviderId.value = null;
+  activeProviderConfigProviderId.value = null;
   pendingTemplateId.value = "";
   pendingProviderDraft.value = null;
 }
@@ -1071,6 +1236,7 @@ async function commitPendingProvider() {
   pendingTemplateId.value = "";
   providerEditorMode.value = "edit";
   editingProviderId.value = provider.provider_id;
+  activeProviderConfigProviderId.value = provider.provider_id;
   alignDefaultModelsToProviderSelection();
   const refreshed = await handleDiscoverModels(provider.provider_id);
   if (!refreshed) {
@@ -1781,6 +1947,135 @@ onBeforeUnmount(() => {
   padding: 14px;
 }
 
+.model-providers-page__provider-editor-panel--popover {
+  display: grid;
+  gap: 14px;
+  margin-top: 0;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  border-radius: 18px;
+  padding: 16px;
+  background: linear-gradient(180deg, rgb(255, 255, 255), rgb(255, 250, 244));
+  box-shadow: 0 22px 46px rgba(60, 41, 20, 0.16);
+}
+
+:deep(.model-providers-page__provider-editor-popper.el-popper) {
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__provider-fields {
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__provider-editor-header {
+  align-items: center;
+  border-bottom: 1px solid rgba(154, 52, 18, 0.1);
+  padding-bottom: 12px;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__badges {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__badges span {
+  padding: 3px 9px;
+  background: rgba(255, 248, 240, 0.84);
+  font-size: 0.78rem;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__provider-form-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 0;
+  min-width: 0;
+}
+
+.model-providers-page__provider-field-label {
+  color: rgba(60, 41, 20, 0.7);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.model-providers-page__provider-text-input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--graphite-text-strong);
+  box-sizing: border-box;
+  font: inherit;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.model-providers-page__provider-text-input:focus-visible {
+  border-color: rgba(154, 52, 18, 0.34);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 0 0 3px rgba(154, 52, 18, 0.1);
+}
+
+.model-providers-page__provider-text-input:disabled {
+  color: rgba(60, 41, 20, 0.58);
+  background: rgba(255, 248, 240, 0.68);
+}
+
+.model-providers-page__provider-select :deep(.el-select__wrapper) {
+  min-height: 42px;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px rgba(154, 52, 18, 0.16) inset;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__advanced-provider {
+  margin-top: 0;
+  border-radius: 14px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__advanced-provider summary {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__advanced-provider[open] {
+  padding-bottom: 12px;
+}
+
+.model-providers-page__provider-editor-panel--popover .model-providers-page__advanced-provider .model-providers-page__provider-fields {
+  padding: 0 12px;
+}
+
+.model-providers-page__provider-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 2px;
+}
+
+.model-providers-page__provider-editor-footer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.model-providers-page__provider-editor-footer .model-providers-page__button {
+  min-height: 40px;
+  padding: 9px 13px;
+}
+
 .model-providers-page__provider-empty {
   color: rgba(60, 41, 20, 0.72);
 }
@@ -1905,6 +2200,30 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+.model-providers-page__model-picker-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(239, 246, 255, 0.86);
+  color: rgb(37, 99, 235);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.model-providers-page__model-picker-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(37, 99, 235, 0.18);
+  border-top-color: rgb(37, 99, 235);
+  border-radius: 999px;
+  animation: model-provider-spin 900ms linear infinite;
+}
+
 .model-providers-page__model-picker-option {
   display: inline-flex;
   align-items: center;
@@ -1961,25 +2280,6 @@ onBeforeUnmount(() => {
 
 .model-providers-page__icon-button:hover {
   background: rgba(255, 237, 213, 0.96);
-}
-
-.model-providers-page__refresh-icon-button {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  border-color: rgba(37, 99, 235, 0.18);
-  background: rgba(239, 246, 255, 0.96);
-  color: rgb(37, 99, 235);
-}
-
-.model-providers-page__refresh-icon-button:hover:not(:disabled) {
-  border-color: rgba(37, 99, 235, 0.32);
-  background: rgba(219, 234, 254, 0.96);
-}
-
-.model-providers-page__refresh-icon-button:disabled {
-  opacity: 0.52;
-  cursor: not-allowed;
 }
 
 .model-providers-page__confirm-hint {
@@ -2091,6 +2391,7 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .model-providers-page__spinner,
+  .model-providers-page__model-picker-spinner,
   .model-providers-page__save-toast--saving .model-providers-page__save-toast-dot {
     animation: none;
   }
