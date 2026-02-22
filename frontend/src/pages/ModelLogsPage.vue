@@ -61,9 +61,14 @@
               <div class="model-logs-page__detail-eyebrow">{{ selectedLog.provider_id }}</div>
               <h3>{{ selectedLog.model || selectedLog.transport }}</h3>
             </div>
-            <span class="model-logs-page__status" :class="{ 'model-logs-page__status--error': Boolean(selectedLog.error) }">
-              {{ selectedLog.error ? t("modelLogs.error") : selectedLog.status_code || "OK" }}
-            </span>
+            <div class="model-logs-page__detail-actions">
+              <span v-if="selectedStreamSummary" class="model-logs-page__stream-badge">
+                {{ t("modelLogs.streamMerged", { count: selectedStreamSummary.eventCount }) }}
+              </span>
+              <span class="model-logs-page__status" :class="{ 'model-logs-page__status--error': Boolean(selectedLog.error) }">
+                {{ selectedLog.error ? t("modelLogs.error") : selectedLog.status_code || "OK" }}
+              </span>
+            </div>
           </header>
 
           <div class="model-logs-page__meta-grid">
@@ -84,25 +89,79 @@
             <p v-else class="model-logs-page__muted">{{ t("common.noSummary") }}</p>
           </section>
 
-          <section v-if="selectedLog.reasoning" class="model-logs-page__section">
-            <h4>{{ t("modelLogs.reasoning") }}</h4>
-            <pre class="model-logs-page__text-block">{{ selectedLog.reasoning }}</pre>
+          <section v-if="formatReadableReasoning(selectedLog)" class="model-logs-page__section">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.reasoning") }}</h4>
+              <span v-if="selectedStreamSummary?.reasoningChunks.length" class="model-logs-page__section-pill">
+                {{ t("modelLogs.streamChunks", { count: selectedStreamSummary.reasoningChunks.length }) }}
+              </span>
+            </div>
+            <pre class="model-logs-page__text-block">{{ formatReadableReasoning(selectedLog) }}</pre>
           </section>
 
-          <section v-if="selectedLog.content" class="model-logs-page__section">
-            <h4>{{ t("modelLogs.output") }}</h4>
-            <pre class="model-logs-page__text-block">{{ selectedLog.content }}</pre>
+          <section v-if="formatReadableContent(selectedLog)" class="model-logs-page__section">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.output") }}</h4>
+              <span v-if="selectedStreamSummary?.outputChunks.length" class="model-logs-page__section-pill">
+                {{ t("modelLogs.streamChunks", { count: selectedStreamSummary.outputChunks.length }) }}
+              </span>
+              <div v-if="hasOutputChunks(selectedLog)" class="model-logs-page__output-mode" :aria-label="t('modelLogs.outputMode')">
+                <button
+                  type="button"
+                  :class="{ 'model-logs-page__output-mode-button--active': outputDisplayMode === 'normal' }"
+                  @click="outputDisplayMode = 'normal'"
+                >
+                  {{ t("modelLogs.outputNormal") }}
+                </button>
+                <button
+                  type="button"
+                  :class="{ 'model-logs-page__output-mode-button--active': outputDisplayMode === 'chunks' }"
+                  @click="outputDisplayMode = 'chunks'"
+                >
+                  {{ t("modelLogs.outputChunks") }}
+                </button>
+              </div>
+            </div>
+            <pre v-if="outputDisplayMode === 'normal' || !hasOutputChunks(selectedLog)" class="model-logs-page__text-block">{{ formatReadableContent(selectedLog) }}</pre>
+            <div v-else class="model-logs-page__text-block model-logs-page__chunk-block">
+              <span
+                v-for="(chunk, chunkIndex) in getOutputChunks(selectedLog)"
+                :key="`${chunkIndex}-${chunk.slice(0, 12)}`"
+                class="model-logs-page__output-chunk"
+              >{{ chunk }}</span>
+            </div>
           </section>
 
           <section class="model-logs-page__raw-grid">
-            <article class="model-logs-page__raw-panel model-logs-page__request-raw">
-              <h4>{{ t("modelLogs.rawRequest") }}</h4>
+            <details open class="model-logs-page__raw-panel model-logs-page__request-raw">
+              <summary class="model-logs-page__raw-summary">
+                <span>{{ t("modelLogs.rawRequest") }}</span>
+                <small>{{ t("modelLogs.rawRequestHint") }}</small>
+              </summary>
               <pre v-html="highlightJson(formatRequestRaw(selectedLog))"></pre>
-            </article>
-            <article class="model-logs-page__raw-panel model-logs-page__response-raw">
-              <h4>{{ t("modelLogs.rawResponse") }}</h4>
-              <pre v-html="highlightJson(formatResponseRaw(selectedLog))"></pre>
-            </article>
+            </details>
+            <details open class="model-logs-page__raw-panel model-logs-page__response-raw">
+              <summary class="model-logs-page__raw-summary">
+                <span>{{ t("modelLogs.rawResponse") }}</span>
+                <small>{{ t("modelLogs.rawResponseHint") }}</small>
+              </summary>
+              <div v-if="hasStreamRaw(selectedLog)" class="model-logs-page__stream-raw">
+                <div v-if="selectedStreamSummary?.events.length" class="model-logs-page__stream-events">
+                  <article v-for="(event, eventIndex) in selectedStreamSummary.events" :key="eventIndex" class="model-logs-page__stream-event">
+                    <header class="model-logs-page__stream-event-header">
+                      <span>{{ formatStreamEventLabel(event, eventIndex) }}</span>
+                      <small>#{{ eventIndex + 1 }}</small>
+                    </header>
+                    <pre v-html="highlightJson(formatStreamEvent(event))"></pre>
+                  </article>
+                </div>
+                <section class="model-logs-page__stream-source">
+                  <h4>{{ t("modelLogs.rawStreamSource") }}</h4>
+                  <pre class="model-logs-page__raw-text">{{ formatResponseRaw(selectedLog) }}</pre>
+                </section>
+              </div>
+              <pre v-else v-html="highlightJson(formatResponseRaw(selectedLog))"></pre>
+            </details>
           </section>
         </section>
 
@@ -147,6 +206,7 @@ const selectedLogId = ref<string | null>(null);
 const query = ref("");
 const loading = ref(true);
 const error = ref<string | null>(null);
+const outputDisplayMode = ref<"normal" | "chunks">("normal");
 let searchTimer: number | null = null;
 
 const selectedLog = computed(() => {
@@ -157,6 +217,71 @@ const selectedLog = computed(() => {
 });
 
 const errorCount = computed(() => logs.value.filter((entry) => Boolean(entry.error)).length);
+const selectedStreamSummary = computed(() => (selectedLog.value ? getStreamSummary(selectedLog.value) : null));
+
+type StreamSummary = {
+  eventCount: number;
+  events: Record<string, unknown>[];
+  outputChunks: string[];
+  reasoningChunks: string[];
+  rawText: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function getRecordArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => isRecord(item)) : [];
+}
+
+function getStreamSummary(log: ModelLogEntry): StreamSummary | null {
+  const stream = log.response_raw._stream;
+  if (!isRecord(stream)) {
+    return null;
+  }
+  const events = getRecordArray(stream.events);
+  return {
+    eventCount: typeof stream.event_count === "number" ? stream.event_count : events.length,
+    events,
+    outputChunks: getStringArray(stream.output_chunks),
+    reasoningChunks: getStringArray(stream.reasoning_chunks),
+    rawText: typeof stream.raw_text === "string" ? stream.raw_text : "",
+  };
+}
+
+function formatReadableReasoning(log: ModelLogEntry) {
+  return log.reasoning || getStreamSummary(log)?.reasoningChunks.join("") || "";
+}
+
+function formatReadableContent(log: ModelLogEntry) {
+  return log.content || getStreamSummary(log)?.outputChunks.join("") || "";
+}
+
+function hasStreamRaw(log: ModelLogEntry) {
+  return Boolean(getStreamSummary(log)?.rawText);
+}
+
+function getOutputChunks(log: ModelLogEntry) {
+  return getStreamSummary(log)?.outputChunks ?? [];
+}
+
+function hasOutputChunks(log: ModelLogEntry) {
+  return getOutputChunks(log).length > 0;
+}
+
+function formatStreamEventLabel(event: Record<string, unknown>, eventIndex: number) {
+  const label = event.type || event._event || event.event;
+  return String(label || `event-${eventIndex + 1}`);
+}
+
+function formatStreamEvent(event: Record<string, unknown>) {
+  return JSON.stringify(event, null, 2);
+}
 
 async function loadLogs() {
   loading.value = true;
@@ -224,6 +349,10 @@ function formatRequestRaw(selectedLog: ModelLogEntry) {
 }
 
 function formatResponseRaw(selectedLog: ModelLogEntry) {
+  const streamRawText = getStreamSummary(selectedLog)?.rawText;
+  if (streamRawText) {
+    return streamRawText;
+  }
   return JSON.stringify(selectedLog.response_raw, null, 2);
 }
 
@@ -234,6 +363,10 @@ watch(query, () => {
 
 watch(currentPage, () => {
   void loadLogs();
+});
+
+watch(selectedLogId, () => {
+  outputDisplayMode.value = "normal";
 });
 
 onMounted(loadLogs);
@@ -482,6 +615,13 @@ onBeforeUnmount(() => {
   padding-bottom: 14px;
 }
 
+.model-logs-page__detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .model-logs-page__detail-header h3 {
   margin: 6px 0 0;
   overflow-wrap: anywhere;
@@ -493,6 +633,22 @@ onBeforeUnmount(() => {
 .model-logs-page__status {
   color: rgb(4, 120, 87);
   background: rgba(236, 253, 245, 0.9);
+}
+
+.model-logs-page__stream-badge,
+.model-logs-page__section-pill {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(239, 246, 255, 0.88);
+  color: rgb(37, 99, 235);
+  font-family: var(--graphite-font-mono);
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .model-logs-page__status--error {
@@ -524,11 +680,50 @@ onBeforeUnmount(() => {
   margin-top: 16px;
 }
 
+.model-logs-page__section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.model-logs-page__output-mode {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid rgba(37, 99, 235, 0.16);
+  border-radius: 999px;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.model-logs-page__output-mode button {
+  min-height: 30px;
+  border: 0;
+  padding: 0 12px;
+  background: transparent;
+  color: rgba(60, 41, 20, 0.64);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.model-logs-page__output-mode button:hover,
+.model-logs-page__output-mode-button--active {
+  background: rgba(37, 99, 235, 0.1);
+  color: rgb(37, 99, 235);
+}
+
 .model-logs-page__section h4,
-.model-logs-page__raw-panel h4 {
-  margin: 0 0 10px;
+.model-logs-page__raw-summary span {
+  margin: 0;
   color: var(--graphite-text-strong);
   font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.model-logs-page__section h4 {
+  margin: 0;
 }
 
 .model-logs-page__messages {
@@ -589,6 +784,26 @@ onBeforeUnmount(() => {
   padding: 12px;
 }
 
+.model-logs-page__chunk-block {
+  display: block;
+}
+
+.model-logs-page__output-chunk {
+  border-radius: 5px;
+  padding: 1px 3px;
+  white-space: pre-wrap;
+}
+
+.model-logs-page__output-chunk:nth-child(odd) {
+  background: rgba(219, 234, 254, 0.82);
+  color: rgb(29, 78, 216);
+}
+
+.model-logs-page__output-chunk:nth-child(even) {
+  background: rgba(220, 252, 231, 0.8);
+  color: rgb(4, 120, 87);
+}
+
 .model-logs-page__raw-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -597,12 +812,128 @@ onBeforeUnmount(() => {
 }
 
 .model-logs-page__raw-panel {
+  display: grid;
+  max-height: 560px;
   min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(154, 52, 18, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 253, 249, 0.6);
+}
+
+.model-logs-page__raw-summary {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 20px;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.model-logs-page__raw-summary::-webkit-details-marker {
+  display: none;
+}
+
+.model-logs-page__raw-summary::after {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 999px;
+  color: rgb(154, 52, 18);
+  content: "+";
+  font-family: var(--graphite-font-mono);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.model-logs-page__raw-panel[open] .model-logs-page__raw-summary::after {
+  content: "-";
+}
+
+.model-logs-page__raw-summary small {
+  color: rgba(60, 41, 20, 0.58);
+  font-size: 0.75rem;
+  white-space: nowrap;
 }
 
 .model-logs-page__raw-panel pre {
+  border: 0;
+  border-top: 1px solid rgba(154, 52, 18, 0.1);
+  border-radius: 0;
   max-height: 460px;
+  min-height: 0;
+  overflow: auto;
   padding: 12px;
+}
+
+.model-logs-page__raw-text {
+  color: rgba(31, 23, 15, 0.82);
+}
+
+.model-logs-page__stream-raw {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid rgba(154, 52, 18, 0.1);
+  padding: 12px;
+}
+
+.model-logs-page__stream-events {
+  display: grid;
+  gap: 10px;
+}
+
+.model-logs-page__stream-event {
+  overflow: hidden;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.52);
+}
+
+.model-logs-page__stream-event-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.1);
+  padding: 8px 10px;
+  background: rgba(239, 246, 255, 0.72);
+  color: rgb(37, 99, 235);
+  font-family: var(--graphite-font-mono);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.model-logs-page__stream-event-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-logs-page__stream-event-header small {
+  color: rgba(37, 99, 235, 0.58);
+}
+
+.model-logs-page__stream-event pre {
+  border: 0;
+  border-radius: 0;
+  max-height: 180px;
+}
+
+.model-logs-page__stream-source {
+  display: grid;
+  gap: 8px;
+}
+
+.model-logs-page__stream-source h4 {
+  margin: 0;
+  color: rgba(60, 41, 20, 0.66);
+  font-size: 0.78rem;
 }
 
 .model-logs-page__raw-panel pre :deep(.model-logs-page__json-key) {

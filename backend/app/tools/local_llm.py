@@ -9,13 +9,22 @@ from typing import Any
 import httpx
 
 from app.core.thinking_levels import (
+    THINKING_LEVEL_AUTO,
+    THINKING_LEVEL_HIGH,
+    THINKING_LEVEL_LOW,
     THINKING_LEVEL_MEDIUM,
+    THINKING_LEVEL_MINIMAL,
     THINKING_LEVEL_OFF,
+    THINKING_LEVEL_XHIGH,
     normalize_thinking_level,
 )
 from app.core.storage.model_log_store import append_model_request_log
 from app.core.storage.settings_store import load_app_settings
-from app.tools.model_provider_client import discover_provider_models
+from app.tools.model_provider_client import (
+    _coalesce_openai_chat_stream_response,
+    discover_provider_models,
+    post_streaming_json_with_fallback,
+)
 
 
 def _env_first(*keys: str, default: str) -> str:
@@ -53,6 +62,9 @@ DEFAULT_LOCAL_MODEL_ALIAS = "lm-local"
 LOCAL_RUNTIME_CONFIG_CACHE_TTL_SEC = 5.0
 _LOCAL_RUNTIME_CONFIG_CACHE: tuple[float, dict[str, Any] | None] | None = None
 _LOCAL_MODEL_DISCOVERY_CACHE: tuple[float, list[str]] | None = None
+LM_STUDIO_MODEL_METADATA_CACHE_TTL_SEC = 5.0
+LM_STUDIO_MODEL_METADATA_TIMEOUT_SEC = 1.0
+_LM_STUDIO_MODEL_METADATA_CACHE: tuple[float, dict[str, Any] | None] | None = None
 
 
 def _append_local_model_request_log_safely(
@@ -301,17 +313,182 @@ def _extract_chat_completion_text(response_payload: dict[str, Any]) -> tuple[str
     )
 
 
+def _get_runtime_config_for_local_thinking() -> dict[str, Any] | None:
+    if _LOCAL_RUNTIME_CONFIG_CACHE is None:
+        return get_local_gateway_runtime_config(force_refresh=True)
+    return get_local_gateway_runtime_config(force_refresh=False)
+
+
+def _request_lm_studio_model_metadata(*, force_refresh: bool = False) -> dict[str, Any] | None:
+    global _LM_STUDIO_MODEL_METADATA_CACHE
+
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _LM_STUDIO_MODEL_METADATA_CACHE is not None
+        and now - _LM_STUDIO_MODEL_METADATA_CACHE[0] < LM_STUDIO_MODEL_METADATA_CACHE_TTL_SEC
+    ):
+        return _LM_STUDIO_MODEL_METADATA_CACHE[1]
+
+    metadata: dict[str, Any] | None = None
+    headers: dict[str, str] = {}
+    api_key = get_local_llm_api_key().strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        with httpx.Client(timeout=LM_STUDIO_MODEL_METADATA_TIMEOUT_SEC, trust_env=False) as client:
+            response = client.get(f"{_get_gateway_base_url()}/api/v1/models", headers=headers or None)
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, dict) and isinstance(payload.get("models"), list):
+                metadata = payload
+    except Exception:
+        metadata = None
+
+    _LM_STUDIO_MODEL_METADATA_CACHE = (now, metadata)
+    return metadata
+
+
+def _lm_studio_model_matches(item: dict[str, Any], model: str) -> bool:
+    target = str(model or "").strip().lower()
+    if not target:
+        return False
+    candidates = [
+        item.get("key"),
+        item.get("id"),
+        item.get("model"),
+        item.get("display_name"),
+    ]
+    loaded_instances = item.get("loaded_instances")
+    if isinstance(loaded_instances, list):
+        candidates.extend(
+            instance.get("id")
+            for instance in loaded_instances
+            if isinstance(instance, dict)
+        )
+    return any(str(candidate or "").strip().lower() == target for candidate in candidates)
+
+
+def _lm_studio_item_advertises_reasoning(item: dict[str, Any]) -> bool:
+    reasoning = item.get("reasoning")
+    if isinstance(reasoning, (dict, list, str)) and bool(reasoning):
+        return True
+    if isinstance(reasoning, bool):
+        return reasoning
+
+    capabilities = item.get("capabilities")
+    if isinstance(capabilities, dict):
+        for key in ("reasoning", "reasoning_effort", "thinking"):
+            if capabilities.get(key):
+                return True
+    if isinstance(capabilities, list):
+        capability_names = {str(value or "").strip().lower() for value in capabilities}
+        return bool(capability_names & {"reasoning", "reasoning_effort", "thinking"})
+    return False
+
+
+def _get_lm_studio_model_reasoning_metadata(model: str) -> dict[str, Any] | None:
+    payload = _request_lm_studio_model_metadata()
+    if payload is None:
+        return None
+
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return None
+
+    matched_item: dict[str, Any] | None = None
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        if _lm_studio_model_matches(item, model):
+            matched_item = item
+            break
+    if matched_item is None:
+        return {
+            "is_lm_studio": True,
+            "advertises_reasoning": False,
+            "reasoning": None,
+        }
+
+    return {
+        "is_lm_studio": True,
+        "advertises_reasoning": _lm_studio_item_advertises_reasoning(matched_item),
+        "reasoning": matched_item.get("reasoning"),
+    }
+
+
+def _map_lm_studio_reasoning_effort(level: str) -> str | None:
+    normalized = normalize_thinking_level(level, fallback=THINKING_LEVEL_OFF)
+    if normalized in {THINKING_LEVEL_AUTO, THINKING_LEVEL_OFF}:
+        return None
+    if normalized == THINKING_LEVEL_MINIMAL:
+        return THINKING_LEVEL_LOW
+    if normalized == THINKING_LEVEL_XHIGH:
+        return THINKING_LEVEL_HIGH
+    return normalized
+
+
+def _build_local_thinking_request_payload(
+    *,
+    model: str,
+    thinking_level: str,
+    warnings: list[str],
+) -> tuple[dict[str, Any], str | None]:
+    runtime_config = _get_runtime_config_for_local_thinking()
+    llama_config = runtime_config.get("llama") if isinstance(runtime_config, dict) else None
+    if isinstance(llama_config, dict):
+        reasoning_format = str(llama_config.get("reasoning_format") or "auto").strip() or "auto"
+        return (
+            {
+                "return_progress": True,
+                "reasoning_format": reasoning_format,
+                "timings_per_token": True,
+            },
+            f"local-gateway:{reasoning_format}",
+        )
+
+    lm_studio_metadata = _get_lm_studio_model_reasoning_metadata(model)
+    if lm_studio_metadata is not None:
+        effort = _map_lm_studio_reasoning_effort(thinking_level)
+        if not lm_studio_metadata.get("advertises_reasoning"):
+            warnings.append(
+                "LM Studio endpoint was detected, but the selected model metadata does not advertise reasoning support. "
+                "If reasoning stays empty, use a reasoning-capable model or start a llama.cpp gateway with reasoning flags."
+            )
+        return ({"reasoning_effort": effort}, "lmstudio:reasoning_effort") if effort else ({}, None)
+
+    return (
+        {
+            "return_progress": True,
+            "reasoning_format": "auto",
+            "timings_per_token": True,
+        },
+        "openai-compatible-local:auto",
+    )
+
+
 def _request_local_chat_completion(request_payload: dict[str, Any]) -> dict[str, Any]:
     headers = {
         "Authorization": f"Bearer {get_local_llm_api_key()}",
         "Content-Type": "application/json",
     }
+    stream_payload = dict(request_payload)
+    stream_payload["stream"] = True
+    fallback_payload = dict(request_payload)
+    fallback_payload["stream"] = False
 
     try:
-        with httpx.Client(timeout=LOCAL_LLM_REQUEST_TIMEOUT_SEC, trust_env=False) as client:
-            response = client.post(f"{get_local_llm_base_url()}/chat/completions", headers=headers, json=request_payload)
-            response.raise_for_status()
-            payload = response.json()
+        payload, sent_payload, stream_fallback_error, _used_stream = post_streaming_json_with_fallback(
+            stream_url=f"{get_local_llm_base_url()}/chat/completions",
+            timeout_sec=LOCAL_LLM_REQUEST_TIMEOUT_SEC,
+            headers=headers,
+            stream_payload=stream_payload,
+            fallback_payload=fallback_payload,
+            parse_stream=_coalesce_openai_chat_stream_response,
+            error_label="Local LLM request failed",
+        )
+        request_payload.clear()
+        request_payload.update(sent_payload)
     except httpx.HTTPStatusError as exc:  # pragma: no cover - network path
         detail = exc.response.text.strip()
         raise RuntimeError(
@@ -324,6 +501,8 @@ def _request_local_chat_completion(request_payload: dict[str, Any]) -> dict[str,
 
     if not isinstance(payload, dict):
         raise RuntimeError("Local LLM returned an unexpected payload shape.")
+    if stream_fallback_error:
+        payload["_stream_fallback"] = {"error": stream_fallback_error}
     return payload
 
 
@@ -341,7 +520,7 @@ def _chat_with_local_model_with_meta(
     request_payload: dict[str, Any] = {
         "model": model or get_default_text_model(),
         "temperature": temperature,
-        "stream": False,
+        "stream": True,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -356,10 +535,15 @@ def _chat_with_local_model_with_meta(
         fallback=THINKING_LEVEL_OFF,
     )
     used_thinking = bool(resolved_thinking_level != THINKING_LEVEL_OFF and provider_id == "local")
+    thinking_request_payload: dict[str, Any] = {}
+    reasoning_format: str | None = None
     if used_thinking:
-        request_payload["return_progress"] = True
-        request_payload["reasoning_format"] = "auto"
-        request_payload["timings_per_token"] = True
+        thinking_request_payload, reasoning_format = _build_local_thinking_request_payload(
+            model=str(request_payload["model"]),
+            thinking_level=resolved_thinking_level,
+            warnings=warnings,
+        )
+        request_payload.update(thinking_request_payload)
     elif thinking_enabled:
         warnings.append(
             f"Thinking mode was requested for provider '{provider_id}', but GraphiteUI currently only maps provider-specific thinking fields for the local gateway."
@@ -371,6 +555,9 @@ def _chat_with_local_model_with_meta(
     try:
         response_payload = _request_local_chat_completion(request_payload)
         content, reasoning = _extract_chat_completion_text(response_payload)
+        stream_fallback = response_payload.get("_stream_fallback")
+        if isinstance(stream_fallback, dict) and stream_fallback.get("error"):
+            warnings.append(f"Streaming request failed; retried once without streaming. {stream_fallback['error']}")
 
         if not content and max_tokens is not None:
             retry_payload = dict(request_payload)
@@ -384,20 +571,19 @@ def _chat_with_local_model_with_meta(
 
         if not content and used_thinking:
             retry_payload = dict(request_payload)
-            retry_payload.pop("return_progress", None)
-            retry_payload.pop("reasoning_format", None)
-            retry_payload.pop("timings_per_token", None)
+            for key in thinking_request_payload:
+                retry_payload.pop(key, None)
             logged_request_payload = retry_payload
             response_payload = _request_local_chat_completion(retry_payload)
             content, reasoning = _extract_chat_completion_text(response_payload)
             used_thinking = False
             warnings.append(
-                "Thinking mode was requested, but the local gateway returned reasoning without final content. Retried without local thinking fields."
+                "Thinking mode was requested, but the provider returned reasoning without final content. Retried without local thinking fields."
             )
 
         if used_thinking and not reasoning:
             warnings.append(
-                "Thinking mode was requested and the local gateway accepted the request, but this response did not include any reasoning text."
+                "Thinking mode was requested and the provider accepted the request, but this response did not include any reasoning text."
             )
 
         if not content:
@@ -432,7 +618,7 @@ def _chat_with_local_model_with_meta(
         "temperature": temperature,
         "thinking_enabled": used_thinking,
         "thinking_level": resolved_thinking_level,
-        "reasoning_format": "auto" if used_thinking and provider_id == "local" else None,
+        "reasoning_format": reasoning_format if used_thinking and provider_id == "local" else None,
         "reasoning": reasoning,
         "usage": response_payload.get("usage"),
         "timings": response_payload.get("timings"),
