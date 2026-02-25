@@ -80,10 +80,11 @@ test("NodeCard keeps state pill geometry but hides the pill chrome visually", ()
   assert.match(componentSource, /\.node-card__port-pill-anchor-slot \{[\s\S]*height:\s*14px;/);
 });
 
-test("NodeCard renders full state port labels without ellipsis clipping", () => {
-  assert.match(componentSource, /\.node-card__port-pill-label \{[\s\S]*overflow:\s*visible;/);
-  assert.match(componentSource, /\.node-card__port-pill-label \{[\s\S]*text-overflow:\s*clip;/);
-  assert.doesNotMatch(componentSource, /\.node-card__port-pill-label \{[\s\S]*text-overflow:\s*ellipsis;/);
+test("NodeCard clips long state port labels inside the pill", () => {
+  assert.match(componentSource, /\.node-card__port-pill-label \{[\s\S]*overflow:\s*hidden;/);
+  assert.match(componentSource, /\.node-card__port-pill-label \{[\s\S]*text-overflow:\s*ellipsis;/);
+  assert.match(componentSource, /\.node-card__port-pill-label-text \{[\s\S]*text-overflow:\s*ellipsis;/);
+  assert.doesNotMatch(componentSource, /\.node-card__port-pill-label \{[\s\S]*overflow:\s*visible;/);
 });
 
 test("NodeCard uses Element Plus segmented control on the same row as the input output pill", () => {
@@ -327,10 +328,11 @@ test("NodeCard renders plus input and plus output as virtual agent state port ro
   assert.doesNotMatch(agentSection, /node-card__port-pill-create-badge/);
   assert.doesNotMatch(agentSection, /t\("common\.new"\)/);
   assert.doesNotMatch(agentSection, /\{\{ pendingStateInputSource\?\.label \}\}/);
-  assert.match(componentSource, /\.node-card__port-pill--create \{[\s\S]*background:\s*transparent;/);
-  assert.match(componentSource, /\.node-card__port-pill--create \{[\s\S]*box-shadow:\s*none;/);
-  assert.match(componentSource, /\.node-card__port-pill--create \{[\s\S]*color:\s*var\(--node-card-port-accent\);/);
-  assert.doesNotMatch(componentSource, /\.node-card__port-pill--create \{[\s\S]*background:\s*color-mix/);
+  assert.match(componentSource, /\.node-card__port-pill--create \{[^}]*border-style:\s*dashed;/);
+  assert.match(componentSource, /\.node-card__port-pill--create \{[^}]*background:\s*color-mix\(in srgb,\s*var\(--node-card-port-accent\) 10%, transparent\);/);
+  assert.match(componentSource, /\.node-card__port-pill--create \{[^}]*box-shadow:\s*none;/);
+  assert.match(componentSource, /\.node-card__port-pill--create \{[^}]*color:\s*var\(--node-card-port-accent\);/);
+  assert.doesNotMatch(componentSource, /\.node-card__port-pill--create \{[^}]*background:\s*transparent;/);
   const createRowStyle = componentSource.match(/\.node-card__port-pill-row--create \{[\s\S]*?\}/);
   assert.ok(createRowStyle, "expected create port row style");
   assert.match(createRowStyle[0], /display:\s*none;/);
@@ -347,6 +349,15 @@ test("NodeCard renders plus input and plus output as virtual agent state port ro
   assert.match(visibleCreateRowStyle[0], /display:\s*flex;/);
 });
 
+test("NodeCard constrains long state port labels without pushing anchor slots outside cards", () => {
+  assert.match(componentSource, /\.node-card__port-pill \{[\s\S]*box-sizing:\s*border-box;/);
+  assert.match(componentSource, /\.node-card__port-pill \{[\s\S]*max-width:\s*min\(100%,\s*var\(--node-card-port-pill-max-width,\s*188px\)\);/);
+  assert.match(componentSource, /\.node-card__port-pill-label \{[\s\S]*min-width:\s*0;/);
+  assert.match(componentSource, /\.node-card__port-pill-label \{[\s\S]*overflow:\s*hidden;/);
+  assert.match(componentSource, /\.node-card__port-pill-label-text \{[\s\S]*overflow:\s*hidden;[\s\S]*text-overflow:\s*ellipsis;[\s\S]*white-space:\s*nowrap;/);
+  assert.match(componentSource, /\.node-card__port-pill-anchor-slot \{[\s\S]*flex:\s*none;/);
+});
+
 test("NodeCard hides virtual agent output any behind the plus output row", () => {
   const rightOutputColumnStart = componentSource.indexOf('<div class="node-card__port-column node-card__port-column--right">');
   const agentRuntimeRowStart = componentSource.indexOf('<div class="node-card__agent-runtime-row">', rightOutputColumnStart);
@@ -360,6 +371,41 @@ test("NodeCard hides virtual agent output any behind the plus output row", () =>
   assert.match(agentOutputPortSection, /@click\.stop="!port\.virtual && handleStateEditorActionClick/);
   assert.match(agentOutputPortSection, /v-if="!port\.virtual"[\s\S]*node-card__port-pill-remove/);
   assert.doesNotMatch(agentOutputPortSection, /node-card__port-pill-create-badge/);
+});
+
+test("NodeCard renders condition and output virtual inputs as plus input create pills", () => {
+  const outputSectionMatch = componentSource.match(
+    /<section v-else-if="view\.body\.kind === 'output'"[\s\S]*?<\/section>/,
+  );
+  const conditionSectionMatch = componentSource.match(
+    /<section v-else-if="view\.body\.kind === 'condition'"[\s\S]*?<\/section>/,
+  );
+  assert.ok(outputSectionMatch, "expected to find the output node section");
+  assert.ok(conditionSectionMatch, "expected to find the condition node section");
+  const outputSection = outputSectionMatch[0];
+  const conditionSection = conditionSectionMatch[0];
+
+  assert.match(outputSection, /'node-card__port-pill--create': view\.body\.primaryInput\.virtual/);
+  assert.match(conditionSection, /'node-card__port-pill--create': view\.body\.primaryInput\.virtual/);
+  assert.match(outputSection, /:data-anchor-slot-id="\`\$\{nodeId\}:state-in:\$\{view\.body\.primaryInput\.key\}\`"/);
+  assert.match(conditionSection, /:data-anchor-slot-id="\`\$\{nodeId\}:state-in:\$\{view\.body\.primaryInput\.key\}\`"/);
+  assert.doesNotMatch(outputSection, />any</);
+  assert.doesNotMatch(conditionSection, />any</);
+});
+
+test("NodeCard renders empty input outputs as virtual plus output create pills", () => {
+  const inputSectionMatch = componentSource.match(
+    /<section v-if="view\.body\.kind === 'input'"[\s\S]*?<\/section>/,
+  );
+  assert.ok(inputSectionMatch, "expected to find the input node section");
+  const inputSection = inputSectionMatch[0];
+
+  assert.match(inputSection, /'node-card__port-pill--create': view\.body\.primaryOutput\.virtual/);
+  assert.match(inputSection, /@click\.stop="view\.body\.primaryOutput\.virtual \? openPortStateCreate\('output'\) : handleStateEditorActionClick/);
+  assert.match(inputSection, /:data-anchor-slot-id="\`\$\{nodeId\}:state-out:\$\{view\.body\.primaryOutput\.key\}\`"/);
+  assert.match(inputSection, /view\.body\.primaryOutput\.virtual && isPortCreateOpen\('output'\) && portStateDraft/);
+  assert.match(inputSection, /class="node-card__agent-create-port-popover node-card__port-picker"/);
+  assert.doesNotMatch(inputSection, />any</);
 });
 
 test("NodeCard moves node actions into hoverable top buttons built from Element Plus icons and overlays", () => {
@@ -470,7 +516,7 @@ test("NodeCard reveals state pills on hover and opens state editing only after a
   assert.match(componentSource, /interactionLocked\?: boolean;/);
   assert.match(componentSource, /\(event: "locked-edit-attempt"\): void;/);
   assert.match(componentSource, /import StateEditorPopover from "\.\/StateEditorPopover\.vue";/);
-  assert.match(componentSource, /@click\.stop="handleStateEditorActionClick\(/);
+  assert.match(componentSource, /@click\.stop="[^"]*handleStateEditorActionClick\(/);
   assert.match(componentSource, /const stateEditorDraft = ref<StateFieldDraft \| null>\(null\);/);
   assert.match(componentSource, /const activeStateEditorAnchorId = ref<string \| null>\(null\);/);
   assert.match(componentSource, /const activeStateEditorConfirmAnchorId = ref<string \| null>\(null\);/);
@@ -597,7 +643,9 @@ test("NodeCard adds mirrored remove-binding buttons to non-output state pills", 
   assert.match(componentSource, /\.node-card__port-pill-remove--leading \{[\s\S]*left:\s*7px;/);
   assert.match(componentSource, /\.node-card__port-pill-remove--trailing \{[\s\S]*right:\s*7px;/);
   assert.match(componentSource, /\.node-card__port-pill-remove--confirm,\n\.node-card__port-pill-remove--confirm:hover,\n\.node-card__port-pill-remove--confirm:focus-visible \{/);
-  assert.match(componentSource, /\.node-card__port-pill--confirm \.node-card__port-pill-remove \{[\s\S]*opacity:\s*0;/);
+  assert.match(componentSource, /\.node-card__port-pill-remove \{[\s\S]*z-index:\s*2;/);
+  assert.match(componentSource, /\.node-card__port-pill--confirm \.node-card__port-pill-remove \{[^}]*opacity:\s*1;/);
+  assert.match(componentSource, /\.node-card__port-pill--confirm \.node-card__port-pill-remove \{[^}]*pointer-events:\s*auto;/);
   assert.match(componentSource, /\.node-card__confirm-hint--remove \{[\s\S]*background:\s*rgba\(255,\s*248,\s*248,\s*0\.98\);/);
 });
 

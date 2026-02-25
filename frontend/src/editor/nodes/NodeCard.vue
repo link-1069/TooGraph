@@ -267,29 +267,33 @@
         <div v-if="view.body.primaryOutput" class="node-card__port-pill-row node-card__port-pill-row--right">
           <ElPopover
             :visible="
-              isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`) ||
-              isStateEditorConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`) ||
-              isRemovePortStateConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`)
+              view.body.primaryOutput.virtual
+                ? isPortCreateOpen('output')
+                : isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`) ||
+                  isStateEditorConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`) ||
+                  isRemovePortStateConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`)
             "
-            :placement="isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`) ? 'bottom-end' : 'top-end'"
-            :width="isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`) ? 320 : undefined"
+            :placement="view.body.primaryOutput.virtual || isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`) ? 'bottom-end' : 'top-end'"
+            :width="view.body.primaryOutput.virtual ? 376 : isStateEditorOpen(`input-primary-output:${view.body.primaryOutput.key}`) ? 320 : undefined"
             :show-arrow="false"
-            :popper-style="stateEditorPopoverStyle"
-            popper-class="node-card__state-editor-popper"
+            :popper-style="view.body.primaryOutput.virtual ? agentAddPopoverStyle : stateEditorPopoverStyle"
+            :popper-class="view.body.primaryOutput.virtual ? 'node-card__agent-add-popover-popper' : 'node-card__state-editor-popper'"
           >
             <template #reference>
               <span
                 class="node-card__port-pill node-card__port-pill--output node-card__port-pill--dock-end"
                 :class="{
-                  'node-card__port-pill--revealed': isStateEditorPillRevealed(`input-primary-output:${view.body.primaryOutput.key}`),
-                  'node-card__port-pill--confirm': isStateEditorConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`),
+                  'node-card__port-pill--create': view.body.primaryOutput.virtual,
+                  'node-card__port-pill--revealed': !view.body.primaryOutput.virtual && isStateEditorPillRevealed(`input-primary-output:${view.body.primaryOutput.key}`),
+                  'node-card__port-pill--confirm': !view.body.primaryOutput.virtual && isStateEditorConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`),
                 }"
                 :style="{ '--node-card-port-accent': view.body.primaryOutput.stateColor }"
                 data-state-editor-trigger="true"
+                data-anchor-hitarea="true"
                 @pointerenter="handleStateEditorPillPointerEnter(`input-primary-output:${view.body.primaryOutput.key}`)"
                 @pointerleave="handleStateEditorPillPointerLeave(`input-primary-output:${view.body.primaryOutput.key}`)"
                 @pointerdown.stop
-                @click.stop="handleStateEditorActionClick(`input-primary-output:${view.body.primaryOutput.key}`, view.body.primaryOutput.key)"
+                @click.stop="view.body.primaryOutput.virtual ? openPortStateCreate('output') : handleStateEditorActionClick(`input-primary-output:${view.body.primaryOutput.key}`, view.body.primaryOutput.key)"
               >
                 <span
                   class="node-card__port-pill-label"
@@ -306,7 +310,99 @@
               </span>
             </template>
             <div
-              v-if="isRemovePortStateConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`)"
+              v-if="view.body.primaryOutput.virtual && isPortCreateOpen('output') && portStateDraft"
+              class="node-card__agent-create-port-popover node-card__port-picker"
+              data-node-popup-surface="true"
+              @pointerdown.stop
+              @click.stop
+            >
+              <div class="node-card__port-picker-title">{{ portPickerTitle }}</div>
+              <div class="node-card__port-picker-form">
+                <div class="node-card__port-picker-grid">
+                  <label class="node-card__control-row">
+                    <span class="node-card__control-label">{{ t("nodeCard.name") }}</span>
+                    <ElInput
+                      :aria-label="t('nodeCard.name')"
+                      :model-value="portStateDraft.definition.name"
+                      @update:model-value="handlePortDraftNameValue"
+                    />
+                  </label>
+                  <label class="node-card__control-row">
+                    <span class="node-card__control-label">{{ t("nodeCard.type") }}</span>
+                    <ElSelect
+                      ref="portDraftTypeSelectRef"
+                      class="node-card__control-select graphite-select"
+                      :model-value="portStateDraft.definition.type"
+                      :teleported="false"
+                      popper-class="graphite-select-popper node-card__port-picker-select-popper"
+                      @update:model-value="handlePortDraftTypeSelect"
+                    >
+                      <ElOption v-for="typeOption in stateTypeOptions" :key="typeOption" :label="typeOption" :value="typeOption" />
+                    </ElSelect>
+                  </label>
+                  <label class="node-card__control-row">
+                    <span class="node-card__control-label">{{ t("nodeCard.color") }}</span>
+                    <ElSelect
+                      ref="portDraftColorSelectRef"
+                      class="node-card__control-select graphite-select"
+                      :model-value="portStateDraft.definition.color"
+                      :teleported="false"
+                      popper-class="graphite-select-popper node-card__port-picker-select-popper"
+                      @update:model-value="handlePortDraftColorSelect"
+                    >
+                      <template #label>
+                        <span class="node-card__port-picker-color-value">
+                          <span class="node-card__port-picker-color-dot" :style="portStateSelectedColorStyle" />
+                        </span>
+                      </template>
+                      <ElOption v-for="option in portStateColorOptions" :key="option.value || option.label" :label="option.label" :value="option.value">
+                        <div class="node-card__port-picker-color-option">
+                          <span class="node-card__port-picker-color-dot" :style="{ backgroundColor: option.swatch }" />
+                          <span>{{ option.label }}</span>
+                        </div>
+                      </ElOption>
+                    </ElSelect>
+                  </label>
+                </div>
+                <label class="node-card__control-row">
+                  <span class="node-card__control-label">{{ t("nodeCard.description") }}</span>
+                  <ElInput
+                    :aria-label="t('nodeCard.description')"
+                    type="textarea"
+                    :rows="2"
+                    :model-value="portStateDraft.definition.description"
+                    @update:model-value="handlePortDraftDescriptionValue"
+                  />
+                </label>
+                <StateDefaultValueEditor
+                  :field="portStateDraft.definition"
+                  @update-value="updatePortDraftValue"
+                />
+                <div class="node-card__port-picker-hint" :class="{ 'node-card__port-picker-hint--error': Boolean(portStateError) }">
+                  {{ portStateError ?? t("nodeCard.createStateBindHint") }}
+                </div>
+                <div class="node-card__port-picker-actions">
+                  <button
+                    type="button"
+                    class="node-card__port-picker-button"
+                    @pointerdown.stop
+                    @click.stop="closePortPicker"
+                  >
+                    {{ t("common.cancel") }}
+                  </button>
+                  <button
+                    type="button"
+                    class="node-card__port-picker-button node-card__port-picker-button--primary"
+                    @pointerdown.stop
+                    @click.stop="commitPortStateCreate"
+                  >
+                    {{ t("nodeCard.create") }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div
+              v-else-if="isRemovePortStateConfirmOpen(`input-primary-output:${view.body.primaryOutput.key}`)"
               class="node-card__confirm-hint node-card__confirm-hint--remove"
             >
               {{ t("nodeCard.removeStateQuestion") }}
@@ -1037,8 +1133,9 @@
             <span
               class="node-card__port-pill node-card__port-pill--input node-card__port-pill--dock-start"
               :class="{
-                'node-card__port-pill--revealed': isStateEditorPillRevealed(`output-input:${view.body.primaryInput.key}`),
-                'node-card__port-pill--confirm': isStateEditorConfirmOpen(`output-input:${view.body.primaryInput.key}`),
+                'node-card__port-pill--create': view.body.primaryInput.virtual,
+                'node-card__port-pill--revealed': !view.body.primaryInput.virtual && isStateEditorPillRevealed(`output-input:${view.body.primaryInput.key}`),
+                'node-card__port-pill--confirm': !view.body.primaryInput.virtual && isStateEditorConfirmOpen(`output-input:${view.body.primaryInput.key}`),
               }"
               :style="{ '--node-card-port-accent': view.body.primaryInput.stateColor }"
               data-state-editor-trigger="true"
@@ -1143,11 +1240,13 @@
               >
                 <template #reference>
                   <span
-                    class="node-card__port-pill node-card__port-pill--input node-card__port-pill--dock-start node-card__port-pill--condition-source"
+                    class="node-card__port-pill node-card__port-pill--input node-card__port-pill--dock-start"
                     :class="{
+                      'node-card__port-pill--condition-source': !view.body.primaryInput.virtual,
+                      'node-card__port-pill--create': view.body.primaryInput.virtual,
                       'node-card__port-pill--removable': !view.body.primaryInput.virtual,
-                      'node-card__port-pill--revealed': isStateEditorPillRevealed(`condition-input:${view.body.primaryInput.key}`),
-                      'node-card__port-pill--confirm': isStateEditorConfirmOpen(`condition-input:${view.body.primaryInput.key}`),
+                      'node-card__port-pill--revealed': !view.body.primaryInput.virtual && isStateEditorPillRevealed(`condition-input:${view.body.primaryInput.key}`),
+                      'node-card__port-pill--confirm': !view.body.primaryInput.virtual && isStateEditorConfirmOpen(`condition-input:${view.body.primaryInput.key}`),
                     }"
                     :style="{ '--node-card-port-accent': view.body.primaryInput.stateColor }"
                     data-state-editor-trigger="true"
@@ -1518,7 +1617,9 @@ const inputKnowledgeBaseValue = computed(() => {
 const inputAssetType = computed(() => (view.value.body.kind === "input" ? view.value.body.assetType : null));
 const inputAssetEnvelope = computed(() => (props.node.kind === "input" ? tryParseUploadedAssetEnvelope(inputStateValue.value) : null));
 const inputAssetAccept = computed(() => resolveUploadedAssetInputAccept(inputAssetType.value));
-const inputStateKey = computed(() => (view.value.body.kind === "input" ? view.value.body.primaryOutput?.key ?? null : null));
+const inputStateKey = computed(() =>
+  view.value.body.kind === "input" && !view.value.body.primaryOutput?.virtual ? view.value.body.primaryOutput?.key ?? null : null,
+);
 const inputStateType = computed(() => {
   const stateKey = inputStateKey.value;
   return stateKey ? String(props.stateSchema[stateKey]?.type ?? "text") : "text";
@@ -3569,13 +3670,14 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
 .node-card__port-pill {
   --node-card-port-accent: rgba(217, 119, 6, 0.92);
   position: relative;
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 9px;
   min-height: 34px;
   min-width: 132px;
-  max-width: 100%;
+  max-width: min(100%, var(--node-card-port-pill-max-width, 188px));
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
@@ -3589,6 +3691,7 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
 }
 
 .node-card__port-pill--condition-source {
+  --node-card-port-pill-max-width: 212px;
   min-width: 212px;
 }
 
@@ -3600,10 +3703,16 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
 }
 
 .node-card__port-pill--create {
+  border-style: dashed;
   border-color: color-mix(in srgb, var(--node-card-port-accent) 38%, transparent);
-  background: transparent;
+  background: color-mix(in srgb, var(--node-card-port-accent) 10%, transparent);
   color: var(--node-card-port-accent);
   box-shadow: none;
+}
+
+.node-card__port-pill--create:focus-visible {
+  border-color: color-mix(in srgb, var(--node-card-port-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--node-card-port-accent) 14%, transparent);
 }
 
 .node-card__port-pill--output {
@@ -3645,6 +3754,7 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
 .node-card__port-pill-remove {
   position: absolute;
   top: 50%;
+  z-index: 2;
   flex: none;
   display: inline-flex;
   align-items: center;
@@ -3696,16 +3806,17 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
 }
 
 .node-card__port-pill--confirm .node-card__port-pill-remove {
-  opacity: 0;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .node-card__port-pill-label {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   padding-inline: 0;
-  overflow: visible;
-  text-overflow: clip;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 1.02rem;
   font-weight: 600;
@@ -3714,6 +3825,12 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
 }
 
 .node-card__port-pill-label-text {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: opacity 140ms ease;
 }
 
