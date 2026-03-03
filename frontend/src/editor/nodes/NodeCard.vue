@@ -1238,10 +1238,16 @@ import {
   CONDITION_LOOP_LIMIT_DEFAULT,
   CONDITION_LOOP_LIMIT_MAX,
   CONDITION_LOOP_LIMIT_MIN,
-  normalizeConditionLoopLimit,
-  parseConditionLoopLimitDraft,
+  resolveConditionLoopLimitDraft,
+  resolveConditionLoopLimitPatch,
 } from "./conditionLoopLimit";
-import { CONDITION_RULE_OPERATOR_OPTIONS } from "./conditionRuleEditorModel";
+import {
+  CONDITION_RULE_OPERATOR_OPTIONS,
+  isConditionRuleValueInputDisabled,
+  resolveConditionRuleOperatorPatch,
+  resolveConditionRuleValueDraft,
+  resolveConditionRuleValuePatch,
+} from "./conditionRuleEditorModel";
 import { buildInputKnowledgeBaseOptions, resolveSelectedKnowledgeBaseDescription } from "./inputKnowledgeBaseModel";
 import { isSwitchableInputBoundaryType, resolveNextInputValueForBoundaryType, resolveStateTypeForInputBoundary } from "./inputValueTypeModel";
 import { buildNodeCardViewModel, type NodePortViewModel } from "./nodeCardViewModel";
@@ -1582,7 +1588,7 @@ const portPickerTitle = computed(() => {
   return activePortPickerSide.value === "input" ? t("nodeCard.createInputState") : t("nodeCard.createOutputState");
 });
 const conditionRuleValueDisabled = computed(
-  () => props.node.kind === "condition" && props.node.config.rule.operator === "exists",
+  () => props.node.kind === "condition" && isConditionRuleValueInputDisabled(props.node.config.rule.operator),
 );
 const agentTemperatureInput = computed(() => {
   if (props.node.kind !== "agent") {
@@ -1612,7 +1618,7 @@ function isPortCreateOpen(side: "input" | "output") {
 watch(
   () => (props.node.kind === "condition" ? props.node.config.rule.value : null),
   (ruleValue) => {
-    conditionRuleValueDraft.value = ruleValue === null || ruleValue === undefined ? "" : String(ruleValue);
+    conditionRuleValueDraft.value = resolveConditionRuleValueDraft(ruleValue);
   },
   { immediate: true },
 );
@@ -1620,7 +1626,7 @@ watch(
 watch(
   () => (props.node.kind === "condition" ? props.node.config.loopLimit : null),
   (loopLimit) => {
-    conditionLoopLimitDraft.value = loopLimit === null ? "" : String(normalizeConditionLoopLimit(loopLimit));
+    conditionLoopLimitDraft.value = resolveConditionLoopLimitDraft(loopLimit);
   },
   { immediate: true },
 );
@@ -2917,16 +2923,16 @@ function commitConditionLoopLimit() {
     return;
   }
 
-  const nextLoopLimit = parseConditionLoopLimitDraft(conditionLoopLimitDraft.value);
-  if (nextLoopLimit === null) {
-    conditionLoopLimitDraft.value = String(normalizeConditionLoopLimit(props.node.config.loopLimit));
+  const result = resolveConditionLoopLimitPatch(conditionLoopLimitDraft.value, props.node.config.loopLimit);
+  if (result.kind === "reset") {
+    conditionLoopLimitDraft.value = result.draftValue;
     return;
   }
-  if (nextLoopLimit === props.node.config.loopLimit) {
+  if (result.kind === "noop") {
     return;
   }
 
-  emitConditionConfigPatch({ loopLimit: nextLoopLimit });
+  emitConditionConfigPatch(result.patch);
 }
 
 function handleConditionLoopLimitEnter(event: KeyboardEvent) {
@@ -2952,7 +2958,7 @@ function updateConditionRule(patch: Partial<ConditionNode["config"]["rule"]>) {
 }
 
 function handleConditionRuleOperatorSelect(value: string | number | boolean | undefined) {
-  updateConditionRule({ operator: String(value ?? "exists") });
+  updateConditionRule(resolveConditionRuleOperatorPatch(value));
 }
 
 function handleConditionRuleValueInput(event: Event) {
@@ -2970,13 +2976,11 @@ function commitConditionRuleValue() {
   if (props.node.kind !== "condition") {
     return;
   }
-  const nextValue = conditionRuleValueDraft.value;
-  const currentValue =
-    props.node.config.rule.value === null || props.node.config.rule.value === undefined ? "" : String(props.node.config.rule.value);
-  if (nextValue === currentValue) {
+  const patch = resolveConditionRuleValuePatch(conditionRuleValueDraft.value, props.node.config.rule.value);
+  if (!patch) {
     return;
   }
-  updateConditionRule({ value: conditionRuleValueDraft.value });
+  updateConditionRule(patch);
 }
 
 function handleConditionRuleValueEnter(event: KeyboardEvent) {
