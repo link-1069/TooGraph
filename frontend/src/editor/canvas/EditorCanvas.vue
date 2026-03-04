@@ -404,7 +404,6 @@ import { isEditableKeyboardEventTarget } from "@/editor/canvas/canvasKeyboard";
 import { DEFAULT_CANVAS_VIEWPORT, type CanvasViewport } from "@/editor/canvas/canvasViewport";
 import {
   NODE_RESIZE_HANDLES,
-  normalizeNodeSize,
   resolveNodeResize,
   type NodeResizeHandle,
 } from "./nodeResize.ts";
@@ -415,11 +414,26 @@ import {
   type EdgeVisibilityMode,
 } from "./edgeVisibilityModel";
 import {
-  buildFlowOutHotspotStyle,
   buildRouteHandleStyle,
   resolveRouteHandlePalette,
   resolveRouteHandleTone,
 } from "./routeHandleModel";
+import {
+  buildConnectionPreviewStyle,
+  buildFlowHotspotStyle,
+  buildFlowHotspotConnectStyle,
+  buildPointAnchorStyle,
+  buildPointAnchorConnectStyle,
+  buildProjectedEdgeStyle,
+} from "./canvasInteractionStyleModel";
+import {
+  buildMinimapNodeModel,
+  buildNodeCardSizeStyle,
+  buildNodeTransformStyle,
+  resolveFallbackNodeSize,
+  resolveNodeRenderedSize,
+  type MeasuredNodeSize,
+} from "./canvasNodePresentationModel";
 import {
   defaultValueForStateType,
   resolveStateColorOptions,
@@ -448,7 +462,7 @@ import { useViewport } from "./useViewport";
 import { isAgentBreakpointEnabledInDocument, resolveAgentBreakpointTimingInDocument } from "@/lib/graph-document";
 import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { SkillDefinition } from "@/types/skills";
-import type { AgentNode, ConditionNode, GraphDocument, GraphNode, GraphNodeSize, GraphPayload, GraphPosition, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
+import type { AgentNode, ConditionNode, GraphDocument, GraphNodeSize, GraphPayload, GraphPosition, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
 
 type NodeCreationMenuPayload = {
   position: GraphPosition;
@@ -538,10 +552,6 @@ const nodeElementMap = new Map<string, HTMLElement>();
 const nodeResizeObserverMap = new Map<string, ResizeObserver>();
 const nodeMutationObserverMap = new Map<string, MutationObserver>();
 const measuredAnchorOffsets = ref<Record<string, MeasuredAnchorOffset>>({});
-type MeasuredNodeSize = {
-  width: number;
-  height: number;
-};
 type PendingStateInputSource = {
   stateKey: string;
   label: string;
@@ -648,21 +658,15 @@ let canvasResizeObserver: ResizeObserver | null = null;
 
 const nodeEntries = computed(() => Object.entries(props.document.nodes));
 const minimapNodes = computed(() =>
-  nodeEntries.value.map(([nodeId, node]) => {
-    const measuredSize = measuredNodeSizes.value[nodeId];
-    const storedSize = normalizeNodeSize(node.ui.size);
-    const fallbackSize = resolveFallbackNodeSize(node);
-    return {
-      id: nodeId,
-      kind: node.kind,
-      x: node.ui.position.x,
-      y: node.ui.position.y,
-      width: measuredSize?.width ?? storedSize?.width ?? fallbackSize.width,
-      height: measuredSize?.height ?? storedSize?.height ?? fallbackSize.height,
-      selected: selection.selectedNodeId.value === nodeId,
-      runState: resolveMinimapRunState(props.runNodeStatusByNodeId?.[nodeId]),
-    };
-  }),
+  nodeEntries.value.map(([nodeId, node]) =>
+    buildMinimapNodeModel({
+      nodeId,
+      node,
+      measuredNodeSizes: measuredNodeSizes.value,
+      isSelected: selection.selectedNodeId.value === nodeId,
+      runStatus: props.runNodeStatusByNodeId?.[nodeId],
+    }),
+  ),
 );
 const minimapEdges = computed(() =>
   projectedEdges.value
@@ -1046,34 +1050,17 @@ const connectionPreview = computed(() => {
     }),
   };
 });
-const connectionPreviewStyle = computed(() => {
-  const accent = activeConnectionAccentColor.value;
-  if (!connectionPreview.value) {
-    return undefined;
-  }
-
-  if (connectionPreview.value.kind === "data") {
-    return {
-      "--editor-connection-preview-stroke": withAlpha(accent, 0.82),
-    };
-  }
-
-  if (connectionPreview.value.kind === "route") {
-    return {
-      "--editor-connection-preview-stroke": withAlpha(accent, 0.78),
-    };
-  }
-
-  return {
-    "--editor-connection-preview-stroke": withAlpha(accent, 0.76),
-  };
-});
+const connectionPreviewStyle = computed(() =>
+  buildConnectionPreviewStyle(connectionPreview.value?.kind ?? null, activeConnectionAccentColor.value),
+);
 const canvasSurfaceStyle = computed(() => resolveCanvasSurfaceStyle(viewport.viewport));
 const viewportStyle = computed(() => ({
   transform: `translate(${viewport.viewport.x}px, ${viewport.viewport.y}px) scale(${viewport.viewport.scale})`,
 }));
 const zoomPercentLabel = computed(() => `${Math.round(viewport.viewport.scale * 100)}%`);
 const stateTypeOptions = STATE_FIELD_TYPE_OPTIONS;
+const nodeStyle = buildNodeTransformStyle;
+const nodeCardSizeStyle = buildNodeCardSizeStyle;
 const flowEdgeDeleteConfirmStyle = computed(() => {
   if (!activeFlowEdgeDeleteConfirm.value) {
     return undefined;
@@ -1619,53 +1606,6 @@ function handleDataEdgeStateEditorTypeValue(value: string | number | boolean | u
   });
 }
 
-function nodeStyle(position: GraphPosition) {
-  return {
-    transform: `translate(${position.x}px, ${position.y}px)`,
-  };
-}
-
-function nodeCardSizeStyle(node: GraphNode) {
-  const size = normalizeNodeSize(node.ui.size);
-  if (!size) {
-    return undefined;
-  }
-  return {
-    "--node-card-width": `${size.width}px`,
-    "--node-card-min-height": `${size.height}px`,
-  };
-}
-
-function resolveNodeRenderedSize(nodeId: string, node: GraphNode): GraphNodeSize {
-  return measuredNodeSizes.value[nodeId] ?? normalizeNodeSize(node.ui.size) ?? resolveFallbackNodeSize(node);
-}
-
-function resolveFallbackNodeSize(node: GraphNode): MeasuredNodeSize {
-  if (node.kind === "condition") {
-    return { width: 560, height: 280 };
-  }
-  if (node.kind === "output") {
-    return { width: 460, height: 340 };
-  }
-  if (node.kind === "input") {
-    return { width: 460, height: 320 };
-  }
-  return { width: 460, height: 360 };
-}
-
-function resolveMinimapRunState(status: string | undefined) {
-  if (status === "running" || status === "resuming") {
-    return "running";
-  }
-  if (status === "success" || status === "completed") {
-    return "success";
-  }
-  if (status === "failed") {
-    return "failed";
-  }
-  return null;
-}
-
 function handleMinimapCenterView(point: { worldX: number; worldY: number }) {
   updateCanvasSize();
   if (canvasSize.value.width <= 0 || canvasSize.value.height <= 0) {
@@ -1684,114 +1624,21 @@ function handleMinimapCenterView(point: { worldX: number; worldY: number }) {
   canvasRef.value?.focus();
 }
 
+const canvasInteractionStyleContext = computed(() => ({
+  activeConnectionSourceAnchorId: activeConnectionSourceAnchorId.value,
+  eligibleTargetAnchorIds: eligibleTargetAnchorIds.value,
+  activeConnectionSourceKind: activeConnection.value?.sourceKind ?? null,
+  activeConnectionAccentColor: activeConnectionAccentColor.value,
+}));
+const edgeStyle = buildProjectedEdgeStyle;
+const flowHotspotStyle = buildFlowHotspotStyle;
 const routeHandleStyle = buildRouteHandleStyle;
+const anchorStyle = buildPointAnchorStyle;
 
-function edgeStyle(edge: ProjectedCanvasEdge) {
-  if (edge.kind === "route" && edge.branch) {
-    const accent = resolveRouteHandlePalette(edge.branch).accent;
-    return {
-      "--editor-edge-stroke": withAlpha(accent, 0.88),
-      "--editor-edge-outline": withAlpha(accent, 0.16),
-    };
-  }
-  if (!edge.color) {
-    return undefined;
-  }
-  return {
-    "--editor-edge-stroke": edge.color,
-    "--editor-edge-outline": withAlpha(edge.color, 0.18),
-    "--editor-edge-outline-active": withAlpha(edge.color, 0.32),
-  };
-}
-
-function withAlpha(hexColor: string, alpha: number) {
-  const normalized = hexColor.trim();
-  const hex = normalized.startsWith("#") ? normalized.slice(1) : normalized;
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-    return `rgba(37, 99, 235, ${alpha})`;
-  }
-
-  const red = Number.parseInt(hex.slice(0, 2), 16);
-  const green = Number.parseInt(hex.slice(2, 4), 16);
-  const blue = Number.parseInt(hex.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-}
-
-function flowHotspotStyle(anchor: ProjectedCanvasAnchor) {
-  const isVertical = anchor.side === "left" || anchor.side === "right";
-  let left = anchor.x;
-  let top = anchor.y;
-  let width = isVertical ? 22 : 86;
-  let height = isVertical ? 86 : 22;
-
-  if (anchor.kind === "flow-out" && anchor.side === "right") {
-    return buildFlowOutHotspotStyle(anchor);
-  } else if (anchor.kind === "flow-in" && anchor.side === "left") {
-    left -= 18;
-    width = 42;
-    height = 82;
-  }
-
-  return {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${width}px`,
-    height: `${height}px`,
-  };
-}
-
-function flowHotspotConnectStyle(anchor: ProjectedCanvasAnchor) {
-  const isSource = activeConnectionSourceAnchorId.value === anchor.id;
-  const isTarget = eligibleTargetAnchorIds.value.has(anchor.id);
-  if (!isSource && !isTarget) {
-    return undefined;
-  }
-
-  const accent = activeConnectionAccentColor.value;
-  if (activeConnection.value?.sourceKind === "state-out") {
-    return {
-      "--editor-connection-source-fill": withAlpha(accent, 0.16),
-      "--editor-connection-source-border": withAlpha(accent, 0.34),
-      "--editor-connection-source-glow": withAlpha(accent, 0.14),
-      "--editor-connection-source-symbol": withAlpha(accent, 0.96),
-      "--editor-connection-target-fill": withAlpha(accent, 0.12),
-      "--editor-connection-target-border": withAlpha(accent, 0.28),
-      "--editor-connection-target-glow": withAlpha(accent, 0.16),
-      "--editor-connection-target-anchor": withAlpha(accent, 0.92),
-    };
-  }
-
-  return undefined;
-}
-
-function anchorStyle(anchor: ProjectedCanvasAnchor) {
-  if (!anchor.color) {
-    return undefined;
-  }
-  return {
-    "--editor-anchor-fill": anchor.color,
-  };
-}
-
-function anchorConnectStyle(anchor: ProjectedCanvasAnchor) {
-  const isSource = activeConnectionSourceAnchorId.value === anchor.id;
-  const isTarget = eligibleTargetAnchorIds.value.has(anchor.id);
-  if (!isSource && !isTarget) {
-    return undefined;
-  }
-
-  const accent = activeConnectionAccentColor.value;
-  if (activeConnection.value?.sourceKind === "state-out") {
-    return {
-      "--editor-connection-source-anchor": withAlpha(accent, 0.96),
-      "--editor-connection-source-stroke": withAlpha(accent, 0.24),
-      "--editor-connection-target-anchor": withAlpha(accent, 0.92),
-      "--editor-connection-target-stroke": withAlpha(accent, 0.18),
-    };
-  }
-
-  return undefined;
-}
+const flowHotspotConnectStyle = (anchor: ProjectedCanvasAnchor) =>
+  buildFlowHotspotConnectStyle(anchor, canvasInteractionStyleContext.value);
+const anchorConnectStyle = (anchor: ProjectedCanvasAnchor) =>
+  buildPointAnchorConnectStyle(anchor, canvasInteractionStyleContext.value);
 
 function registerNodeRef(nodeId: string, element: unknown) {
   if (element instanceof HTMLElement) {
@@ -2780,7 +2627,11 @@ function handleNodeResizePointerDown(nodeId: string, handle: NodeResizeHandle, e
     startClientX: event.clientX,
     startClientY: event.clientY,
     originPosition: { ...node.ui.position },
-    originSize: resolveNodeRenderedSize(nodeId, node),
+    originSize: resolveNodeRenderedSize({
+      nodeId,
+      node,
+      measuredNodeSizes: measuredNodeSizes.value,
+    }),
     captureElement,
     moved: false,
   };
