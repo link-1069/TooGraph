@@ -1,5 +1,232 @@
 # Progress Log
 
+## Session: 2026-04-28 Rounds 21-30
+
+### Phase 1: Re-orientation and Ten-Round Planning
+- **Status:** completed
+- Actions taken:
+  - Confirmed the worktree started clean on `main...origin/main`.
+  - Ran planning catchup after the user's request to increase the next cleanup batch to ten rounds.
+  - Re-read the latest plan, progress, findings, and current high-line-count files.
+  - Inspected `EditorCanvas.vue` computed/helper clusters around minimap edges, forced visible edges, pending state previews, virtual anchors, reconnect projection, delete actions, data-edge disconnects, pinch math, and viewport display values.
+  - Selected ten low-risk pure boundaries for Rounds 21-30 while keeping DOM, refs, timers, emits, and lock guards local.
+
+### Phase 2-11: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added focused red tests before production extraction for all ten canvas helper boundaries.
+  - Added `canvasMinimapEdgeModel.ts`, `canvasPendingStatePortModel.ts`, `canvasVirtualCreatePortModel.ts`, `canvasPinchZoomModel.ts`, and `canvasViewportDisplayModel.ts`.
+  - Extended `edgeVisibilityModel.ts`, `canvasConnectionModel.ts`, `flowEdgeDeleteModel.ts`, and `canvasDataEdgeStateModel.ts` with pure helpers now reused by `EditorCanvas.vue`.
+  - Updated `EditorCanvas.vue` to delegate those pure projections while keeping DOM refs, timers, lock guards, emits, viewport mutation, and pointer side effects in the component.
+  - Updated `EditorCanvas.structure.test.ts` to assert the new module boundaries instead of locking the previous inline helper implementations.
+  - Reduced `EditorCanvas.vue` from 4,226 lines at batch start to 4,039 lines.
+
+### Phase 12: Verification
+- **Status:** completed
+- Actions taken:
+  - Verified the initial focused suite failed before implementation because the new model files/exports did not exist.
+  - Fixed one post-extraction structure assertion that still expected inline forced-edge-id code.
+  - Ran focused canvas model and structure tests.
+  - Ran TypeScript unused-symbol verification.
+  - Ran the full frontend node test suite.
+  - Ran the frontend production build and confirmed no Vite large chunk warning was emitted.
+  - Ran `git diff --check` with no whitespace errors.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend returned HTTP 200 at `http://127.0.0.1:3477`.
+  - Confirmed the backend health route returned `{"status":"ok"}` at `http://127.0.0.1:8765/health`.
+  - Confirmed `node scripts/start.mjs`, uvicorn, and Vite processes remained alive after a delayed check.
+
+### Phase 13: Commit and Push
+- **Status:** completed
+- Actions taken:
+  - Reviewed staged source/test diff and confirmed it excludes runtime artifacts.
+  - Committed source and tests as `8cc4a60` with Chinese message `抽取画布十轮辅助模型`.
+  - Committed planning updates with Chinese message `更新第二十一至三十轮清理进度`.
+  - Pushed `main` to `origin/main`.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red focused suite | `node --test` with the new/extended canvas model and structure tests before implementation | Fails because the new model files/exports and component wiring are missing | Failed with missing model files/exports | Passed |
+| Focused canvas suite | `node --test frontend/src/editor/canvas/canvasMinimapEdgeModel.test.ts ... frontend/src/editor/canvas/EditorCanvas.structure.test.ts` | All focused canvas model and structure tests pass | 96 passed | Passed |
+| Unused symbol check | `npx vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` in `frontend` | No unused-symbol diagnostics | Exit 0, no diagnostics | Passed |
+| Full frontend tests | `node --test $(rg --files frontend/src -g '*.test.ts') frontend/vite.config.structure.test.ts` | All frontend tests pass | 745 passed | Passed |
+| Frontend production build | `npm run build` in `frontend` | Build succeeds without a large chunk warning | Exit 0, no Vite large chunk warning | Passed |
+| Whitespace check | `git diff --check` | No whitespace errors | Exit 0 | Passed |
+| Dev restart | `npm run dev` | Services start and respond | Frontend 200, backend `/health` ok, delayed process check alive | Passed |
+
+## 5-Question Reboot Check
+| Question | Answer |
+|----------|--------|
+| Where am I? | Rounds 21-30 implementation, verification, dev restart, commits, and push are complete. |
+| Where am I going? | Ready for handoff or the next cleanup slice. |
+| What's the goal? | Continue reducing `EditorCanvas.vue` responsibility concentration without changing graph editing behavior. |
+| What have I learned? | Several canvas display and interaction projections are pure enough to model-test outside the Vue component. |
+| What have I done? | Extracted ten focused canvas helper boundaries, added tests, kept side effects inside the component, and confirmed the build no longer emits a large chunk warning. |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+
+## Session: 2026-04-28 Phase 16
+
+### Phase 1: Re-orientation and Safety Scope
+- **Status:** completed
+- Actions taken:
+  - Ran planning session catchup, confirmed the worktree started clean, and re-read the active plan, progress, and findings.
+  - Inspected the largest remaining files and selected `NodeCard.vue` title/description editing as the next safe high-impact slice.
+  - Chose this slice because it is already backed by pure text editor model helpers and does not touch canvas connection, auto-snap, port reorder, or node creation naming paths.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `frontend/src/editor/nodes/useNodeCardTextEditor.test.ts` before production code.
+  - Ran `node --test frontend/src/editor/nodes/useNodeCardTextEditor.test.ts` and verified the expected red failure: `ERR_MODULE_NOT_FOUND` for `useNodeCardTextEditor.ts`.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `useNodeCardTextEditor.ts` to own title/description editor state, pointer trigger activation, confirm/focus timers, draft values, and metadata patch commits.
+  - Updated `NodeCard.vue` to consume the composable while keeping title/description template bindings, locked interaction guard, peer panel cleanup, and metadata emits in the component.
+  - Updated `NodeCard.structure.test.ts` to verify the composable boundary instead of requiring the old inline state machine.
+  - Confirmed `NodeCard.vue` is down to 4,930 lines after this extraction.
+
+### Phase 4: Focused Verification
+- **Status:** completed
+- Actions taken:
+  - Ran `node --test frontend/src/editor/nodes/useNodeCardTextEditor.test.ts frontend/src/editor/nodes/textEditorModel.test.ts frontend/src/editor/nodes/NodeCard.structure.test.ts`.
+  - Result: 43 tests passed, 0 failed.
+
+### Phase 5: Full Verification and Dev Restart
+- **Status:** completed
+- Actions taken:
+  - Ran `npx vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` in `frontend`; the first run found a test helper type-narrowing issue, then the rerun exited 0 with no diagnostics after fixing it.
+  - Ran the full frontend test suite with `node --test $(rg --files frontend/src -g '*.test.ts') frontend/vite.config.structure.test.ts`.
+  - Result: 755 tests passed, 0 failed.
+  - Ran `npm run build` in `frontend`; the build completed without a Vite large chunk warning.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend returned HTTP 200 at `http://127.0.0.1:3477`.
+  - Confirmed the backend health route returned HTTP 200 at `http://127.0.0.1:8765/health`.
+  - Confirmed the restarted backend and frontend dev processes remained alive after a delayed check.
+
+### Phase 6: Commit and Push
+- **Status:** completed
+- Actions taken:
+  - Checked git status after restart; only source, test, and planning files are modified or untracked.
+  - Confirmed no runtime logs or build output are listed for commit.
+  - Ran `git diff --check` and `git diff --cached --check` with no whitespace errors.
+  - Committed the cleanup as `f495a50` with Chinese message `抽取节点文本编辑交互`.
+  - Pushed `main` to `origin/main`.
+
+## Session: 2026-04-28 Baseline Interaction Repair and Large Connection Cleanup
+
+### Phase 1: Baseline Regression Repair
+- **Status:** completed
+- Actions taken:
+  - Compared the broken interaction behavior against baseline commit `8017081`.
+  - Identified that virtual output drags stopped creating pending agent input sources because `buildPendingAgentInputSourceByNodeId` filtered them through concrete-only state-key logic.
+  - Added regression coverage for preserving `VIRTUAL_ANY_OUTPUT_STATE_KEY` pending sources.
+  - Fixed the pending-source model and committed/pushed `22aac3c 修复虚拟输出吸附回归`.
+
+### Phase 2: Larger Connection Interaction Consolidation
+- **Status:** completed
+- Actions taken:
+  - Added `canvasConnectionInteractionModel.test.ts` before the model existed and verified the focused test failed with `ERR_MODULE_NOT_FOUND`.
+  - Added `canvasConnectionInteractionModel.ts` for node-creation payloads, virtual create-input fallback anchors, state auto-snap row selection, reverse virtual output fallback anchors, and state target eligibility.
+  - Updated `EditorCanvas.vue` to delegate auto-snapping, connection-state value type lookup, and node creation payload construction to the new model.
+  - Updated `EditorCanvas.structure.test.ts` so structure coverage locks the new module boundary instead of requiring the old inline helper bodies.
+  - Reduced `EditorCanvas.vue` from 4,039 lines after the ten-round batch to 3,848 lines.
+
+### Phase 3: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused connection interaction, pending state port, virtual create port, and EditorCanvas structure tests.
+  - Ran frontend unused-symbol TypeScript verification.
+  - Ran the full frontend test suite.
+  - Ran the frontend production build and confirmed the large chunk warning did not return.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend returned HTTP 200 at `http://127.0.0.1:3477`.
+  - Confirmed the backend health route returned `{"status":"ok"}` at `http://127.0.0.1:8765/health`.
+
+### Phase 4: Commit and Push
+- **Status:** completed
+- Actions taken:
+  - Ran `git diff --check` and `git diff --cached --check` with no whitespace errors.
+  - Staged only source, tests, and planning files for the interaction cleanup.
+  - Committed the consolidated cleanup with Chinese message `抽取画布连接交互模型`.
+  - Pushed `main` to `origin/main`.
+
+## Test Results: Baseline Interaction Repair and Large Connection Cleanup
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red regression | `node --test frontend/src/editor/canvas/canvasPendingStatePortModel.test.ts` before the pending-source fix | Fails on missing virtual output pending source | Failed before the fix | Passed |
+| Pending state port model | `node --test frontend/src/editor/canvas/canvasPendingStatePortModel.test.ts` | Regression and existing tests pass | 5 passed | Passed |
+| Red interaction model | `node --test frontend/src/editor/canvas/canvasConnectionInteractionModel.test.ts` before implementation | Fails because the model file does not exist | Failed with `ERR_MODULE_NOT_FOUND` | Passed |
+| Focused canvas interaction set | `node --test frontend/src/editor/canvas/canvasConnectionInteractionModel.test.ts frontend/src/editor/canvas/canvasPendingStatePortModel.test.ts frontend/src/editor/canvas/canvasVirtualCreatePortModel.test.ts frontend/src/editor/canvas/EditorCanvas.structure.test.ts` | Focused interaction and structure tests pass | 70 passed | Passed |
+| Unused symbol check | `npx vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` in `frontend` | No unused-symbol diagnostics | Exit 0, no diagnostics | Passed |
+| Full frontend tests | `node --test $(rg --files frontend/src -g '*.test.ts') frontend/vite.config.structure.test.ts` | All frontend tests pass | 750 passed | Passed |
+| Frontend production build | `npm run build` in `frontend` | Build succeeds without large chunk warning | Exit 0, no large chunk warning | Passed |
+| Dev restart | `npm run dev` | Services start and respond | Frontend 200, backend `/health` ok | Passed |
+
+## Session: 2026-04-28 High-Safety EditorCanvas Cleanup
+
+### Phase 1: Select High-Progress Safe Boundaries
+- **Status:** completed
+- Actions taken:
+  - Re-read the active cleanup plan and current large-file inventory.
+  - Kept the next work inside `EditorCanvas.vue`, matching the approved direction to raise progress while preserving canvas interactions.
+  - Selected edge popover interaction state and node measurement state because both have narrow external contracts and existing structure coverage.
+
+### Phase 2: Edge Interaction Composable
+- **Status:** completed
+- Actions taken:
+  - Added `useCanvasEdgeInteractions.test.ts` before implementation and verified it failed because the composable did not exist.
+  - Added `useCanvasEdgeInteractions.ts` for flow/route delete confirmation, data-edge state editing, state-editor request handling, update-state emits, disconnect emits, timeout cleanup, and missing-edge cleanup.
+  - Updated `EditorCanvas.vue` to keep pointer event wrappers while delegating edge interaction state and actions to the composable.
+  - Updated `EditorCanvas.structure.test.ts` to verify the new composable boundary.
+
+### Phase 3: Node Measurement Composable
+- **Status:** completed
+- Actions taken:
+  - Added `useCanvasNodeMeasurements.test.ts` before implementation and verified it failed because the composable did not exist.
+  - Added `useCanvasNodeMeasurements.ts` for node ref registration, ResizeObserver/MutationObserver lifecycle, measured anchor offsets, measured node sizes, and teardown.
+  - Updated `EditorCanvas.vue` to consume measured refs and `registerNodeRef` from the composable.
+  - Updated structure tests to check measurement logic in the composable rather than inline in the component.
+  - Reduced `EditorCanvas.vue` from 3,848 lines to 3,363 lines in this phase.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused canvas interaction, measurement, and structure tests.
+  - Ran frontend unused-symbol TypeScript verification.
+  - Ran the full frontend test suite.
+  - Ran the frontend production build and confirmed the large chunk warning did not return.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend returned HTTP 200 at `http://127.0.0.1:3477`.
+  - Confirmed the backend health route returned `{"status":"ok"}` at `http://127.0.0.1:8765/health`.
+
+### Phase 5: Commit and Push
+- **Status:** completed
+- Actions taken:
+  - Ran `git diff --check` and `git diff --cached --check` with no whitespace errors.
+  - Staged only source, tests, and planning files for this cleanup.
+  - Committed the cleanup with Chinese message `抽取画布边交互和测量控制器`.
+  - Pushed `main` to `origin/main`.
+
+## Test Results: High-Safety EditorCanvas Cleanup
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red edge interaction test | `node --test frontend/src/editor/canvas/useCanvasEdgeInteractions.test.ts` before implementation | Fails because the composable does not exist | Failed with `ERR_MODULE_NOT_FOUND` | Passed |
+| Edge interaction focused test | `node --test frontend/src/editor/canvas/useCanvasEdgeInteractions.test.ts` | Edge delete and data-edge edit behavior pass | 2 passed | Passed |
+| Red measurement test | `node --test frontend/src/editor/canvas/useCanvasNodeMeasurements.test.ts` before implementation | Fails because the composable does not exist | Failed with `ERR_MODULE_NOT_FOUND` | Passed |
+| Measurement focused test | `node --test frontend/src/editor/canvas/useCanvasNodeMeasurements.test.ts` | Measurement cache cleanup passes | 1 passed | Passed |
+| Focused canvas suite | `node --test frontend/src/editor/canvas/useCanvasEdgeInteractions.test.ts frontend/src/editor/canvas/useCanvasNodeMeasurements.test.ts frontend/src/editor/canvas/canvasDataEdgeStateModel.test.ts frontend/src/editor/canvas/flowEdgeDeleteModel.test.ts frontend/src/editor/canvas/EditorCanvas.structure.test.ts frontend/src/editor/canvas/canvasConnectionInteractionModel.test.ts frontend/src/editor/canvas/canvasPendingStatePortModel.test.ts frontend/src/editor/canvas/canvasVirtualCreatePortModel.test.ts` | Canvas interaction and structure tests pass | 83 passed | Passed |
+| Unused symbol check | `npx vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` in `frontend` | No unused-symbol diagnostics | Exit 0, no diagnostics | Passed |
+| Full frontend tests | `node --test $(rg --files frontend/src -g '*.test.ts') frontend/vite.config.structure.test.ts` | All frontend tests pass | 753 passed | Passed |
+| Frontend production build | `npm run build` in `frontend` | Build succeeds without large chunk warning | Exit 0, no large chunk warning | Passed |
+| Dev restart | `npm run dev` | Services start and respond | Frontend 200, backend `/health` ok | Passed |
+| 2026-04-28 | One structure test still searched for the old inline forced-visible-edge-id block. | Focused post-implementation suite. | Replaced it with an assertion that the flow delete confirm id is passed into `buildForceVisibleProjectedEdgeIds`. |
+
 ## Session: 2026-04-28 Rounds 18-20
 
 ### Phase 1: Re-orientation and Batch Planning

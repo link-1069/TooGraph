@@ -389,14 +389,12 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } fro
 import { Check, Minus, Plus, RefreshLeft } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 
-import { buildAnchorModel } from "@/editor/anchors/anchorModel";
 import EditorMinimap from "./EditorMinimap.vue";
 import NodeCard from "@/editor/nodes/NodeCard.vue";
 import StateEditorPopover from "@/editor/nodes/StateEditorPopover.vue";
 import { type ProjectedCanvasAnchor, type ProjectedCanvasEdge } from "@/editor/canvas/edgeProjection";
-import { resolveFlowAnchorOffset } from "@/editor/canvas/flowAnchorLayout";
 import { resolveEdgeRunPresentation } from "@/editor/canvas/runEdgePresentation";
-import { resolveCanvasLayout, type MeasuredAnchorOffset } from "@/editor/canvas/resolvedCanvasLayout";
+import { resolveCanvasLayout } from "@/editor/canvas/resolvedCanvasLayout";
 import { resolveCanvasSurfaceStyle } from "@/editor/canvas/canvasSurfaceStyle";
 import { isEditableKeyboardEventTarget } from "@/editor/canvas/canvasKeyboard";
 import { DEFAULT_CANVAS_VIEWPORT, type CanvasViewport } from "@/editor/canvas/canvasViewport";
@@ -427,7 +425,6 @@ import {
 import {
   buildConnectionPreviewModel,
   buildPendingConnectionFromAnchor,
-  isConcreteStateConnectionKey,
   isSamePendingConnection,
   resolveConnectionAccentColor,
   resolveConnectionPreviewStateKey,
@@ -457,61 +454,37 @@ import {
   resolveRunNodeClassListForCanvasNode,
   resolveRunNodePresentationForCanvasNode,
 } from "./canvasRunPresentationModel";
-import {
-  buildFlowEdgeDeleteConfirmFromEdge,
-  buildFlowEdgeDeleteConfirmStyle,
-  isFlowEdgeDeleteConfirmActive,
-  resolveFlowEdgeDeleteAction,
-  resolveFlowEdgeDeleteActionFromEdge,
-  type FlowEdgeDeleteConfirmTarget,
-} from "./flowEdgeDeleteModel";
+import { resolveFlowEdgeDeleteActionFromEdge } from "./flowEdgeDeleteModel";
 import {
   buildMinimapNodeModel,
   buildNodeCardSizeStyle,
   buildNodeTransformStyle,
-  resolveFallbackNodeSize,
   resolveNodeRenderedSize,
-  type MeasuredNodeSize,
 } from "./canvasNodePresentationModel";
-import {
-  buildDataEdgeStateConfirmFromEdge,
-  buildDataEdgeStateDisconnectPayload,
-  buildDataEdgeStateEditorFromConfirm,
-  buildDataEdgeStateEditorFromRequest,
-  buildFloatingCanvasPointStyle,
-  isActiveDataEdge,
-  isDataEdgeStateInteractionOpen as resolveDataEdgeStateInteractionOpen,
-  shouldOfferDataEdgeFlowDisconnect as resolveShouldOfferDataEdgeFlowDisconnect,
-  type DataEdgeStateConfirmTarget,
-  type DataEdgeStateEditorTarget,
-} from "./canvasDataEdgeStateModel";
+import { useCanvasEdgeInteractions } from "./useCanvasEdgeInteractions";
+import { useCanvasNodeMeasurements } from "./useCanvasNodeMeasurements";
 import { buildPinchZoomStart, resolvePointerCenter, resolvePointerDistance } from "./canvasPinchZoomModel";
 import { buildCanvasViewportStyle, buildZoomPercentLabel } from "./canvasViewportDisplayModel";
 import {
-  resolveStateColorOptions,
-  STATE_FIELD_TYPE_OPTIONS,
-  type StateFieldDraft,
-} from "@/editor/workspace/statePanelFields";
-import {
-  buildStateEditorDraftFromSchema,
-  resolveStateEditorUpdatePatch,
-  updateStateEditorDraftColor,
-  updateStateEditorDraftDescription,
-  updateStateEditorDraftName,
-  updateStateEditorDraftType,
-} from "@/editor/nodes/stateEditorModel";
+  buildCanvasNodeCreationMenuPayload,
+  isCanvasStateTargetAnchorAllowedForConnection,
+  resolveCanvasConcreteStateInputSourceAnchorAtPointerY,
+  resolveCanvasConcreteStateTargetAnchorAtPointerY,
+  resolveCanvasConnectionStateValueType,
+  resolveCanvasEligibleStateInputSourceAnchorForNodeBody,
+  resolveCanvasEligibleStateTargetAnchorForNodeBody,
+  resolveCanvasEligibleTargetAnchorForNodeBody,
+  type CanvasNodeCreationMenuPayload,
+} from "./canvasConnectionInteractionModel";
+import { STATE_FIELD_TYPE_OPTIONS } from "@/editor/workspace/statePanelFields";
 import {
   canCompleteGraphConnection,
   canDisconnectSequenceEdgeForDataConnection,
   canStartGraphConnection,
-  type GraphConnectionAnchorKind,
   type PendingGraphConnection,
 } from "@/lib/graph-connections";
 import {
   CREATE_AGENT_INPUT_STATE_KEY,
-  VIRTUAL_ANY_INPUT_STATE_KEY,
-  VIRTUAL_ANY_OUTPUT_COLOR,
-  VIRTUAL_ANY_OUTPUT_STATE_KEY,
 } from "@/lib/virtual-any-input";
 import { resolveFocusedViewport } from "@/editor/canvas/focusNodeViewport";
 import { resolveViewportForMinimapCenter } from "./minimapModel";
@@ -521,21 +494,6 @@ import { isAgentBreakpointEnabledInDocument, resolveAgentBreakpointTimingInDocum
 import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { SkillDefinition } from "@/types/skills";
 import type { AgentNode, ConditionNode, GraphDocument, GraphNodeSize, GraphPayload, GraphPosition, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
-
-type NodeCreationMenuPayload = {
-  position: GraphPosition;
-  sourceNodeId?: string;
-  sourceAnchorKind?: Extract<GraphConnectionAnchorKind, "flow-out" | "route-out" | "state-out">;
-  sourceBranchKey?: string;
-  sourceStateKey?: string;
-  sourceValueType?: string | null;
-  targetNodeId?: string;
-  targetAnchorKind?: Extract<GraphConnectionAnchorKind, "state-in">;
-  targetStateKey?: string;
-  targetValueType?: string | null;
-  clientX: number;
-  clientY: number;
-};
 
 const props = defineProps<{
   document: GraphPayload | GraphDocument;
@@ -560,7 +518,6 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = useI18n();
-const STATE_TARGET_ROW_FALLBACK_GAP = 44;
 const edgeVisibilityModeOptions = computed(() => {
   locale.value;
   return buildEdgeVisibilityModeOptions();
@@ -600,19 +557,26 @@ const emit = defineEmits<{
   (event: "remove-flow", payload: { sourceNodeId: string; targetNodeId: string }): void;
   (event: "disconnect-data-edge", payload: { sourceNodeId: string; targetNodeId: string; stateKey: string; mode: "state" | "flow" }): void;
   (event: "remove-route", payload: { sourceNodeId: string; branchKey: string }): void;
-  (event: "open-node-creation-menu", payload: NodeCreationMenuPayload): void;
+  (event: "open-node-creation-menu", payload: CanvasNodeCreationMenuPayload): void;
   (event: "create-node-from-file", payload: { file: File; position: GraphPosition; clientX: number; clientY: number }): void;
   (event: "update:viewport", payload: CanvasViewport): void;
 }>();
 
 const canvasRef = ref<HTMLElement | null>(null);
-const nodeElementMap = new Map<string, HTMLElement>();
-const nodeResizeObserverMap = new Map<string, ResizeObserver>();
-const nodeMutationObserverMap = new Map<string, MutationObserver>();
-const measuredAnchorOffsets = ref<Record<string, MeasuredAnchorOffset>>({});
-const measuredNodeSizes = ref<Record<string, MeasuredNodeSize>>({});
 const canvasSize = ref({ width: 0, height: 0 });
 const viewport = useViewport(props.initialViewport ?? undefined);
+const nodeMeasurements = useCanvasNodeMeasurements({
+  document: () => props.document,
+  viewportScale: () => viewport.viewport.scale,
+});
+const {
+  measuredAnchorOffsets,
+  measuredNodeSizes,
+  nodeElementMap,
+  registerNodeRef,
+  scheduleAnchorMeasurement,
+  teardownNodeMeasurements,
+} = nodeMeasurements;
 const selection = useNodeSelectionFocus({
   externalSelectedNodeId: toRef(props, "selectedNodeId"),
   externalFocusRequest: toRef(props, "focusRequest"),
@@ -662,24 +626,57 @@ const autoSnappedTargetAnchor = ref<ProjectedCanvasAnchor | null>(null);
 const activeConnectionHoverNodeId = ref<string | null>(null);
 const selectedEdgeId = ref<string | null>(null);
 const edgeVisibilityMode = ref<EdgeVisibilityMode>("smart");
-const activeFlowEdgeDeleteConfirm = ref<FlowEdgeDeleteConfirmTarget | null>(null);
-const flowEdgeDeleteConfirmTimeoutRef = ref<number | null>(null);
-const activeDataEdgeStateConfirm = ref<DataEdgeStateConfirmTarget | null>(null);
-const dataEdgeStateConfirmTimeoutRef = ref<number | null>(null);
-const activeDataEdgeStateEditor = ref<DataEdgeStateEditorTarget | null>(null);
-const lastOpenedStateEditorRequestId = ref<string | null>(null);
-const dataEdgeStateDraft = ref<StateFieldDraft | null>(null);
-const dataEdgeStateError = ref<string | null>(null);
 const NODE_HOVER_RELEASE_DELAY_MS = 2000;
 const hoveredNodeId = ref<string | null>(null);
 const hoveredNodeReleaseTimeoutRef = ref<number | null>(null);
 const hoveredPointAnchorNodeId = ref<string | null>(null);
 const hoveredFlowHandleNodeId = ref<string | null>(null);
-const pendingAnchorMeasurementNodeIds = new Set<string>();
-let scheduledAnchorMeasurementFrame: number | null = null;
 let scheduledDragFrame: number | null = null;
 let pendingDragFrameCallback: (() => void) | null = null;
 let canvasResizeObserver: ResizeObserver | null = null;
+
+const edgeInteractions = useCanvasEdgeInteractions({
+  stateSchema: () => props.document.state_schema,
+  stateEditorRequest: () => props.stateEditorRequest,
+  isLocked: isGraphEditingLocked,
+  guardLockedInteraction: guardLockedCanvasInteraction,
+  getSelectedEdgeId: () => selectedEdgeId.value,
+  setSelectedEdgeId: (edgeId) => {
+    selectedEdgeId.value = edgeId;
+  },
+  canDisconnectFlow: (sourceNodeId, targetNodeId) =>
+    canDisconnectSequenceEdgeForDataConnection(props.document, sourceNodeId, targetNodeId),
+  emitRemoveFlow: (payload) => emit("remove-flow", payload),
+  emitRemoveRoute: (payload) => emit("remove-route", payload),
+  emitDisconnectDataEdge: (payload) => emit("disconnect-data-edge", payload),
+  emitUpdateState: (payload) => emit("update-state", payload),
+});
+const {
+  activeFlowEdgeDeleteConfirm,
+  activeDataEdgeStateConfirm,
+  activeDataEdgeStateEditor,
+  dataEdgeStateDraft,
+  dataEdgeStateError,
+  flowEdgeDeleteConfirmStyle,
+  dataEdgeStateConfirmStyle,
+  dataEdgeStateEditorStyle,
+  dataEdgeStateColorOptions,
+  clearFlowEdgeDeleteConfirmState,
+  clearDataEdgeStateInteraction,
+  confirmFlowEdgeDelete,
+  openDataEdgeStateEditor,
+  confirmCreatedDataEdgeStateEditor,
+  isCreatedDataEdgeStateEditorOpen,
+  shouldOfferDataEdgeFlowDisconnect,
+  disconnectActiveDataEdgeStateReference,
+  disconnectActiveDataEdgeFlow,
+  handleDataEdgeStateEditorNameInput,
+  handleDataEdgeStateEditorDescriptionInput,
+  handleDataEdgeStateEditorColorInput,
+  handleDataEdgeStateEditorTypeValue,
+  isFlowEdgeDeleteConfirmOpen,
+  isDataEdgeStateInteractionOpen,
+} = edgeInteractions;
 
 const nodeEntries = computed(() => Object.entries(props.document.nodes));
 const minimapNodes = computed(() =>
@@ -853,10 +850,6 @@ const zoomPercentLabel = computed(() => buildZoomPercentLabel(viewport.viewport.
 const stateTypeOptions = STATE_FIELD_TYPE_OPTIONS;
 const nodeStyle = buildNodeTransformStyle;
 const nodeCardSizeStyle = buildNodeCardSizeStyle;
-const flowEdgeDeleteConfirmStyle = computed(() => buildFlowEdgeDeleteConfirmStyle(activeFlowEdgeDeleteConfirm.value));
-const dataEdgeStateConfirmStyle = computed(() => buildFloatingCanvasPointStyle(activeDataEdgeStateConfirm.value));
-const dataEdgeStateEditorStyle = computed(() => buildFloatingCanvasPointStyle(activeDataEdgeStateEditor.value));
-const dataEdgeStateColorOptions = computed(() => resolveStateColorOptions(dataEdgeStateDraft.value?.definition.color ?? ""));
 
 watch(
   () => ({
@@ -869,17 +862,6 @@ watch(
   },
   { immediate: true },
 );
-
-function isFlowEdgeDeleteConfirmOpen(edgeId: string) {
-  return isFlowEdgeDeleteConfirmActive(activeFlowEdgeDeleteConfirm.value, edgeId);
-}
-
-function isDataEdgeStateInteractionOpen(edge: Pick<ProjectedCanvasEdge, "kind" | "source" | "target" | "state">) {
-  return resolveDataEdgeStateInteractionOpen(edge, {
-    confirm: activeDataEdgeStateConfirm.value,
-    editor: activeDataEdgeStateEditor.value,
-  });
-}
 
 function isProjectedEdgeVisible(edge: ProjectedCanvasEdge) {
   return visibleProjectedEdgeIds.value.has(edge.id);
@@ -912,17 +894,7 @@ watch(projectedEdges, (edges) => {
     }
   }
 
-  if (activeFlowEdgeDeleteConfirm.value && !edges.some((edge) => edge.id === activeFlowEdgeDeleteConfirm.value?.id)) {
-    clearFlowEdgeDeleteConfirmState();
-  }
-
-  if (activeDataEdgeStateConfirm.value && !edges.some((edge) => isActiveDataEdge(edge, activeDataEdgeStateConfirm.value))) {
-    clearDataEdgeStateConfirmState();
-  }
-
-  if (activeDataEdgeStateEditor.value && !edges.some((edge) => isActiveDataEdge(edge, activeDataEdgeStateEditor.value))) {
-    closeDataEdgeStateEditor();
-  }
+  edgeInteractions.clearMissingProjectedEdges(edges);
 });
 
 watch(
@@ -944,20 +916,6 @@ watch([pendingAgentInputSourceByNodeId, pendingStateInputSourceTargetByNodeId], 
   });
 });
 
-watch(
-  () => props.stateEditorRequest,
-  (request) => {
-    if (!request || lastOpenedStateEditorRequestId.value === request.requestId) {
-      return;
-    }
-    lastOpenedStateEditorRequestId.value = request.requestId;
-    void nextTick().then(() => {
-      openDataEdgeStateEditorFromRequest(request);
-    });
-  },
-  { immediate: true },
-);
-
 onMounted(() => {
   updateCanvasSize();
   attachCanvasResizeObserver();
@@ -965,20 +923,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  for (const observer of nodeResizeObserverMap.values()) {
-    observer.disconnect();
-  }
-  nodeResizeObserverMap.clear();
-
-  for (const observer of nodeMutationObserverMap.values()) {
-    observer.disconnect();
-  }
-  nodeMutationObserverMap.clear();
-
-  if (scheduledAnchorMeasurementFrame !== null && typeof window !== "undefined") {
-    window.cancelAnimationFrame(scheduledAnchorMeasurementFrame);
-    scheduledAnchorMeasurementFrame = null;
-  }
+  teardownNodeMeasurements();
   cancelScheduledDragFrame();
 
   canvasResizeObserver?.disconnect();
@@ -1016,53 +961,6 @@ function attachCanvasResizeObserver() {
   canvasResizeObserver.observe(canvasRef.value);
 }
 
-function clearFlowEdgeDeleteConfirmTimeout() {
-  if (flowEdgeDeleteConfirmTimeoutRef.value !== null) {
-    window.clearTimeout(flowEdgeDeleteConfirmTimeoutRef.value);
-    flowEdgeDeleteConfirmTimeoutRef.value = null;
-  }
-}
-
-function clearFlowEdgeDeleteConfirmState() {
-  clearFlowEdgeDeleteConfirmTimeout();
-  const confirmEdgeId = activeFlowEdgeDeleteConfirm.value?.id ?? null;
-  activeFlowEdgeDeleteConfirm.value = null;
-  if (confirmEdgeId && selectedEdgeId.value === confirmEdgeId) {
-    selectedEdgeId.value = null;
-  }
-}
-
-function clearDataEdgeStateConfirmTimeout() {
-  if (dataEdgeStateConfirmTimeoutRef.value !== null) {
-    window.clearTimeout(dataEdgeStateConfirmTimeoutRef.value);
-    dataEdgeStateConfirmTimeoutRef.value = null;
-  }
-}
-
-function clearDataEdgeStateConfirmState() {
-  clearDataEdgeStateConfirmTimeout();
-  const confirmEdgeId = activeDataEdgeStateConfirm.value?.id ?? null;
-  activeDataEdgeStateConfirm.value = null;
-  if (confirmEdgeId && activeDataEdgeStateEditor.value?.id !== confirmEdgeId && selectedEdgeId.value === confirmEdgeId) {
-    selectedEdgeId.value = null;
-  }
-}
-
-function closeDataEdgeStateEditor() {
-  const editorEdgeId = activeDataEdgeStateEditor.value?.id ?? null;
-  activeDataEdgeStateEditor.value = null;
-  dataEdgeStateDraft.value = null;
-  dataEdgeStateError.value = null;
-  if (editorEdgeId && selectedEdgeId.value === editorEdgeId) {
-    selectedEdgeId.value = null;
-  }
-}
-
-function clearDataEdgeStateInteraction() {
-  clearDataEdgeStateConfirmState();
-  closeDataEdgeStateEditor();
-}
-
 function clearCanvasTransientState() {
   clearFlowEdgeDeleteConfirmState();
   clearDataEdgeStateInteraction();
@@ -1072,211 +970,11 @@ function clearCanvasTransientState() {
 }
 
 function startFlowEdgeDeleteConfirm(edge: ProjectedCanvasEdge, event: PointerEvent) {
-  clearFlowEdgeDeleteConfirmTimeout();
-  const point = resolveCanvasPoint(event);
-  const nextConfirm = buildFlowEdgeDeleteConfirmFromEdge(edge, point);
-  if (!nextConfirm) {
-    return;
-  }
-
-  activeFlowEdgeDeleteConfirm.value = nextConfirm;
-  selectedEdgeId.value = edge.id;
-  flowEdgeDeleteConfirmTimeoutRef.value = window.setTimeout(() => {
-    flowEdgeDeleteConfirmTimeoutRef.value = null;
-    if (activeFlowEdgeDeleteConfirm.value?.id === edge.id) {
-      clearFlowEdgeDeleteConfirmState();
-    }
-  }, 2000);
-}
-
-function confirmFlowEdgeDelete() {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  if (!activeFlowEdgeDeleteConfirm.value) {
-    return;
-  }
-
-  const action = resolveFlowEdgeDeleteAction(activeFlowEdgeDeleteConfirm.value);
-  if (!action) {
-    return;
-  }
-
-  if (action.kind === "route") {
-    emit("remove-route", {
-      sourceNodeId: action.sourceNodeId,
-      branchKey: action.branchKey,
-    });
-    clearFlowEdgeDeleteConfirmState();
-    return;
-  }
-
-  emit("remove-flow", {
-    sourceNodeId: action.sourceNodeId,
-    targetNodeId: action.targetNodeId,
-  });
-  clearFlowEdgeDeleteConfirmState();
+  edgeInteractions.startFlowEdgeDeleteConfirm(edge, resolveCanvasPoint(event));
 }
 
 function startDataEdgeStateConfirm(edge: ProjectedCanvasEdge, event: PointerEvent) {
-  const point = resolveCanvasPoint(event);
-  const nextConfirm = buildDataEdgeStateConfirmFromEdge(edge, point);
-  if (!nextConfirm) {
-    return;
-  }
-
-  clearDataEdgeStateConfirmTimeout();
-  activeDataEdgeStateConfirm.value = nextConfirm;
-  selectedEdgeId.value = edge.id;
-  dataEdgeStateConfirmTimeoutRef.value = window.setTimeout(() => {
-    dataEdgeStateConfirmTimeoutRef.value = null;
-    if (activeDataEdgeStateConfirm.value?.id === edge.id) {
-      clearDataEdgeStateConfirmState();
-    }
-  }, 2000);
-}
-
-function openDataEdgeStateEditor() {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  if (!activeDataEdgeStateConfirm.value) {
-    return;
-  }
-
-  const nextDraft = buildStateEditorDraftFromSchema(activeDataEdgeStateConfirm.value.stateKey, props.document.state_schema);
-  if (!nextDraft) {
-    clearDataEdgeStateConfirmState();
-    return;
-  }
-
-  activeDataEdgeStateEditor.value = buildDataEdgeStateEditorFromConfirm(activeDataEdgeStateConfirm.value);
-  dataEdgeStateDraft.value = nextDraft;
-  dataEdgeStateError.value = null;
-  clearDataEdgeStateConfirmState();
-}
-
-function openDataEdgeStateEditorFromRequest(request: NonNullable<typeof props.stateEditorRequest>) {
-  if (isGraphEditingLocked()) {
-    return;
-  }
-
-  const nextDraft = buildStateEditorDraftFromSchema(request.stateKey, props.document.state_schema);
-  if (!nextDraft) {
-    return;
-  }
-
-  const nextEditor = buildDataEdgeStateEditorFromRequest(request);
-  clearFlowEdgeDeleteConfirmState();
-  clearDataEdgeStateConfirmState();
-  selectedEdgeId.value = nextEditor.id;
-  activeDataEdgeStateEditor.value = nextEditor;
-  dataEdgeStateDraft.value = nextDraft;
-  dataEdgeStateError.value = null;
-}
-
-function confirmCreatedDataEdgeStateEditor() {
-  closeDataEdgeStateEditor();
-}
-
-function isCreatedDataEdgeStateEditorOpen() {
-  return activeDataEdgeStateEditor.value?.mode === "create";
-}
-
-function shouldOfferDataEdgeFlowDisconnect() {
-  const editor = activeDataEdgeStateEditor.value;
-  return resolveShouldOfferDataEdgeFlowDisconnect({
-    editor,
-    canDisconnectFlow: (sourceNodeId, targetNodeId) => canDisconnectSequenceEdgeForDataConnection(props.document, sourceNodeId, targetNodeId),
-  });
-}
-
-function disconnectActiveDataEdgeStateReference() {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  const payload = buildDataEdgeStateDisconnectPayload(activeDataEdgeStateEditor.value, "state");
-  if (!payload) {
-    return;
-  }
-
-  emit("disconnect-data-edge", payload);
-  closeDataEdgeStateEditor();
-}
-
-function disconnectActiveDataEdgeFlow() {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  const payload = buildDataEdgeStateDisconnectPayload(activeDataEdgeStateEditor.value, "flow");
-  if (!payload) {
-    return;
-  }
-
-  emit("disconnect-data-edge", payload);
-  closeDataEdgeStateEditor();
-}
-
-function syncDataEdgeStateDraft(nextDraft: StateFieldDraft) {
-  const currentEditor = activeDataEdgeStateEditor.value;
-  if (!currentEditor || !dataEdgeStateDraft.value) {
-    return;
-  }
-
-  dataEdgeStateDraft.value = nextDraft;
-
-  const currentStateKey = currentEditor.stateKey;
-  if (!currentStateKey) {
-    dataEdgeStateError.value = "State key cannot be empty.";
-    return;
-  }
-
-  dataEdgeStateError.value = null;
-
-  emit("update-state", {
-    stateKey: currentStateKey,
-    patch: resolveStateEditorUpdatePatch(nextDraft, currentStateKey),
-  });
-}
-
-function handleDataEdgeStateEditorNameInput(value: string | number) {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  if (typeof value !== "string" || !dataEdgeStateDraft.value) {
-    return;
-  }
-  syncDataEdgeStateDraft(updateStateEditorDraftName(dataEdgeStateDraft.value, value));
-}
-
-function handleDataEdgeStateEditorDescriptionInput(value: string | number) {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  if (typeof value !== "string" || !dataEdgeStateDraft.value) {
-    return;
-  }
-  syncDataEdgeStateDraft(updateStateEditorDraftDescription(dataEdgeStateDraft.value, value));
-}
-
-function handleDataEdgeStateEditorColorInput(value: string | number) {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  if (typeof value !== "string" || !dataEdgeStateDraft.value) {
-    return;
-  }
-  syncDataEdgeStateDraft(updateStateEditorDraftColor(dataEdgeStateDraft.value, value));
-}
-
-function handleDataEdgeStateEditorTypeValue(value: string | number | boolean | undefined) {
-  if (guardLockedCanvasInteraction()) {
-    return;
-  }
-  if (typeof value !== "string" || !dataEdgeStateDraft.value) {
-    return;
-  }
-  syncDataEdgeStateDraft(updateStateEditorDraftType(dataEdgeStateDraft.value, value));
+  edgeInteractions.startDataEdgeStateConfirm(edge, resolveCanvasPoint(event));
 }
 
 function handleMinimapCenterView(point: { worldX: number; worldY: number }) {
@@ -1313,94 +1011,6 @@ const flowHotspotConnectStyle = (anchor: ProjectedCanvasAnchor) =>
 const anchorConnectStyle = (anchor: ProjectedCanvasAnchor) =>
   buildPointAnchorConnectStyle(anchor, canvasInteractionStyleContext.value);
 
-function registerNodeRef(nodeId: string, element: unknown) {
-  if (element instanceof HTMLElement) {
-    nodeElementMap.set(nodeId, element);
-    attachNodeMeasurementObservers(nodeId, element);
-    scheduleAnchorMeasurement(nodeId);
-    return;
-  }
-  nodeElementMap.delete(nodeId);
-  detachNodeMeasurementObservers(nodeId);
-  clearNodeAnchorOffsets(nodeId);
-}
-
-function attachNodeMeasurementObservers(nodeId: string, element: HTMLElement) {
-  detachNodeMeasurementObservers(nodeId);
-
-  if (typeof ResizeObserver !== "undefined") {
-    const resizeObserver = new ResizeObserver(() => {
-      scheduleAnchorMeasurement(nodeId);
-    });
-    resizeObserver.observe(element);
-    nodeResizeObserverMap.set(nodeId, resizeObserver);
-  }
-
-  if (typeof MutationObserver !== "undefined") {
-    const mutationObserver = new MutationObserver(() => {
-      scheduleAnchorMeasurement(nodeId);
-    });
-    mutationObserver.observe(element, {
-      subtree: true,
-      childList: true,
-      characterData: true,
-    });
-    nodeMutationObserverMap.set(nodeId, mutationObserver);
-  }
-}
-
-function detachNodeMeasurementObservers(nodeId: string) {
-  nodeResizeObserverMap.get(nodeId)?.disconnect();
-  nodeResizeObserverMap.delete(nodeId);
-  nodeMutationObserverMap.get(nodeId)?.disconnect();
-  nodeMutationObserverMap.delete(nodeId);
-}
-
-function clearNodeAnchorOffsets(nodeId: string) {
-  const nextAnchorOffsets = { ...measuredAnchorOffsets.value };
-  let didChange = false;
-
-  for (const anchorId of Object.keys(nextAnchorOffsets)) {
-    if (!anchorId.startsWith(`${nodeId}:`)) {
-      continue;
-    }
-    delete nextAnchorOffsets[anchorId];
-    didChange = true;
-  }
-
-  if (didChange) {
-    measuredAnchorOffsets.value = nextAnchorOffsets;
-  }
-
-  if (measuredNodeSizes.value[nodeId]) {
-    const nextNodeSizes = { ...measuredNodeSizes.value };
-    delete nextNodeSizes[nodeId];
-    measuredNodeSizes.value = nextNodeSizes;
-  }
-}
-
-function scheduleAnchorMeasurement(nodeId?: string) {
-  if (nodeId) {
-    pendingAnchorMeasurementNodeIds.add(nodeId);
-  }
-
-  if (scheduledAnchorMeasurementFrame !== null) {
-    return;
-  }
-
-  if (typeof window === "undefined") {
-    measureAnchorOffsets(pendingAnchorMeasurementNodeIds.size > 0 ? Array.from(pendingAnchorMeasurementNodeIds) : undefined);
-    pendingAnchorMeasurementNodeIds.clear();
-    return;
-  }
-
-  scheduledAnchorMeasurementFrame = window.requestAnimationFrame(() => {
-    scheduledAnchorMeasurementFrame = null;
-    measureAnchorOffsets(pendingAnchorMeasurementNodeIds.size > 0 ? Array.from(pendingAnchorMeasurementNodeIds) : undefined);
-    pendingAnchorMeasurementNodeIds.clear();
-  });
-}
-
 function scheduleDragFrame(callback: () => void) {
   pendingDragFrameCallback = callback;
 
@@ -1434,112 +1044,6 @@ function cancelScheduledDragFrame() {
     scheduledDragFrame = null;
   }
   pendingDragFrameCallback = null;
-}
-
-function measureAnchorOffsets(nodeIds?: string[]) {
-  const nextAnchorOffsets = { ...measuredAnchorOffsets.value };
-  const nextNodeSizes = { ...measuredNodeSizes.value };
-  const measuredNodeIds = new Set(nodeIds ?? nodeElementMap.keys());
-  let didChange = false;
-  let didNodeSizeChange = false;
-
-  for (const nodeId of measuredNodeIds) {
-    for (const anchorId of Object.keys(nextAnchorOffsets)) {
-      if (!anchorId.startsWith(`${nodeId}:`)) {
-        continue;
-      }
-      delete nextAnchorOffsets[anchorId];
-      didChange = true;
-    }
-
-    const nodeElement = nodeElementMap.get(nodeId);
-    const node = props.document.nodes[nodeId];
-    if (!nodeElement) {
-      continue;
-    }
-
-    const nodeRect = nodeElement.getBoundingClientRect();
-    const scale = viewport.viewport.scale || 1;
-    const measuredNodeSize = {
-      width: Math.round(nodeElement.offsetWidth),
-      height: Math.round(nodeElement.offsetHeight),
-    };
-    const currentNodeSize = nextNodeSizes[nodeId];
-    if (
-      !currentNodeSize ||
-      currentNodeSize.width !== measuredNodeSize.width ||
-      currentNodeSize.height !== measuredNodeSize.height
-    ) {
-      nextNodeSizes[nodeId] = measuredNodeSize;
-      didNodeSizeChange = true;
-    }
-
-    for (const slotElement of nodeElement.querySelectorAll("[data-anchor-slot-id]")) {
-      if (!(slotElement instanceof HTMLElement)) {
-        continue;
-      }
-
-      const anchorId = slotElement.dataset.anchorSlotId;
-      if (!anchorId) {
-        continue;
-      }
-
-      const slotRect = slotElement.getBoundingClientRect();
-      if (slotRect.width <= 0 || slotRect.height <= 0) {
-        continue;
-      }
-
-      const measuredOffset = {
-        offsetX: roundMeasuredOffset((slotRect.left + slotRect.width / 2 - nodeRect.left) / scale),
-        offsetY: roundMeasuredOffset((slotRect.top + slotRect.height / 2 - nodeRect.top) / scale),
-      };
-      const currentOffset = nextAnchorOffsets[anchorId];
-      if (
-        !currentOffset ||
-        currentOffset.offsetX !== measuredOffset.offsetX ||
-        currentOffset.offsetY !== measuredOffset.offsetY
-      ) {
-        didChange = true;
-      }
-      nextAnchorOffsets[anchorId] = measuredOffset;
-    }
-
-    if (node) {
-      const anchorModel = buildAnchorModel(nodeId, node);
-      const flowAnchorsToMeasure = [anchorModel.flowIn, anchorModel.flowOut].filter(
-        (anchor): anchor is NonNullable<typeof anchorModel.flowIn> => anchor !== null,
-      );
-
-      for (const flowAnchor of flowAnchorsToMeasure) {
-        const measuredOffset = resolveFlowAnchorOffset({
-          side: flowAnchor.side,
-          width: nodeElement.offsetWidth,
-          height: nodeElement.offsetHeight,
-        });
-        const anchorId = `${nodeId}:${flowAnchor.id}`;
-        const currentOffset = nextAnchorOffsets[anchorId];
-        if (
-          !currentOffset ||
-          currentOffset.offsetX !== measuredOffset.offsetX ||
-          currentOffset.offsetY !== measuredOffset.offsetY
-        ) {
-          didChange = true;
-        }
-        nextAnchorOffsets[anchorId] = measuredOffset;
-      }
-    }
-  }
-
-  if (didChange || Object.keys(nextAnchorOffsets).length !== Object.keys(measuredAnchorOffsets.value).length) {
-    measuredAnchorOffsets.value = nextAnchorOffsets;
-  }
-  if (didNodeSizeChange || Object.keys(nextNodeSizes).length !== Object.keys(measuredNodeSizes.value).length) {
-    measuredNodeSizes.value = nextNodeSizes;
-  }
-}
-
-function roundMeasuredOffset(value: number) {
-  return Math.round(value * 1000) / 1000;
 }
 
 function clearPinchZoom() {
@@ -1876,7 +1380,14 @@ function resolveAutoSnappedStateInputSourceAnchor(event: PointerEvent) {
     return null;
   }
 
-  const directStateInputSourceAnchor = resolveEligibleConcreteStateInputSourceAnchorAtPointer(nodeId, event);
+  const point = resolveCanvasPoint(event);
+  const directStateInputSourceAnchor = resolveCanvasConcreteStateInputSourceAnchorAtPointerY({
+    connection: activeConnection.value,
+    nodeId,
+    projectedAnchors: projectedAnchors.value,
+    pointerY: point.y,
+    canComplete: canCompleteCanvasConnection,
+  });
   if (directStateInputSourceAnchor) {
     return directStateInputSourceAnchor;
   }
@@ -1902,84 +1413,14 @@ function resolveAutoSnappedStateTargetAnchor(event: PointerEvent) {
 }
 
 function resolveEligibleStateInputSourceAnchorForNodeBody(nodeId: string) {
-  if (activeConnection.value?.sourceKind !== "state-in" || !activeConnection.value.sourceStateKey) {
-    return null;
-  }
-
-  const matchingOutputAnchor = projectedAnchors.value.find(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-out" &&
-      anchor.stateKey === activeConnection.value?.sourceStateKey,
-  );
-  if (matchingOutputAnchor && canCompleteCanvasConnection(matchingOutputAnchor)) {
-    return matchingOutputAnchor;
-  }
-
-  const createOutputAnchor = projectedAnchors.value.find(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-out" &&
-      anchor.stateKey === VIRTUAL_ANY_OUTPUT_STATE_KEY,
-  );
-  if (createOutputAnchor && canCompleteCanvasConnection(createOutputAnchor)) {
-    return createOutputAnchor;
-  }
-
-  const node = props.document.nodes[nodeId];
-  if (!node) {
-    return null;
-  }
-
-  const fallbackOutputAnchor = {
-    id: `${nodeId}:state-out:${VIRTUAL_ANY_OUTPUT_STATE_KEY}:reverse`,
+  return resolveCanvasEligibleStateInputSourceAnchorForNodeBody({
+    connection: activeConnection.value,
     nodeId,
-    kind: "state-out" as const,
-    x: node.ui.position.x + (measuredNodeSizes.value[nodeId]?.width ?? resolveFallbackNodeSize(node).width),
-    y: node.ui.position.y + 88,
-    side: "right" as const,
-    color: VIRTUAL_ANY_OUTPUT_COLOR,
-    stateKey: VIRTUAL_ANY_OUTPUT_STATE_KEY,
-  };
-  return canCompleteCanvasConnection(fallbackOutputAnchor) ? fallbackOutputAnchor : null;
-}
-
-function resolveEligibleConcreteStateInputSourceAnchorAtPointer(nodeId: string, event: PointerEvent) {
-  const concreteStateOutputAnchors = projectedAnchors.value
-    .filter(
-      (anchor) =>
-        anchor.nodeId === nodeId &&
-        anchor.kind === "state-out" &&
-        isConcreteStateConnectionKey(anchor.stateKey) &&
-        canCompleteCanvasConnection(anchor),
-    )
-    .sort((left, right) => left.y - right.y);
-  if (concreteStateOutputAnchors.length === 0) {
-    return null;
-  }
-
-  const point = resolveCanvasPoint(event);
-  const createOutputAnchor = projectedAnchors.value.find(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-out" &&
-      anchor.stateKey === VIRTUAL_ANY_OUTPUT_STATE_KEY &&
-      canCompleteCanvasConnection(anchor),
-  );
-  for (let index = 0; index < concreteStateOutputAnchors.length; index += 1) {
-    const anchor = concreteStateOutputAnchors[index];
-    const previousAnchor = concreteStateOutputAnchors[index - 1];
-    const nextAnchor = concreteStateOutputAnchors[index + 1];
-    const previousY = previousAnchor?.y ?? anchor.y - STATE_TARGET_ROW_FALLBACK_GAP;
-    const nextY = nextAnchor?.y ?? createOutputAnchor?.y ?? anchor.y + STATE_TARGET_ROW_FALLBACK_GAP;
-    const upperBoundary = (previousY + anchor.y) / 2;
-    const lowerBoundary = (anchor.y + nextY) / 2;
-    if (point.y >= upperBoundary && point.y < lowerBoundary) {
-      return anchor;
-    }
-  }
-
-  return null;
+    node: props.document.nodes[nodeId],
+    projectedAnchors: projectedAnchors.value,
+    measuredNodeSize: measuredNodeSizes.value[nodeId],
+    canComplete: canCompleteCanvasConnection,
+  });
 }
 
 function isPointerWithinNodeElement(nodeElement: HTMLElement, event: PointerEvent) {
@@ -2009,135 +1450,51 @@ function isPointerWithinFlowHotspot(anchor: ProjectedCanvasAnchor, event: Pointe
 }
 
 function resolveEligibleTargetAnchorForNodeBody(nodeId: string) {
-  if (activeConnection.value?.sourceKind === "state-in") {
-    return resolveEligibleStateInputSourceAnchorForNodeBody(nodeId);
-  }
-
-  if (activeConnection.value?.sourceKind === "state-out") {
-    return resolveEligibleStateTargetAnchorForNodeBody(nodeId);
-  }
-
-  const candidateAnchor = projectedAnchors.value.find((anchor) => anchor.nodeId === nodeId && anchor.kind === "flow-in");
-  if (!candidateAnchor || !eligibleTargetAnchorIds.value.has(candidateAnchor.id)) {
-    return null;
-  }
-  return candidateAnchor;
+  return resolveCanvasEligibleTargetAnchorForNodeBody({
+    connection: activeConnection.value,
+    nodeId,
+    node: props.document.nodes[nodeId],
+    projectedAnchors: projectedAnchors.value,
+    baseProjectedAnchors: baseProjectedAnchors.value,
+    measuredAnchorOffsets: measuredAnchorOffsets.value,
+    measuredNodeSize: measuredNodeSizes.value[nodeId],
+    eligibleTargetAnchorIds: eligibleTargetAnchorIds.value,
+    pendingAgentInputSource: pendingAgentInputSourceByNodeId.value[nodeId] ?? null,
+    canComplete: canCompleteCanvasConnection,
+  });
 }
 
 function resolveEligibleConcreteStateTargetAnchorAtPointer(nodeId: string, event: PointerEvent) {
-  const concreteStateInputAnchors = projectedAnchors.value
-    .filter(
-      (anchor) =>
-        anchor.nodeId === nodeId &&
-        anchor.kind === "state-in" &&
-        anchor.stateKey !== CREATE_AGENT_INPUT_STATE_KEY &&
-        anchor.stateKey !== VIRTUAL_ANY_INPUT_STATE_KEY &&
-        isStateTargetAnchorAllowedForActiveConnection(anchor) &&
-        eligibleTargetAnchorIds.value.has(anchor.id),
-    )
-    .sort((left, right) => left.y - right.y);
-  if (concreteStateInputAnchors.length === 0) {
-    return null;
-  }
-
   const point = resolveCanvasPoint(event);
-  const createInputAnchor = resolveAgentCreateInputTargetAnchor(nodeId);
-  for (let index = 0; index < concreteStateInputAnchors.length; index += 1) {
-    const anchor = concreteStateInputAnchors[index];
-    const previousAnchor = concreteStateInputAnchors[index - 1];
-    const nextAnchor = concreteStateInputAnchors[index + 1];
-    const previousY = previousAnchor?.y ?? anchor.y - STATE_TARGET_ROW_FALLBACK_GAP;
-    const nextY = nextAnchor?.y ?? createInputAnchor?.y ?? anchor.y + STATE_TARGET_ROW_FALLBACK_GAP;
-    const upperBoundary = (previousY + anchor.y) / 2;
-    const lowerBoundary = (anchor.y + nextY) / 2;
-    if (point.y >= upperBoundary && point.y < lowerBoundary) {
-      return anchor;
-    }
-  }
-
-  return null;
+  return resolveCanvasConcreteStateTargetAnchorAtPointerY({
+    connection: activeConnection.value,
+    nodeId,
+    node: props.document.nodes[nodeId],
+    projectedAnchors: projectedAnchors.value,
+    baseProjectedAnchors: baseProjectedAnchors.value,
+    measuredAnchorOffsets: measuredAnchorOffsets.value,
+    pendingAgentInputSource: pendingAgentInputSourceByNodeId.value[nodeId] ?? null,
+    eligibleTargetAnchorIds: eligibleTargetAnchorIds.value,
+    pointerY: point.y,
+  });
 }
 
 function resolveEligibleStateTargetAnchorForNodeBody(nodeId: string) {
-  const createInputAnchor = resolveAgentCreateInputTargetAnchor(nodeId);
-  if (createInputAnchor && canCompleteCanvasConnection(createInputAnchor)) {
-    return createInputAnchor;
-  }
-
-  const candidateAnchor = projectedAnchors.value.find(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-in" &&
-      isStateTargetAnchorAllowedForActiveConnection(anchor),
-  );
-  if (!candidateAnchor || !eligibleTargetAnchorIds.value.has(candidateAnchor.id)) {
-    return null;
-  }
-  return candidateAnchor;
-}
-
-function resolveAgentCreateInputTargetAnchor(nodeId: string): ProjectedCanvasAnchor | null {
-  const existingCreateInputAnchor = projectedAnchors.value.find(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-in" &&
-      anchor.stateKey === CREATE_AGENT_INPUT_STATE_KEY,
-  );
-  if (existingCreateInputAnchor) {
-    return existingCreateInputAnchor;
-  }
-
-  const pendingSource = pendingAgentInputSourceByNodeId.value[nodeId];
-  const node = props.document.nodes[nodeId];
-  if (!pendingSource || !node || node.kind !== "agent") {
-    return null;
-  }
-
-  const fallbackInputAnchor = baseProjectedAnchors.value.find(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-in" &&
-      anchor.stateKey === VIRTUAL_ANY_INPUT_STATE_KEY,
-  );
-  const measuredCreateInputOffset = measuredAnchorOffsets.value[`${nodeId}:state-in:${CREATE_AGENT_INPUT_STATE_KEY}`];
-  const existingInputAnchors = baseProjectedAnchors.value.filter(
-    (anchor) =>
-      anchor.nodeId === nodeId &&
-      anchor.kind === "state-in" &&
-      anchor.stateKey !== VIRTUAL_ANY_INPUT_STATE_KEY,
-  );
-  const lastInputAnchor = existingInputAnchors.at(-1);
-
-  return {
-    id: `${nodeId}:state-in:${CREATE_AGENT_INPUT_STATE_KEY}`,
+  return resolveCanvasEligibleStateTargetAnchorForNodeBody({
+    connection: activeConnection.value,
     nodeId,
-    kind: "state-in" as const,
-    x: measuredCreateInputOffset
-      ? node.ui.position.x + measuredCreateInputOffset.offsetX
-      : (fallbackInputAnchor?.x ?? lastInputAnchor?.x ?? node.ui.position.x + 6),
-    y: measuredCreateInputOffset
-      ? node.ui.position.y + measuredCreateInputOffset.offsetY
-      : (fallbackInputAnchor?.y ?? (lastInputAnchor ? lastInputAnchor.y + 44 : node.ui.position.y + 145)),
-    side: "left" as const,
-    color: pendingSource.stateColor,
-    stateKey: CREATE_AGENT_INPUT_STATE_KEY,
-  };
+    node: props.document.nodes[nodeId],
+    projectedAnchors: projectedAnchors.value,
+    baseProjectedAnchors: baseProjectedAnchors.value,
+    measuredAnchorOffsets: measuredAnchorOffsets.value,
+    pendingAgentInputSource: pendingAgentInputSourceByNodeId.value[nodeId] ?? null,
+    eligibleTargetAnchorIds: eligibleTargetAnchorIds.value,
+    canComplete: canCompleteCanvasConnection,
+  });
 }
 
 function isStateTargetAnchorAllowedForActiveConnection(anchor: ProjectedCanvasAnchor) {
-  if (activeConnection.value?.sourceKind !== "state-out") {
-    return true;
-  }
-
-  if (activeConnection.value?.sourceStateKey === VIRTUAL_ANY_OUTPUT_STATE_KEY) {
-    return anchor.kind === "state-in" && typeof anchor.stateKey === "string";
-  }
-
-  return (
-    anchor.stateKey === CREATE_AGENT_INPUT_STATE_KEY ||
-    anchor.stateKey === VIRTUAL_ANY_INPUT_STATE_KEY ||
-    anchor.stateKey === activeConnection.value?.sourceStateKey
-  );
+  return isCanvasStateTargetAnchorAllowedForConnection(activeConnection.value, anchor);
 }
 
 function canCompleteCanvasConnection(anchor: ProjectedCanvasAnchor) {
@@ -2495,13 +1852,6 @@ function handleAnchorPointerDown(anchor: ProjectedCanvasAnchor) {
   pendingConnectionPoint.value = { x: anchor.x, y: anchor.y };
 }
 
-function resolveConnectionStateValueType(stateKey: string | undefined) {
-  if (!stateKey || stateKey === VIRTUAL_ANY_INPUT_STATE_KEY || stateKey === VIRTUAL_ANY_OUTPUT_STATE_KEY || stateKey === CREATE_AGENT_INPUT_STATE_KEY) {
-    return null;
-  }
-  return props.document.state_schema[stateKey]?.type ?? null;
-}
-
 function openCreationMenuFromPendingConnection(event: PointerEvent) {
   if (isGraphEditingLocked()) {
     return;
@@ -2511,44 +1861,18 @@ function openCreationMenuFromPendingConnection(event: PointerEvent) {
     return;
   }
   clearCanvasTransientState();
-  const isStateCreationSource = connection.sourceKind === "state-out";
-  const isStateInputCreationTarget = connection.sourceKind === "state-in";
-  const isFlowCreationSource = connection.sourceKind === "flow-out";
-  const isRouteCreationSource = connection.sourceKind === "route-out";
-  if (!isStateCreationSource && !isStateInputCreationTarget && !isFlowCreationSource && !isRouteCreationSource) {
-    return;
-  }
-
-  if (connection.sourceKind === "state-in") {
-    emit("open-node-creation-menu", {
-      position: resolveCanvasPoint(event),
-      targetNodeId: connection.sourceNodeId,
-      targetAnchorKind: connection.sourceKind,
-      ...(connection.sourceStateKey ? { targetStateKey: connection.sourceStateKey } : {}),
-      targetValueType: resolveConnectionStateValueType(connection.sourceStateKey),
-      clientX: event.clientX,
-      clientY: event.clientY,
-    });
-
-    pendingConnection.value = null;
-    pendingConnectionPoint.value = null;
-    autoSnappedTargetAnchor.value = null;
-    setActiveConnectionHoverNode(null);
-    selectedEdgeId.value = null;
-    return;
-  }
-
-  const sourceAnchorKind = connection.sourceKind as Extract<GraphConnectionAnchorKind, "flow-out" | "route-out" | "state-out">;
-  emit("open-node-creation-menu", {
+  const payload = buildCanvasNodeCreationMenuPayload({
+    connection,
     position: resolveCanvasPoint(event),
-    sourceNodeId: connection.sourceNodeId,
-    sourceAnchorKind,
-    ...(connection.branchKey ? { sourceBranchKey: connection.branchKey } : {}),
-    ...(connection.sourceStateKey ? { sourceStateKey: connection.sourceStateKey } : {}),
-    sourceValueType: resolveConnectionStateValueType(connection.sourceStateKey),
     clientX: event.clientX,
     clientY: event.clientY,
+    stateSchema: props.document.state_schema,
   });
+  if (!payload) {
+    return;
+  }
+
+  emit("open-node-creation-menu", payload);
 
   pendingConnection.value = null;
   pendingConnectionPoint.value = null;
@@ -2630,7 +1954,7 @@ function completePendingConnection(targetAnchor: ProjectedCanvasAnchor) {
       sourceNodeId: targetAnchor.nodeId,
       targetNodeId: connection.sourceNodeId,
       targetStateKey: connection.sourceStateKey,
-      targetValueType: resolveConnectionStateValueType(connection.sourceStateKey),
+      targetValueType: resolveCanvasConnectionStateValueType(connection.sourceStateKey, props.document.state_schema),
     });
   } else {
     emit("connect-flow", {
