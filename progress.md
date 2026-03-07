@@ -68,6 +68,216 @@
 | Timestamp | Error | Attempt | Resolution |
 |-----------|-------|---------|------------|
 
+## Session: 2026-04-29 Phase 30
+
+### Phase 1: NodeCard P1 Completion Gate
+- **Status:** completed
+- Actions taken:
+  - Re-read the formal roadmap, current task plan, findings, and progress log.
+  - Confirmed `NodeCard.vue` is down to 1,988 lines and its remaining logic is mostly state draft synchronization, validation, confirmation windows, lock guards, and graph/state mutation emits.
+  - Decided further NodeCard extraction is no longer the safest next slice without stronger controller coverage.
+  - Selected the next P2 Canvas slice: node drag/resize pure move projection.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `canvasNodeDragResizeModel.test.ts` before the production model existed.
+  - Updated `EditorCanvas.structure.test.ts` to require the new drag/resize model boundary.
+  - Ran the focused tests and verified the expected red failure: missing `canvasNodeDragResizeModel.ts`.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `canvasNodeDragResizeModel.ts` with pure drag/resize move helpers for activation threshold, viewport-scale projection, rounded node position, and resize result projection.
+  - Updated `EditorCanvas.vue` to consume `resolveNodeDragMove` and `resolveNodeResizeDragMove`.
+  - Kept DOM pointer capture, animation-frame scheduling, connection completion, panning, and graph mutation emits inside `EditorCanvas.vue`.
+  - Reduced `EditorCanvas.vue` from 3,363 lines to 3,332 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused drag/resize model and `EditorCanvas` structure tests.
+  - Ran focused Canvas interaction tests covering connection auto-snap, connection model, node measurements, edge interactions, node resize, and the new drag/resize model.
+  - Ran TypeScript unused-symbol verification from the `frontend` directory.
+  - Ran the full frontend source test suite and the Vite structure test.
+  - Ran the frontend production build; no Vite large chunk warning was emitted.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed `/editor/new` returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Captured a Chrome headless screenshot for `/editor/new` at 1440x1000 and confirmed it was nonblank by sampled color count.
+
+### Phase 5: Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated total roadmap progress at about 57%.
+  - Marked low-risk `NodeCard.vue` P1 extraction as about 98% complete and intentionally gated.
+  - Recalculated P2 `EditorCanvas.vue` cleanup at about 43%.
+  - Opened Phase 31 because total roadmap progress remains below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red focused test | `node --test frontend/src/editor/canvas/canvasNodeDragResizeModel.test.ts frontend/src/editor/canvas/EditorCanvas.structure.test.ts` before implementation | Fails because the drag/resize model does not exist | Failed with `ERR_MODULE_NOT_FOUND` and missing model file | Passed |
+| Focused drag/resize structure | Same command after implementation | New model boundary passes | 63 passed | Passed |
+| Focused Canvas related suite | `node --test` over drag/resize, nodeResize, EditorCanvas structure, connection, measurements, and edge interactions | Related Canvas behavior/model tests pass | 81 passed | Passed |
+| TypeScript unused-symbol check | `cd frontend && ./node_modules/.bin/vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` | No diagnostics | Exit 0, no diagnostics | Passed |
+| Full frontend source tests | `node --test $(rg --files frontend/src | rg '\.test\.ts$')` | All frontend source tests pass | 776 passed | Passed |
+| Vite structure tests | `node --test frontend/vite.config.structure.test.ts` | Vite structure tests pass | 3 passed | Passed |
+| Frontend production build | `npm run build` in `frontend` | Build succeeds without chunk-warning regression | Exit 0, no large chunk warning | Passed |
+| Dev restart and health | `npm run dev`, then HTTP checks | Services start and respond | Frontend `/editor/new` 200, backend `/health` 200 ok | Passed |
+| Browser visual smoke | Chrome headless screenshot of `/editor/new` | Page renders nonblank | 1440x1000 PNG, sampledColors=318 | Passed |
+
+## 5-Question Reboot Check
+| Question | Answer |
+|----------|--------|
+| Where am I? | Phase 30 implementation, verification, dev restart, commit, and push are complete. |
+| Where am I going? | Phase 31 is open for the next safe P2 Canvas slice. |
+| What's the goal? | Continue reducing high-concentration editor code while preserving auto-snap, node creation context, drag/resize behavior, and runtime UI. |
+| What have I learned? | Node drag/resize move math is pure enough to test outside `EditorCanvas.vue`; pointer capture and graph emits should remain component-owned for now. |
+| What have I done? | Closed the NodeCard P1 gate, extracted `canvasNodeDragResizeModel.ts`, verified full frontend behavior, built without chunk warnings, and restarted the app. |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-29 | `vue-tsc` rejected `emit` calls scheduled in closures because `update` could still be nullable across the callback boundary | Ran TypeScript unused-symbol verification after model extraction | Captured `resizeUpdate` and `dragUpdate` as narrowed constants before scheduling the animation-frame callback. |
+
+## Session: 2026-04-29 Phase 31
+
+### Phase 1: Canvas Drag/Resize Controller Boundary
+- **Status:** completed
+- Actions taken:
+  - Re-read the formal roadmap, task plan, findings, and Phase 30 progress.
+  - Selected the next safe P2 Canvas slice: node drag/resize refs, pointer capture release, scheduled drag/resize emits, and residual click suppression.
+  - Kept selection, active connection cleanup, auto-snap, connection completion, panning, DOM measurement, and graph mutation emits inside `EditorCanvas.vue`.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `useCanvasNodeDragResize.test.ts` before the composable existed.
+  - Updated `EditorCanvas.structure.test.ts` to require the new composable boundary and to verify that node drag/resize move math still comes from `canvasNodeDragResizeModel.ts`.
+  - Ran the focused tests and verified the expected red failure: missing `useCanvasNodeDragResize.ts`.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `useCanvasNodeDragResize.ts` with node drag and resize refs, start handlers, pointer-move dispatch, pointer-capture release, finish handling, residual click suppression, and teardown.
+  - Updated `EditorCanvas.vue` to consume the composable and remove local node drag/resize refs plus local residual-click suppression state.
+  - Updated structure tests so `EditorCanvas.vue` no longer has to expose `nodeDrag`; the drag ref remains owned by the composable.
+  - Reduced `EditorCanvas.vue` from 3,332 lines to 3,267 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused composable and `EditorCanvas` structure tests.
+  - Ran focused Canvas regression tests covering node drag/resize, node resize projection, connection auto-snap, connection model, node measurements, and edge interactions.
+  - Ran TypeScript unused-symbol verification from the `frontend` directory.
+  - Ran the full frontend source test suite and the Vite structure test in one Node test invocation.
+  - Ran the frontend production build; no Vite large chunk warning was emitted.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed `/editor/new` returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Captured a Google Chrome headless screenshot for `/editor/new` at 1440x1000 and confirmed it was nonblank by sampled color count.
+  - Confirmed the restarted backend and frontend processes remained alive after a delayed check.
+
+### Phase 5: Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated total roadmap progress at about 58%.
+  - Recalculated P2 `EditorCanvas.vue` cleanup at about 46%.
+  - Confirmed the build/chunk warning remains resolved because the production build emitted no large chunk warning.
+  - Opened Phase 32 because total roadmap progress remains below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red focused test | `node --test frontend/src/editor/canvas/useCanvasNodeDragResize.test.ts frontend/src/editor/canvas/EditorCanvas.structure.test.ts` before implementation | Fails because the composable does not exist | Failed with missing `useCanvasNodeDragResize.ts` | Passed |
+| Focused drag/resize structure | Same command after implementation | New composable boundary passes | 62 passed | Passed |
+| Focused Canvas related suite | `node --test` over node drag/resize, nodeResize, EditorCanvas structure, connection, measurements, and edge interactions | Related Canvas behavior/model tests pass | 84 passed | Passed |
+| TypeScript unused-symbol check | `cd frontend && ./node_modules/.bin/vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` | No diagnostics | Exit 0, no diagnostics | Passed |
+| Full frontend tests | `node --test $(rg --files src vite.config.structure.test.ts | rg '\.test\.ts$')` in `frontend` | All frontend tests pass | 782 passed | Passed |
+| Frontend production build | `npm run build` in `frontend` | Build succeeds without chunk-warning regression | Exit 0, no large chunk warning | Passed |
+| Dev restart and health | `npm run dev`, then HTTP checks | Services start and respond | Frontend `/editor/new` 200, backend `/health` 200 ok | Passed |
+| Browser visual smoke | Google Chrome headless screenshot of `/editor/new` | Page renders nonblank | 1440x1000 PNG, sampledColors=207 | Passed |
+
+## 5-Question Reboot Check
+| Question | Answer |
+|----------|--------|
+| Where am I? | Phase 31 implementation, verification, dev restart, commit, and push are complete. |
+| Where am I going? | Phase 32 is open for the next safe P2 Canvas boundary. |
+| What's the goal? | Continue reducing `EditorCanvas.vue` responsibility concentration while preserving auto-snap, node creation context, drag/resize behavior, and runtime UI. |
+| What have I learned? | Node drag/resize interaction state can move into a composable after the pure move model exists, but connection completion and graph mutation emits should remain at the component boundary for now. |
+| What have I done? | Extracted `useCanvasNodeDragResize.ts`, added focused tests, verified full frontend behavior, built without chunk warnings, restarted the app, and opened the next continuation phase. |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-29 | `vue-tsc` flagged `nodeDrag` as an unused `EditorCanvas.vue` destructure after moving drag state into the composable | Ran TypeScript unused-symbol verification after implementation | Removed the unused destructure and updated structure tests to confirm `nodeDrag` remains internal to `useCanvasNodeDragResize.ts`. |
+
+## Session: 2026-04-29 Phase 29
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued the formal roadmap from `docs/future/2026-04-28-architecture-refactor-roadmap.md` and the Phase 28 execution notes.
+  - Confirmed the active slice should stay inside the remaining `NodeCard.vue` P1 residual surface instead of starting a new subsystem mid-round.
+  - Chose primary input/output state-port presentation and the floating reorder preview as the safest remaining NodeCard presentation boundaries.
+
+### Phase 2: Implement Cleanup
+- **Status:** completed
+- Actions taken:
+  - Added red structure coverage for `PrimaryStatePort.vue`, `FloatingStatePortPill.vue`, and the updated `NodeCard.vue` delegation boundary.
+  - Extracted primary input/output state-pill popover presentation, create-popover wiring, state-editor popover wiring, anchor-slot projection, and local pill styles into `PrimaryStatePort.vue`.
+  - Extracted the port-reorder floating drag preview Teleport and local floating-pill styles into `FloatingStatePortPill.vue`.
+  - Kept state draft synchronization, port create validation, state editor confirm timers, lock guards, and graph/state mutation emits in `NodeCard.vue`.
+  - Removed stale state-summary, port-list, top-action, action-popover, and port-option styles from `NodeCard.vue`.
+  - Reduced `NodeCard.vue` from 2,577 lines to 1,988 lines.
+
+### Phase 3: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused structure tests for the new components and `NodeCard.vue`.
+  - Ran related state-editor, create-port, and reorder model tests.
+  - Ran TypeScript unused-symbol verification from the `frontend` directory.
+  - Ran the full frontend source test suite and the Vite structure test.
+  - Ran the frontend production build; no Vite large chunk warning was emitted.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed `/editor/new` returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Captured a Chrome headless screenshot for `/editor/new` at 1440x1000 and confirmed it was nonblank by PNG size and sampled color count.
+
+### Phase 4: Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated total roadmap progress at about 56%.
+  - Recalculated P1 `NodeCard.vue` cleanup at about 96%.
+  - Opened Phase 30 because total roadmap progress remains below 100%.
+  - Decided the next round should be a NodeCard P1 completion gate first, then move to the next safest P2/P3 slice if remaining NodeCard code is intentional orchestration.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure test | `node --test frontend/src/editor/nodes/PrimaryStatePort.structure.test.ts frontend/src/editor/nodes/FloatingStatePortPill.structure.test.ts frontend/src/editor/nodes/NodeCard.structure.test.ts` before implementation | Fails because the extracted components do not exist | Failed with `ERR_MODULE_NOT_FOUND` for the new components | Passed |
+| Focused NodeCard structure | Same command after implementation | New component boundaries pass | 39 passed | Passed |
+| Related NodeCard models | `node --test` over primary-state, NodeCard, state editor, state create, and port reorder tests | Related interaction/model tests pass | 61 passed | Passed |
+| TypeScript unused-symbol check | `cd frontend && ./node_modules/.bin/vue-tsc --noEmit --noUnusedLocals --noUnusedParameters` | No diagnostics | Exit 0, no diagnostics | Passed |
+| Full frontend source tests | `node --test $(rg --files frontend/src | rg '\.test\.ts$')` | All frontend source tests pass | 772 passed | Passed |
+| Vite structure tests | `node --test frontend/vite.config.structure.test.ts` | Vite structure tests pass | 3 passed | Passed |
+| Frontend production build | `npm run build` in `frontend` | Build succeeds without chunk-warning regression | Exit 0, no large chunk warning | Passed |
+| Dev restart and health | `npm run dev`, then HTTP checks | Services start and respond | Frontend `/editor/new` 200, backend `/health` 200 ok | Passed |
+| Browser visual smoke | Chrome headless screenshot of `/editor/new` | Page renders nonblank | 1440x1000 PNG, sampledColors=318 | Passed |
+
+## 5-Question Reboot Check
+| Question | Answer |
+|----------|--------|
+| Where am I? | Phase 29 cleanup, verification, dev restart, commit, and push are complete. |
+| Where am I going? | Phase 30 is open as the NodeCard P1 completion gate before moving to the next roadmap subsystem. |
+| What's the goal? | Finish the repository cleanup roadmap without regressing editor interactions such as snapping, node creation context, state editing, or port reorder. |
+| What have I learned? | Primary state-port presentation can live in a child component, but state drafts, validation, lock guards, and mutation emits should stay parent-owned for now. |
+| What have I done? | Extracted `PrimaryStatePort.vue` and `FloatingStatePortPill.vue`, removed stale NodeCard chrome, ran focused/full verification, built without chunk warnings, and restarted the app. |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-29 | Initial post-implementation structure test still expected old quote/style ownership details | Ran focused structure tests after extracting `PrimaryStatePort.vue` and `FloatingStatePortPill.vue` | Updated structure assertions to check the new child-component boundary and restored the row wrapper in `PrimaryStatePort.vue` to preserve alignment. |
+| 2026-04-29 | `identify` was not available and Pillow was not installed for screenshot pixel checks | Tried lightweight image inspection after Chrome headless screenshot | Used a small Node PNG parser with built-in `zlib` to confirm dimensions and sampled color count without adding dependencies. |
+
 ## Session: 2026-04-29 Phase 26 Input Node Body Component
 
 ### Phase 26: Input Node Body Component

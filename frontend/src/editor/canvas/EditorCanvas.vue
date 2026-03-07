@@ -400,9 +400,9 @@ import { isEditableKeyboardEventTarget } from "@/editor/canvas/canvasKeyboard";
 import { DEFAULT_CANVAS_VIEWPORT, type CanvasViewport } from "@/editor/canvas/canvasViewport";
 import {
   NODE_RESIZE_HANDLES,
-  resolveNodeResize,
   type NodeResizeHandle,
 } from "./nodeResize.ts";
+import { useCanvasNodeDragResize } from "./useCanvasNodeDragResize.ts";
 import {
   buildEdgeVisibilityModeOptions,
   buildForceVisibleProjectedEdgeIds,
@@ -589,27 +589,29 @@ const selection = useNodeSelectionFocus({
     });
   },
 });
-const nodeDrag = ref<{
-  nodeId: string;
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  originX: number;
-  originY: number;
-  captureElement: HTMLElement | null;
-  moved: boolean;
-} | null>(null);
-const nodeResizeDrag = ref<{
-  nodeId: string;
-  pointerId: number;
-  handle: NodeResizeHandle;
-  startClientX: number;
-  startClientY: number;
-  originPosition: GraphPosition;
-  originSize: GraphNodeSize;
-  captureElement: HTMLElement | null;
-  moved: boolean;
-} | null>(null);
+const nodeDragResize = useCanvasNodeDragResize({
+  viewportScale: () => viewport.viewport.scale,
+  scheduleDragFrame,
+  emitNodePosition: (payload) => emit("update:node-position", payload),
+  emitNodeSize: (payload) => emit("update:node-size", payload),
+  timeoutScheduler:
+    typeof window === "undefined"
+      ? undefined
+      : {
+          setTimeout: (callback, delay) => window.setTimeout(callback, delay),
+          clearTimeout: (timeoutId) => window.clearTimeout(timeoutId),
+        },
+});
+const {
+  nodeResizeDrag,
+  startNodeDrag,
+  startNodeResizeDrag,
+  handleNodeDragResizePointerMove,
+  releaseNodeDragResizePointerCapture,
+  finishNodeDragResizePointer,
+  handleNodeClickCapture,
+  teardownNodeDragResize,
+} = nodeDragResize;
 const activeCanvasPointers = new Map<number, { clientX: number; clientY: number; pointerType: string }>();
 const pinchZoom = ref<{
   pointerIds: [number, number];
@@ -618,8 +620,6 @@ const pinchZoom = ref<{
   centerClientX: number;
   centerClientY: number;
 } | null>(null);
-const suppressedNodeClickId = ref<string | null>(null);
-const suppressedNodeClickTimeoutRef = ref<number | null>(null);
 const pendingConnection = ref<PendingGraphConnection | null>(null);
 const pendingConnectionPoint = ref<{ x: number; y: number } | null>(null);
 const autoSnappedTargetAnchor = ref<ProjectedCanvasAnchor | null>(null);
@@ -931,6 +931,7 @@ onBeforeUnmount(() => {
 
   clearFlowEdgeDeleteConfirmState();
   clearDataEdgeStateInteraction();
+  teardownNodeDragResize();
   clearScheduledHoveredNodeRelease();
 });
 
@@ -1151,59 +1152,7 @@ function handleCanvasPointerMove(event: PointerEvent) {
     });
     return;
   }
-  if (nodeResizeDrag.value && nodeResizeDrag.value.pointerId === event.pointerId) {
-    const pointerDeltaX = event.clientX - nodeResizeDrag.value.startClientX;
-    const pointerDeltaY = event.clientY - nodeResizeDrag.value.startClientY;
-    if (!nodeResizeDrag.value.moved) {
-      if (Math.abs(pointerDeltaX) <= 3 && Math.abs(pointerDeltaY) <= 3) {
-        return;
-      }
-      nodeResizeDrag.value.moved = true;
-      if (nodeResizeDrag.value.captureElement && !nodeResizeDrag.value.captureElement.hasPointerCapture(event.pointerId)) {
-        nodeResizeDrag.value.captureElement.setPointerCapture(event.pointerId);
-      }
-    }
-    const resizeResult = resolveNodeResize({
-      handle: nodeResizeDrag.value.handle,
-      originPosition: nodeResizeDrag.value.originPosition,
-      originSize: nodeResizeDrag.value.originSize,
-      deltaX: pointerDeltaX / viewport.viewport.scale,
-      deltaY: pointerDeltaY / viewport.viewport.scale,
-    });
-    const nodeId = nodeResizeDrag.value.nodeId;
-    scheduleDragFrame(() => {
-      emit("update:node-size", {
-        nodeId,
-        ...resizeResult,
-      });
-    });
-    return;
-  }
-  if (nodeDrag.value && nodeDrag.value.pointerId === event.pointerId) {
-    const pointerDeltaX = event.clientX - nodeDrag.value.startClientX;
-    const pointerDeltaY = event.clientY - nodeDrag.value.startClientY;
-    if (!nodeDrag.value.moved) {
-      if (Math.abs(pointerDeltaX) <= 3 && Math.abs(pointerDeltaY) <= 3) {
-        return;
-      }
-      nodeDrag.value.moved = true;
-      if (nodeDrag.value.captureElement && !nodeDrag.value.captureElement.hasPointerCapture(event.pointerId)) {
-        nodeDrag.value.captureElement.setPointerCapture(event.pointerId);
-      }
-    }
-    const deltaX = pointerDeltaX / viewport.viewport.scale;
-    const deltaY = pointerDeltaY / viewport.viewport.scale;
-    const nextPosition = {
-      x: Math.round(nodeDrag.value.originX + deltaX),
-      y: Math.round(nodeDrag.value.originY + deltaY),
-    };
-    const nodeId = nodeDrag.value.nodeId;
-    scheduleDragFrame(() => {
-      emit("update:node-position", {
-        nodeId,
-        position: nextPosition,
-      });
-    });
+  if (handleNodeDragResizePointerMove(event)) {
     return;
   }
   if (viewport.isPanning.value) {
@@ -1224,12 +1173,7 @@ function handleCanvasPointerUp(event: PointerEvent) {
   if (canvasRef.value?.hasPointerCapture(event.pointerId)) {
     canvasRef.value.releasePointerCapture(event.pointerId);
   }
-  if (nodeDrag.value?.captureElement?.hasPointerCapture(event.pointerId)) {
-    nodeDrag.value.captureElement.releasePointerCapture(event.pointerId);
-  }
-  if (nodeResizeDrag.value?.captureElement?.hasPointerCapture(event.pointerId)) {
-    nodeResizeDrag.value.captureElement.releasePointerCapture(event.pointerId);
-  }
+  releaseNodeDragResizePointerCapture(event.pointerId);
   if (activeConnection.value) {
     if (isGraphEditingLocked()) {
       pendingConnection.value = null;
@@ -1244,47 +1188,8 @@ function handleCanvasPointerUp(event: PointerEvent) {
     }
     openCreationMenuFromPendingConnection(event);
   }
-  if (nodeDrag.value && nodeDrag.value.pointerId === event.pointerId) {
-    if (nodeDrag.value.moved) {
-      startSuppressedNodeClickWindow(nodeDrag.value.nodeId);
-    }
-    nodeDrag.value = null;
-  }
-  if (nodeResizeDrag.value && nodeResizeDrag.value.pointerId === event.pointerId) {
-    if (nodeResizeDrag.value.moved) {
-      startSuppressedNodeClickWindow(nodeResizeDrag.value.nodeId);
-    }
-    nodeResizeDrag.value = null;
-  }
+  finishNodeDragResizePointer(event.pointerId);
   viewport.endPan(event);
-}
-
-function clearSuppressedNodeClickWindow() {
-  if (suppressedNodeClickTimeoutRef.value !== null) {
-    window.clearTimeout(suppressedNodeClickTimeoutRef.value);
-    suppressedNodeClickTimeoutRef.value = null;
-  }
-  suppressedNodeClickId.value = null;
-}
-
-function startSuppressedNodeClickWindow(nodeId: string) {
-  clearSuppressedNodeClickWindow();
-  suppressedNodeClickId.value = nodeId;
-  suppressedNodeClickTimeoutRef.value = window.setTimeout(() => {
-    suppressedNodeClickTimeoutRef.value = null;
-    if (suppressedNodeClickId.value === nodeId) {
-      suppressedNodeClickId.value = null;
-    }
-  }, 80);
-}
-
-function handleNodeClickCapture(nodeId: string, event: MouseEvent) {
-  if (suppressedNodeClickId.value !== nodeId) {
-    return;
-  }
-  clearSuppressedNodeClickWindow();
-  event.preventDefault();
-  event.stopPropagation();
 }
 
 function handleCanvasDoubleClick(event: MouseEvent) {
@@ -1583,7 +1488,7 @@ function handleNodePointerDown(nodeId: string, event: PointerEvent) {
   cancelScheduledDragFrame();
   selectedEdgeId.value = null;
   selection.selectNode(nodeId);
-  nodeDrag.value = {
+  startNodeDrag({
     nodeId,
     pointerId: event.pointerId,
     startClientX: event.clientX,
@@ -1592,7 +1497,7 @@ function handleNodePointerDown(nodeId: string, event: PointerEvent) {
     originY: node.ui.position.y,
     captureElement,
     moved: false,
-  };
+  });
 }
 
 function handleNodeResizePointerDown(nodeId: string, handle: NodeResizeHandle, event: PointerEvent) {
@@ -1621,9 +1526,8 @@ function handleNodeResizePointerDown(nodeId: string, handle: NodeResizeHandle, e
   pendingConnectionPoint.value = null;
   cancelScheduledDragFrame();
   selectedEdgeId.value = null;
-  nodeDrag.value = null;
   selection.selectNode(nodeId);
-  nodeResizeDrag.value = {
+  startNodeResizeDrag({
     nodeId,
     pointerId: event.pointerId,
     handle,
@@ -1637,7 +1541,7 @@ function handleNodeResizePointerDown(nodeId: string, handle: NodeResizeHandle, e
     }),
     captureElement,
     moved: false,
-  };
+  });
 }
 
 function isNodeResizeHotzoneEnabled() {
