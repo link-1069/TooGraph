@@ -93,6 +93,10 @@ function readCanvasViewportInteractionModelSource() {
   return readFileSync(resolve(currentDirectory, "canvasViewportInteractionModel.ts"), "utf8").replace(/\r\n/g, "\n");
 }
 
+function readFocusNodeViewportModelSource() {
+  return readFileSync(resolve(currentDirectory, "focusNodeViewport.ts"), "utf8").replace(/\r\n/g, "\n");
+}
+
 function readCanvasNodeDragResizeModelSource() {
   return readFileSync(resolve(currentDirectory, "canvasNodeDragResizeModel.ts"), "utf8").replace(/\r\n/g, "\n");
 }
@@ -182,6 +186,21 @@ test("EditorCanvas stacks zoom controls above the minimap at the bottom right", 
   assert.match(minimapSource, /\.editor-minimap \{[\s\S]*backdrop-filter:\s*blur\(24px\) saturate\(1\.6\) contrast\(1\.02\);/);
   assert.match(minimapSource, /\.editor-minimap::before \{[\s\S]*background:\s*var\(--graphite-glass-specular\),\s*var\(--graphite-glass-lens\);/);
   assert.match(minimapSource, /\.editor-minimap__surface \{[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/);
+});
+
+test("EditorCanvas delegates external node focus viewport projection to a model", () => {
+  const focusNodeViewportModelSource = readFocusNodeViewportModelSource();
+
+  assert.match(componentSource, /import \{ resolveFocusedNodeViewportAction \} from "@\/editor\/canvas\/focusNodeViewport";/);
+  assert.match(focusNodeViewportModelSource, /export function resolveFocusedViewport/);
+  assert.match(focusNodeViewportModelSource, /export function resolveFocusedNodeViewportAction/);
+  assert.match(componentSource, /function focusNode\(nodeId: string\)/);
+  assert.match(componentSource, /const canvasRect = canvas\?\.getBoundingClientRect\(\) \?\? null;/);
+  assert.match(componentSource, /const focusedNodeViewportAction = resolveFocusedNodeViewportAction\(\{[\s\S]*currentScale: viewport\.viewport\.scale,[\s\S]*canvasSize: canvasRect \? \{ width: canvasRect\.width, height: canvasRect\.height \} : null,[\s\S]*nodePosition: node\?\.ui\.position \?\? null,[\s\S]*nodeSize: element \? \{ width: element\.offsetWidth, height: element\.offsetHeight \} : null,[\s\S]*\}\);/);
+  assert.match(componentSource, /case "ignore-missing-target":[\s\S]*return;/);
+  assert.match(componentSource, /case "set-viewport":[\s\S]*selection\.selectNode\(nodeId\);[\s\S]*viewport\.setViewport\(focusedNodeViewportAction\.viewport\);/);
+  assert.doesNotMatch(componentSource, /if \(!node \|\| !canvas \|\| !element\) \{/);
+  assert.doesNotMatch(componentSource, /resolveFocusedViewport\(\{[\s\S]*nodeX:/);
 });
 
 test("EditorCanvas does not animate node transforms while dragging", () => {
@@ -1316,7 +1335,7 @@ test("EditorCanvas opts mobile touch drags out of browser gestures", () => {
 test("EditorCanvas supports two-finger pinch zoom on mobile without changing single-pointer gestures", () => {
   const canvasPinchZoomModelSource = readCanvasPinchZoomModelSource();
 
-  assert.match(componentSource, /import \{ buildPinchZoomStart, resolveCanvasPointerDownAction, resolvePointerCenter, resolvePointerDistance \} from "\.\/canvasPinchZoomModel";/);
+  assert.match(componentSource, /import \{ buildPinchZoomStart, resolveCanvasPinchZoomUpdateAction, resolveCanvasPointerDownAction \} from "\.\/canvasPinchZoomModel";/);
   assert.match(componentSource, /const activeCanvasPointers = new Map<number, \{ clientX: number; clientY: number; pointerType: string \}>\(\);/);
   assert.match(componentSource, /const pinchZoom = ref<\{/);
   assert.match(componentSource, /function beginPinchZoomIfReady\(\)/);
@@ -1324,15 +1343,21 @@ test("EditorCanvas supports two-finger pinch zoom on mobile without changing sin
   assert.match(componentSource, /viewport\.endPan\(\);/);
   assert.match(componentSource, /pinchZoom\.value = nextPinchZoom;/);
   assert.match(componentSource, /function updatePinchZoom\(\)/);
-  assert.match(componentSource, /viewport\.zoomAt\(\{/);
-  assert.match(componentSource, /nextScale: pinch\.startScale \* \(nextDistance \/ pinch\.startDistance\)/);
+  assert.match(componentSource, /const pinchZoomUpdateAction = resolveCanvasPinchZoomUpdateAction\(\{[\s\S]*pinch,[\s\S]*leftPointer,[\s\S]*rightPointer,[\s\S]*canvasRect,[\s\S]*\}\);/);
+  assert.match(componentSource, /case "ignore-missing-pinch":[\s\S]*return;/);
+  assert.match(componentSource, /case "clear-pinch-zoom":[\s\S]*clearPinchZoom\(\);[\s\S]*return;/);
+  assert.match(componentSource, /case "ignore-non-positive-distance":[\s\S]*return;/);
+  assert.match(componentSource, /case "zoom-at":[\s\S]*viewport\.zoomAt\(pinchZoomUpdateAction\.request\);/);
   assert.match(canvasPinchZoomModelSource, /export function buildPinchZoomStart/);
   assert.match(canvasPinchZoomModelSource, /export type CanvasPointerDownAction/);
   assert.match(canvasPinchZoomModelSource, /export function resolveCanvasPointerDownAction/);
+  assert.match(canvasPinchZoomModelSource, /export type CanvasPinchZoomUpdateAction/);
+  assert.match(canvasPinchZoomModelSource, /export function resolveCanvasPinchZoomUpdateAction/);
   assert.match(canvasPinchZoomModelSource, /export function resolvePointerDistance/);
   assert.match(canvasPinchZoomModelSource, /export function resolvePointerCenter/);
   assert.doesNotMatch(componentSource, /function resolvePointerDistance/);
   assert.doesNotMatch(componentSource, /function resolvePointerCenter/);
+  assert.doesNotMatch(componentSource, /nextScale: pinch\.startScale \* \(nextDistance \/ pinch\.startDistance\)/);
   assert.match(componentSource, /if \(event\.pointerType === "touch"\) \{/);
   assert.match(componentSource, /const canvasPointerDownAction = resolveCanvasPointerDownAction\(\{ startedPinchZoom \}\);/);
   assert.match(componentSource, /function applyCanvasPointerDownSetup\([\s\S]*action: CanvasPointerDownAction,[\s\S]*event: PointerEvent,[\s\S]*\)/);
