@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import copy
 import inspect
-import json
-import time
 from typing import Any
 
 from app.core.model_catalog import get_default_text_model_ref, normalize_model_ref, resolve_runtime_model_name
+from app.core.runtime.agent_streaming import (
+    build_agent_stream_delta_callback as _build_agent_stream_delta_callback,
+    finalize_agent_stream_delta as _finalize_agent_stream_delta,
+)
 from app.core.runtime.agent_prompt import (
     build_auto_system_prompt as _build_auto_system_prompt,
     build_effective_system_prompt as _build_effective_system_prompt,
@@ -28,6 +29,10 @@ from app.core.runtime.execution_graph import (
     build_regular_edge_id as _build_regular_edge_id,
     select_active_outgoing_edges as _select_active_outgoing_edges,
 )
+from app.core.runtime.input_boundary import (
+    coerce_input_boundary_value as _coerce_input_boundary_value,
+    first_truthy as _first_truthy,
+)
 from app.core.runtime.llm_output_parser import (
     build_output_key_aliases as _build_output_key_aliases,
     parse_llm_json_response as _parse_llm_json_response,
@@ -38,15 +43,23 @@ from app.core.runtime.output_artifacts import (
     format_loop_limit_exhausted_output_value as _format_loop_limit_exhausted_output_value,
     resolve_active_output_nodes as _resolve_active_output_nodes,
 )
-from app.core.runtime.output_boundary_utils import save_output_value
+from app.core.runtime.output_boundaries import (
+    collect_output_boundaries,
+    execute_output_node as _execute_output_node,
+)
 from app.core.runtime.knowledge_retrieval import retrieve_knowledge_base_context
+from app.core.runtime.run_artifacts import (
+    append_run_snapshot,
+    build_knowledge_summary as _build_knowledge_summary,
+    refresh_run_artifacts as _refresh_run_artifacts,
+)
 from app.core.runtime.run_events import publish_run_event
 from app.core.runtime.state_io import (
     apply_state_writes as _apply_state_writes,
     collect_node_inputs as _collect_node_inputs,
     initialize_graph_state as _initialize_graph_state,
 )
-from app.core.runtime.state import touch_run_lifecycle, utc_now_iso
+from app.core.runtime.state import touch_run_lifecycle
 from app.core.schemas.node_system import (
     NodeSystemAgentNode,
     NodeSystemConditionNode,
@@ -89,87 +102,6 @@ def _persist_run_progress(
             "duration_ms": state.get("duration_ms"),
             "updated_at": state.get("lifecycle", {}).get("updated_at") if isinstance(state.get("lifecycle"), dict) else None,
         },
-    )
-
-
-def _refresh_run_artifacts(
-    state: dict[str, Any],
-    node_outputs: dict[str, dict[str, Any]],
-    active_edge_ids: set[str],
-    *,
-    started_perf: float,
-) -> None:
-    state["duration_ms"] = max(int((time.perf_counter() - started_perf) * 1000), 0)
-    saved_outputs = list(state.get("saved_outputs", []))
-    exported_outputs = [
-        {
-            "node_id": preview.get("node_id"),
-            "label": preview.get("label"),
-            "source_kind": preview.get("source_kind", "state"),
-            "source_key": preview.get("source_key"),
-            "display_mode": preview.get("display_mode"),
-            "persist_enabled": preview.get("persist_enabled"),
-            "persist_format": preview.get("persist_format"),
-            "value": preview.get("value"),
-            "saved_file": next(
-                (
-                    item
-                    for item in saved_outputs
-                    if item.get("node_id") == preview.get("node_id")
-                    and item.get("source_key") == preview.get("source_key")
-                ),
-                None,
-            ),
-        }
-        for preview in state.get("output_previews", [])
-    ]
-    state_values = dict(state.get("state_values", {}))
-    state_events = list(state.get("state_events", []))
-    state_last_writers = dict(state.get("state_last_writers", {}))
-    state["artifacts"] = {
-        "skill_outputs": state.get("skill_outputs", []),
-        "output_previews": state.get("output_previews", []),
-        "saved_outputs": saved_outputs,
-        "exported_outputs": exported_outputs,
-        "node_outputs": node_outputs,
-        "active_edge_ids": sorted(active_edge_ids),
-        "state_events": state_events,
-        "state_values": state_values,
-        "streaming_outputs": dict(state.get("streaming_outputs", {})),
-        "cycle_iterations": list(state.get("cycle_iterations", [])),
-        "cycle_summary": dict(state.get("cycle_summary", {})),
-    }
-    state["state_snapshot"] = {
-        "values": state_values,
-        "last_writers": state_last_writers,
-    }
-    state["knowledge_summary"] = _build_knowledge_summary(state.get("skill_outputs", []))
-
-
-def append_run_snapshot(
-    state: dict[str, Any],
-    *,
-    snapshot_id: str,
-    kind: str,
-    label: str,
-) -> None:
-    snapshots = state.setdefault("run_snapshots", [])
-    snapshots.append(
-        {
-            "snapshot_id": snapshot_id,
-            "kind": kind,
-            "label": label,
-            "created_at": utc_now_iso(),
-            "status": state.get("status", ""),
-            "current_node_id": state.get("current_node_id"),
-            "checkpoint_metadata": copy.deepcopy(state.get("checkpoint_metadata", {})),
-            "state_snapshot": copy.deepcopy(state.get("state_snapshot", {})),
-            "graph_snapshot": copy.deepcopy(state.get("graph_snapshot", {})),
-            "artifacts": copy.deepcopy(state.get("artifacts", {})),
-            "node_status_map": copy.deepcopy(state.get("node_status_map", {})),
-            "output_previews": copy.deepcopy(state.get("output_previews", [])),
-            "final_result": str(state.get("final_result", "") or ""),
-        }
     )
 
 
@@ -328,158 +260,6 @@ def _callable_accepts_keyword(func: Any, keyword: str) -> bool:
     except (TypeError, ValueError):
         return True
     return keyword in parameters or any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
-
-
-def _build_agent_stream_delta_callback(
-    *,
-    state: dict[str, Any],
-    node_name: str,
-    output_keys: list[str],
-):
-    run_id = str(state.get("run_id") or "").strip()
-    if not run_id:
-        return None
-
-    text_parts: list[str] = []
-    chunk_count = 0
-
-    def _on_delta(delta: str) -> None:
-        nonlocal chunk_count
-        chunk_text = str(delta or "")
-        if not chunk_text:
-            return
-        chunk_count += 1
-        text_parts.append(chunk_text)
-        full_text = "".join(text_parts)
-        stream_record = {
-            "node_id": node_name,
-            "output_keys": list(output_keys),
-            "text": full_text,
-            "chunk_count": chunk_count,
-            "completed": False,
-            "updated_at": utc_now_iso(),
-        }
-        state.setdefault("streaming_outputs", {})[node_name] = stream_record
-        publish_run_event(
-            run_id,
-            "node.output.delta",
-            {
-                **stream_record,
-                "delta": chunk_text,
-                "chunk_index": chunk_count,
-            },
-        )
-
-    return _on_delta
-
-
-def _finalize_agent_stream_delta(
-    *,
-    state: dict[str, Any],
-    node_name: str,
-    output_values: dict[str, Any],
-) -> None:
-    stream_record = state.setdefault("streaming_outputs", {}).get(node_name)
-    if not isinstance(stream_record, dict):
-        return
-    stream_record["completed"] = True
-    stream_record["updated_at"] = utc_now_iso()
-    stream_record["output_values"] = copy.deepcopy(output_values)
-    publish_run_event(
-        str(state.get("run_id") or ""),
-        "node.output.completed",
-        {
-            **stream_record,
-            "output_values": copy.deepcopy(output_values),
-        },
-    )
-
-
-def _execute_output_node(
-    node_name: str,
-    node: NodeSystemOutputNode,
-    input_values: dict[str, Any],
-    state: dict[str, Any],
-) -> dict[str, Any]:
-    binding = node.reads[0]
-    value = input_values.get(binding.state)
-    preview = {
-        "node_id": node_name,
-        "label": binding.state,
-        "source_kind": "state",
-        "source_key": binding.state,
-        "display_mode": node.config.display_mode.value,
-        "persist_enabled": node.config.persist_enabled,
-        "persist_format": node.config.persist_format.value,
-        "value": value,
-    }
-    saved_outputs: list[dict[str, Any]] = []
-    if node.config.persist_enabled and value not in (None, "", [], {}):
-        saved_outputs.append(
-            save_output_value(
-                run_id=str(state.get("run_id", "")),
-                node_id=node_name,
-                source_key=binding.state,
-                value=value,
-                persist_format=node.config.persist_format.value,
-                file_name_template=node.config.file_name_template or binding.state,
-            )
-        )
-    return {
-        "outputs": {binding.state: value},
-        "output_previews": [preview],
-        "saved_outputs": saved_outputs,
-        "final_result": "" if value is None else str(value),
-    }
-
-
-def collect_output_boundaries(
-    graph: NodeSystemGraphDocument,
-    state: dict[str, Any],
-    active_edge_ids: set[str] | None = None,
-) -> None:
-    active_output_nodes = _resolve_active_output_nodes(graph, active_edge_ids or set())
-    output_node_names = {
-        node_name
-        for node_name, node in graph.nodes.items()
-        if isinstance(node, NodeSystemOutputNode)
-    }
-    refreshed_output_nodes = active_output_nodes or output_node_names
-    state["output_previews"] = [
-        preview
-        for preview in state.get("output_previews", [])
-        if preview.get("node_id") not in refreshed_output_nodes
-    ]
-    state["saved_outputs"] = [
-        output
-        for output in state.get("saved_outputs", [])
-        if output.get("node_id") not in refreshed_output_nodes
-    ]
-    final_results: list[Any] = []
-
-    for node_name, node in graph.nodes.items():
-        if not isinstance(node, NodeSystemOutputNode) or not node.reads:
-            continue
-        if active_output_nodes and node_name not in active_output_nodes:
-            continue
-
-        binding = node.reads[0]
-        body = _execute_output_node(
-            node_name,
-            node,
-            {binding.state: copy.deepcopy(state.get("state_values", {}).get(binding.state))},
-            state,
-        )
-        if state.get("loop_limit_exhaustion"):
-            body = _apply_loop_limit_exhausted_output_message(body)
-        state["output_previews"] = [*state.get("output_previews", []), *body.get("output_previews", [])]
-        state["saved_outputs"] = [*state.get("saved_outputs", []), *body.get("saved_outputs", [])]
-        state.setdefault("node_status_map", {})[node_name] = "success"
-        if body.get("final_result") not in (None, "", [], {}):
-            final_results.append(body["final_result"])
-
-    if final_results:
-        state["final_result"] = str(final_results[-1])
 
 
 def _execute_condition_node(
@@ -682,31 +462,6 @@ def _resolve_reference(
     return reference
 
 
-def _build_knowledge_summary(skill_outputs: list[dict[str, Any]]) -> str:
-    lines: list[str] = []
-    for skill_output in skill_outputs:
-        if skill_output.get("skill_key") != KNOWLEDGE_BASE_SKILL_KEY:
-            continue
-        outputs = skill_output.get("outputs") or {}
-        knowledge_base = outputs.get("knowledge_base") or "unknown"
-        query = outputs.get("query") or ""
-        citations = outputs.get("citations") or []
-        header = f"Knowledge Base: {knowledge_base}"
-        if query:
-            header += f"\nQuery: {query}"
-        lines.append(header)
-        if citations:
-            for citation in citations[:6]:
-                lines.append(
-                    f"- {citation.get('title') or 'Untitled'}"
-                    f" | {citation.get('section') or 'Overview'}"
-                    f" | {citation.get('url') or citation.get('source') or ''}"
-                )
-        else:
-            lines.append("- No citations returned.")
-    return "\n\n".join(lines).strip()
-
-
 def _read_path(payload: Any, path: str) -> Any:
     current = payload
     for part in path.split("."):
@@ -729,27 +484,3 @@ def _summarize_outputs(output_values: dict[str, Any], final_result: Any) -> str:
     if output_values:
         return str({key: str(value)[:80] for key, value in output_values.items()})[:160]
     return "no outputs"
-
-
-def _first_truthy(values: Any) -> Any:
-    for value in values:
-        if value:
-            return value
-    return None
-
-
-def _coerce_input_boundary_value(value: Any, state_type: NodeSystemStateType) -> Any:
-    if not isinstance(value, str):
-        return value
-
-    try:
-        parsed = json.loads(value)
-        if state_type in {NodeSystemStateType.NUMBER, NodeSystemStateType.BOOLEAN, NodeSystemStateType.OBJECT, NodeSystemStateType.ARRAY, NodeSystemStateType.JSON, NodeSystemStateType.FILE_LIST}:
-            return parsed
-        if state_type in {NodeSystemStateType.IMAGE, NodeSystemStateType.AUDIO, NodeSystemStateType.VIDEO, NodeSystemStateType.FILE} and isinstance(parsed, dict) and parsed.get("kind") == "uploaded_file":
-            return parsed
-        if state_type == NodeSystemStateType.KNOWLEDGE_BASE:
-            return value
-        return value
-    except json.JSONDecodeError:
-        return value

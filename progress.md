@@ -1,5 +1,220 @@
 # Progress Log
 
+## Session: 2026-04-30 Phase 107
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `950e879` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 106 findings, and remaining executor agent streaming/node-handler clusters.
+  - Chose agent streaming delta callbacks because they are a self-contained side-effect boundary with explicit run-event behavior.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_agent_streaming_runtime.py` covering no-run-id callback suppression, streamed text accumulation, delta event payloads, completion marking, output value deep-copying, and completed event payloads.
+  - Verified the expected red failure because `app.core.runtime.agent_streaming` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/agent_streaming.py`.
+  - Moved agent streaming delta callback construction and stream completion publishing out of `node_system_executor.py`.
+  - Kept legacy `_build_agent_stream_delta_callback` and `_finalize_agent_stream_delta` names available from `node_system_executor.py` through compatibility imports.
+  - Eliminated a latent `copy.deepcopy` import gap in `node_system_executor.py` by moving the deepcopy use into the new module.
+  - Reduced `node_system_executor.py` from 547 lines to 486 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused agent streaming and LangGraph migration tests.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 89%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 107 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 66-70% after isolating agent streaming helpers.
+  - Opened Phase 108 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_agent_streaming_runtime.py -q` before implementation | Fails because `agent_streaming` is missing | Failed with missing module import | Passed |
+| Focused agent streaming tests | `PYTHONPATH=backend pytest backend/tests/test_agent_streaming_runtime.py backend/tests/test_langgraph_migration.py -q` | Streaming delta helpers and LangGraph behavior stay unchanged | 42 passed | Passed |
+| Full backend tests | `PYTHONPATH=backend pytest backend/tests -q` | All backend tests pass | 166 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | `node_system_executor.py` no longer imported `copy` after Phase 106, while streaming finalize still referenced `copy.deepcopy` | Phase 107 implementation inspection | Moved streaming finalize into `agent_streaming.py`, where `copy` is imported and covered by focused tests. |
+
+## Session: 2026-04-30 Phase 106
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `6a663d9` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 105 findings, and remaining executor output boundary/node-handler clusters.
+  - Chose output node execution and output boundary collection because this closes the output preview/saved output boundary that earlier phases prepared.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_runtime_output_boundaries.py` covering output preview creation, output persistence calls, active output refresh filtering, node status updates, and final result selection.
+  - Verified the expected red failure because `app.core.runtime.output_boundaries` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/output_boundaries.py`.
+  - Moved output node execution and output boundary collection out of `node_system_executor.py`.
+  - Updated `backend/app/core/langgraph/runtime.py` to import `collect_output_boundaries` directly from the new module.
+  - Kept legacy `collect_output_boundaries` and `_execute_output_node` names available from `node_system_executor.py` through compatibility imports.
+  - Reduced `node_system_executor.py` from 633 lines to 547 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused output boundary and LangGraph migration tests.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 88%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 106 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 62-66% after isolating output boundary helpers.
+  - Opened Phase 107 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_runtime_output_boundaries.py -q` before implementation | Fails because `output_boundaries` is missing | Failed with missing module import | Passed |
+| Focused output boundary tests | `PYTHONPATH=backend pytest backend/tests/test_runtime_output_boundaries.py backend/tests/test_langgraph_migration.py -q` | Output boundary helpers and LangGraph behavior stay unchanged | 41 passed | Passed |
+| Full backend tests | `PYTHONPATH=backend pytest backend/tests -q` | All backend tests pass | 163 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 106 | No implementation errors beyond the expected red module-import failure. |
+
+## Session: 2026-04-30 Phase 105
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `02e54c9` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 104 findings, and remaining executor output/node-handler clusters.
+  - Chose input boundary coercion and first-truthy selection as a smaller safe slice before moving output persistence or node-handler side effects.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_runtime_input_boundary.py` covering structured JSON coercion, text/knowledge-base preservation, uploaded-file payload parsing, invalid JSON fallback, and first-truthy selection.
+  - Verified the expected red failure because `app.core.runtime.input_boundary` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/input_boundary.py`.
+  - Moved input boundary JSON coercion and first-truthy selection out of `node_system_executor.py`.
+  - Kept legacy private-helper names available from `node_system_executor.py` through compatibility imports.
+  - Reduced `node_system_executor.py` from 653 lines to 633 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused input boundary and LangGraph migration tests.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 87%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 105 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 58-61% after isolating input boundary helpers.
+  - Opened Phase 106 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_runtime_input_boundary.py -q` before implementation | Fails because `input_boundary` is missing | Failed with missing module import | Passed |
+| Focused input boundary tests | `PYTHONPATH=backend pytest backend/tests/test_runtime_input_boundary.py backend/tests/test_langgraph_migration.py -q` | Input boundary helpers and LangGraph behavior stay unchanged | 43 passed | Passed |
+| Full backend tests | `PYTHONPATH=backend pytest backend/tests -q` | All backend tests pass | 161 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 105 | No implementation errors beyond the expected red module-import failure. |
+
+## Session: 2026-04-30 Phase 104
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `469a5f4` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 103 findings, and remaining executor run artifact helper clusters.
+  - Chose run artifact refresh, snapshot append, and knowledge summary because they are shared by LangGraph runtime and have stable payload semantics.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_runtime_run_artifacts.py` covering exported output payloads, state snapshots, active edge ids, knowledge summary text, and snapshot deep-copy behavior.
+  - Verified the expected red failure because `app.core.runtime.run_artifacts` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/run_artifacts.py`.
+  - Moved run artifact refresh, run snapshot append, and knowledge summary building out of `node_system_executor.py`.
+  - Updated `backend/app/core/langgraph/runtime.py` to import run artifact helpers directly.
+  - Kept legacy private-helper names available from `node_system_executor.py` through compatibility imports.
+  - Reduced `node_system_executor.py` from 755 lines to 653 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused run artifact and LangGraph migration tests.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 86-87%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 104 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 56-60% after isolating run artifact helpers.
+  - Opened Phase 105 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_runtime_run_artifacts.py -q` before implementation | Fails because `run_artifacts` is missing | Failed with missing module import | Passed |
+| Focused run artifact tests | `PYTHONPATH=backend pytest backend/tests/test_runtime_run_artifacts.py backend/tests/test_langgraph_migration.py -q` | Run artifact helpers and LangGraph behavior stay unchanged | 42 passed | Passed |
+| Full backend tests | `PYTHONPATH=backend pytest backend/tests -q` | All backend tests pass | 157 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 104 | No implementation errors beyond the expected red module-import failure. |
+
 ## Session: 2026-04-30 Phase 103
 
 ### Phase 1: Re-orientation
