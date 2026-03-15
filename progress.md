@@ -1,5 +1,395 @@
 # Progress Log
 
+## Session: 2026-04-30 Phase 117
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `5e99d7b` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 116 findings, and remaining LangGraph runtime cycle/runtime clusters.
+  - Chose cycle tracker helpers because the behavior is already well covered by cycle migration tests and can move while preserving the runtime's private aliases.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_langgraph_cycle_tracker.py` covering summary max-iteration resolution, cycle iteration record merging, no-state-change failure projection, cycle record serialization, and non-cycle final summary projection.
+  - Verified the expected red failure because `app.core.langgraph.cycle_tracker` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/langgraph/cycle_tracker.py`.
+  - Moved cycle tracker construction, condition loop-limit collection/resolution, loop iteration advancement, cycle iteration records, node/route activity recording, cycle record serialization, final stop reason resolution, and final cycle summary projection out of `core/langgraph/runtime.py`.
+  - Updated `core/langgraph/runtime.py` to import those helpers under the existing private names.
+  - Reduced `core/langgraph/runtime.py` from 856 lines to 528 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused cycle tracker and LangGraph migration tests.
+  - Ran `git diff --check`.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 98%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 117 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 95% after extracting LangGraph cycle tracker helpers.
+  - Opened Phase 118 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red module test | `PYTHONPATH=backend pytest backend/tests/test_langgraph_cycle_tracker.py -q` before implementation | Fails because the cycle tracker module is missing | Failed with missing module import | Passed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_langgraph_cycle_tracker.py backend/tests/test_langgraph_migration.py -q` | Cycle tracker and LangGraph behavior stay unchanged | 43 passed | Passed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 197 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 117 | No implementation errors beyond the expected red missing-module failure. |
+
+## Session: 2026-04-30 Phase 116
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `35adb37` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 115 findings, and remaining LangGraph runtime waiting-state/cycle clusters.
+  - Chose waiting-state interrupt helpers because they are self-contained and can preserve existing private aliases in `core/langgraph/runtime.py`.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_langgraph_interrupts.py` covering breakpoint node name wrapping/unwrapping, interrupt config normalization, waiting detection, pending interrupt serialization, waiting-state mutation, metadata cleanup, and snapshot id allocation.
+  - Verified the expected red failure because `app.core.langgraph.interrupts` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/langgraph/interrupts.py`.
+  - Moved breakpoint node helpers, interrupt configuration normalization, waiting detection, pending interrupt serialization, waiting-state application, pending interrupt metadata cleanup, and snapshot id allocation out of `core/langgraph/runtime.py`.
+  - Updated `core/langgraph/runtime.py` to import those helpers under the existing private names.
+  - Fixed the new test fixture to include required `graph_id` and `name` fields after the first focused run exposed a fixture validation error.
+  - Reduced `core/langgraph/runtime.py` from 974 lines to 856 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused interrupt helper and LangGraph migration tests.
+  - Ran `git diff --check`.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 96.5%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 116 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 90-92% after extracting LangGraph waiting-state interrupt helpers.
+  - Opened Phase 117 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red module test | `PYTHONPATH=backend pytest backend/tests/test_langgraph_interrupts.py -q` before implementation | Fails because the interrupts module is missing | Failed with missing module import | Passed |
+| First focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_langgraph_interrupts.py backend/tests/test_langgraph_migration.py -q` | New helper and LangGraph behavior stay unchanged | Failed 1 test because the new fixture missed `graph_id` and `name` | Fixed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_langgraph_interrupts.py backend/tests/test_langgraph_migration.py -q` | New helper and LangGraph behavior stay unchanged | 44 passed | Passed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 193 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | New LangGraph interrupt test fixture omitted required `graph_id` and `name` fields | First Phase 116 focused verification | Added the required fields and re-ran focused tests successfully. |
+
+## Session: 2026-04-30 Phase 115
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `0c25e61` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 114 findings, and remaining LangGraph runtime checkpoint/runtime clusters.
+  - Chose checkpoint runtime/metadata helpers because they are self-contained and heavily covered by existing checkpoint/resume migration tests.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_langgraph_checkpoint_runtime.py` covering initial checkpoint metadata, resume checkpoint id propagation, missing thread id failure, unavailable checkpoint sync, and available checkpoint id sync.
+  - Verified the expected red failure because `app.core.langgraph.checkpoint_runtime` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/langgraph/checkpoint_runtime.py`.
+  - Moved checkpoint runtime config construction, checkpoint lookup config construction, initial checkpoint metadata normalization, and checkpoint metadata sync from saver out of `core/langgraph/runtime.py`.
+  - Updated `core/langgraph/runtime.py` to import the moved helpers as `_build_checkpoint_runtime` and `_sync_checkpoint_metadata`, preserving existing call sites.
+  - Reduced `core/langgraph/runtime.py` from 1,032 lines to 974 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused checkpoint runtime and LangGraph migration tests.
+  - Ran `git diff --check`.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 95.5%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 115 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 88-90% after extracting LangGraph checkpoint runtime/metadata helpers.
+  - Opened Phase 116 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red module test | `PYTHONPATH=backend pytest backend/tests/test_langgraph_checkpoint_runtime.py -q` before implementation | Fails because the checkpoint runtime module is missing | Failed with missing module import | Passed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_langgraph_checkpoint_runtime.py backend/tests/test_langgraph_migration.py -q` | Checkpoint helper and LangGraph behavior stay unchanged | 43 passed | Passed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 188 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 115 | No implementation errors beyond the expected red missing-module failure. |
+
+## Session: 2026-04-30 Phase 114
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `4d80ace` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 113 findings, and remaining backend P4 high-line-count files.
+  - Confirmed `node_system_executor.py` is now thin enough to keep as a compatibility facade for the moment.
+  - Chose the first LangGraph runtime preparation slice: moving value-summary selection into the shared runtime summary module.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Extended `backend/tests/test_runtime_summaries.py` with LangGraph-style first non-empty value summary behavior.
+  - Verified the expected red failure because `summarize_first_value` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `summarize_first_value` to `backend/app/core/runtime/runtime_summaries.py`.
+  - Updated `backend/app/core/langgraph/runtime.py` to import it as `_summarize_values`, preserving existing local call sites.
+  - Removed the duplicate local `_summarize_values` body from LangGraph runtime.
+  - Reduced `core/langgraph/runtime.py` from about 1,040 lines to 1,032 lines and `node_system_executor.py` to 240 lines after import reshuffling.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused runtime summary and LangGraph migration tests.
+  - Ran `git diff --check`.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 94.5%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 114 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 86-88% after beginning LangGraph runtime preparation.
+  - Opened Phase 115 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red import test | `PYTHONPATH=backend pytest backend/tests/test_runtime_summaries.py -q` before implementation | Fails because `summarize_first_value` is missing | Failed with missing import | Passed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_runtime_summaries.py backend/tests/test_langgraph_migration.py -q` | Summary and LangGraph behavior stay unchanged | 42 passed | Passed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 184 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 114 | No implementation errors beyond the expected red missing-import failure. |
+
+## Session: 2026-04-30 Phase 113
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `88f282f` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 112 findings, and remaining executor facade/summary clusters.
+  - Chose runtime summary helpers because they are pure, low-risk, and can move while preserving the old private helper names.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_runtime_summaries.py` covering empty input summaries, truncation, final-result priority, output summaries, and empty output summaries.
+  - Verified the expected red failure because `app.core.runtime.runtime_summaries` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/runtime_summaries.py`.
+  - Moved input and output/final-result summary helpers out of `node_system_executor.py`.
+  - Kept `_summarize_inputs` and `_summarize_outputs` available in `node_system_executor.py` through compatibility imports.
+  - Reduced `node_system_executor.py` from 250 lines to 241 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused runtime summary and LangGraph migration tests.
+  - First full verification stopped at `git diff --check` because `node_system_executor.py` had a trailing blank line at EOF after deleting the local summary functions.
+  - Removed the trailing blank line and re-ran the same full verification command.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 94%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 113 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 84-86% after isolating runtime summaries.
+  - Opened Phase 114 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_runtime_summaries.py -q` before implementation | Fails because the runtime summaries module is missing | Failed with missing module import | Passed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_runtime_summaries.py backend/tests/test_langgraph_migration.py -q` | Summary and LangGraph behavior stay unchanged | 41 passed | Passed |
+| First whitespace check | `git diff --check` | No whitespace errors | Failed on trailing blank line at EOF in `node_system_executor.py` | Fixed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 183 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | `git diff --check` reported a trailing blank line at EOF in `node_system_executor.py` | Phase 113 full verification | Removed the trailing blank line and re-ran the full verification command successfully. |
+
+## Session: 2026-04-30 Phase 112
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `c0fee00` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 111 findings, and remaining executor run-progress/facade clusters.
+  - Chose run progress persistence because the side-effect sequence can move behind injected dependencies while preserving the old runtime call surface.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_runtime_progress_persistence.py` covering run artifact refresh arguments, lifecycle touch, save call, and `run.updated` event payload construction.
+  - Verified the expected red failure because `app.core.runtime.run_progress` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/run_progress.py`.
+  - Moved run artifact refresh, lifecycle touch, save, and `run.updated` event publishing out of `node_system_executor.py`.
+  - Kept `node_system_executor._persist_run_progress` as a thin dependency-injection facade so runtime callers and patch seams still work.
+  - Reduced `node_system_executor.py` from 252 lines to 250 lines while isolating the side-effect boundary.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused run progress and LangGraph migration tests.
+  - Ran `git diff --check`.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 93.5%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 112 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 82-84% after isolating run progress persistence.
+  - Opened Phase 113 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_runtime_progress_persistence.py -q` before implementation | Fails because the run progress module is missing | Failed with missing module import | Passed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_runtime_progress_persistence.py backend/tests/test_langgraph_migration.py -q` | Run progress and LangGraph behavior stay unchanged | 40 passed | Passed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 181 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 112 | No implementation errors beyond the expected red module-import failure. |
+
+## Session: 2026-04-30 Phase 111
+
+### Phase 1: Re-orientation
+- **Status:** completed
+- Actions taken:
+  - Continued automatically after commit `f12d278` because the full-roadmap progress is below 100%.
+  - Re-read the formal roadmap, Phase 110 findings, and remaining executor node-handler/run-progress clusters.
+  - Chose input, condition, and agent node handlers because they can move behind injected dependencies while the executor keeps the old private patch seams.
+
+### Phase 2: Red Tests
+- **Status:** completed
+- Actions taken:
+  - Added `backend/tests/test_node_handlers_runtime.py` covering input output coercion/final result selection, condition branch resolution/failure, agent skill ordering, knowledge-base skill inputs, stream callback wiring, generation kwargs, warning dedupe, and final output projection.
+  - Verified the expected red failure because `app.core.runtime.node_handlers` did not exist yet.
+
+### Phase 3: Implementation
+- **Status:** completed
+- Actions taken:
+  - Added `backend/app/core/runtime/node_handlers.py`.
+  - Moved input, condition, and agent handler bodies out of `node_system_executor.py`.
+  - Kept `_execute_input_node`, `_execute_agent_node`, and `_execute_condition_node` in `node_system_executor.py` as thin dependency-injection facades so existing tests and patch seams still work.
+  - Reduced `node_system_executor.py` from 339 lines to 252 lines.
+
+### Phase 4: Verification
+- **Status:** completed
+- Actions taken:
+  - Ran focused node handler and LangGraph migration tests.
+  - Ran `git diff --check`.
+  - Ran the full backend test suite.
+  - Restarted the local dev environment with root `npm run dev`.
+  - Confirmed the frontend entry returned HTTP 200 and backend `/health` returned `{"status":"ok"}`.
+  - Confirmed the previous dev session exited after the restart.
+
+### Phase 5: Honest Progress Gate
+- **Status:** completed
+- Actions taken:
+  - Recalculated the full roadmap at about 93%.
+  - Recalculated the frontend-focused roadmap at about 83-85%; unchanged because Phase 111 was backend-only.
+  - Recalculated P3 `EditorWorkspaceShell.vue` cleanup at about 82%; unchanged.
+  - Recalculated P4 backend cleanup at about 79-82% after isolating node handlers.
+  - Opened Phase 112 automatically because the full roadmap is still below 100%.
+
+## Test Results
+| Test | Input | Expected | Actual | Status |
+|------|-------|----------|--------|--------|
+| Red structure/import test | `PYTHONPATH=backend pytest backend/tests/test_node_handlers_runtime.py -q` before implementation | Fails because the node handler module is missing | Failed with missing module import | Passed |
+| Focused runtime tests | `PYTHONPATH=backend pytest backend/tests/test_node_handlers_runtime.py backend/tests/test_langgraph_migration.py -q` | Node handler and LangGraph behavior stay unchanged | 42 passed | Passed |
+| Whitespace check + full backend tests | `git diff --check && PYTHONPATH=backend pytest backend/tests -q` | No whitespace errors and all backend tests pass | 180 passed, 2 existing warnings | Passed |
+| Dev restart | `npm run dev` at repo root | Services restart and respond | Frontend HTTP 200, backend `/health` ok | Passed |
+
+## Error Log
+| Timestamp | Error | Attempt | Resolution |
+|-----------|-------|---------|------------|
+| 2026-04-30 | None | Phase 111 | No implementation errors beyond the expected red module-import failure. |
+
 ## Session: 2026-04-30 Phase 110
 
 ### Phase 1: Re-orientation
