@@ -222,27 +222,20 @@ import {
   type NodeCreationMenuState,
 } from "@/editor/workspace/nodeCreationMenuModel";
 import { createNodeFromCreationEntry, createNodeFromDroppedFile } from "./nodeCreationExecution.ts";
-import { resolveEditorRouteInstruction } from "@/lib/editor-route-sync";
 import {
   cloneGraphDocument,
   createEditorSeedDraftGraph,
-  pruneUnreferencedStateSchemaInDocument,
   resolveEditorSeedTemplate,
 } from "@/lib/graph-document";
 import {
-  applyDocumentMetaToWorkspaceTab,
-  closeWorkspaceTabTransition,
   createUnsavedWorkspaceTab,
   ensureSavedGraphTab,
   prunePersistedEditorDocumentDrafts,
   prunePersistedEditorViewportDrafts,
   readPersistedEditorDocumentDraft,
   readPersistedEditorWorkspace,
-  reorderWorkspaceTab,
   removePersistedEditorDocumentDraft,
   removePersistedEditorViewportDraft,
-  resolveEditorUrl,
-  resolveWorkspaceTabUrl,
   writePersistedEditorWorkspace,
   type EditorWorkspaceTab,
   type PersistedEditorWorkspace,
@@ -286,15 +279,19 @@ import {
   shouldHydrateExistingGraphDocument,
   shouldRunWorkspaceDraftHydration,
 } from "./editorDraftPersistenceModel.ts";
-import { omitTabScopedRecordEntry, setTabScopedRecordEntry } from "./editorTabRuntimeModel.ts";
-import { formatValidationFeedback } from "./runFeedbackModel.ts";
+import { setTabScopedRecordEntry } from "./editorTabRuntimeModel.ts";
 import type { WorkspaceSidePanelMode } from "./workspaceSidePanelModel.ts";
-import { buildPythonExportFileName, downloadPythonSource } from "./pythonExportModel.ts";
+import { downloadPythonSource } from "./pythonExportModel.ts";
 import { isGraphiteUiPythonExportFile, isGraphiteUiPythonExportSource } from "./pythonImportModel.ts";
 import { buildPresetPayloadForNode } from "./presetPersistence.ts";
 import { useWorkspaceDocumentState } from "./useWorkspaceDocumentState.ts";
+import { useWorkspaceGraphPersistenceController } from "./useWorkspaceGraphPersistenceController.ts";
+import { useWorkspacePythonImportController } from "./useWorkspacePythonImportController.ts";
+import { useWorkspaceRouteController } from "./useWorkspaceRouteController.ts";
+import { useWorkspaceRunController } from "./useWorkspaceRunController.ts";
 import { useWorkspaceRunVisualState, type WorkspaceRunFeedback } from "./useWorkspaceRunVisualState.ts";
 import { useWorkspaceSidePanelController } from "./useWorkspaceSidePanelController.ts";
+import { useWorkspaceTabLifecycleController } from "./useWorkspaceTabLifecycleController.ts";
 import { useWorkspaceGraphMutationActions } from "./useWorkspaceGraphMutationActions.ts";
 
 type DataEdgeStateEditorRequest = CreatedStateEdgeEditorRequest;
@@ -450,6 +447,129 @@ const routeSignature = computed(() => {
   }
   return "root";
 });
+const { applyCurrentRouteInstruction, syncRouteToUrl, syncRouteToTab } = useWorkspaceRouteController({
+  routeMode: () => props.routeMode,
+  routeGraphId: () => props.routeGraphId ?? null,
+  defaultTemplateId: () => props.defaultTemplateId ?? null,
+  restoreRunId: () => props.restoreRunId ?? null,
+  restoreSnapshotId: () => props.restoreSnapshotId ?? null,
+  activeTabRouteSignature,
+  routeSignature,
+  handledRouteSignature,
+  routeRestoreError,
+  currentRouteFullPath: () => route.fullPath,
+  pushRoute: (targetUrl) => router.push(targetUrl),
+  replaceRoute: (targetUrl) => router.replace(targetUrl),
+  openRestoredRunTab,
+  openNewTab,
+  openExistingGraph,
+});
+const {
+  renameActiveGraph,
+  saveActiveGraph,
+  saveTab,
+  validateActiveGraph,
+  exportActiveGraph,
+} = useWorkspaceGraphPersistenceController({
+  activeTab,
+  workspace,
+  documentsByTabId,
+  guardGraphEditForTab,
+  commitDirtyDocumentForTab,
+  registerDocumentForTab,
+  updateWorkspace,
+  updateWorkspaceTab,
+  syncRouteToTab,
+  loadGraphs: () => graphStore.loadGraphs(),
+  saveGraph,
+  fetchGraph,
+  validateGraph,
+  exportLangGraphPython,
+  downloadPythonSource,
+  setMessageFeedbackForTab,
+});
+const {
+  handlePythonGraphImportSelection,
+  importPythonGraphFile,
+  openPythonGraphImportDialog,
+} = useWorkspacePythonImportController({
+  activeTab,
+  workspace,
+  handledRouteSignature,
+  clickPythonGraphImportInput: () => {
+    pythonGraphImportInput.value?.click();
+  },
+  registerDocumentForTab,
+  updateWorkspace,
+  syncRouteToTab,
+  importGraphFromPythonSource,
+  isGraphiteUiPythonExportSource,
+  setMessageFeedbackForTab,
+});
+const {
+  activateTab,
+  reorderTab,
+  requestCloseTab,
+  cancelPendingClose,
+  discardPendingClose,
+  saveAndClosePendingTab,
+} = useWorkspaceTabLifecycleController({
+  workspace,
+  pendingCloseTabId,
+  closeBusy,
+  closeError,
+  documentsByTabId,
+  loadingByTabId,
+  errorByTabId,
+  feedbackByTabId,
+  statePanelOpenByTabId,
+  sidePanelModeByTabId,
+  focusedNodeIdByTabId,
+  focusRequestByTabId,
+  viewportByTabId,
+  runNodeStatusByTabId,
+  currentRunNodeIdByTabId,
+  latestRunDetailByTabId,
+  restoredRunSnapshotIdByTabId,
+  humanReviewBusyByTabId,
+  humanReviewErrorByTabId,
+  runOutputPreviewByTabId,
+  runFailureMessageByTabId,
+  activeRunEdgeIdsByTabId,
+  cancelRunPolling,
+  cancelRunEventStreamForTab,
+  updateWorkspace,
+  writeWorkspace: writePersistedEditorWorkspace,
+  removeDocumentDraft: removePersistedEditorDocumentDraft,
+  removeViewportDraft: removePersistedEditorViewportDraft,
+  syncRouteToTab,
+  syncRouteToUrl,
+  saveTab,
+  closeSaveFailedMessage: () => t("closeDialog.saveFailed"),
+});
+const { runActiveGraph, resumeHumanReviewRun } = useWorkspaceRunController({
+  activeTab,
+  documentsByTabId,
+  latestRunDetailByTabId,
+  restoredRunSnapshotIdByTabId,
+  humanReviewBusyByTabId,
+  humanReviewErrorByTabId,
+  runNodeStatusByTabId,
+  currentRunNodeIdByTabId,
+  runOutputPreviewByTabId,
+  runFailureMessageByTabId,
+  activeRunEdgeIdsByTabId,
+  refreshAgentModels,
+  runGraph,
+  resumeRun,
+  cancelRunPolling,
+  getRunGeneration: (tabId) => runPollGenerationByTabId.get(tabId) ?? 0,
+  startRunEventStreamForTab,
+  pollRunForTab,
+  setFeedbackForTab,
+  setMessageFeedbackForTab,
+  translate: (key, params) => t(key, params ?? {}),
+});
 
 function cancelRunPolling(tabId: string) {
   runPollGenerationByTabId.set(tabId, (runPollGenerationByTabId.get(tabId) ?? 0) + 1);
@@ -557,56 +677,6 @@ async function pollRunForTab(tabId: string, runId: string, generation = runPollG
   }
 }
 
-function applyCurrentRouteInstruction() {
-  const instruction = resolveEditorRouteInstruction({
-    routeMode: props.routeMode,
-    routeGraphId: props.routeGraphId ?? null,
-    defaultTemplateId: props.defaultTemplateId ?? null,
-    restoreRunId: props.restoreRunId ?? null,
-    restoreSnapshotId: props.restoreSnapshotId ?? null,
-    activeTabRouteSignature: activeTabRouteSignature.value,
-    routeSignature: routeSignature.value,
-    handledRouteSignature: handledRouteSignature.value,
-  });
-
-  if (instruction.type === "restore-run") {
-    void openRestoredRunTab(instruction.runId, instruction.snapshotId ?? null, instruction.navigation);
-    return;
-  }
-
-  if (instruction.type === "open-new") {
-    routeRestoreError.value = null;
-    openNewTab(instruction.templateId, instruction.navigation);
-    return;
-  }
-
-  if (instruction.type === "open-existing") {
-    routeRestoreError.value = null;
-    openExistingGraph(instruction.graphId, instruction.navigation);
-    return;
-  }
-
-  handledRouteSignature.value = routeSignature.value;
-}
-
-function syncRouteToUrl(targetUrl: string, mode: "push" | "replace" = "push") {
-  if (route.fullPath === targetUrl) {
-    return;
-  }
-  if (mode === "replace") {
-    void router.replace(targetUrl);
-    return;
-  }
-  void router.push(targetUrl);
-}
-
-function syncRouteToTab(
-  tab: Pick<EditorWorkspaceTab, "graphId" | "kind" | "templateId" | "defaultTemplateId">,
-  mode: "push" | "replace" = "push",
-) {
-  syncRouteToUrl(resolveWorkspaceTabUrl(tab), mode);
-}
-
 function updateWorkspace(nextWorkspace: PersistedEditorWorkspace) {
   workspace.value = nextWorkspace;
 }
@@ -616,29 +686,6 @@ function updateWorkspaceTab(tabId: string, updater: (tab: EditorWorkspaceTab) =>
     ...workspace.value,
     tabs: workspace.value.tabs.map((tab) => (tab.tabId === tabId ? updater(tab) : tab)),
   });
-}
-
-function clearTabRuntime(tabId: string) {
-  cancelRunPolling(tabId);
-  cancelRunEventStreamForTab(tabId);
-  documentsByTabId.value = omitTabScopedRecordEntry(documentsByTabId.value, tabId);
-  loadingByTabId.value = omitTabScopedRecordEntry(loadingByTabId.value, tabId);
-  errorByTabId.value = omitTabScopedRecordEntry(errorByTabId.value, tabId);
-  feedbackByTabId.value = omitTabScopedRecordEntry(feedbackByTabId.value, tabId);
-  statePanelOpenByTabId.value = omitTabScopedRecordEntry(statePanelOpenByTabId.value, tabId);
-  sidePanelModeByTabId.value = omitTabScopedRecordEntry(sidePanelModeByTabId.value, tabId);
-  focusedNodeIdByTabId.value = omitTabScopedRecordEntry(focusedNodeIdByTabId.value, tabId);
-  focusRequestByTabId.value = omitTabScopedRecordEntry(focusRequestByTabId.value, tabId);
-  viewportByTabId.value = omitTabScopedRecordEntry(viewportByTabId.value, tabId);
-  runNodeStatusByTabId.value = omitTabScopedRecordEntry(runNodeStatusByTabId.value, tabId);
-  currentRunNodeIdByTabId.value = omitTabScopedRecordEntry(currentRunNodeIdByTabId.value, tabId);
-  latestRunDetailByTabId.value = omitTabScopedRecordEntry(latestRunDetailByTabId.value, tabId);
-  restoredRunSnapshotIdByTabId.value = omitTabScopedRecordEntry(restoredRunSnapshotIdByTabId.value, tabId);
-  humanReviewBusyByTabId.value = omitTabScopedRecordEntry(humanReviewBusyByTabId.value, tabId);
-  humanReviewErrorByTabId.value = omitTabScopedRecordEntry(humanReviewErrorByTabId.value, tabId);
-  runOutputPreviewByTabId.value = omitTabScopedRecordEntry(runOutputPreviewByTabId.value, tabId);
-  runFailureMessageByTabId.value = omitTabScopedRecordEntry(runFailureMessageByTabId.value, tabId);
-  activeRunEdgeIdsByTabId.value = omitTabScopedRecordEntry(activeRunEdgeIdsByTabId.value, tabId);
 }
 
 function createDraftForTab(tab: EditorWorkspaceTab): GraphPayload {
@@ -727,33 +774,6 @@ async function openRestoredRunTab(runId: string, snapshotId: string | null = pro
   }
 }
 
-function openImportedGraphTab(graph: GraphPayload, fileName: string) {
-  const importedGraph = cloneGraphDocument({
-    ...graph,
-    graph_id: null,
-    name: graph.name?.trim() || fileName.replace(/\.py$/i, "") || "Imported Graph",
-  });
-  const tab = {
-    ...createUnsavedWorkspaceTab({
-      kind: "new",
-      title: importedGraph.name,
-    }),
-    dirty: true,
-  };
-
-  registerDocumentForTab(tab.tabId, importedGraph);
-  updateWorkspace({
-    activeTabId: tab.tabId,
-    tabs: [...workspace.value.tabs, tab],
-  });
-  syncRouteToTab(tab);
-  handledRouteSignature.value = "new:";
-  setMessageFeedbackForTab(tab.tabId, {
-    tone: "success",
-    message: `Imported graph from ${fileName}.`,
-  });
-}
-
 async function loadExistingGraphIntoTab(tabId: string, graphId: string) {
   if (!shouldHydrateExistingGraphDocument({ hasDocument: Boolean(documentsByTabId.value[tabId]), isLoading: Boolean(loadingByTabId.value[tabId]) })) {
     return;
@@ -810,67 +830,6 @@ function openExistingGraph(graphId: string, navigation: "push" | "replace" | "no
     );
   }
   handledRouteSignature.value = `existing:${graphId}`;
-}
-
-function activateTab(tabId: string) {
-  const tab = workspace.value.tabs.find((entry) => entry.tabId === tabId);
-  if (!tab) {
-    return;
-  }
-  updateWorkspace({
-    ...workspace.value,
-    activeTabId: tabId,
-  });
-  syncRouteToTab(tab);
-}
-
-function reorderTab(sourceTabId: string, targetTabId: string, placement: "before" | "after") {
-  updateWorkspace(reorderWorkspaceTab(workspace.value, sourceTabId, targetTabId, placement));
-}
-
-function finalizeTabClose(tabId: string) {
-  const transition = closeWorkspaceTabTransition(workspace.value, tabId);
-  updateWorkspace(transition.workspace);
-  writePersistedEditorWorkspace(transition.workspace);
-  removePersistedEditorDocumentDraft(tabId);
-  removePersistedEditorViewportDraft(tabId);
-  clearTabRuntime(tabId);
-
-  if (transition.closedActiveTab) {
-    syncRouteToUrl(resolveEditorUrl(transition.nextGraphId));
-  }
-}
-
-function requestCloseTab(tabId: string) {
-  const tab = workspace.value.tabs.find((entry) => entry.tabId === tabId);
-  if (!tab) {
-    return;
-  }
-
-  if (!tab.dirty) {
-    finalizeTabClose(tabId);
-    return;
-  }
-
-  pendingCloseTabId.value = tabId;
-  closeError.value = null;
-}
-
-function cancelPendingClose() {
-  if (closeBusy.value) {
-    return;
-  }
-  pendingCloseTabId.value = null;
-  closeError.value = null;
-}
-
-function discardPendingClose() {
-  if (!pendingCloseTabId.value || closeBusy.value) {
-    return;
-  }
-  finalizeTabClose(pendingCloseTabId.value);
-  pendingCloseTabId.value = null;
-  closeError.value = null;
 }
 
 function isGraphInteractionLocked(tabId: string) {
@@ -1018,53 +977,6 @@ async function createNodeFromFileForTab(tabId: string, _payload: { file: File; p
   closeNodeCreationMenu(tabId);
 }
 
-function openPythonGraphImportDialog() {
-  pythonGraphImportInput.value?.click();
-}
-
-async function handlePythonGraphImportSelection(event: Event) {
-  const input = event.currentTarget instanceof HTMLInputElement ? event.currentTarget : null;
-  const file = input?.files?.[0] ?? null;
-  if (input) {
-    input.value = "";
-  }
-  if (!file) {
-    return;
-  }
-  await importPythonGraphFile(file, { fallbackToFileNode: false });
-}
-
-async function importPythonGraphFile(file: File, options: { fallbackToFileNode: boolean }) {
-  const source = await file.text();
-  if (!isGraphiteUiPythonExportSource(source)) {
-    if (!options.fallbackToFileNode) {
-      const tab = activeTab.value;
-      if (tab) {
-        setMessageFeedbackForTab(tab.tabId, {
-          tone: "warning",
-          message: `${file.name} is not a GraphiteUI Python export.`,
-        });
-      }
-    }
-    return false;
-  }
-
-  try {
-    const importedGraph = await importGraphFromPythonSource(source);
-    openImportedGraphTab(importedGraph, file.name);
-    return true;
-  } catch (error) {
-    const tab = activeTab.value;
-    if (tab) {
-      setMessageFeedbackForTab(tab.tabId, {
-        tone: "warning",
-        message: error instanceof Error ? error.message : "Failed to import GraphiteUI Python export.",
-      });
-    }
-    return true;
-  }
-}
-
 function handleNodePositionUpdate(tabId: string, payload: { nodeId: string; position: GraphPosition }) {
   if (guardGraphEditForTab(tabId)) {
     return;
@@ -1194,251 +1106,6 @@ function showStateDeleteBlockedToast(message: string) {
     showClose: true,
     message,
   });
-}
-
-function renameActiveGraph(name: string) {
-  const tab = activeTab.value;
-  if (!tab) {
-    return;
-  }
-  if (guardGraphEditForTab(tab.tabId)) {
-    return;
-  }
-  const document = documentsByTabId.value[tab.tabId];
-  if (!document) {
-    return;
-  }
-
-  const nextDocument = cloneGraphDocument(document);
-  nextDocument.name = name;
-  commitDirtyDocumentForTab(tab.tabId, nextDocument);
-}
-
-async function saveTab(tabId: string) {
-  const document = documentsByTabId.value[tabId];
-  if (!document) {
-    return false;
-  }
-
-  try {
-    const documentToSave = pruneUnreferencedStateSchemaInDocument(document);
-    const response = await saveGraph(documentToSave);
-    const savedGraph = await fetchGraph(response.graph_id);
-    registerDocumentForTab(tabId, savedGraph);
-
-    updateWorkspaceTab(tabId, (tab) => ({
-      ...tab,
-      kind: "existing",
-      graphId: savedGraph.graph_id,
-      title: savedGraph.name,
-      dirty: false,
-      templateId: null,
-    }));
-    updateWorkspace(
-      applyDocumentMetaToWorkspaceTab(workspace.value, tabId, {
-        title: savedGraph.name,
-        dirty: false,
-        graphId: savedGraph.graph_id,
-      }),
-    );
-    await graphStore.loadGraphs();
-    if (workspace.value.activeTabId === tabId) {
-      syncRouteToTab(
-        {
-          graphId: savedGraph.graph_id,
-          kind: "existing",
-          templateId: null,
-          defaultTemplateId: null,
-        },
-        "replace",
-      );
-    }
-
-    setMessageFeedbackForTab(tabId, {
-      tone: "success",
-      message: `Saved graph ${savedGraph.graph_id}.`,
-    });
-    return response.saved;
-  } catch (error) {
-    setMessageFeedbackForTab(tabId, {
-      tone: "danger",
-      message: error instanceof Error ? error.message : "Failed to save graph.",
-    });
-    throw error;
-  }
-}
-
-async function saveActiveGraph() {
-  if (!activeTab.value) {
-    return;
-  }
-  await saveTab(activeTab.value.tabId);
-}
-
-async function saveAndClosePendingTab() {
-  if (!pendingCloseTabId.value || closeBusy.value) {
-    return;
-  }
-
-  closeBusy.value = true;
-  closeError.value = null;
-
-  try {
-    const success = await saveTab(pendingCloseTabId.value);
-    if (!success) {
-      closeError.value = t("closeDialog.saveFailed");
-      return;
-    }
-    finalizeTabClose(pendingCloseTabId.value);
-    pendingCloseTabId.value = null;
-    closeError.value = null;
-  } catch (error) {
-    closeError.value = error instanceof Error ? error.message : t("closeDialog.saveFailed");
-  } finally {
-    closeBusy.value = false;
-  }
-}
-
-async function validateActiveGraph() {
-  const tab = activeTab.value;
-  if (!tab) {
-    return;
-  }
-  const document = documentsByTabId.value[tab.tabId];
-  if (!document) {
-    return;
-  }
-
-  try {
-    const response = await validateGraph(document);
-    const feedback = formatValidationFeedback(response);
-    setMessageFeedbackForTab(tab.tabId, feedback);
-  } catch (error) {
-    setMessageFeedbackForTab(tab.tabId, {
-      tone: "danger",
-      message: error instanceof Error ? error.message : "Failed to validate graph.",
-    });
-  }
-}
-
-async function exportActiveGraph() {
-  const tab = activeTab.value;
-  if (!tab) {
-    return;
-  }
-  const document = documentsByTabId.value[tab.tabId];
-  if (!document) {
-    return;
-  }
-
-  try {
-    const exportDocument = cloneGraphDocument(document);
-    const source = await exportLangGraphPython(exportDocument);
-    const fileName = buildPythonExportFileName(exportDocument.name || tab.title);
-    downloadPythonSource(source, fileName);
-    setMessageFeedbackForTab(tab.tabId, {
-      tone: "success",
-      message: `Exported ${fileName}.`,
-    });
-  } catch (error) {
-    setMessageFeedbackForTab(tab.tabId, {
-      tone: "danger",
-      message: error instanceof Error ? error.message : "Failed to export Python code.",
-    });
-  }
-}
-
-async function runActiveGraph() {
-  const tab = activeTab.value;
-  if (!tab) {
-    return;
-  }
-  const document = documentsByTabId.value[tab.tabId];
-  if (!document) {
-    return;
-  }
-
-  try {
-    await refreshAgentModels();
-    const latestDocument = documentsByTabId.value[tab.tabId];
-    if (!latestDocument) {
-      return;
-    }
-
-    const response = await runGraph(latestDocument);
-    cancelRunPolling(tab.tabId);
-    const generation = runPollGenerationByTabId.get(tab.tabId) ?? 0;
-    runNodeStatusByTabId.value = setTabScopedRecordEntry(runNodeStatusByTabId.value, tab.tabId, {});
-    currentRunNodeIdByTabId.value = setTabScopedRecordEntry(currentRunNodeIdByTabId.value, tab.tabId, null);
-    runOutputPreviewByTabId.value = setTabScopedRecordEntry(runOutputPreviewByTabId.value, tab.tabId, {});
-    runFailureMessageByTabId.value = setTabScopedRecordEntry(runFailureMessageByTabId.value, tab.tabId, {});
-    activeRunEdgeIdsByTabId.value = setTabScopedRecordEntry(activeRunEdgeIdsByTabId.value, tab.tabId, []);
-    latestRunDetailByTabId.value = setTabScopedRecordEntry(latestRunDetailByTabId.value, tab.tabId, null);
-    humanReviewErrorByTabId.value = setTabScopedRecordEntry(humanReviewErrorByTabId.value, tab.tabId, null);
-    setFeedbackForTab(tab.tabId, {
-      tone: "warning",
-      message: t("feedback.runQueued", { runId: response.run_id, pending: Object.keys(latestDocument.nodes).length, cycle: "" }),
-      activeRunId: response.run_id,
-      activeRunStatus: response.status,
-      summary: {
-        idle: Object.keys(latestDocument.nodes).length,
-        running: 0,
-        paused: 0,
-        success: 0,
-        failed: 0,
-      },
-      currentNodeLabel: null,
-    });
-    startRunEventStreamForTab(tab.tabId, response.run_id);
-    void pollRunForTab(tab.tabId, response.run_id, generation);
-  } catch (error) {
-    setMessageFeedbackForTab(tab.tabId, {
-      tone: "danger",
-      message: error instanceof Error ? error.message : t("feedback.runFailed", { runId: "" }),
-    });
-  }
-}
-
-async function resumeHumanReviewRun(tabId: string, payload: Record<string, unknown>) {
-  const run = latestRunDetailByTabId.value[tabId];
-  if (!run) {
-    return;
-  }
-
-  humanReviewBusyByTabId.value = setTabScopedRecordEntry(humanReviewBusyByTabId.value, tabId, true);
-  humanReviewErrorByTabId.value = setTabScopedRecordEntry(humanReviewErrorByTabId.value, tabId, null);
-
-  try {
-    const response = await resumeRun(run.run_id, payload, restoredRunSnapshotIdByTabId.value[tabId] ?? null);
-    cancelRunPolling(tabId);
-    const generation = runPollGenerationByTabId.get(tabId) ?? 0;
-    latestRunDetailByTabId.value = setTabScopedRecordEntry(
-      latestRunDetailByTabId.value,
-      tabId,
-      {
-        ...run,
-        run_id: response.run_id,
-        status: response.status,
-      },
-    );
-    restoredRunSnapshotIdByTabId.value = setTabScopedRecordEntry(restoredRunSnapshotIdByTabId.value, tabId, null);
-    setMessageFeedbackForTab(tabId, {
-      tone: "warning",
-      message: t("feedback.runResuming", { runId: response.run_id }),
-      activeRunId: response.run_id,
-      activeRunStatus: response.status,
-    });
-    startRunEventStreamForTab(tabId, response.run_id);
-    void pollRunForTab(tabId, response.run_id, generation);
-  } catch (error) {
-    humanReviewErrorByTabId.value = setTabScopedRecordEntry(
-      humanReviewErrorByTabId.value,
-      tabId,
-      error instanceof Error ? error.message : t("humanReview.resumeFailed"),
-    );
-  } finally {
-    humanReviewBusyByTabId.value = setTabScopedRecordEntry(humanReviewBusyByTabId.value, tabId, false);
-  }
 }
 
 async function loadKnowledgeBases() {
