@@ -7,7 +7,7 @@ import {
   projectCanvasEdges,
 } from "./edgeProjection.ts";
 import { buildConnectorCurvePath } from "./connectionCurvePath.ts";
-import { buildSequenceFlowPath } from "./flowEdgePath.ts";
+import { buildSelfFeedbackFlowPath, buildSequenceFlowPath } from "./flowEdgePath.ts";
 
 export type MeasuredAnchorOffset = {
   offsetX: number;
@@ -88,7 +88,17 @@ function resolveCanvasEdges(
 
       return {
         ...edge,
-        path: buildDataPath(sourceAnchor.x, sourceAnchor.y, targetAnchor.x, targetAnchor.y),
+        path: buildDataPath(
+          sourceAnchor.x,
+          sourceAnchor.y,
+          targetAnchor.x,
+          targetAnchor.y,
+          document.nodes[edge.source]?.ui.position.x,
+          document.nodes[edge.source]?.ui.position.y,
+          document.nodes[edge.target]?.ui.position.x,
+          document.nodes[edge.target]?.ui.position.y,
+          edge.source === edge.target,
+        ),
       };
     }
 
@@ -142,7 +152,43 @@ function buildFlowPath(
   });
 }
 
-function buildDataPath(startX: number, startY: number, endX: number, endY: number) {
+function buildDataPath(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  sourceNodeX?: number,
+  sourceNodeY?: number,
+  targetNodeX?: number,
+  targetNodeY?: number,
+  isSelfFeedback = false,
+) {
+  if (isSelfFeedback) {
+    return buildSelfFeedbackFlowPath({
+      sourceX: startX,
+      sourceY: startY,
+      targetX: endX,
+      targetY: endY,
+      sourceNodeX,
+      sourceNodeY,
+      targetNodeX,
+      targetNodeY,
+    });
+  }
+
+  if (endX <= startX) {
+    return buildSequenceFlowPath({
+      sourceX: startX,
+      sourceY: startY,
+      targetX: endX,
+      targetY: endY,
+      sourceNodeX,
+      sourceNodeY,
+      targetNodeX,
+      targetNodeY,
+    });
+  }
+
   return buildConnectorCurvePath({
     sourceX: startX,
     sourceY: startY,

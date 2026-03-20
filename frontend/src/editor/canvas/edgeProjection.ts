@@ -2,7 +2,7 @@ import type { GraphDocument, GraphNode, GraphPayload } from "../../types/node-sy
 import { buildAnchorModel } from "../anchors/anchorModel.ts";
 import { placeAnchors, type NodeFrame } from "../anchors/anchorPlacement.ts";
 import { buildConnectorCurvePath } from "./connectionCurvePath.ts";
-import { buildSequenceFlowPath } from "./flowEdgePath.ts";
+import { buildSelfFeedbackFlowPath, buildSequenceFlowPath } from "./flowEdgePath.ts";
 
 export type ProjectedCanvasEdge = {
   id: string;
@@ -143,6 +143,8 @@ export function projectCanvasEdges(document: GraphPayload | GraphDocument): Proj
     .map((relation) => {
       const source = placements.get(relation.source);
       const target = placements.get(relation.target);
+      const sourceNode = document.nodes[relation.source];
+      const targetNode = document.nodes[relation.target];
       const sourceAnchor = source?.stateOutputs.find((anchor) => anchor.stateKey === relation.state);
       const targetAnchor = target?.stateInputs.find((anchor) => anchor.stateKey === relation.state);
       if (!sourceAnchor || !targetAnchor) {
@@ -156,7 +158,17 @@ export function projectCanvasEdges(document: GraphPayload | GraphDocument): Proj
         target: relation.target,
         color: document.state_schema[relation.state]?.color ?? undefined,
         state: relation.state,
-        path: buildDataPath(sourceAnchor.x, sourceAnchor.y, targetAnchor.x, targetAnchor.y),
+        path: buildDataPath(
+          sourceAnchor.x,
+          sourceAnchor.y,
+          targetAnchor.x,
+          targetAnchor.y,
+          sourceNode?.ui.position.x,
+          sourceNode?.ui.position.y,
+          targetNode?.ui.position.x,
+          targetNode?.ui.position.y,
+          relation.source === relation.target,
+        ),
       };
     })
     .filter(Boolean) as ProjectedCanvasEdge[];
@@ -421,7 +433,43 @@ function resolveFlowDescriptorBranchPriority(branch: string | undefined) {
   return 3;
 }
 
-function buildDataPath(startX: number, startY: number, endX: number, endY: number) {
+function buildDataPath(
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  sourceNodeX?: number,
+  sourceNodeY?: number,
+  targetNodeX?: number,
+  targetNodeY?: number,
+  isSelfFeedback = false,
+) {
+  if (isSelfFeedback) {
+    return buildSelfFeedbackFlowPath({
+      sourceX: startX,
+      sourceY: startY,
+      targetX: endX,
+      targetY: endY,
+      sourceNodeX,
+      sourceNodeY,
+      targetNodeX,
+      targetNodeY,
+    });
+  }
+
+  if (endX <= startX) {
+    return buildSequenceFlowPath({
+      sourceX: startX,
+      sourceY: startY,
+      targetX: endX,
+      targetY: endY,
+      sourceNodeX,
+      sourceNodeY,
+      targetNodeX,
+      targetNodeY,
+    });
+  }
+
   return buildConnectorCurvePath({
     sourceX: startX,
     sourceY: startY,
@@ -457,25 +505,18 @@ function collectProjectedDataRelations(document: GraphPayload | GraphDocument): 
   for (const [nodeId, node] of Object.entries(document.nodes)) {
     for (const binding of node.reads) {
       const candidateWriters = (writersByState.get(binding.state) ?? []).filter(
-        (writerId) => writerId !== nodeId && reachability.get(writerId)?.has(nodeId),
+        (writerId) => writerId === nodeId || reachability.get(writerId)?.has(nodeId),
       );
-      const remainingWriters = candidateWriters.filter(
-        (writerId) =>
-          !candidateWriters.some(
-            (otherWriterId) =>
-              otherWriterId !== writerId &&
-              reachability.get(writerId)?.has(otherWriterId) &&
-              reachability.get(otherWriterId)?.has(nodeId),
-          ),
-      );
-      if (remainingWriters.length !== 1) {
+      if (candidateWriters.length === 0) {
         continue;
       }
-      relations.push({
-        source: remainingWriters[0]!,
-        target: nodeId,
-        state: binding.state,
-      });
+      relations.push(
+        ...candidateWriters.map((writerId) => ({
+          source: writerId,
+          target: nodeId,
+          state: binding.state,
+        })),
+      );
     }
   }
 
