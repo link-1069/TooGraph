@@ -16,7 +16,9 @@ from app.core.schemas.node_system import (
     NodeSystemConditionNode,
     NodeSystemInputNode,
     NodeSystemStateDefinition,
+    StateWriteMode,
 )
+from app.core.storage.skill_artifact_store import create_skill_artifact_context
 from app.skills.registry import get_skill_registry
 
 
@@ -105,7 +107,16 @@ def execute_agent_node(
 
         started_at = perf_counter()
         skill_inputs = build_skill_inputs(binding, input_values)
-        skill_result = invoke_skill_func(skill_func, skill_inputs)
+        skill_invoke_kwargs: dict[str, Any] = {}
+        if callable_accepts_keyword_func(invoke_skill_func, "context"):
+            invocation_index = _next_skill_artifact_invocation_index(state, node_name, skill_key)
+            skill_invoke_kwargs["context"] = create_skill_artifact_context(
+                run_id=str(state.get("run_id") or "run"),
+                node_id=node_name,
+                skill_key=skill_key,
+                invocation_index=invocation_index,
+            )
+        skill_result = invoke_skill_func(skill_func, skill_inputs, **skill_invoke_kwargs)
         duration_ms = int((perf_counter() - started_at) * 1000)
         state_writes = map_skill_outputs(binding, skill_result)
         skill_status, skill_error = _resolve_skill_invocation_status(skill_key, skill_result)
@@ -151,12 +162,14 @@ def execute_agent_node(
     warnings.extend(response_warnings)
 
     output_values = dict(mapped_skill_outputs)
-    output_values.update(
-        {
-            state_name: response_payload.get(state_name)
-            for state_name in output_keys
-        }
-    )
+    write_modes = {binding.state: binding.mode for binding in node.writes}
+    for state_name in output_keys:
+        if state_name in mapped_skill_outputs and write_modes.get(state_name) == StateWriteMode.APPEND:
+            continue
+        if state_name in response_payload:
+            output_values[state_name] = response_payload.get(state_name)
+        elif state_name not in output_values:
+            output_values[state_name] = None
     finalize_agent_stream_delta_func(
         state=state,
         node_name=node_name,
@@ -173,6 +186,23 @@ def execute_agent_node(
         "warnings": list(dict.fromkeys(warnings)),
         "final_result": first_truthy_func(output_values.values()) or response_payload.get("summary") or "",
     }
+
+
+def _next_skill_artifact_invocation_index(state: dict[str, Any], node_name: str, skill_key: str) -> int:
+    raw_counters = state.get("skill_invocation_counts")
+    if not isinstance(raw_counters, dict):
+        raw_counters = {}
+        state["skill_invocation_counts"] = raw_counters
+
+    counter_key = f"{node_name}:{skill_key}"
+    try:
+        current_index = int(raw_counters.get(counter_key, 0))
+    except (TypeError, ValueError):
+        current_index = 0
+    next_index = max(0, current_index) + 1
+    raw_counters[counter_key] = next_index
+    return next_index
+
 
 def _resolve_skill_invocation_status(skill_key: str, skill_result: dict[str, Any]) -> tuple[str, str]:
     status = _compact_text(skill_result.get("status")).lower()

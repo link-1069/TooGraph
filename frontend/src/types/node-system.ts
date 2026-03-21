@@ -25,7 +25,7 @@ export type ReadBinding = {
 
 export type WriteBinding = {
   state: string;
-  mode?: "replace";
+  mode?: "replace" | "append";
 };
 
 export type AgentThinkingMode = "off" | "low" | "medium" | "high" | "xhigh" | "on";
@@ -92,7 +92,7 @@ export type OutputNode = {
   reads: ReadBinding[];
   writes: WriteBinding[];
   config: {
-    displayMode: "auto" | "plain" | "markdown" | "json";
+    displayMode: "auto" | "plain" | "markdown" | "json" | "documents";
     persistEnabled: boolean;
     persistFormat: "txt" | "md" | "json" | "auto";
     fileNameTemplate: string;
