@@ -39,8 +39,12 @@
           'node-card__preview--empty': outputPreviewContent.isEmpty,
         }"
       >
+        <OutputDocumentPager
+          v-if="outputPreviewContent.kind === 'documents' && outputPreviewContent.documentRefs.length > 0"
+          :documents="outputPreviewContent.documentRefs"
+        />
         <div
-          v-if="outputPreviewContent.kind === 'markdown'"
+          v-else-if="outputPreviewContent.kind === 'markdown'"
           class="node-card__preview-markdown"
           v-html="outputPreviewContent.html"
         />
@@ -56,6 +60,7 @@ import { DocumentChecked } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 
 import type { NodeCardViewModel } from "./nodeCardViewModel";
+import OutputDocumentPager from "./OutputDocumentPager.vue";
 import type { OutputPreviewContent } from "./outputPreviewContentModel";
 
 type OutputBodyViewModel = Extract<NodeCardViewModel["body"], { kind: "output" }>;
@@ -192,6 +197,30 @@ const { t } = useI18n();
   display: grid;
   gap: 0.35rem;
   padding-left: 1.1rem;
+}
+
+.node-card__preview-markdown :deep(table) {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.88rem;
+  white-space: normal;
+}
+
+.node-card__preview-markdown :deep(th),
+.node-card__preview-markdown :deep(td) {
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  padding: 0.42rem 0.58rem;
+  vertical-align: top;
+}
+
+.node-card__preview-markdown :deep(th) {
+  background: rgba(154, 52, 18, 0.08);
+  color: rgba(69, 45, 25, 0.92);
+  font-weight: 700;
 }
 
 .node-card__preview-markdown :deep(code) {
