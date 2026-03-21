@@ -42,25 +42,34 @@
       </div>
     </div>
     <div v-else-if="showAssetUploadInput" class="node-card__input-upload">
-      <input
-        ref="inputAssetInputRef"
-        class="node-card__sr-only"
-        type="file"
-        :accept="inputAssetAccept"
-        @change="emit('asset-file-change', $event)"
-      />
-      <button
+      <label
         v-if="!inputAssetEnvelope"
-        type="button"
         class="node-card__asset-dropzone"
+        role="button"
+        tabindex="0"
         @pointerdown.stop
-        @click.stop="openInputAssetPicker"
+        @click.stop
+        @keydown.enter.prevent="openInputAssetPicker"
+        @keydown.space.prevent="openInputAssetPicker"
         @dragover.prevent
         @drop.prevent="emit('asset-drop', $event)"
       >
+        <input
+          ref="inputAssetInputRef"
+          class="node-card__asset-native-input"
+          type="file"
+          tabindex="-1"
+          :accept="inputAssetAccept"
+          :aria-label="`Upload ${inputAssetLabel}`"
+          @pointerdown.stop
+          @click.stop
+          @dragover.prevent
+          @drop.prevent.stop="emit('asset-drop', $event)"
+          @change="emit('asset-file-change', $event)"
+        />
         <span class="node-card__asset-dropzone-title">Drop {{ inputAssetLabel }} here</span>
         <span class="node-card__asset-dropzone-copy">Or click to choose a file from your device.</span>
-      </button>
+      </label>
       <div
         v-else
         class="node-card__asset-preview-card"
@@ -68,14 +77,28 @@
         @drop.prevent="emit('asset-drop', $event)"
       >
         <div class="node-card__asset-actions">
-          <button
-            type="button"
+          <label
             class="node-card__asset-action"
+            role="button"
+            tabindex="0"
             @pointerdown.stop
-            @click.stop="openInputAssetPicker"
+            @click.stop
+            @keydown.enter.prevent="openInputAssetPicker"
+            @keydown.space.prevent="openInputAssetPicker"
           >
+            <input
+              ref="inputAssetInputRef"
+              class="node-card__asset-native-input node-card__asset-native-input--action"
+              type="file"
+              tabindex="-1"
+              :accept="inputAssetAccept"
+              aria-label="Replace uploaded file"
+              @pointerdown.stop
+              @click.stop
+              @change="emit('asset-file-change', $event)"
+            />
             Replace
-          </button>
+          </label>
           <button
             type="button"
             class="node-card__asset-action node-card__asset-action--danger"
@@ -321,16 +344,29 @@ function openInputAssetPicker() {
 }
 
 .node-card__asset-dropzone {
+  position: relative;
   display: grid;
   min-height: 176px;
   place-items: center;
   gap: 8px;
+  overflow: hidden;
   border: 1px dashed rgba(154, 52, 18, 0.24);
   border-radius: 24px;
   padding: 20px;
   background: rgba(255, 255, 255, 0.84);
   color: #3c2914;
   text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.node-card__asset-native-input {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
   cursor: pointer;
 }
 
@@ -361,6 +397,8 @@ function openInputAssetPicker() {
 }
 
 .node-card__asset-action {
+  position: relative;
+  overflow: hidden;
   min-height: 30px;
   border: 1px solid rgba(154, 52, 18, 0.16);
   border-radius: 999px;
@@ -372,6 +410,11 @@ function openInputAssetPicker() {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  touch-action: manipulation;
+}
+
+.node-card__asset-native-input--action {
+  border-radius: inherit;
 }
 
 .node-card__asset-action--danger {
