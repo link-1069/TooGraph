@@ -77,13 +77,14 @@ test("EditorWorkspaceShell loads persisted presets for the node creation menu", 
   assert.match(resourceControllerSource, /persistedPresets\.value = await input\.fetchPresets\(\)/);
 });
 
-test("EditorWorkspaceShell seeds plain new tabs from the baseline default template", () => {
+test("EditorWorkspaceShell creates blank plain new tabs while preserving explicit template tabs", () => {
   assert.match(componentSource, /import \{ useWorkspaceOpenController \} from "\.\/useWorkspaceOpenController\.ts";/);
-  assert.match(openControllerSource, /createEditorSeedDraftGraph/);
-  assert.match(openControllerSource, /resolveEditorSeedTemplate/);
-  assert.match(openControllerSource, /return createEditorSeedDraftGraph\(input\.templates\(\), tab\.defaultTemplateId \?\? null, tab\.title\);/);
-  assert.match(openControllerSource, /const seedTemplate = resolveEditorSeedTemplate\(input\.templates\(\), template\?\.template_id \?\? null\);/);
-  assert.match(openControllerSource, /const draft = createEditorSeedDraftGraph\(input\.templates\(\), template\?\.template_id \?\? null\);/);
+  assert.match(openControllerSource, /createEmptyDraftGraph/);
+  assert.match(openControllerSource, /createDraftFromTemplate/);
+  assert.match(openControllerSource, /return createEmptyDraftGraph\(tab\.title\);/);
+  assert.match(openControllerSource, /const draft = template \? createDraftFromTemplate\(template\) : createEmptyDraftGraph\(\);/);
+  assert.doesNotMatch(openControllerSource, /createEditorSeedDraftGraph/);
+  assert.doesNotMatch(openControllerSource, /resolveEditorSeedTemplate/);
   assert.doesNotMatch(componentSource, /createEditorSeedDraftGraph/);
 });
 
@@ -228,7 +229,7 @@ test("EditorWorkspaceShell routes menu selections and dropped files through the 
   assert.match(nodeCreationControllerSource, /buildClosedNodeCreationMenuState\(\)/);
   assert.match(nodeCreationControllerSource, /buildUpdatedNodeCreationMenuQuery\(currentState, query\)/);
   assert.doesNotMatch(componentSource, /typeof context\.clientX === "number" && typeof context\.clientY === "number"/);
-  assert.match(graphMutationActionsSource, /function connectStateBindingForTab\(\s*tabId: string,\s*payload: \{ sourceNodeId: string; sourceStateKey: string; targetNodeId: string; targetStateKey: string; position: GraphPosition \},\s*\)/);
+  assert.match(graphMutationActionsSource, /function connectStateBindingForTab\(\s*tabId: string,\s*payload: \{[\s\S]*sourceNodeId: string;[\s\S]*sourceStateKey: string;[\s\S]*targetNodeId: string;[\s\S]*targetStateKey: string;[\s\S]*position: GraphPosition;[\s\S]*sourceValueType\?: string \| null;[\s\S]*\},\s*\)/);
   assert.match(graphMutationActionsSource, /const createdStateKey = resolveCreatedVirtualOutputStateKey\(document, nextDocument, payload\.sourceNodeId, payload\.sourceStateKey\);/);
   assert.match(graphMutationActionsSource, /if \(createdStateKey\) \{[\s\S]*input\.openCreatedStateEdgeEditorForTab\(\s*tabId,[\s\S]*sourceNodeId: payload\.sourceNodeId,[\s\S]*sourceStateKey: payload\.sourceStateKey,[\s\S]*createdStateKey,/);
   assert.match(graphMutationActionsSource, /if \(previousDocument\.state_schema\[createdBinding\.state\]\) \{[\s\S]*return null;/);

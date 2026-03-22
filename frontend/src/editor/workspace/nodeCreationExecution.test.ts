@@ -87,7 +87,7 @@ test("createNodeFromCreationEntry builds the builtin empty agent preset and auto
   assert.deepEqual(result.document.edges, [{ source: "input_question", target: "agent_created" }]);
 });
 
-test("createNodeFromCreationEntry creates input boundary nodes without default states", () => {
+test("createNodeFromCreationEntry creates input boundary nodes with a virtual output slot", () => {
   const document = {
     ...createBaseDocument(),
     metadata: {
@@ -115,7 +115,7 @@ test("createNodeFromCreationEntry creates input boundary nodes without default s
   });
 
   assert.deepEqual(result.document.nodes.input_created.writes, []);
-  assert.equal(result.document.state_schema.state_8, undefined);
+  assert.deepEqual(result.document.state_schema, document.state_schema);
   assert.equal(result.document.metadata.graphiteui_state_key_counter, 7);
 });
 

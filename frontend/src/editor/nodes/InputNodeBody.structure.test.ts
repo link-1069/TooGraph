@@ -14,12 +14,16 @@ test("InputNodeBody owns input presentation and forwards parent side effects", (
   assert.match(componentSource, /defineEmits<\{[\s\S]*\(event: "update:boundary-selection", value: string \| number \| boolean\): void;[\s\S]*\(event: "update:knowledge-base", value: string \| number \| boolean \| undefined\): void;[\s\S]*\(event: "asset-file-change", inputEvent: Event\): void;[\s\S]*\(event: "asset-drop", dragEvent: DragEvent\): void;[\s\S]*\(event: "clear-asset"\): void;[\s\S]*\(event: "input-value", inputEvent: Event\): void;[\s\S]*\}>/);
   assert.match(componentSource, /<div class="node-card__input-body">/);
   assert.match(componentSource, /<div class="node-card__port-row node-card__port-row--single node-card__port-row--input-boundary">/);
-  assert.match(componentSource, /<ElSegmented[\s\S]*class="node-card__input-boundary-toggle"[\s\S]*:model-value="inputBoundarySelection"[\s\S]*:options="inputTypeOptions"[\s\S]*:disabled="Boolean\(inputAssetEnvelope\)"[\s\S]*@update:model-value="emit\('update:boundary-selection', \$event\)"/);
+  assert.match(componentSource, /<ElSegmented[\s\S]*class="node-card__input-boundary-toggle"[\s\S]*:model-value="inputBoundarySelection"[\s\S]*:options="inputTypeOptions"[\s\S]*@update:model-value="emit\('update:boundary-selection', \$event\)"/);
+  assert.doesNotMatch(componentSource, /:disabled="Boolean\(inputAssetEnvelope\)"/);
   assert.match(componentSource, /<slot name="primary-output" \/>/);
   assert.match(componentSource, /v-if="showKnowledgeBaseInput"[\s\S]*class="node-card__surface node-card__input-picker"[\s\S]*<ElSelect[\s\S]*:model-value="inputKnowledgeBaseValue \|\| undefined"[\s\S]*@update:model-value="emit\('update:knowledge-base', \$event\)"/);
   assert.match(componentSource, /<ElOption v-for="option in inputKnowledgeBaseOptions"/);
-  assert.match(componentSource, /<label[\s\S]*class="node-card__asset-dropzone"[\s\S]*@drop\.prevent="emit\('asset-drop', \$event\)"[\s\S]*<input[\s\S]*ref="inputAssetInputRef"[\s\S]*class="node-card__asset-native-input"[\s\S]*type="file"[\s\S]*@change="emit\('asset-file-change', \$event\)"/);
-  assert.match(componentSource, /<label[\s\S]*class="node-card__asset-action"[\s\S]*<input[\s\S]*ref="inputAssetInputRef"[\s\S]*class="node-card__asset-native-input node-card__asset-native-input--action"[\s\S]*type="file"[\s\S]*@change="emit\('asset-file-change', \$event\)"[\s\S]*Replace[\s\S]*<\/label>/);
+  assert.match(componentSource, /<label[\s\S]*class="node-card__asset-dropzone"[\s\S]*@click\.stop="handleAssetUploadSurfaceClick"[\s\S]*@drop\.prevent="emit\('asset-drop', \$event\)"[\s\S]*<input[\s\S]*ref="inputAssetInputRef"[\s\S]*class="node-card__asset-native-input"[\s\S]*type="file"[\s\S]*@change="emit\('asset-file-change', \$event\)"/);
+  assert.match(componentSource, /<label[\s\S]*class="node-card__asset-action"[\s\S]*@click\.stop="handleAssetUploadSurfaceClick"[\s\S]*<input[\s\S]*ref="inputAssetInputRef"[\s\S]*class="node-card__asset-native-input node-card__asset-native-input--action"[\s\S]*type="file"[\s\S]*@change="emit\('asset-file-change', \$event\)"[\s\S]*Replace[\s\S]*<\/label>/);
+  assert.doesNotMatch(componentSource, /class="node-card__asset-native-input"[\s\S]{0,260}@click\.stop/);
+  assert.match(componentSource, /function handleAssetUploadSurfaceClick\(event: MouseEvent\) \{[\s\S]*if \(event\.target instanceof HTMLInputElement\) \{[\s\S]*return;[\s\S]*\}[\s\S]*openInputAssetPicker\(\);[\s\S]*\}/);
+  assert.match(componentSource, /function openInputAssetPicker\(\) \{[\s\S]*const input = inputAssetInputRef\.value;[\s\S]*showPicker\(\);[\s\S]*return;[\s\S]*input\.click\(\);[\s\S]*\}/);
   assert.match(componentSource, /v-if="inputAssetEnvelope\.detectedType === 'image' && inputAssetEnvelope\.encoding === 'data_url'"/);
   assert.match(componentSource, /v-else-if="inputAssetEnvelope\.detectedType === 'audio' && inputAssetEnvelope\.encoding === 'data_url'"/);
   assert.match(componentSource, /v-else-if="inputAssetEnvelope\.detectedType === 'video' && inputAssetEnvelope\.encoding === 'data_url'"/);
@@ -29,6 +33,6 @@ test("InputNodeBody owns input presentation and forwards parent side effects", (
   assert.match(componentSource, /\.node-card__input-body \{[\s\S]*display:\s*flex;[\s\S]*flex:\s*1 1 auto;/);
   assert.match(componentSource, /\.node-card__input-boundary-toggle \{/);
   assert.match(componentSource, /\.node-card__asset-dropzone \{[\s\S]*position:\s*relative;/);
-  assert.match(componentSource, /\.node-card__asset-native-input \{[\s\S]*position:\s*absolute;[\s\S]*inset:\s*0;[\s\S]*opacity:\s*0;/);
+  assert.match(componentSource, /\.node-card__asset-native-input \{[\s\S]*position:\s*absolute;[\s\S]*inset:\s*0;[\s\S]*opacity:\s*0;[\s\S]*pointer-events:\s*auto;/);
   assert.match(componentSource, /\.node-card__surface-textarea \{[\s\S]*flex:\s*1 1 auto;[\s\S]*resize:\s*none;/);
 });

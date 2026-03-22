@@ -1112,7 +1112,7 @@ test("EditorCanvas forwards node-card state editing and top-action events", () =
   assert.match(componentSource, /\(event: "remove-port-state", payload: \{ nodeId: string; side: "input" \| "output"; stateKey: string \}\): void;/);
   assert.match(componentSource, /\(event: "delete-node", payload: \{ nodeId: string \}\): void;/);
   assert.match(componentSource, /\(event: "save-node-preset", payload: \{ nodeId: string \}\): void;/);
-  assert.match(componentSource, /\(event: "connect-state", payload: \{ sourceNodeId: string; sourceStateKey: string; targetNodeId: string; targetStateKey: string; position: GraphPosition \}\): void;/);
+  assert.match(componentSource, /\(event: "connect-state", payload: \{ sourceNodeId: string; sourceStateKey: string; targetNodeId: string; targetStateKey: string; position: GraphPosition; sourceValueType\?: string \| null \}\): void;/);
 });
 
 test("EditorCanvas opens the creation flow when output drags end on empty canvas", () => {
@@ -1354,13 +1354,13 @@ test("EditorCanvas opens node creation from the virtual agent any output", () =>
 
   assert.match(canvasConnectionModelSource, /connection\?\.sourceKind === "state-out" &&[\s\S]*connection\.sourceStateKey === VIRTUAL_ANY_OUTPUT_STATE_KEY/);
   assert.match(componentSource, /import \{[\s\S]*resolveCanvasPendingConnectionCreationMenuAction,[\s\S]*type CanvasNodeCreationMenuPayload,[\s\S]*\} from "\.\/canvasConnectionInteractionModel";/);
-  assert.match(componentSource, /const creationMenuAction = resolveCanvasPendingConnectionCreationMenuAction\(\{[\s\S]*interactionLocked: isGraphEditingLocked\(\),[\s\S]*connection: activeConnection\.value,[\s\S]*position: resolveCanvasPoint\(event\),[\s\S]*stateSchema: props\.document\.state_schema,[\s\S]*\}\);/);
+  assert.match(componentSource, /const creationMenuAction = resolveCanvasPendingConnectionCreationMenuAction\(\{[\s\S]*interactionLocked: isGraphEditingLocked\(\),[\s\S]*connection: activeConnection\.value,[\s\S]*position: resolveCanvasPoint\(event\),[\s\S]*stateSchema: props\.document\.state_schema,[\s\S]*nodes: props\.document\.nodes,[\s\S]*\}\);/);
   assert.match(componentSource, /emit\("open-node-creation-menu", creationMenuAction\.payload\);/);
   assert.match(componentSource, /if \(creationMenuAction\.clearConnectionInteraction\) \{[\s\S]*clearConnectionInteractionState\(\);[\s\S]*\}/);
   assert.match(componentSource, /if \(creationMenuAction\.clearSelectedEdge\) \{[\s\S]*selectedEdgeId\.value = null;[\s\S]*\}/);
   assert.doesNotMatch(componentSource, /buildCanvasNodeCreationMenuPayload/);
   assert.match(canvasConnectionInteractionModelSource, /sourceStateKey: connection\.sourceStateKey/);
-  assert.match(canvasConnectionInteractionModelSource, /sourceValueType: resolveCanvasConnectionStateValueType\(connection\.sourceStateKey, input\.stateSchema\)/);
+  assert.match(canvasConnectionInteractionModelSource, /sourceValueType: resolveCanvasConnectionStateValueType\([\s\S]*connection\.sourceStateKey,[\s\S]*input\.stateSchema,[\s\S]*input\.nodes\?\.\[connection\.sourceNodeId\],[\s\S]*\)/);
   assert.match(canvasConnectionInteractionModelSource, /stateKey === VIRTUAL_ANY_OUTPUT_STATE_KEY/);
   assert.doesNotMatch(componentSource, /resolveCanvasConnectionStateValueType/);
   assert.doesNotMatch(componentSource, /function resolveConnectionStateValueType/);
@@ -1410,6 +1410,24 @@ test("EditorCanvas disables text selection while a connection drag is active", (
   assert.match(componentSource, /'editor-canvas--connecting': Boolean\(pendingConnection\)/);
   assert.match(componentSource, /window\.getSelection\(\)\?\.removeAllRanges\(\)/);
   assert.match(componentSource, /\.editor-canvas--connecting,\n\.editor-canvas--connecting \* \{[\s\S]*user-select:\s*none;/);
+});
+
+test("EditorCanvas focuses the empty prompt and blocks viewport movement for blank graphs", () => {
+  assert.match(componentSource, /const emptyCanvasPromptRef = ref<HTMLElement \| null>\(null\);/);
+  assert.match(componentSource, /const isCanvasEmpty = computed\(\(\) => nodeEntries\.value\.length === 0\);/);
+  assert.match(componentSource, /ref="emptyCanvasPromptRef"[\s\S]*class="editor-canvas__empty-card"[\s\S]*tabindex="-1"[\s\S]*@pointerdown\.stop="focusEmptyCanvasPrompt"/);
+  assert.match(componentSource, /watch\(\s*\(\) => nodeEntries\.value\.length,/);
+  assert.match(componentSource, /if \(nextCount !== 0\) \{\n\s+return;\n\s+\}/);
+  assert.ok(componentSource.includes("clearCanvasTransientState();"));
+  assert.ok(componentSource.includes("selection.clearSelection();"));
+  assert.ok(componentSource.includes("selectedEdgeId.value = null;"));
+  assert.ok(componentSource.includes("viewport.setViewport(EMPTY_CANVAS_VIEWPORT);"));
+  assert.match(componentSource, /void nextTick\(\)\.then\(\(\) => \{\n\s+focusEmptyCanvasPrompt\(\);/);
+  assert.match(componentSource, /const canvasPointerDownAction = resolveCanvasPointerDownAction\(\{[\s\S]*startedPinchZoom,[\s\S]*isCanvasEmpty: isCanvasEmpty\.value,[\s\S]*\}\);/);
+  assert.match(componentSource, /if \(action\.focusEmptyCanvasPrompt\) \{[\s\S]*focusEmptyCanvasPrompt\(\);/);
+  assert.match(componentSource, /isCanvasEmpty: isCanvasEmpty\.value,/);
+  assert.match(componentSource, /\.editor-canvas__empty-state > \* \{[\s\S]*pointer-events:\s*auto;/);
+  assert.match(componentSource, /\.editor-canvas__empty-card:focus-visible \{/);
 });
 
 test("EditorCanvas keeps canvas panning alive outside the viewport and disables selection while panning", () => {
@@ -1468,7 +1486,7 @@ test("EditorCanvas supports two-finger pinch zoom on mobile without changing sin
   assert.doesNotMatch(componentSource, /function resolvePointerCenter/);
   assert.doesNotMatch(componentSource, /nextScale: pinch\.startScale \* \(nextDistance \/ pinch\.startDistance\)/);
   assert.match(componentSource, /const startedPinchZoom = trackTouchPointerDown\(event\);/);
-  assert.match(componentSource, /const canvasPointerDownAction = resolveCanvasPointerDownAction\(\{ startedPinchZoom \}\);/);
+  assert.match(componentSource, /const canvasPointerDownAction = resolveCanvasPointerDownAction\(\{[\s\S]*startedPinchZoom,[\s\S]*isCanvasEmpty: isCanvasEmpty\.value,[\s\S]*\}\);/);
   assert.match(componentSource, /function applyCanvasPointerDownSetup\([\s\S]*action: CanvasPointerDownAction,[\s\S]*event: PointerEvent,[\s\S]*\)/);
   assert.match(componentSource, /if \(action\.focusCanvas\) \{[\s\S]*canvasRef\.value\?\.focus\(\);/);
   assert.match(componentSource, /if \(action\.setPointerCapture\) \{[\s\S]*canvasRef\.value\?\.setPointerCapture\(event\.pointerId\);/);
