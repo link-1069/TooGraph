@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createCompanionMemory, fetchCompanionProfile, restoreCompanionRevision, updateCompanionProfile } from "./companion.ts";
+import {
+  createCompanionMemory,
+  fetchCompanionProfile,
+  restoreCompanionRevision,
+  updateCompanionProfile,
+} from "./companion.ts";
 
 const originalFetch = globalThis.fetch;
 

@@ -37,7 +37,6 @@ DEFAULT_SESSION_SUMMARY = {
     "updated_at": "",
 }
 
-
 def load_profile() -> dict[str, Any]:
     return _read_dict(PROFILE_PATH, DEFAULT_PROFILE)
 

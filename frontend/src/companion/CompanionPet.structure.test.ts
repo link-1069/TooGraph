@@ -88,16 +88,13 @@ test("CompanionPet keeps runtime error replies out of model context and persiste
   assert.match(componentSource, /updateAssistantMessage\(assistantMessage\.id, t\("companion\.errorReply", \{ error: message \}\), \{ includeInContext: false \}\);/);
 });
 
-test("CompanionPet injects backend self config context without blocking chat on context fetch failure", () => {
-  assert.match(
-    componentSource,
-    /import \{[\s\S]*fetchCompanionMemories,[\s\S]*fetchCompanionPolicy,[\s\S]*fetchCompanionProfile,[\s\S]*fetchCompanionSessionSummary,[\s\S]*\} from "\.\.\/api\/companion\.ts";/,
-  );
-  assert.match(componentSource, /const selfConfigContext = await fetchSelfConfigContext\(\);/);
-  assert.match(componentSource, /selfConfigContext,/);
-  assert.match(componentSource, /async function fetchSelfConfigContext\(\)/);
-  assert.match(componentSource, /catch \{[\s\S]*return \{\};[\s\S]*\}/);
-  assert.match(componentSource, /function formatProfileForPrompt/);
-  assert.match(componentSource, /function formatPolicyForPrompt/);
-  assert.match(componentSource, /function formatMemoriesForPrompt/);
+test("CompanionPet leaves companion self config loading and memory curation to the chat graph template", () => {
+  assert.doesNotMatch(componentSource, new RegExp("fetch" + "CompanionContext"));
+  assert.doesNotMatch(componentSource, new RegExp("curate" + "CompanionMemoryTurn"));
+  assert.doesNotMatch(componentSource, new RegExp("fetch" + "SelfConfigContext"));
+  assert.doesNotMatch(componentSource, new RegExp("curate" + "CompletedTurnMemory"));
+  assert.doesNotMatch(componentSource, /selfConfigContext,/);
+  assert.doesNotMatch(componentSource, /function formatProfileForPrompt/);
+  assert.doesNotMatch(componentSource, /function formatPolicyForPrompt/);
+  assert.doesNotMatch(componentSource, /function formatMemoriesForPrompt/);
 });

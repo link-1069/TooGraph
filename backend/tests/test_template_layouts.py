@@ -433,8 +433,44 @@ class TemplateLayoutTests(unittest.TestCase):
                 "companion_policy",
                 "companion_memory_context",
                 "companion_session_summary",
+                "companion_memory_update_result",
+                "companion_profile_json",
+                "companion_policy_json",
+                "companion_memories_json",
+                "companion_session_summary_json",
+                "companion_profile_next",
+                "companion_policy_next",
+                "companion_memories_next",
+                "companion_session_summary_next",
+                "companion_profile_write_result",
+                "companion_policy_write_result",
+                "companion_memories_write_result",
+                "companion_session_summary_write_result",
             ],
         )
+        serialized_template = json.dumps(template.model_dump(mode="json"), ensure_ascii=False)
+        self.assertNotIn("companion_state", serialized_template)
+        self.assertIn("local_file", serialized_template)
+
+        loader = template.nodes["read_companion_profile"]
+        self.assertEqual(loader.kind, "agent")
+        self.assertEqual(loader.config.skills, ["local_file"])
+        self.assertEqual(loader.config.skill_bindings[0].skill_key, "local_file")
+        self.assertEqual(loader.config.skill_bindings[0].config.get("operation"), "read_json")
+        self.assertEqual(loader.config.skill_bindings[0].config.get("path"), "backend/data/companion/profile.json")
+        self.assertEqual(
+            loader.config.skill_bindings[0].output_mapping,
+            {
+                "prompt_section": state_by_name["companion_profile"],
+                "json_content": state_by_name["companion_profile_json"],
+            },
+        )
+        memory_reader = template.nodes["read_companion_memories"]
+        self.assertEqual(
+            memory_reader.config.skill_bindings[0].config.get("prompt_array_filter"),
+            {"enabled": True, "deleted": False},
+        )
+        self.assertEqual(memory_reader.config.skill_bindings[0].config.get("max_prompt_items"), 20)
         agent = template.nodes["companion_reply_agent"]
         self.assertEqual(agent.kind, "agent")
         self.assertEqual(agent.config.skills, [])
@@ -457,6 +493,46 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("图操作请求", agent.config.task_instruction)
         self.assertIn("不能新建图", agent.config.task_instruction)
         self.assertIn("不能运行图", agent.config.task_instruction)
+
+        curator = template.nodes["curate_companion_memory"]
+        self.assertEqual(curator.kind, "agent")
+        self.assertEqual(curator.config.skills, [])
+        self.assertEqual(curator.config.skill_bindings, [])
+        self.assertIn(state_by_name["companion_profile_json"], [binding.state for binding in curator.reads])
+        self.assertIn(state_by_name["companion_policy_json"], [binding.state for binding in curator.reads])
+        self.assertIn(state_by_name["companion_memories_json"], [binding.state for binding in curator.reads])
+        self.assertIn(state_by_name["companion_session_summary_json"], [binding.state for binding in curator.reads])
+        self.assertEqual(
+            [binding.state for binding in curator.writes],
+            [
+                state_by_name["companion_profile_next"],
+                state_by_name["companion_policy_next"],
+                state_by_name["companion_memories_next"],
+                state_by_name["companion_session_summary_next"],
+                state_by_name["companion_memory_update_result"],
+            ],
+        )
+        self.assertIn("完整下一版文件内容", curator.config.task_instruction)
+        self.assertIn("graph_permission_mode", curator.config.task_instruction)
+
+        writer = template.nodes["write_companion_profile"]
+        self.assertEqual(writer.kind, "agent")
+        self.assertEqual(writer.config.skills, ["local_file"])
+        self.assertEqual(writer.config.skill_bindings[0].skill_key, "local_file")
+        self.assertEqual(writer.config.skill_bindings[0].input_mapping, {"content": state_by_name["companion_profile_next"]})
+        self.assertEqual(writer.config.skill_bindings[0].config.get("operation"), "write_json")
+        self.assertEqual(writer.config.skill_bindings[0].config.get("path"), "backend/data/companion/profile.json")
+        for node_id in [
+            "write_companion_profile",
+            "write_companion_policy",
+            "write_companion_memories",
+            "write_companion_session_summary",
+        ]:
+            self.assertIs(template.nodes[node_id].config.skill_bindings[0].config.get("skip_if_unchanged"), True)
+        self.assertEqual(
+            writer.config.skill_bindings[0].output_mapping,
+            {"write_result": state_by_name["companion_profile_write_result"]},
+        )
 
         output_node = template.nodes["output_companion_reply"]
         self.assertEqual(output_node.reads[0].state, state_by_name["companion_reply"])
