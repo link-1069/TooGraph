@@ -19,8 +19,11 @@
 - Agent 节点卡片上手动添加的 skill，与通过 `skill` 类型 state 输入传入的 skill 按并集合并，一视同仁。
 - 添加到 Agent 节点的 skill 会在节点提示词编辑区生成可编辑的技能说明胶囊；移除 skill 时对应胶囊会移除。
 - 胶囊内容是节点级覆盖，不会反向写回技能包原始文档。
+- 在 Agent 节点卡片添加带 `outputSchema` 的 skill 时，前端会自动创建 managed skill output state、添加到该节点输出端口，并写入 `skillBindings.outputMapping`，让运行时能把技能结果透传给下游节点。
 - `state_schema` 支持 `promptVisible=false`。这类 state 可以参与图运行和技能输出透传，但不会进入 Agent 的模型提示词上下文。
 - `state_schema` 支持 `binding` 元数据，用来标记某个 state 是否由技能输出自动绑定。
+- `file` / `file_list` 类型 state 的值是本地 artifact 路径或路径列表。Agent 节点接收这类 state 时，会读取文件并只把“文件名 + 原文全文”拼入模型上下文，不暴露本地路径、来源网址、抓取时间或运行元数据。
+- Input 节点输出普通文件时写入本地路径；图片和视频仍保留 uploaded file envelope 以支持多模态附件。
 
 ## 当前技能
 
@@ -28,17 +31,15 @@
 
 - 位置：`skill/web_search/`
 - 显示名称：`联网搜索`
-- 作用：执行联网搜索、返回引用、来源链接、可选网页抓取 artifact 和结构化错误信息。
+- 作用：执行联网搜索、返回来源链接、本地原文文件路径和结构化错误信息。
 - 桌宠来源默认可自主使用且无需确认，前提仍是它被图模板显式绑定或由图状态传入，并通过 registry、运行策略和运行时就绪检查。
-- 它只负责搜索和资料获取，不负责最终总结。搜索词、结果数量、搜索深度和是否抓取页面内容应由绑定它的 Agent 节点根据任务决定；整理和总结应交给后续 Agent 节点。
+- 它只负责搜索和资料获取，不负责最终总结。搜索词由绑定它的 Agent 节点根据任务决定；整理和总结应交给后续 Agent 节点。
 
 主要输出语义：
 
-- `search_brief`：搜索结果简要摘要。
-- `results` / `citations`：结构化搜索结果和引用。
 - `source_urls`：搜索到的网址列表。
-- `artifact_paths`：成功保存到本地的来源文档路径。
-- `errors` / `error`：结构化错误信息。
+- `artifact_paths`：成功保存到本地的来源原文文件路径，类型应绑定为 `file_list`。
+- `errors`：结构化错误列表。
 
 ## 当前前端能力
 
@@ -62,6 +63,6 @@
 - 用新结构手工重建桌宠自主循环模板。
 - 设计并实现真正的 `autonomous_decision` 技能，用于根据技能目录、用户意图和运行策略选择技能，但不直接执行技能。
 - 设计并实现 `graphite_skill_builder`，用于在用户确认后生成符合 GraphiteUI 项目结构的 skill 草案。
-- 完成技能输出绑定 state 的 UI 管理与更完整的图运行展示。
+- 完成更完整的图运行展示。
 - 完成桌宠审批恢复 UI、图补丁预览、GraphCommandBus、revision、undo 和审计闭环。
 - 将人设、记忆、会话摘要等长期状态更新表达为可审计的图模板流程，而不是隐藏产品逻辑。
