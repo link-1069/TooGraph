@@ -300,8 +300,9 @@ function buildSubgraphThumbnail(node: Extract<GraphNode, { kind: "subgraph" }>, 
       })),
     ),
   ];
+  const visibleEntries = entries.filter(([, innerNode]) => isSubgraphThumbnailVisibleNode(innerNode));
   const orderedIds = orderSubgraphThumbnailNodeIds(
-    entries.map(([id]) => id),
+    visibleEntries.map(([id]) => id),
     edgePairs,
   );
   const columnCount = Math.max(1, Math.min(4, orderedIds.length));
@@ -334,10 +335,14 @@ function buildSubgraphThumbnail(node: Extract<GraphNode, { kind: "subgraph" }>, 
     ];
   });
   const statusByNodeId = new Map(nodes.map((item) => [item.id, item.status]));
+  const visibleNodeIds = new Set(nodes.map((item) => item.id));
   const seenEdgeKeys = new Set<string>();
   return {
     nodes,
     edges: edgePairs.flatMap((edge) => {
+      if (!visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target)) {
+        return [];
+      }
       const edgeKey = `${edge.source}->${edge.target}`;
       if (seenEdgeKeys.has(edgeKey)) {
         return [];
@@ -356,6 +361,10 @@ function buildSubgraphThumbnail(node: Extract<GraphNode, { kind: "subgraph" }>, 
     columnCount,
     rowCount: Math.max(1, ...nodes.map((item) => item.row)),
   };
+}
+
+function isSubgraphThumbnailVisibleNode(node: GraphNode) {
+  return node.kind !== "input" && node.kind !== "output";
 }
 
 function orderSubgraphThumbnailNodeIds(nodeIds: string[], edges: Array<{ source: string; target: string }>) {
@@ -425,13 +434,14 @@ function isActiveSubgraphThumbnailStatus(status: SubgraphThumbnailStatus) {
 }
 
 function summarizeSubgraphRuntime(nodes: SubgraphThumbnailNodeViewModel[]): SubgraphRuntimeSummaryViewModel | null {
-  const touchedNodes = nodes.filter((item) => item.status !== "idle");
+  const progressNodes = nodes.filter(isSubgraphRuntimeProgressNode);
+  const touchedNodes = progressNodes.filter((item) => item.status !== "idle");
   if (touchedNodes.length === 0) {
     return null;
   }
-  const completedCount = nodes.filter((item) => item.status === "success").length;
-  const activeNodes = nodes.filter((item) => isActiveSubgraphThumbnailStatus(item.status));
-  const failedCount = nodes.filter((item) => item.status === "failed").length;
+  const completedCount = progressNodes.filter((item) => item.status === "success").length;
+  const activeNodes = progressNodes.filter((item) => isActiveSubgraphThumbnailStatus(item.status));
+  const failedCount = progressNodes.filter((item) => item.status === "failed").length;
   const currentNode = activeNodes[0] ?? null;
   const tone =
     failedCount > 0
@@ -440,7 +450,7 @@ function summarizeSubgraphRuntime(nodes: SubgraphThumbnailNodeViewModel[]): Subg
         ? "paused"
         : activeNodes.length > 0
           ? "running"
-          : completedCount === nodes.length
+          : completedCount === progressNodes.length
             ? "success"
             : "idle";
   return {
@@ -448,9 +458,13 @@ function summarizeSubgraphRuntime(nodes: SubgraphThumbnailNodeViewModel[]): Subg
     completedCount,
     activeCount: activeNodes.length,
     failedCount,
-    totalCount: nodes.length,
+    totalCount: progressNodes.length,
     currentNodeLabel: currentNode?.label ?? null,
   };
+}
+
+function isSubgraphRuntimeProgressNode(node: SubgraphThumbnailNodeViewModel) {
+  return node.kind !== "input" && node.kind !== "output";
 }
 
 function listSubgraphCapabilities(node: Extract<GraphNode, { kind: "subgraph" }>) {
