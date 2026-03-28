@@ -22,27 +22,34 @@
     @drop.prevent="handleCanvasDrop"
   >
     <div
-      class="editor-canvas__edge-view-toolbar"
-      role="toolbar"
-      :aria-label="t('edgeMode.toolbar')"
+      class="editor-canvas__top-left-tools"
       @pointerdown.stop
       @pointerup.stop
       @dblclick.stop
       @click.stop
       @wheel.stop
     >
-      <button
-        v-for="option in edgeVisibilityModeOptions"
-        :key="option.mode"
-        type="button"
-        class="editor-canvas__edge-view-button"
-        :class="{ 'editor-canvas__edge-view-button--active': edgeVisibilityMode === option.mode }"
-        :title="option.title"
-        :aria-pressed="edgeVisibilityMode === option.mode"
-        @click.stop="handleEdgeVisibilityModeClick(option.mode)"
+      <div
+        class="editor-canvas__edge-view-toolbar"
+        role="toolbar"
+        :aria-label="t('edgeMode.toolbar')"
       >
-        {{ option.label }}
-      </button>
+        <button
+          v-for="option in edgeVisibilityModeOptions"
+          :key="option.mode"
+          type="button"
+          class="editor-canvas__edge-view-button"
+          :class="{ 'editor-canvas__edge-view-button--active': edgeVisibilityMode === option.mode }"
+          :title="option.title"
+          :aria-pressed="edgeVisibilityMode === option.mode"
+          @click.stop="handleEdgeVisibilityModeClick(option.mode)"
+        >
+          {{ option.label }}
+        </button>
+      </div>
+      <div v-if="sourceContextLabel" class="editor-canvas__source-context-pill">
+        {{ sourceContextLabel }}
+      </div>
     </div>
     <button
       v-if="interactionLocked"
@@ -212,6 +219,7 @@
         @pointerdown.capture="handleLockedNodePointerCapture(nodeId, $event)"
         @pointerdown.stop="handleNodePointerDown(nodeId, $event)"
         @click.capture="handleNodeClickCapture(nodeId, $event)"
+        @dblclick.stop="handleNodeDoubleClick(nodeId, $event)"
       >
         <div
           v-if="resolveRunNodePresentationForNode(nodeId)?.haloClass"
@@ -509,7 +517,7 @@ import { useViewport } from "./useViewport";
 import { isAgentBreakpointEnabledInDocument, resolveAgentBreakpointTimingInDocument } from "@/lib/graph-document";
 import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { SkillDefinition } from "@/types/skills";
-import type { AgentNode, ConditionNode, GraphDocument, GraphNodeSize, GraphPayload, GraphPosition, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
+import type { AgentNode, ConditionNode, GraphDocument, GraphNode, GraphNodeSize, GraphPayload, GraphPosition, InputNode, OutputNode, StateDefinition } from "@/types/node-system";
 
 const props = defineProps<{
   document: GraphPayload | GraphDocument;
@@ -531,6 +539,7 @@ const props = defineProps<{
   interactionLocked?: boolean;
   initialViewport?: CanvasViewport | null;
   stateEditorRequest?: { requestId: string; sourceNodeId: string; targetNodeId: string; stateKey: string; position: GraphPosition } | null;
+  sourceContextLabel?: string | null;
 }>();
 
 const { t, locale } = useI18n();
@@ -543,7 +552,7 @@ const emit = defineEmits<{
   (event: "update:node-position", payload: { nodeId: string; position: GraphPosition }): void;
   (event: "update:node-size", payload: { nodeId: string; position: GraphPosition; size: GraphNodeSize }): void;
   (event: "select-node", nodeId: string | null): void;
-  (event: "update-node-metadata", payload: { nodeId: string; patch: Partial<Pick<InputNode | AgentNode | ConditionNode | OutputNode, "name" | "description">> }): void;
+  (event: "update-node-metadata", payload: { nodeId: string; patch: Partial<Pick<GraphNode, "name" | "description">> }): void;
   (event: "update-input-config", payload: { nodeId: string; patch: Partial<InputNode["config"]> }): void;
   (event: "update-input-state", payload: { stateKey: string; patch: Partial<StateDefinition> }): void;
   (event: "update-state", payload: { stateKey: string; patch: Partial<StateDefinition> }): void;
@@ -574,6 +583,7 @@ const emit = defineEmits<{
   (event: "disconnect-data-edge", payload: { sourceNodeId: string; targetNodeId: string; stateKey: string; mode: "state" | "flow" }): void;
   (event: "remove-route", payload: { sourceNodeId: string; branchKey: string }): void;
   (event: "open-node-creation-menu", payload: CanvasNodeCreationMenuPayload): void;
+  (event: "open-subgraph-editor", payload: { nodeId: string }): void;
   (event: "create-node-from-file", payload: { file: File; position: GraphPosition; clientX: number; clientY: number }): void;
   (event: "update:viewport", payload: CanvasViewport): void;
 }>();
@@ -1268,6 +1278,19 @@ function handleCanvasDoubleClick(event: MouseEvent) {
     case "open-creation-menu":
       emit("open-node-creation-menu", doubleClickCreationAction.payload);
   }
+}
+
+function handleNodeDoubleClick(nodeId: string, event: MouseEvent) {
+  const node = props.document.nodes[nodeId];
+  if (node?.kind !== "subgraph") {
+    return;
+  }
+  event.preventDefault();
+  if (isGraphEditingLocked()) {
+    emit("locked-edit-attempt");
+    return;
+  }
+  emit("open-subgraph-editor", { nodeId });
 }
 
 function isIgnoredCanvasDoubleClickTarget(target: HTMLElement | null) {
@@ -2141,11 +2164,24 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
     0 0 42px rgba(234, 88, 12, 0.34);
 }
 
-.editor-canvas__edge-view-toolbar {
+.editor-canvas__top-left-tools {
   position: absolute;
   left: 18px;
   top: calc(var(--editor-canvas-floating-top-clearance, 18px) + 18px);
   z-index: 24;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 36px);
+  pointer-events: none;
+}
+
+.editor-canvas__top-left-tools > * {
+  pointer-events: auto;
+}
+
+.editor-canvas__edge-view-toolbar {
+  position: relative;
   isolation: isolate;
   display: inline-flex;
   align-items: center;
@@ -2162,6 +2198,26 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
   backdrop-filter: blur(20px) saturate(1.45) contrast(1.01);
   cursor: default;
   pointer-events: auto;
+}
+
+.editor-canvas__source-context-pill {
+  overflow: hidden;
+  max-width: clamp(180px, calc(100vw - 520px), 520px);
+  border: 1px solid rgba(37, 99, 235, 0.18);
+  border-radius: 999px;
+  background: rgba(239, 246, 255, 0.9);
+  padding: 9px 14px;
+  color: rgba(30, 64, 175, 0.92);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow:
+    0 8px 20px rgba(31, 28, 24, 0.045),
+    var(--graphite-glass-highlight),
+    var(--graphite-glass-rim);
+  backdrop-filter: blur(18px) saturate(1.35);
 }
 
 .editor-canvas__edge-view-toolbar::before {

@@ -149,6 +149,17 @@ test("EditorCanvas binds the canvas surface styling to the viewport state", () =
   assert.doesNotMatch(componentSource, /`\$\{Math\.round\(viewport\.viewport\.scale \* 100\)\}%`/);
 });
 
+test("EditorCanvas can show an editing source capsule beside the edge visibility controls", () => {
+  assert.match(componentSource, /sourceContextLabel\?: string \| null;/);
+  assert.match(
+    componentSource,
+    /class="editor-canvas__top-left-tools"[\s\S]*class="editor-canvas__edge-view-toolbar"[\s\S]*v-if="sourceContextLabel"[\s\S]*class="editor-canvas__source-context-pill"[\s\S]*\{\{ sourceContextLabel \}\}/,
+  );
+  assert.match(componentSource, /\.editor-canvas__top-left-tools \{[\s\S]*position:\s*absolute;[\s\S]*left:\s*18px;[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 18px\);/);
+  assert.match(componentSource, /\.editor-canvas__edge-view-toolbar \{[\s\S]*position:\s*relative;/);
+  assert.match(componentSource, /\.editor-canvas__source-context-pill \{[\s\S]*max-width:\s*clamp\(180px,\s*calc\(100vw - 520px\),\s*520px\);/);
+});
+
 test("EditorCanvas mounts a right-bottom minimap backed by measured node geometry", () => {
   const canvasNodePresentationModelSource = readCanvasNodePresentationModelSource();
   const canvasMinimapEdgeModelSource = readCanvasMinimapEdgeModelSource();
@@ -609,7 +620,7 @@ test("EditorCanvas keeps paused human-review graphs viewable but read-only", () 
 
 test("EditorCanvas lets top-left floating tools respect workspace overlay clearance", () => {
   assert.match(componentSource, /\.editor-canvas__lock-banner \{[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 64px\);/);
-  assert.match(componentSource, /\.editor-canvas__edge-view-toolbar \{[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 18px\);/);
+  assert.match(componentSource, /\.editor-canvas__top-left-tools \{[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 18px\);/);
 });
 
 test("EditorCanvas renders condition route outputs as right-side floating branch handles", () => {
@@ -823,8 +834,9 @@ test("EditorCanvas exposes a top-left capsule toolbar for edge visibility modes"
   assert.match(componentSource, /v-show="isProjectedCanvasEdgeVisible\(edge, visibleProjectedEdgeIds\)"/);
   assert.match(
     componentSource,
-    /\.editor-canvas__edge-view-toolbar \{[\s\S]*position:\s*absolute;[\s\S]*left:\s*18px;[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 18px\);/,
+    /\.editor-canvas__top-left-tools \{[\s\S]*position:\s*absolute;[\s\S]*left:\s*18px;[\s\S]*top:\s*calc\(var\(--editor-canvas-floating-top-clearance,\s*18px\) \+ 18px\);/,
   );
+  assert.match(componentSource, /\.editor-canvas__edge-view-toolbar \{[\s\S]*position:\s*relative;/);
   assert.match(componentSource, /\.editor-canvas__edge-view-button \{[\s\S]*border-radius:\s*999px;/);
   assert.match(componentSource, /\.editor-canvas__edge-view-button--active \{[\s\S]*background:\s*rgba\(154,\s*52,\s*18,\s*0\.9\);/);
   assert.match(componentSource, /\.editor-canvas__edge-view-toolbar \{[\s\S]*background:\s*var\(--graphite-glass-bg\);/);
@@ -1099,6 +1111,14 @@ test("EditorCanvas emits node-creation intents for empty-canvas double click and
   assert.match(componentSource, /function isIgnoredCanvasDropTarget\(target: HTMLElement \| null\)/);
 });
 
+test("EditorCanvas emits a subgraph editor request when a subgraph node is double clicked", () => {
+  assert.match(componentSource, /@dblclick\.stop="handleNodeDoubleClick\(nodeId, \$event\)"/);
+  assert.match(componentSource, /\(event: "open-subgraph-editor", payload: \{ nodeId: string \}\): void;/);
+  assert.match(componentSource, /function handleNodeDoubleClick\(nodeId: string, event: MouseEvent\)/);
+  assert.match(componentSource, /if \(node\?\.kind !== "subgraph"\) \{/);
+  assert.match(componentSource, /emit\("open-subgraph-editor", \{ nodeId \}\);/);
+});
+
 test("EditorCanvas forwards node-card state editing and top-action events", () => {
   assert.match(componentSource, /@update-node-metadata="emit\('update-node-metadata', \$event\)"/);
   assert.doesNotMatch(componentSource, /@rename-state="emit\('rename-state', \$event\)"/);
@@ -1106,7 +1126,7 @@ test("EditorCanvas forwards node-card state editing and top-action events", () =
   assert.match(componentSource, /@remove-port-state="emit\('remove-port-state', \$event\)"/);
   assert.match(componentSource, /@delete-node="emit\('delete-node', \$event\)"/);
   assert.match(componentSource, /@save-node-preset="emit\('save-node-preset', \$event\)"/);
-  assert.match(componentSource, /\(event: "update-node-metadata", payload: \{ nodeId: string; patch: Partial<Pick<InputNode \| AgentNode \| ConditionNode \| OutputNode, "name" \| "description">> \}\): void;/);
+  assert.match(componentSource, /\(event: "update-node-metadata", payload: \{ nodeId: string; patch: Partial<Pick<GraphNode, "name" \| "description">> \}\): void;/);
   assert.doesNotMatch(componentSource, /\(event: "rename-state"/);
   assert.match(componentSource, /\(event: "update-state", payload: \{ stateKey: string; patch: Partial<StateDefinition> \}\): void;/);
   assert.match(componentSource, /\(event: "remove-port-state", payload: \{ nodeId: string; side: "input" \| "output"; stateKey: string \}\): void;/);

@@ -17,6 +17,7 @@ import type {
   AgentNode,
   AgentSkillBinding,
   ConditionNode,
+  GraphCorePayload,
   GraphDocument,
   GraphNode,
   GraphPayload,
@@ -259,6 +260,12 @@ function bindStateToSourceOutput(node: GraphNode | undefined, stateKey: string) 
     node.writes = [{ state: stateKey, mode: "replace" }];
     return;
   }
+  if (node.kind === "subgraph") {
+    if (!node.writes.some((binding) => binding.state === stateKey)) {
+      node.writes = [...node.writes, { state: stateKey, mode: "replace" }];
+    }
+    return;
+  }
   if (node.kind !== "agent") {
     return;
   }
@@ -477,6 +484,30 @@ export function updateOutputNodeConfigInDocument<T extends GraphPayload | GraphD
   }
 
   nextNode.config = nextConfig;
+  return nextDocument;
+}
+
+export function updateSubgraphNodeGraphInDocument<T extends GraphPayload | GraphDocument>(
+  document: T,
+  nodeId: string,
+  graph: GraphCorePayload,
+): T {
+  const node = document.nodes[nodeId];
+  if (!node || node.kind !== "subgraph") {
+    return document;
+  }
+
+  if (JSON.stringify(node.config.graph) === JSON.stringify(graph)) {
+    return document;
+  }
+
+  const nextDocument = cloneGraphDocument(document);
+  const nextNode = nextDocument.nodes[nodeId];
+  if (nextNode.kind !== "subgraph") {
+    return document;
+  }
+
+  nextNode.config.graph = clonePlainValue(graph);
   return nextDocument;
 }
 
@@ -770,7 +801,12 @@ export function connectStateBindingInDocument<T extends GraphPayload | GraphDocu
   const nextSourceNode = nextDocument.nodes[sourceNodeId];
   const nextTargetNode = nextDocument.nodes[targetNodeId];
   if (isVirtualAnyOutputStateKey(sourceStateKey)) {
-    if (nextSourceNode.kind === "agent" || isCreateAgentInputStateKey(targetStateKey) || isVirtualAnyInputStateKey(targetStateKey)) {
+    if (
+      nextSourceNode.kind === "agent" ||
+      nextSourceNode.kind === "subgraph" ||
+      isCreateAgentInputStateKey(targetStateKey) ||
+      isVirtualAnyInputStateKey(targetStateKey)
+    ) {
       const materializedState = buildNextMaterializedVirtualStateField(
         nextDocument,
         sourceValueType?.trim() || resolveInputNodeVirtualOutputType(nextSourceNode) || "text",
@@ -788,7 +824,7 @@ export function connectStateBindingInDocument<T extends GraphPayload | GraphDocu
   }
 
   if (isCreateAgentInputStateKey(targetStateKey)) {
-    if (nextTargetNode.kind !== "agent") {
+    if (nextTargetNode.kind !== "agent" && nextTargetNode.kind !== "subgraph") {
       return document;
     }
     nextTargetNode.reads = [...nextTargetNode.reads, { state: resolvedSourceStateKey, required: true }];
@@ -798,7 +834,7 @@ export function connectStateBindingInDocument<T extends GraphPayload | GraphDocu
 
   if (isVirtualAnyInputStateKey(targetStateKey)) {
     nextTargetNode.reads =
-      nextTargetNode.kind === "agent" && nextTargetNode.reads.length > 0
+      (nextTargetNode.kind === "agent" || nextTargetNode.kind === "subgraph") && nextTargetNode.reads.length > 0
         ? [...nextTargetNode.reads, { state: resolvedSourceStateKey, required: true }]
         : [{ state: resolvedSourceStateKey, required: true }];
     if (nextTargetNode.kind === "condition") {

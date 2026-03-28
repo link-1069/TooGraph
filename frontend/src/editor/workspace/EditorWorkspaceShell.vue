@@ -50,9 +50,13 @@
             :is-state-panel-open="activeStatePanelOpen"
             :is-run-activity-panel-open="activeRunActivityPanelOpen"
             :has-run-activity-hint="activeRunActivityPanelHint"
+            :save-graph-label="activeTab?.kind === 'subgraph' ? t('editor.saveSubgraph') : t('editor.saveGraph')"
+            :show-save-as-graph="activeTab?.kind === 'subgraph'"
+            :save-as-graph-label="t('editor.saveAsGraph')"
             @toggle-state-panel="toggleActiveStatePanel"
             @toggle-run-activity-panel="toggleActiveRunActivityPanelFromActionCapsule"
             @save-active-graph="saveActiveGraph"
+            @save-active-graph-as-new="saveActiveGraphAsNewGraph"
             @validate-active-graph="validateActiveGraph"
             @import-python-graph="openPythonGraphImportDialog"
             @export-active-graph="exportActiveGraph"
@@ -101,6 +105,7 @@
                 :interaction-locked="isGraphInteractionLocked(tab.tabId)"
                 :initial-viewport="viewportByTabId[tab.tabId] ?? null"
                 :state-editor-request="dataEdgeStateEditorRequestByTabId[tab.tabId] ?? null"
+                :source-context-label="subgraphSourceContextLabel(tab)"
                 @select-node="focusNodeForTab(tab.tabId, $event)"
                 @update-node-metadata="updateNodeMetadataForTab(tab.tabId, $event.nodeId, $event.patch)"
                 @update-input-config="updateInputConfigForTab(tab.tabId, $event.nodeId, $event.patch)"
@@ -133,6 +138,7 @@
                 @update:node-size="handleNodeSizeUpdate(tab.tabId, $event)"
                 @update:viewport="updateCanvasViewportForTab(tab.tabId, $event)"
                 @open-node-creation-menu="openNodeCreationMenuForTab(tab.tabId, $event)"
+                @open-subgraph-editor="openSubgraphEditorForTab(tab.tabId, $event.nodeId)"
                 @create-node-from-file="createNodeFromFileForTab(tab.tabId, $event)"
                 @open-human-review="openHumanReviewPanelForTab(tab.tabId, $event.nodeId)"
                 @locked-edit-attempt="showGraphLockedEditToast"
@@ -220,9 +226,11 @@ import { fetchSkillDefinitions } from "@/api/skills";
 import { exportLangGraphPython, fetchGraph, importGraphFromPythonSource, runGraph, saveGraph, validateGraph } from "@/api/graphs";
 import { resolveAgentRuntimeCatalog } from "@/editor/nodes/agentConfigModel";
 import EditorCanvas from "@/editor/canvas/EditorCanvas.vue";
+import { clonePlainValue } from "@/lib/graph-document";
 import type { NodeFocusRequest } from "@/editor/canvas/useNodeSelectionFocus";
 import type { CreatedStateEdgeEditorRequest, NodeCreationMenuState } from "@/editor/workspace/nodeCreationMenuModel";
 import {
+  createSubgraphWorkspaceTab,
   prunePersistedEditorDocumentDrafts,
   prunePersistedEditorViewportDrafts,
   readPersistedEditorWorkspace,
@@ -239,6 +247,7 @@ import type { RunDetail } from "@/types/run";
 import type {
   GraphDocument,
   GraphPayload,
+  SubgraphNode,
   TemplateRecord,
 } from "@/types/node-system";
 
@@ -342,6 +351,7 @@ const {
 });
 
 const graphById = computed(() => new Map(props.graphs.map((graph) => [graph.graph_id, graph])));
+const savedGraphs = computed(() => props.graphs);
 const agentRuntimeCatalog = computed(() => resolveAgentRuntimeCatalog(settings.value));
 const activeTab = computed(() => workspace.value.tabs.find((tab) => tab.tabId === workspace.value.activeTabId) ?? null);
 const pendingCloseTab = computed(() =>
@@ -539,6 +549,10 @@ const activeTabRouteSignature = computed(() => {
     return null;
   }
 
+  if (tab.kind === "subgraph") {
+    return tab.subgraphSource?.parentGraphId ? `existing:${tab.subgraphSource.parentGraphId}` : "new:";
+  }
+
   if (tab.graphId) {
     return `existing:${tab.graphId}`;
   }
@@ -640,6 +654,7 @@ openRestoredRunTabFromController = workspaceOpenController.openRestoredRunTab;
 const {
   renameActiveGraph,
   saveActiveGraph,
+  saveActiveGraphAsNewGraph,
   saveTab,
   validateActiveGraph,
   exportActiveGraph,
@@ -693,6 +708,7 @@ const {
   dataEdgeStateEditorRequestByTabId,
   nodeCreationMenuByTabId,
   persistedPresets,
+  graphs: savedGraphs,
   guardGraphEditForTab,
   markDocumentDirty,
   setMessageFeedbackForTab,
@@ -831,6 +847,64 @@ const {
   openCreatedStateEdgeEditorForTab,
   translate: t,
 });
+
+function openSubgraphEditorForTab(tabId: string, nodeId: string) {
+  if (guardGraphEditForTab(tabId)) {
+    return;
+  }
+  const parentTab = workspace.value.tabs.find((tab) => tab.tabId === tabId) ?? null;
+  const node = documentsByTabId.value[tabId]?.nodes[nodeId];
+  if (!parentTab || !node || node.kind !== "subgraph") {
+    return;
+  }
+
+  const existingSubgraphTab = workspace.value.tabs.find(
+    (tab) => tab.kind === "subgraph" && tab.subgraphSource?.parentTabId === tabId && tab.subgraphSource?.nodeId === nodeId,
+  );
+  if (existingSubgraphTab) {
+    updateWorkspace({
+      ...workspace.value,
+      activeTabId: existingSubgraphTab.tabId,
+    });
+    syncRouteToTab(existingSubgraphTab, "replace");
+    focusNodeForTab(tabId, nodeId);
+    return;
+  }
+
+  const subgraphTab = createSubgraphWorkspaceTab({
+    parentTabId: tabId,
+    parentGraphId: parentTab.graphId,
+    parentTitle: parentTab.title,
+    nodeId,
+    nodeName: node.name,
+  });
+  registerDocumentForTab(subgraphTab.tabId, createSubgraphDocumentFromNode(node));
+  updateWorkspace({
+    activeTabId: subgraphTab.tabId,
+    tabs: [...workspace.value.tabs, subgraphTab],
+  });
+  syncRouteToTab(subgraphTab, "replace");
+  focusNodeForTab(tabId, nodeId);
+}
+
+function createSubgraphDocumentFromNode(node: SubgraphNode): GraphPayload {
+  return {
+    graph_id: null,
+    name: node.name,
+    ...clonePlainValue(node.config.graph),
+  };
+}
+
+function subgraphSourceContextLabel(tab: EditorWorkspaceTab) {
+  if (tab.kind !== "subgraph" || !tab.subgraphSource) {
+    return null;
+  }
+  const parentTitle = workspace.value.tabs.find((candidate) => candidate.tabId === tab.subgraphSource!.parentTabId)?.title ?? tab.subgraphSource.parentTitle;
+  const parentDocument = documentsByTabId.value[tab.subgraphSource.parentTabId];
+  const parentNode = parentDocument?.nodes[tab.subgraphSource.nodeId];
+  const nodeName = parentNode?.kind === "subgraph" ? parentNode.name : tab.subgraphSource.nodeName;
+  return `来自：${parentTitle} / 节点：${nodeName}`;
+}
 
 function showPresetSaveToast(type: "success" | "error", message: string) {
   ElMessage({
