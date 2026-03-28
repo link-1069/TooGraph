@@ -1,6 +1,11 @@
-export const CONDITION_LOOP_LIMIT_MIN = 1;
-export const CONDITION_LOOP_LIMIT_MAX = 10;
-export const CONDITION_LOOP_LIMIT_DEFAULT = 5;
+import {
+  CONDITION_LOOP_LIMIT_DEFAULT,
+  CONDITION_LOOP_LIMIT_MAX,
+  CONDITION_LOOP_LIMIT_MIN,
+  normalizeConditionLoopLimit,
+} from "../../lib/condition-protocol.ts";
+
+export { CONDITION_LOOP_LIMIT_DEFAULT, CONDITION_LOOP_LIMIT_MAX, CONDITION_LOOP_LIMIT_MIN };
 
 export type ConditionLoopLimitPatch = {
   loopLimit: number;
@@ -11,14 +16,7 @@ export type ConditionLoopLimitPatchResult =
   | { kind: "reset"; draftValue: string }
   | { kind: "noop" };
 
-export function normalizeConditionLoopLimit(value: number | null | undefined): number {
-  if (value === null || value === undefined || !Number.isFinite(value) || value === -1) {
-    return CONDITION_LOOP_LIMIT_DEFAULT;
-  }
-
-  const integerValue = Math.trunc(value);
-  return Math.min(CONDITION_LOOP_LIMIT_MAX, Math.max(CONDITION_LOOP_LIMIT_MIN, integerValue));
-}
+export { normalizeConditionLoopLimit };
 
 export function resolveConditionLoopLimitDraft(value: number | null | undefined): string {
   if (value === null || value === undefined) {

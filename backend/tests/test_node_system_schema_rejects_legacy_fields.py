@@ -64,14 +64,14 @@ class NodeSystemSchemaLegacyFieldRejectionTests(unittest.TestCase):
                 }
             )
 
-    def test_condition_config_accepts_loop_limit(self) -> None:
+    def test_condition_config_accepts_configurable_loop_limit(self) -> None:
         config = NodeSystemConditionConfig.model_validate(
             {
-                "branches": ["continue", "retry"],
-                "loopLimit": 5,
+                "branches": ["true", "false", "exhausted"],
+                "loopLimit": 8,
                 "branchMapping": {
-                    "true": "continue",
-                    "false": "retry",
+                    "true": "true",
+                    "false": "false",
                 },
                 "rule": {
                     "source": "counter",
@@ -81,16 +81,11 @@ class NodeSystemSchemaLegacyFieldRejectionTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(config.loop_limit, 5)
+        self.assertEqual(config.loop_limit, 8)
 
-    def test_condition_config_uses_bounded_loop_limits(self) -> None:
+    def test_condition_config_rejects_invalid_loop_limits_and_custom_branch_shapes(self) -> None:
         default_config = NodeSystemConditionConfig.model_validate(
             {
-                "branches": ["continue", "retry"],
-                "branchMapping": {
-                    "true": "continue",
-                    "false": "retry",
-                },
                 "rule": {
                     "source": "counter",
                     "operator": "exists",
@@ -100,30 +95,33 @@ class NodeSystemSchemaLegacyFieldRejectionTests(unittest.TestCase):
         )
 
         self.assertEqual(default_config.loop_limit, 5)
+        self.assertEqual(default_config.branches, ["true", "false", "exhausted"])
+        self.assertEqual(default_config.branch_mapping, {"true": "true", "false": "false"})
 
-        legacy_unlimited_config = NodeSystemConditionConfig.model_validate(
-            {
-                "branches": ["continue", "retry"],
-                "loopLimit": -1,
-                "branchMapping": {
-                    "true": "continue",
-                    "false": "retry",
-                },
-                "rule": {
-                    "source": "counter",
-                    "operator": "exists",
-                    "value": None,
-                },
-            }
-        )
-
-        self.assertEqual(legacy_unlimited_config.loop_limit, 5)
+        for loop_limit in (-1, 0, 11):
+            with self.subTest(loop_limit=loop_limit):
+                with self.assertRaises(ValidationError):
+                    NodeSystemConditionConfig.model_validate(
+                        {
+                            "branches": ["true", "false", "exhausted"],
+                            "loopLimit": loop_limit,
+                            "branchMapping": {
+                                "true": "true",
+                                "false": "false",
+                            },
+                            "rule": {
+                                "source": "counter",
+                                "operator": "exists",
+                                "value": None,
+                            },
+                        }
+                    )
 
         with self.assertRaises(ValidationError):
             NodeSystemConditionConfig.model_validate(
                 {
                     "branches": ["continue", "retry"],
-                    "loopLimit": 11,
+                    "loopLimit": 5,
                     "branchMapping": {
                         "true": "continue",
                         "false": "retry",

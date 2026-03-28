@@ -4,6 +4,8 @@ from collections import Counter
 
 from app.core.control_flow_state_analysis import find_ambiguous_state_reads
 from app.core.schemas.node_system import (
+    FIXED_CONDITION_BRANCHES,
+    FIXED_CONDITION_BRANCH_MAPPING,
     GraphValidationResponse,
     NodeSystemAgentNode,
     NodeSystemConditionNode,
@@ -234,15 +236,22 @@ def _validate_condition_node(
     graph: NodeSystemGraphDocument,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    if len(node.config.branches) < 2:
+    if node.config.branches != list(FIXED_CONDITION_BRANCHES):
         issues.append(
             ValidationIssue(
-                code="condition_branch_count_too_small",
-                message=f"Condition node '{node_name}' must define at least two branches.",
+                code="condition_branches_not_fixed",
+                message=f"Condition node '{node_name}' must use fixed branches: true, false, exhausted.",
                 path=f"nodes.{node_name}.config.branches",
             )
         )
-
+    if node.config.branch_mapping != FIXED_CONDITION_BRANCH_MAPPING:
+        issues.append(
+            ValidationIssue(
+                code="condition_branch_mapping_not_fixed",
+                message=f"Condition node '{node_name}' must use fixed true/false branch mapping.",
+                path=f"nodes.{node_name}.config.branchMapping",
+            )
+        )
     conditional_edge = next((item for item in graph.conditional_edges if item.source == node_name), None)
     if conditional_edge is None:
         issues.append(

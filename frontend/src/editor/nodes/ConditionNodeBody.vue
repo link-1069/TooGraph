@@ -126,21 +126,18 @@
             @keydown.enter.prevent="emit('rule-value-enter', $event)"
           />
         </label>
-        <label class="node-card__control-row">
+        <label class="node-card__control-row node-card__control-row--loop-limit">
           <span class="node-card__control-label">{{ t("nodeCard.maxLoops") }}</span>
-          <input
-            class="node-card__loop-input node-card__loop-input--condition"
-            type="number"
-            inputmode="numeric"
+          <ElInputNumber
+            class="node-card__condition-loop-limit-input"
+            :model-value="conditionLoopLimitValue"
             :min="CONDITION_LOOP_LIMIT_MIN"
             :max="CONDITION_LOOP_LIMIT_MAX"
-            :value="conditionLoopLimitDraft"
-            :placeholder="String(CONDITION_LOOP_LIMIT_DEFAULT)"
+            :step="1"
+            :controls="false"
             @pointerdown.stop
             @click.stop
-            @input="emit('loop-limit-input', $event)"
-            @blur="emit('commit-loop-limit')"
-            @keydown.enter.prevent="emit('loop-limit-enter', $event)"
+            @update:model-value="emit('update:loop-limit', $event)"
           />
         </label>
       </div>
@@ -150,17 +147,13 @@
 
 <script setup lang="ts">
 import { computed, type CSSProperties } from "vue";
-import { ElIcon, ElOption, ElPopover, ElSelect } from "element-plus";
+import { ElIcon, ElInputNumber, ElOption, ElPopover, ElSelect } from "element-plus";
 import { Check, Delete } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 
 import StateEditorPopover from "./StateEditorPopover.vue";
 import StatePortCreatePopover from "./StatePortCreatePopover.vue";
-import {
-  CONDITION_LOOP_LIMIT_DEFAULT,
-  CONDITION_LOOP_LIMIT_MAX,
-  CONDITION_LOOP_LIMIT_MIN,
-} from "./conditionLoopLimit";
+import { CONDITION_LOOP_LIMIT_MAX, CONDITION_LOOP_LIMIT_MIN } from "./conditionLoopLimit";
 import type { NodeCardViewModel } from "./nodeCardViewModel";
 import type { ConditionNode } from "@/types/node-system";
 import type { StateColorOption, StateFieldDraft, StateFieldType } from "@/editor/workspace/statePanelFields";
@@ -177,7 +170,7 @@ const props = defineProps<{
   ruleOperatorValue: ConditionNode["config"]["rule"]["operator"] | "";
   conditionRuleValueDraft: string;
   conditionRuleValueDisabled: boolean;
-  conditionLoopLimitDraft: string;
+  conditionLoopLimitValue: number;
   conditionRuleOperatorOptions: ConditionRuleOperatorOption[];
   stateEditorPopoverStyle: CSSProperties;
   agentAddPopoverStyle: CSSProperties;
@@ -214,12 +207,10 @@ const emit = defineEmits<{
   (event: "cancel-create"): void;
   (event: "commit-create"): void;
   (event: "update:operator", value: string | number | boolean | undefined): void;
+  (event: "update:loop-limit", value: number | undefined): void;
   (event: "rule-value-input", inputEvent: Event): void;
   (event: "commit-rule-value"): void;
   (event: "rule-value-enter", keyboardEvent: KeyboardEvent): void;
-  (event: "loop-limit-input", inputEvent: Event): void;
-  (event: "commit-loop-limit"): void;
-  (event: "loop-limit-enter", keyboardEvent: KeyboardEvent): void;
 }>();
 
 const { t } = useI18n();
@@ -247,8 +238,9 @@ const conditionInputAnchorId = computed(() =>
 }
 
 .node-card__condition-panel {
+  --node-card-condition-loop-column: 104px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--node-card-condition-loop-column);
   gap: 14px;
   align-items: stretch;
 }
@@ -285,7 +277,7 @@ const conditionInputAnchorId = computed(() =>
 }
 
 .node-card__condition-controls-row {
-  --node-card-condition-loop-column: clamp(6.5rem, 22%, 8rem);
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--node-card-condition-loop-column);
   gap: 12px;
@@ -319,23 +311,11 @@ const conditionInputAnchorId = computed(() =>
   font-size: 0.82rem;
 }
 
-.node-card__control-select {
+.node-card__condition-loop-limit-input {
   width: 100%;
 }
 
-.node-card__loop-input {
-  min-height: 36px;
-  width: 88px;
-  border: 1px solid rgba(154, 52, 18, 0.16);
-  border-radius: 14px;
-  padding: 0 12px;
-  background: rgba(255, 255, 255, 0.86);
-  color: #1f2937;
-  font-size: 0.84rem;
-  text-align: right;
-}
-
-.node-card__loop-input--condition {
+.node-card__control-select {
   width: 100%;
 }
 

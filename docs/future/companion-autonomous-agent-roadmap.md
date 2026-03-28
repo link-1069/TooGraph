@@ -51,13 +51,96 @@
 - Agent 节点卡片添加带 `outputSchema` 的 skill 时，会自动创建 managed skill output state、写入节点输出端口，并同步 `skillBindings.outputMapping`。
 - 技能输入由 Agent 节点的 LLM 在运行时根据当前输入 state、技能说明和 `inputSchema` 生成；必填技能输入缺失时由运行时记录可恢复错误。
 - 图运行前不再兼容补齐旧绑定。旧草稿、旧模板和旧技能需要按当前协议重建。
+- 已新增通用 `advanced_web_research_loop` 内置模板，用于验证“搜索技能执行 -> 证据评估 -> condition 控制补搜 -> 依据筛选 -> final_reply”的图式工具循环。它不是桌宠自主循环模板，但可作为联网研究子流程和后续桌宠模板的参考构件。
 
 尚未完成：
 
+- 正式 `subgraph` 子图节点与对应运行、校验、可视化和审计能力。
 - 真实的 `autonomous_decision` 技能。
 - 新版桌宠自主循环模板。
 - `graphite_skill_builder`。
 - 审批恢复 UI、图补丁预览、GraphCommandBus、revision、undo 和完整审计闭环。
+
+## 当前可参考模板
+
+### `advanced_web_research_loop`
+
+该模板是当前新协议下的高级联网搜索图，不是旧 `web_research_loop` 的兼容版本。
+
+流程：
+
+```text
+input_question
+  -> plan_search 写 research_plan 和 current_query
+  -> run_web_search 绑定 web_search，并由 Agent LLM 生成 query 运行技能
+  -> review_evidence 阅读 artifact_paths 原文，写 evidence_review，并在需要补搜时写下一轮 current_query
+  -> should_continue_search
+      true: run_web_search
+      false: select_evidence
+      exhausted: select_evidence
+  -> select_evidence
+  -> final_answer 写 final_reply
+  -> output_final / output_evidence / output_documents
+```
+
+设计约束：
+
+- `web_search` 的输入由搜索 Agent 运行时决定，不由决策节点或静态 mapping 提前生成。
+- `query`、`source_urls`、`artifact_paths`、`errors` 通过 `skillBindings.outputMapping` 写入 managed binding state。
+- `artifact_paths` 是 `file` state；下游 Agent 看到的是本地文档文件名和原文全文。
+- 补搜回边必须是 condition 的原生分支，便于 `loopLimit` 生效。
+- `exhausted` 分支表示达到循环上限后用已有证据收束，而不是失败。
+- 证据评估节点不应为了追求完美资料无限补搜。已有约 5 份可读原文并足以回答时，应进入整理阶段，并在最终回复中说明资料局限。
+
+该模板证明当前节点系统已经能表达一个“万能循环”的核心局部：工具执行、结果评估、必要时再调用工具、最后整理回复。桌宠自主循环还需要在它前面补上意图判断、技能目录检索和 `autonomous_decision`，并在它后面补上可选的人设/记忆/会话摘要写回。
+
+## 子图组件
+
+`subgraph` 是未来 `node_system` 中的一等节点类型，不是纯 UI 分组，也不是绕过图协议的隐藏执行路径。它的目标是把一张完整图复制封装为当前父图里的一个可编辑小组件，让复杂流程可以作为节点参与更大的图。
+
+固定语义：
+
+- 只支持“整张图变成子图”，不做选中一组节点抽取。
+- 创建子图时复制一份完整图数据作为当前子图实例；编辑子图不会影响原图，也不会影响其他图。
+- 双击子图节点打开的是当前实例的内部图，编辑只影响当前父图里的这个子图节点。
+- 子图内部 state 与父图隔离。父图只能通过子图公开输入和公开输出通信。
+- 子图可以包含子图，但必须在校验阶段拒绝自引用和递归引用。
+
+接口规则：
+
+- 子图内部所有 `input` 节点生成子图节点左侧输入胶囊。
+- 子图内部所有 `output` 节点生成子图节点右侧输出胶囊。
+- 子图输入不继承原图 `input` 节点默认值；父图必须提供新的明确输入。
+- 缺少必需输入时，运行前校验失败，不进入子图内部运行，也不在运行中临时要求用户补值。
+- 子图内部临时 state 不暴露给父图。只有内部 `output` 节点对应的 state 可以写回父图。
+
+运行规则：
+
+```text
+父图运行前校验
+  -> 检查子图必需输入是否都有明确来源
+  -> 创建隔离的子图 state
+  -> 把父图显式输入写入子图 input 边界
+  -> 运行子图内部节点
+  -> 收集子图 output 边界
+  -> 把公开输出写回父图子图节点输出
+```
+
+可视化规则：
+
+- 子图节点视觉上是一个缩略图，类似画布右下角缩略图。
+- 左侧胶囊展示所有公开输入，右侧胶囊展示所有公开输出。
+- 未展开时，缩略图内部只简化显示节点名称和连接线。
+- 运行时，缩略图内部节点应根据运行状态改变颜色，便于观察当前子流程进度。
+- 子图节点必须显式展示内部能力汇总，例如联网、文件读写、记忆写入、图编辑、模型调用和其他技能副作用，不能把能力藏在内部图里。
+
+与 LangGraph 子图的关系：
+
+- LangGraph 也把 graph 作为父图里的 node 使用；父子图 state schema 相同时可以直接添加 compiled subgraph，schema 不同时通常通过父图节点函数手动转换输入输出。参考官方文档：[LangGraph subgraphs](https://docs.langchain.com/oss/python/langgraph/use-subgraphs)。
+- LangGraph 支持嵌套子图、checkpoint、interrupt、state inspection，以及 `subgraphs=True` 的子图事件流。
+- GraphiteUI 借鉴的是“graph as node”、嵌套运行、内部事件可见和可审计这些运行思想。
+- GraphiteUI 不采用默认共享 state key 的产品心智。GraphiteUI 的子图默认隔离内部 state，接口由内部 `input` / `output` 节点生成，并以可视化胶囊呈现。
+- GraphiteUI 的子图是实例化的画布组件。双击编辑当前实例，不是编辑全局共享定义。
 
 ## 运行模型
 
