@@ -215,6 +215,31 @@ test("EditorCanvas stacks zoom controls above the minimap at the bottom right", 
   assert.match(minimapSource, /\.editor-minimap__surface \{[\s\S]*position:\s*relative;[\s\S]*z-index:\s*1;/);
 });
 
+test("EditorMinimap mirrors main node type colors in the bottom-right thumbnail", () => {
+  assert.match(minimapSource, /'editor-minimap__node--input': node\.kind === 'input'/);
+  assert.match(minimapSource, /'editor-minimap__node--agent': node\.kind === 'agent'/);
+  assert.match(minimapSource, /'editor-minimap__node--condition': node\.kind === 'condition'/);
+  assert.match(minimapSource, /'editor-minimap__node--output': node\.kind === 'output'/);
+  assert.match(minimapSource, /'editor-minimap__node--subgraph': node\.kind === 'subgraph'/);
+  assert.match(minimapSource, /\.editor-minimap__node--input \{[\s\S]*fill:\s*rgba\(8,\s*145,\s*178,\s*0\.42\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--agent \{[\s\S]*fill:\s*rgba\(37,\s*99,\s*235,\s*0\.42\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--condition \{[\s\S]*fill:\s*rgba\(217,\s*119,\s*6,\s*0\.46\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--output \{[\s\S]*fill:\s*rgba\(79,\s*70,\s*229,\s*0\.42\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--subgraph \{[\s\S]*fill:\s*rgba\(13,\s*148,\s*136,\s*0\.44\);/);
+});
+
+test("EditorMinimap mirrors main runtime outline colors in the bottom-right thumbnail", () => {
+  assert.match(minimapSource, /'editor-minimap__node--running': node\.runState === 'running'/);
+  assert.match(minimapSource, /'editor-minimap__node--paused': node\.runState === 'paused'/);
+  assert.match(minimapSource, /'editor-minimap__node--success': node\.runState === 'success'/);
+  assert.match(minimapSource, /'editor-minimap__node--failed': node\.runState === 'failed'/);
+  assert.match(minimapSource, /\.editor-minimap__node--running \{[\s\S]*stroke:\s*rgba\(16,\s*185,\s*129,\s*0\.88\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--paused \{[\s\S]*stroke:\s*rgba\(245,\s*158,\s*11,\s*0\.88\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--success \{[\s\S]*stroke:\s*rgba\(16,\s*185,\s*129,\s*0\.82\);/);
+  assert.match(minimapSource, /\.editor-minimap__node--failed \{[\s\S]*stroke:\s*rgba\(239,\s*68,\s*68,\s*0\.86\);/);
+  assert.doesNotMatch(minimapSource, /\.editor-minimap__node--success \{[\s\S]*rgba\(180,\s*83,\s*9/);
+});
+
 test("EditorCanvas delegates external node focus viewport projection to a model", () => {
   const focusNodeViewportModelSource = readFocusNodeViewportModelSource();
 
@@ -418,7 +443,7 @@ test("EditorCanvas styles runtime feedback with one halo layer and a static node
   assert.match(pausedCardBlock, /0 0 0 1\.5px rgba\(245,\s*158,\s*11,\s*0\.52\)/);
   assert.doesNotMatch(pausedCardBlock, /animation:/);
   assert.doesNotMatch(componentSource, /:global\(\.node-card\.editor-canvas__node--paused-current\)/);
-  assert.match(componentSource, /:global\(\.node-card\.editor-canvas__node--success\) \{[\s\S]*0 0 0 1\.5px rgba\(180,\s*83,\s*9,\s*0\.34\)/);
+  assert.match(componentSource, /:global\(\.node-card\.editor-canvas__node--success\) \{[\s\S]*0 0 0 1\.5px rgba\(16,\s*185,\s*129,\s*0\.5\)/);
   assert.match(componentSource, /:global\(\.node-card\.editor-canvas__node--failed\) \{[\s\S]*0 0 0 1\.5px rgba\(239,\s*68,\s*68,\s*0\.56\)/);
   assert.doesNotMatch(componentSource, /:deep\(\.editor-canvas__node--(?:running|paused|success|failed)\)/);
   assert.doesNotMatch(componentSource, /\.editor-canvas__node-halo--success/);
@@ -1117,6 +1142,10 @@ test("EditorCanvas emits a subgraph editor request when a subgraph node is doubl
   assert.match(componentSource, /function handleNodeDoubleClick\(nodeId: string, event: MouseEvent\)/);
   assert.match(componentSource, /if \(node\?\.kind !== "subgraph"\) \{/);
   assert.match(componentSource, /emit\("open-subgraph-editor", \{ nodeId \}\);/);
+});
+
+test("EditorCanvas forwards subgraph edit requests from the node top action dock", () => {
+  assert.match(componentSource, /@open-subgraph-editor="emit\('open-subgraph-editor', \$event\)"/);
 });
 
 test("EditorCanvas forwards node-card state editing and top-action events", () => {

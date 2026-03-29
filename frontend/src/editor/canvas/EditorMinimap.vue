@@ -39,8 +39,10 @@
           'editor-minimap__node--agent': node.kind === 'agent',
           'editor-minimap__node--condition': node.kind === 'condition',
           'editor-minimap__node--output': node.kind === 'output',
+          'editor-minimap__node--subgraph': node.kind === 'subgraph',
           'editor-minimap__node--selected': node.selected,
           'editor-minimap__node--running': node.runState === 'running',
+          'editor-minimap__node--paused': node.runState === 'paused',
           'editor-minimap__node--failed': node.runState === 'failed',
           'editor-minimap__node--success': node.runState === 'success',
         }"
@@ -208,19 +210,23 @@ function emitWorldPointFromEvent(event: PointerEvent) {
 }
 
 .editor-minimap__node--input {
-  fill: rgba(201, 107, 31, 0.5);
+  fill: rgba(8, 145, 178, 0.42);
 }
 
 .editor-minimap__node--agent {
-  fill: rgba(149, 91, 47, 0.5);
+  fill: rgba(37, 99, 235, 0.42);
 }
 
 .editor-minimap__node--condition {
-  fill: rgba(132, 112, 75, 0.52);
+  fill: rgba(217, 119, 6, 0.46);
 }
 
 .editor-minimap__node--output {
-  fill: rgba(94, 83, 73, 0.45);
+  fill: rgba(79, 70, 229, 0.42);
+}
+
+.editor-minimap__node--subgraph {
+  fill: rgba(13, 148, 136, 0.44);
 }
 
 .editor-minimap__node--selected {
@@ -232,12 +238,16 @@ function emitWorldPointFromEvent(event: PointerEvent) {
   stroke: rgba(16, 185, 129, 0.88);
 }
 
+.editor-minimap__node--paused {
+  stroke: rgba(245, 158, 11, 0.88);
+}
+
 .editor-minimap__node--success {
-  stroke: rgba(180, 83, 9, 0.82);
+  stroke: rgba(16, 185, 129, 0.82);
 }
 
 .editor-minimap__node--failed {
-  stroke: rgba(220, 38, 38, 0.86);
+  stroke: rgba(239, 68, 68, 0.86);
 }
 
 .editor-minimap__viewport {

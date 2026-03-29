@@ -271,6 +271,7 @@
           @create-port-state="emit('create-port-state', $event)"
           @delete-node="emit('delete-node', $event)"
           @save-node-preset="emit('save-node-preset', $event)"
+          @open-subgraph-editor="emit('open-subgraph-editor', $event)"
           @open-human-review="emit('open-human-review', $event)"
           @locked-edit-attempt="emit('locked-edit-attempt')"
           @refresh-agent-models="emit('refresh-agent-models')"
@@ -3348,7 +3349,7 @@ function resolveRunEdgePresentationForEdge(edgeId: string) {
 :global(.node-card.editor-canvas__node--success) {
   box-shadow:
     0 18px 36px rgba(60, 41, 20, 0.1),
-    0 0 0 1.5px rgba(180, 83, 9, 0.34);
+    0 0 0 1.5px rgba(16, 185, 129, 0.5);
 }
 
 :global(.node-card.editor-canvas__node--failed) {

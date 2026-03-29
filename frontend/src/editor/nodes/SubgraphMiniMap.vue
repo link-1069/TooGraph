@@ -19,30 +19,40 @@
           :d="edge.path"
         />
       </svg>
-      <span
+      <ElTooltip
         v-for="node in layout.nodes"
         :key="node.id"
-        class="subgraph-mini-map__node"
-        :class="[
-          `subgraph-mini-map__node--${node.kind}`,
-          `subgraph-mini-map__node--${node.status}`,
-          { 'subgraph-mini-map__node--active': node.active },
-        ]"
-        :style="nodeStyle(node)"
-        :title="`${node.label} - ${formatStatus(node.status)}`"
+        :content="node.label"
+        placement="top"
+        effect="light"
+        popper-class="subgraph-mini-map__node-tooltip"
+        :show-after="180"
+        :hide-after="0"
       >
-        <span class="subgraph-mini-map__node-kind" aria-hidden="true" />
-        <span class="subgraph-mini-map__node-status" aria-hidden="true" />
-        <span class="subgraph-mini-map__node-label">{{ node.label }}</span>
-      </span>
+        <span
+          class="subgraph-mini-map__node"
+          :class="[
+            `subgraph-mini-map__node--${node.kind}`,
+            `subgraph-mini-map__node--${node.status}`,
+            { 'subgraph-mini-map__node--active': node.active },
+          ]"
+          :style="nodeStyle(node)"
+          :aria-label="node.label"
+        >
+          <span class="subgraph-mini-map__node-kind" aria-hidden="true" />
+          <span class="subgraph-mini-map__node-status" aria-hidden="true" />
+          <span class="subgraph-mini-map__node-label">{{ node.label }}</span>
+        </span>
+      </ElTooltip>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { ElTooltip } from "element-plus";
 
-import type { SubgraphThumbnailEdgeViewModel, SubgraphThumbnailNodeViewModel, SubgraphThumbnailStatus } from "./nodeCardViewModel";
+import type { SubgraphThumbnailEdgeViewModel, SubgraphThumbnailNodeViewModel } from "./nodeCardViewModel";
 import { buildSubgraphMiniMapLayout } from "./subgraphMiniMapLayout";
 import type { SubgraphMiniMapPlacedNode } from "./subgraphMiniMapLayout";
 
@@ -83,25 +93,6 @@ function nodeStyle(node: SubgraphMiniMapPlacedNode) {
     width: `${node.width}px`,
     height: `${node.height}px`,
   };
-}
-
-function formatStatus(status: SubgraphThumbnailStatus) {
-  if (status === "queued") {
-    return "queued";
-  }
-  if (status === "running") {
-    return "running";
-  }
-  if (status === "paused") {
-    return "paused";
-  }
-  if (status === "success") {
-    return "success";
-  }
-  if (status === "failed") {
-    return "failed";
-  }
-  return "idle";
 }
 </script>
 
@@ -206,13 +197,32 @@ function formatStatus(status: SubgraphThumbnailStatus) {
   background: rgba(120, 113, 108, 0.38);
 }
 
+:global(.subgraph-mini-map__node-tooltip.el-popper) {
+  max-width: min(360px, calc(100vw - 32px));
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: rgba(255, 252, 247, 0.96);
+  box-shadow: 0 12px 28px rgba(60, 41, 20, 0.14);
+  color: #292524;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+:global(.subgraph-mini-map__node-tooltip .el-popper__arrow::before) {
+  border-color: rgba(154, 52, 18, 0.14);
+  background: rgba(255, 252, 247, 0.96);
+}
+
 .subgraph-mini-map__node--input {
-  border-color: rgba(20, 120, 78, 0.24);
-  background: rgba(246, 253, 248, 0.98);
+  border-color: rgba(8, 145, 178, 0.26);
+  background: rgba(240, 249, 255, 0.98);
 }
 
 .subgraph-mini-map__node--input .subgraph-mini-map__node-kind {
-  background: #16a34a;
+  background: #0891b2;
 }
 
 .subgraph-mini-map__node--agent {
@@ -234,12 +244,12 @@ function formatStatus(status: SubgraphThumbnailStatus) {
 }
 
 .subgraph-mini-map__node--output {
-  border-color: rgba(154, 52, 18, 0.24);
-  background: rgba(255, 250, 245, 0.98);
+  border-color: rgba(79, 70, 229, 0.26);
+  background: rgba(245, 243, 255, 0.98);
 }
 
 .subgraph-mini-map__node--output .subgraph-mini-map__node-kind {
-  background: #9a3412;
+  background: #4f46e5;
 }
 
 .subgraph-mini-map__node--subgraph {
@@ -266,7 +276,10 @@ function formatStatus(status: SubgraphThumbnailStatus) {
 }
 
 .subgraph-mini-map__node--success {
-  border-color: rgba(180, 83, 9, 0.42);
+  border-color: rgba(16, 185, 129, 0.62);
+  box-shadow:
+    0 0 0 2px rgba(16, 185, 129, 0.08),
+    0 8px 18px rgba(16, 185, 129, 0.12);
 }
 
 .subgraph-mini-map__node--failed {
@@ -286,25 +299,34 @@ function formatStatus(status: SubgraphThumbnailStatus) {
 }
 
 .subgraph-mini-map__node--success .subgraph-mini-map__node-status {
-  background: #b45309;
+  background: #10b981;
 }
 
 .subgraph-mini-map__node--failed .subgraph-mini-map__node-status {
   background: #ef4444;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .subgraph-mini-map__node--active {
-    animation: subgraph-mini-map-pulse 1.4s ease-in-out infinite;
-  }
+.subgraph-mini-map__node--active {
+  animation: subgraph-mini-map-node-flash 1.25s ease-in-out infinite;
 }
 
-@keyframes subgraph-mini-map-pulse {
+@keyframes subgraph-mini-map-node-flash {
   0%,
   100% {
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow:
+      0 0 0 2px rgba(16, 185, 129, 0.1),
+      0 8px 18px rgba(16, 185, 129, 0.12);
+    filter: saturate(1);
     transform: translateZ(0);
   }
+
   50% {
+    background: rgba(236, 253, 245, 0.98);
+    box-shadow:
+      0 0 0 4px rgba(16, 185, 129, 0.18),
+      0 12px 26px rgba(16, 185, 129, 0.22);
+    filter: saturate(1.08);
     transform: translateY(-1px);
   }
 }
