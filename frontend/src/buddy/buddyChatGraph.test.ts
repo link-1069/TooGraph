@@ -11,7 +11,9 @@ import {
   BUDDY_REPLY_STATE_KEY,
   buildBuddyChatGraph,
   formatBuddyHistory,
+  resolveBuddyReplyFromRunEvent,
   resolveBuddyRunActivityFromRunEvent,
+  resolveBuddyRunTraceFromRunEvent,
   resolveBuddyMode,
   resolveBuddyReplyText,
 } from "./buddyChatGraph.ts";
@@ -564,6 +566,248 @@ test("resolveBuddyReplyText prefers the buddy reply state over fallback text", (
   assert.equal(resolveBuddyReplyText(run), "我看到了。");
 });
 
+test("resolveBuddyReplyFromRunEvent recognizes reply states by graph state name", () => {
+  const graph = buildBuddyChatGraph(
+    {
+      ...createAgenticTemplate(),
+      state_schema: {
+        user_message: { name: "user_message", description: "", type: "text", value: "", color: "#9a3412" },
+        final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      },
+    },
+    {
+      userMessage: "你好",
+      history: [],
+      pageContext: "当前路径: /",
+      buddyMode: "advisory",
+    },
+  );
+
+  assert.equal(
+    resolveBuddyReplyFromRunEvent(
+      {
+        event: "state.updated",
+        state_key: "final_reply",
+        value: "你好，我是 Buddy。",
+      },
+      graph,
+    ),
+    "你好，我是 Buddy。",
+  );
+});
+
+test("resolveBuddyReplyFromRunEvent reads completed output values for named reply states", () => {
+  const graph = buildBuddyChatGraph(
+    {
+      ...createAgenticTemplate(),
+      state_schema: {
+        final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      },
+    },
+    {
+      userMessage: "你好",
+      history: [],
+      pageContext: "当前路径: /",
+      buddyMode: "advisory",
+    },
+  );
+
+  assert.equal(
+    resolveBuddyReplyFromRunEvent(
+      {
+        event: "node.output.completed",
+        output_keys: ["final_reply"],
+        output_values: {
+          final_reply: "已经组织好的回复。",
+        },
+      },
+      graph,
+    ),
+    "已经组织好的回复。",
+  );
+});
+
+test("resolveBuddyReplyFromRunEvent streams partial markdown from a structured reply field", () => {
+  const graph = buildBuddyChatGraph(
+    {
+      ...createAgenticTemplate(),
+      state_schema: {
+        final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      },
+    },
+    {
+      userMessage: "你好",
+      history: [],
+      pageContext: "当前路径: /",
+      buddyMode: "advisory",
+    },
+  );
+
+  assert.equal(
+    resolveBuddyReplyFromRunEvent(
+      {
+        event: "node.output.delta",
+        node_id: "draft_final_reply",
+        output_keys: ["final_reply"],
+        stream_state_keys: ["final_reply"],
+        text: '{"final_reply":"# 你好\\n我正在',
+      },
+      graph,
+    ),
+    "# 你好\n我正在",
+  );
+});
+
+test("resolveBuddyRunTraceFromRunEvent summarizes streaming output from non-output LLM nodes", () => {
+  const graph = createActivityGraph();
+
+  assert.deepEqual(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.output.delta",
+      {
+        node_id: "understand_request",
+        node_type: "agent",
+        subgraph_node_id: "intake_request",
+        output_keys: ["state_10"],
+        stream_state_keys: ["state_10"],
+        text: '{"state_10":"正在识别：这是一个简单问候，不需要调用能力',
+      },
+      graph,
+    ),
+    {
+      labelKey: "buddy.activity.generatingOutput",
+      params: {
+        node: "识别意图",
+        stage: "理解请求",
+      },
+      preview: "正在识别：这是一个简单问候，不需要调用能力",
+      tone: "stream",
+      replaceKey: "stream:intake_request:understand_request",
+      timingKey: "stage:intake_request:understand_request",
+    },
+  );
+});
+
+test("resolveBuddyRunTraceFromRunEvent keeps backend stage duration on top-level completed stages", () => {
+  const graph = createActivityGraph();
+
+  assert.deepEqual(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.completed",
+      {
+        node_id: "intake_request",
+        node_type: "subgraph",
+        status: "success",
+        duration_ms: 1534,
+      },
+      graph,
+    ),
+    {
+      labelKey: "buddy.activity.completed",
+      params: {
+        node: "理解请求",
+      },
+      preview: "",
+      tone: "success",
+      replaceKey: "node:intake_request",
+      timingKey: "stage:intake_request",
+      durationMs: 1534,
+    },
+  );
+});
+
+test("resolveBuddyRunTraceFromRunEvent keeps real inner node progress visible", () => {
+  const graph = createActivityGraph();
+
+  assert.deepEqual(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.completed",
+      {
+        node_id: "understand_request",
+        node_type: "agent",
+        subgraph_node_id: "intake_request",
+        status: "success",
+        duration_ms: 1534,
+      },
+      graph,
+    ),
+    {
+      labelKey: "buddy.activity.completed",
+      params: {
+        node: "识别意图",
+        stage: "理解请求",
+      },
+      preview: "",
+      tone: "success",
+      replaceKey: "node:intake_request:understand_request",
+      timingKey: "stage:intake_request:understand_request",
+      durationMs: 1534,
+    },
+  );
+  assert.equal(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.started",
+      {
+        node_id: "understand_request",
+        node_type: "agent",
+        subgraph_node_id: "intake_request",
+      },
+      graph,
+    )?.replaceKey,
+    "node:intake_request:understand_request",
+  );
+});
+
+test("resolveBuddyRunTraceFromRunEvent hides subgraph plumbing from buddy progress", () => {
+  const graph = createActivityGraph();
+
+  assert.equal(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.completed",
+      {
+        node_id: "input_user_message",
+        node_type: "input",
+        subgraph_node_id: "intake_request",
+        status: "success",
+      },
+      graph,
+    ),
+    null,
+  );
+  assert.equal(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.completed",
+      {
+        node_id: "output_final_reply",
+        node_type: "output",
+        subgraph_node_id: "draft_final_response",
+        status: "success",
+      },
+      graph,
+    ),
+    null,
+  );
+  assert.equal(
+    resolveBuddyRunTraceFromRunEvent(
+      "node.output.completed",
+      {
+        node_id: "understand_request",
+        node_type: "agent",
+        subgraph_node_id: "intake_request",
+        output_keys: ["state_10"],
+        stream_state_keys: ["state_10"],
+        output_values: {
+          state_10: {
+            intent: "chat",
+          },
+        },
+      },
+      graph,
+    ),
+    null,
+  );
+});
+
 test("resolveBuddyRunActivityFromRunEvent describes inner buddy subgraph activity", () => {
   const activity = resolveBuddyRunActivityFromRunEvent(
     "node.started",
@@ -581,6 +825,24 @@ test("resolveBuddyRunActivityFromRunEvent describes inner buddy subgraph activit
     params: {
       node: "识别意图",
       stage: "理解请求",
+    },
+  });
+});
+
+test("resolveBuddyRunActivityFromRunEvent names subgraph containers without duplicating inner phases", () => {
+  const activity = resolveBuddyRunActivityFromRunEvent(
+    "node.started",
+    {
+      node_id: "intake_request",
+      node_type: "subgraph",
+    },
+    createActivityGraph(),
+  );
+
+  assert.deepEqual(activity, {
+    labelKey: "buddy.activity.running",
+    params: {
+      node: "理解请求",
     },
   });
 });

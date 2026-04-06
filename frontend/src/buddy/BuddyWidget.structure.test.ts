@@ -114,10 +114,44 @@ test("BuddyWidget keeps runtime error replies out of model context and persisted
 test("BuddyWidget shows live run activity while the assistant reply is still empty", () => {
   assert.match(componentSource, /resolveBuddyRunActivityFromRunEvent/);
   assert.match(componentSource, /activityText/);
-  assert.match(componentSource, /message\.content \|\| message\.activityText \|\| t\("buddy\.streaming"\)/);
+  assert.match(componentSource, /shouldShowAssistantActivityBubble\(message\)/);
+  assert.match(componentSource, /message\.activityText \|\| t\("buddy\.streaming"\)/);
   assert.match(componentSource, /setAssistantActivityText\(assistantMessage\.id, t\("buddy\.activity\.preparing"\)\);/);
   assert.match(componentSource, /setAssistantActivityFromRunEvent\(assistantMessageId, eventType, payload, graph\);/);
   assert.match(componentSource, /if \(mood\.value === "thinking" && latestActivityText\.value\) \{/);
+});
+
+test("BuddyWidget renders assistant replies as safe markdown and keeps a compact run trace panel", () => {
+  assert.match(componentSource, /import \{ resolveOutputPreviewContent \} from "\.\.\/editor\/nodes\/outputPreviewContentModel\.ts";/);
+  assert.match(componentSource, /v-html="renderBuddyMarkdown\(message\.content\)"/);
+  assert.match(componentSource, /class="buddy-widget__run-trace"/);
+  assert.match(componentSource, /const runTraceEntries = ref<BuddyRunTraceEntry\[\]>\(\[\]\);/);
+  assert.match(componentSource, /resolveBuddyRunTraceFromRunEvent/);
+  assert.match(componentSource, /appendRunTraceEntry\(eventType, traceEntry\);/);
+  assert.match(componentSource, /\.buddy-widget__run-trace-body[\s\S]*max-height:\s*calc\(3 \* 1\.45em \+ 18px\);/);
+});
+
+test("BuddyWidget records and displays per-stage run trace durations", () => {
+  assert.match(componentSource, /import \{ formatRunDuration \} from "\.\.\/lib\/run-display-name\.ts";/);
+  assert.match(componentSource, /const runTraceStartedAtByKey = new Map<string, number>\(\);/);
+  assert.match(componentSource, /function appendRunTraceEntry\(eventType: string, traceEntry: BuddyRunTraceEntry\)/);
+  assert.match(componentSource, /runTraceStartedAtByKey\.set\(traceEntry\.timingKey, nowRunTraceMs\(\)\);/);
+  assert.match(componentSource, /durationMs: Math\.max\(1, Math\.round\(nowRunTraceMs\(\) - startedAt\)\),/);
+  assert.match(componentSource, /class="buddy-widget__run-trace-duration"/);
+  assert.match(componentSource, /formatRunTraceDuration\(entry\.durationMs\)/);
+});
+
+test("BuddyWidget keeps the run trace above the formal reply and collapses to elapsed summary", () => {
+  assert.match(componentSource, /const runTraceStartedAtMs = ref<number \| null>\(null\);/);
+  assert.match(componentSource, /const runTraceFinishedAtMs = ref<number \| null>\(null\);/);
+  assert.match(componentSource, /const runTraceHeaderText = computed/);
+  assert.match(componentSource, /markRunTraceFinished\(\);/);
+  assert.match(componentSource, /if \(!hasAssistantMessageContent\(assistantMessageId\)\) \{[\s\S]*markRunTraceFinished\(\);[\s\S]*\}/);
+  assert.match(componentSource, /v-if="shouldShowRunTraceForMessage\(message\)"/);
+  assert.match(componentSource, /v-if="shouldShowRunTraceBody"/);
+  assert.match(componentSource, /v-if="message\.role === 'assistant' && message\.content"/);
+  assert.match(componentSource, /shouldShowAssistantActivityBubble\(message\)/);
+  assert.doesNotMatch(componentSource, /message\.content \|\| message\.activityText \|\| t\("buddy\.streaming"\)/);
 });
 
 test("BuddyWidget leaves buddy self config loading and memory curation to the chat graph template", () => {
