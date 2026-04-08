@@ -33,7 +33,7 @@
                 :class="{ 'buddy-widget__icon-button--active': isSessionPanelOpen }"
                 :title="t('buddy.history')"
                 :aria-label="t('buddy.history')"
-                @click="isSessionPanelOpen = !isSessionPanelOpen"
+                @click="toggleSessionPanel"
               >
                 <ElIcon><Clock /></ElIcon>
               </button>
@@ -44,17 +44,6 @@
               >
                 <div class="buddy-widget__sessions-header">
                   <strong>{{ t("buddy.history") }}</strong>
-                  <button
-                    type="button"
-                    class="buddy-widget__session-new"
-                    :disabled="isSessionSwitchLocked"
-                    :title="t('buddy.newSession')"
-                    :aria-label="t('buddy.newSession')"
-                    @click="createNewSession"
-                  >
-                    <ElIcon><Plus /></ElIcon>
-                    <span>{{ t("buddy.newSession") }}</span>
-                  </button>
                 </div>
                 <p v-if="isSessionLoading" class="buddy-widget__sessions-status">
                   {{ t("buddy.historyLoading") }}
@@ -78,16 +67,32 @@
                       <span>{{ session.title || t("buddy.untitledSession") }}</span>
                       <small>{{ session.last_message_preview || t("buddy.emptySession") }}</small>
                     </button>
-                    <button
-                      type="button"
-                      class="buddy-widget__session-delete"
-                      :disabled="isSessionSwitchLocked"
-                      :title="t('buddy.deleteSession')"
-                      :aria-label="t('buddy.deleteSession')"
-                      @click.stop="deleteSession(session.session_id)"
+                    <ElPopover
+                      :visible="isSessionDeleteConfirmOpen(session.session_id)"
+                      placement="left"
+                      :show-arrow="false"
+                      popper-class="buddy-widget__confirm-popover buddy-widget__confirm-popover--delete"
                     >
-                      <ElIcon><Delete /></ElIcon>
-                    </button>
+                      <template #reference>
+                        <button
+                          type="button"
+                          data-session-delete-surface="true"
+                          class="buddy-widget__session-delete"
+                          :class="{ 'buddy-widget__session-delete--confirm': isSessionDeleteConfirmOpen(session.session_id) }"
+                          :disabled="isSessionSwitchLocked"
+                          :title="isSessionDeleteConfirmOpen(session.session_id) ? t('buddy.confirmDeleteSession') : t('buddy.deleteSession')"
+                          :aria-label="isSessionDeleteConfirmOpen(session.session_id) ? t('buddy.confirmDeleteSession') : t('buddy.deleteSession')"
+                          @pointerdown.stop
+                          @click.stop="handleSessionDeleteActionClick(session.session_id)"
+                        >
+                          <ElIcon v-if="isSessionDeleteConfirmOpen(session.session_id)" aria-hidden="true"><Check /></ElIcon>
+                          <ElIcon v-else aria-hidden="true"><Delete /></ElIcon>
+                        </button>
+                      </template>
+                      <div class="buddy-widget__confirm-hint buddy-widget__confirm-hint--delete">
+                        {{ t("buddy.deleteSessionQuestion") }}
+                      </div>
+                    </ElPopover>
                   </div>
                 </div>
               </aside>
@@ -107,10 +112,10 @@
               class="buddy-widget__icon-button"
               :title="isPanelFullscreen ? t('buddy.exitFullscreen') : t('buddy.fullscreen')"
               :aria-label="isPanelFullscreen ? t('buddy.exitFullscreen') : t('buddy.fullscreen')"
-              @click="isPanelFullscreen = !isPanelFullscreen"
+              @click="togglePanelFullscreen"
             >
               <ElIcon>
-                <ScaleToOriginal v-if="isPanelFullscreen" />
+                <SemiSelect v-if="isPanelFullscreen" />
                 <FullScreen v-else />
               </ElIcon>
             </button>
@@ -119,7 +124,7 @@
               class="buddy-widget__icon-button"
               :title="t('common.close')"
               :aria-label="t('common.close')"
-              @click="isPanelOpen = false"
+              @click="closePanel"
             >
               <ElIcon><Close /></ElIcon>
             </button>
@@ -178,9 +183,9 @@
           <p v-if="messages.length === 0" class="buddy-widget__empty">
             {{ t("buddy.empty") }}
           </p>
+          <template v-for="message in messages" :key="message.id">
           <article
-            v-for="message in messages"
-            :key="message.id"
+            v-if="shouldRenderMessage(message)"
             class="buddy-widget__message"
             :class="`buddy-widget__message--${message.role}`"
           >
@@ -241,6 +246,7 @@
               {{ message.content }}
             </p>
           </article>
+          </template>
           <p v-if="errorMessage" class="buddy-widget__error">{{ errorMessage }}</p>
           <p v-if="queuedTurns.length > 0" class="buddy-widget__queue">
             {{ t("buddy.queueStatus", { count: queuedTurns.length }) }}
@@ -274,6 +280,7 @@
       <button
         type="button"
         class="buddy-widget__avatar"
+        :style="avatarStyle"
         :title="t('buddy.dragHint')"
         :aria-label="t('buddy.open')"
         @pointerdown="handlePointerDown"
@@ -286,8 +293,8 @@
 </template>
 
 <script setup lang="ts">
-import { ArrowDown, Clock, Close, Delete, FullScreen, Plus, Promotion, ScaleToOriginal } from "@element-plus/icons-vue";
-import { ElIcon, ElOption, ElSelect } from "element-plus";
+import { ArrowDown, Check, Clock, Close, Delete, FullScreen, Plus, Promotion, SemiSelect } from "@element-plus/icons-vue";
+import { ElIcon, ElOption, ElPopover, ElSelect } from "element-plus";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
@@ -316,10 +323,12 @@ import type { SettingsPayload } from "../types/settings.ts";
 import BuddyMascot from "./BuddyMascot.vue";
 import { buildBuddyPageContext } from "./buddyPageContext.ts";
 import {
+  BUDDY_REVIEW_TEMPLATE_ID,
   BUDDY_TEMPLATE_ID,
   BUDDY_MODE_OPTIONS,
   DEFAULT_BUDDY_MODE,
   buildBuddyChatGraph,
+  buildBuddyReviewGraph,
   resolveBuddyMode,
   resolveBuddyRunActivityFromRunEvent,
   resolveBuddyRunTraceFromRunEvent,
@@ -342,6 +351,7 @@ import {
 
 type BuddyMessage = BuddyChatMessage & {
   id: string;
+  clientOrder?: number | null;
   activityText?: string;
 };
 
@@ -349,6 +359,7 @@ type BuddyMessagePatch = Partial<Pick<BuddyMessage, "content" | "includeInContex
 
 type BuddyQueuedTurn = {
   userMessageId: string;
+  assistantMessageId: string;
   userMessage: string;
   sessionId: string;
   history: BuddyChatMessage[];
@@ -385,6 +396,8 @@ const chatSessions = ref<BuddyChatSession[]>([]);
 const activeSessionId = ref<string | null>(null);
 const isSessionPanelOpen = ref(false);
 const isSessionLoading = ref(false);
+const activeSessionDeleteId = ref<string | null>(null);
+const sessionDeleteConfirmTimeoutRef = ref<number | null>(null);
 const isPanelFullscreen = ref(false);
 const queuedTurns = ref<BuddyQueuedTurn[]>([]);
 const runTraceEntries = ref<BuddyRunTraceEntry[]>([]);
@@ -411,7 +424,9 @@ let activeAbortController: AbortController | null = null;
 let isDrainingBuddyQueue = false;
 let speakingIdleTimerId: number | null = null;
 let chatSessionInitializationPromise: Promise<void> | null = null;
+const backgroundReviewAbortControllers = new Set<AbortController>();
 const runTraceStartedAtByKey = new Map<string, number>();
+let nextBuddyMessageClientOrder = 0;
 
 const isDragging = computed(() => Boolean(pointerDrag.value?.moved));
 const isSessionSwitchLocked = computed(
@@ -437,6 +452,15 @@ const buddyModelPlaceholder = computed(() =>
 const anchorStyle = computed(() => ({
   transform: isPanelFullscreen.value ? "none" : `translate3d(${position.value.x}px, ${position.value.y}px, 0)`,
 }));
+const avatarStyle = computed(() => {
+  if (!isPanelFullscreen.value) {
+    return {};
+  }
+  return {
+    left: `${position.value.x}px`,
+    top: `${position.value.y}px`,
+  };
+});
 const panelPlacement = computed(() => (position.value.x > viewport.value.width / 2 ? "left" : "right"));
 const latestActivityText = computed(() => {
   const latestPendingMessage = [...messages.value]
@@ -484,9 +508,11 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointermove", handlePointerMove);
   window.removeEventListener("pointerup", handlePointerUp);
   queuedTurns.value = [];
+  clearSessionDeleteConfirmTimeout();
   clearSpeakingIdleTimer();
   closeEventSource();
   activeAbortController?.abort();
+  abortBackgroundReviewRuns();
 });
 
 watch(buddyMode, (nextMode) => {
@@ -519,6 +545,24 @@ function handleAvatarClick() {
   if (isPanelOpen.value) {
     void scrollMessagesToBottom();
   }
+}
+
+function closePanel() {
+  isPanelOpen.value = false;
+  isSessionPanelOpen.value = false;
+  isPanelFullscreen.value = false;
+  clearSessionDeleteConfirmState();
+}
+
+function togglePanelFullscreen() {
+  isPanelFullscreen.value = !isPanelFullscreen.value;
+  isSessionPanelOpen.value = false;
+  clearSessionDeleteConfirmState();
+}
+
+function toggleSessionPanel() {
+  isSessionPanelOpen.value = !isSessionPanelOpen.value;
+  clearSessionDeleteConfirmState();
 }
 
 function handleBuddyModelSelectVisibleChange(visible: boolean) {
@@ -587,12 +631,14 @@ async function sendMessage() {
   }
   draft.value = "";
 
-  const userEntry = createMessage("user", userMessage);
-  messages.value.push(userEntry);
+  const userEntry = createMessage("user", userMessage, undefined, allocateBuddyMessageClientOrder());
+  const assistantEntry = createMessage("assistant", "", undefined, allocateBuddyMessageClientOrder());
+  messages.value.push(userEntry, assistantEntry);
   const history = buildHistoryBeforeMessage(userEntry.id);
   void persistBuddyMessage(sessionId, userEntry);
   queuedTurns.value.push({
     userMessageId: userEntry.id,
+    assistantMessageId: assistantEntry.id,
     userMessage,
     sessionId,
     history,
@@ -626,7 +672,7 @@ async function drainBuddyQueue() {
 async function processQueuedTurn(turn: BuddyQueuedTurn) {
   clearSpeakingIdleTimer();
   const history = turn.history;
-  const assistantMessage = appendAssistantMessageForTurn(turn.userMessageId);
+  const assistantMessage = ensureAssistantMessageForTurn(turn);
   resetRunTraceForMessage(assistantMessage.id);
   mood.value = "thinking";
   setAssistantActivityText(assistantMessage.id, t("buddy.activity.preparing"));
@@ -664,6 +710,7 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
       runId: run.run_id,
       includeInContext: includeReplyInContext,
     });
+    void startBuddySelfReviewRun(runDetail);
     mood.value = runDetail.status === "failed" ? "error" : "speaking";
     if (runDetail.status === "completed") {
       buddyContextStore.notifyBuddyDataChanged();
@@ -699,6 +746,49 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
     }
     await scrollMessagesToBottom();
   }
+}
+
+async function startBuddySelfReviewRun(mainRun: RunDetail) {
+  if (mainRun.status !== "completed") {
+    return;
+  }
+  try {
+    const template = await fetchTemplate(BUDDY_REVIEW_TEMPLATE_ID);
+    const graph = buildBuddyReviewGraph(template, {
+      mainRun,
+      buddyModel: buddyModelRef.value,
+    });
+    const reviewRun = await runGraph(graph);
+    void pollBuddySelfReviewRun(reviewRun.run_id);
+  } catch (error) {
+    console.warn("[Buddy] Background self-review failed to start.", error);
+  }
+}
+
+async function pollBuddySelfReviewRun(runId: string) {
+  const controller = new AbortController();
+  backgroundReviewAbortControllers.add(controller);
+  try {
+    const run = await pollRunUntilFinished(runId, controller.signal);
+    if (run.status === "completed") {
+      buddyContextStore.notifyBuddyDataChanged();
+    } else if (run.status === "failed") {
+      console.warn("[Buddy] Background self-review failed.", run.errors);
+    }
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === "AbortError")) {
+      console.warn("[Buddy] Background self-review polling failed.", error);
+    }
+  } finally {
+    backgroundReviewAbortControllers.delete(controller);
+  }
+}
+
+function abortBackgroundReviewRuns() {
+  for (const controller of backgroundReviewAbortControllers) {
+    controller.abort();
+  }
+  backgroundReviewAbortControllers.clear();
 }
 
 function appendLocalRunTraceStart(replaceKey: string, labelKey: string) {
@@ -738,6 +828,7 @@ async function clearMessages() {
   activeRunId.value = null;
   const sessionId = activeSessionId.value;
   messages.value = [];
+  nextBuddyMessageClientOrder = 0;
   errorMessage.value = "";
   mood.value = "idle";
   window.localStorage.removeItem(BUDDY_HISTORY_STORAGE_KEY);
@@ -812,6 +903,7 @@ async function createNewSession() {
     chatSessions.value = [session, ...chatSessions.value.filter((item) => item.session_id !== session.session_id)];
     await activateChatSession(session.session_id);
     isSessionPanelOpen.value = false;
+    clearSessionDeleteConfirmState();
   } catch (error) {
     errorMessage.value = t("buddy.historyCreateFailed", { error: formatErrorMessage(error) });
   }
@@ -820,6 +912,7 @@ async function createNewSession() {
 async function selectChatSession(sessionId: string) {
   await activateChatSession(sessionId);
   isSessionPanelOpen.value = false;
+  clearSessionDeleteConfirmState();
 }
 
 async function activateChatSession(sessionId: string, options: { skipInitializationWait?: boolean } = {}) {
@@ -836,6 +929,7 @@ async function activateChatSession(sessionId: string, options: { skipInitializat
     activeSessionId.value = sessionId;
     window.localStorage.setItem(BUDDY_ACTIVE_SESSION_STORAGE_KEY, sessionId);
     messages.value = records.map(messageRecordToBuddyMessage);
+    resetNextBuddyMessageClientOrder();
     resetVisibleRunTrace();
     await scrollMessagesToBottom();
   } catch (error) {
@@ -849,6 +943,7 @@ async function deleteSession(sessionId: string) {
   if (isSessionSwitchLocked.value) {
     return;
   }
+  clearSessionDeleteConfirmState();
   await waitForChatSessionInitialization();
   errorMessage.value = "";
   try {
@@ -871,6 +966,44 @@ async function deleteSession(sessionId: string) {
   }
 }
 
+function isSessionDeleteConfirmOpen(sessionId: string) {
+  return activeSessionDeleteId.value === sessionId;
+}
+
+function clearSessionDeleteConfirmTimeout() {
+  if (sessionDeleteConfirmTimeoutRef.value !== null) {
+    window.clearTimeout(sessionDeleteConfirmTimeoutRef.value);
+    sessionDeleteConfirmTimeoutRef.value = null;
+  }
+}
+
+function clearSessionDeleteConfirmState() {
+  clearSessionDeleteConfirmTimeout();
+  activeSessionDeleteId.value = null;
+}
+
+function startSessionDeleteConfirmWindow(sessionId: string) {
+  clearSessionDeleteConfirmTimeout();
+  activeSessionDeleteId.value = sessionId;
+  sessionDeleteConfirmTimeoutRef.value = window.setTimeout(() => {
+    sessionDeleteConfirmTimeoutRef.value = null;
+    if (activeSessionDeleteId.value === sessionId) {
+      activeSessionDeleteId.value = null;
+    }
+  }, 2000);
+}
+
+function handleSessionDeleteActionClick(sessionId: string) {
+  if (isSessionSwitchLocked.value) {
+    return;
+  }
+  if (activeSessionDeleteId.value === sessionId) {
+    void deleteSession(sessionId);
+    return;
+  }
+  startSessionDeleteConfirmWindow(sessionId);
+}
+
 async function persistBuddyMessage(
   sessionId: string,
   message: BuddyMessage | undefined,
@@ -884,6 +1017,7 @@ async function persistBuddyMessage(
       message_id: message.id,
       role: message.role,
       content: message.content,
+      client_order: message.clientOrder ?? null,
       include_in_context: options.includeInContext ?? message.includeInContext !== false,
       run_id: options.runId ?? null,
     });
@@ -897,18 +1031,21 @@ async function migrateLegacyBuddyHistory() {
   const legacyMessages = readLegacyBuddyMessages();
   if (legacyMessages.length === 0) {
     messages.value = [];
+    nextBuddyMessageClientOrder = 0;
     return;
   }
   const firstUserMessage = legacyMessages.find((message) => message.role === "user" && message.content.trim());
   const session = await createBuddyChatSession({ title: firstUserMessage?.content.trim() || undefined });
   activeSessionId.value = session.session_id;
   messages.value = legacyMessages;
+  resetNextBuddyMessageClientOrder();
   window.localStorage.setItem(BUDDY_ACTIVE_SESSION_STORAGE_KEY, session.session_id);
   for (const message of legacyMessages) {
     await appendBuddyChatMessage(session.session_id, {
       message_id: message.id,
       role: message.role,
       content: message.content,
+      client_order: message.clientOrder ?? null,
       include_in_context: message.includeInContext !== false,
     });
   }
@@ -950,8 +1087,8 @@ function readLegacyBuddyMessages(): BuddyMessage[] {
     return parsed
       .filter(isPersistedMessage)
       .slice(-24)
-      .map((message) => ({
-        ...createMessage(message.role, message.content),
+      .map((message, index) => ({
+        ...createMessage(message.role, message.content, undefined, index),
         includeInContext: message.includeInContext,
       }));
   } catch {
@@ -1071,8 +1208,22 @@ function shouldShowRunTraceForMessage(message: BuddyMessage) {
   return message.id === activeTraceMessageId.value && runTraceEntries.value.length > 0;
 }
 
+function shouldRenderMessage(message: BuddyMessage) {
+  return (
+    message.role === "user" ||
+    Boolean(message.content.trim()) ||
+    Boolean(message.activityText?.trim()) ||
+    shouldShowRunTraceForMessage(message)
+  );
+}
+
 function shouldShowAssistantActivityBubble(message: BuddyMessage) {
-  return message.role === "assistant" && !message.content.trim() && !shouldShowRunTraceForMessage(message);
+  return (
+    message.role === "assistant" &&
+    !message.content.trim() &&
+    Boolean(message.activityText?.trim()) &&
+    !shouldShowRunTraceForMessage(message)
+  );
 }
 
 function appendRunTraceEntry(eventType: string, traceEntry: BuddyRunTraceEntry) {
@@ -1176,9 +1327,20 @@ function buildHistoryBeforeMessage(messageId: string): BuddyChatMessage[] {
   return previousMessages.filter(isContextMessage).map(({ role, content }) => ({ role, content }));
 }
 
-function appendAssistantMessageForTurn(userMessageId: string): BuddyMessage {
-  const assistantMessage = createMessage("assistant", "");
-  const userMessageIndex = messages.value.findIndex((message) => message.id === userMessageId);
+function ensureAssistantMessageForTurn(turn: BuddyQueuedTurn): BuddyMessage {
+  const existingMessage = messages.value.find(
+    (message) => message.id === turn.assistantMessageId && message.role === "assistant",
+  );
+  if (existingMessage) {
+    return existingMessage;
+  }
+  const assistantMessage = createMessage(
+    "assistant",
+    "",
+    turn.assistantMessageId,
+    allocateBuddyMessageClientOrder(),
+  );
+  const userMessageIndex = messages.value.findIndex((message) => message.id === turn.userMessageId);
   if (userMessageIndex >= 0 && userMessageIndex < messages.value.length - 1) {
     messages.value.splice(userMessageIndex + 1, 0, assistantMessage);
     return assistantMessage;
@@ -1222,11 +1384,17 @@ function buildPageContext() {
   });
 }
 
-function createMessage(role: BuddyChatMessage["role"], content: string): BuddyMessage {
+function createMessage(
+  role: BuddyChatMessage["role"],
+  content: string,
+  id?: string,
+  clientOrder: number | null = null,
+): BuddyMessage {
   return {
-    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: id ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
     role,
     content,
+    clientOrder,
     activityText: "",
   };
 }
@@ -1236,9 +1404,25 @@ function messageRecordToBuddyMessage(record: BuddyChatMessageRecord): BuddyMessa
     id: record.message_id,
     role: record.role,
     content: record.content,
+    clientOrder: record.client_order,
     includeInContext: record.include_in_context,
     activityText: "",
   };
+}
+
+function allocateBuddyMessageClientOrder() {
+  const clientOrder = nextBuddyMessageClientOrder;
+  nextBuddyMessageClientOrder += 1;
+  return clientOrder;
+}
+
+function resetNextBuddyMessageClientOrder() {
+  const maxClientOrder = messages.value.reduce((maxOrder, message, index) => {
+    const order =
+      typeof message.clientOrder === "number" && Number.isFinite(message.clientOrder) ? message.clientOrder : index;
+    return Math.max(maxOrder, order);
+  }, -1);
+  nextBuddyMessageClientOrder = Math.floor(maxClientOrder) + 1;
 }
 
 function buildBuddyModelOptions(settings: SettingsPayload): BuddyModelOption[] {
@@ -1334,6 +1518,7 @@ function formatErrorMessage(error: unknown): string {
 .buddy-widget__avatar {
   appearance: none;
   position: relative;
+  z-index: 4;
   width: 96px;
   height: 96px;
   padding: 0;
@@ -1386,7 +1571,6 @@ function formatErrorMessage(error: unknown): string {
 .buddy-widget__send:focus-visible,
 .buddy-widget__input:focus-visible,
 .buddy-widget__run-trace-toggle:focus-visible,
-.buddy-widget__session-new:focus-visible,
 .buddy-widget__session-item:focus-visible,
 .buddy-widget__session-delete:focus-visible {
   outline: none;
@@ -1401,11 +1585,12 @@ function formatErrorMessage(error: unknown): string {
 
 .buddy-widget__panel {
   bottom: calc(100% + 12px);
+  z-index: 1;
   width: min(420px, calc(100vw - 32px));
   max-height: min(640px, calc(100vh - 132px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--graphite-glass-border);
   border-radius: 8px;
   background: var(--graphite-glass-specular), var(--graphite-glass-lens), rgba(255, 252, 247, 0.88);
@@ -1419,15 +1604,18 @@ function formatErrorMessage(error: unknown): string {
   left: 50%;
   right: auto;
   bottom: auto;
-  width: min(880px, calc(100vw - 48px));
-  height: min(760px, calc(100vh - 48px));
-  max-height: calc(100vh - 48px);
+  width: min(1440px, calc(100vw - 96px));
+  height: min(920px, calc(100vh - 80px));
+  max-height: calc(100vh - 80px);
   transform: translate(-50%, -50%);
   z-index: 1;
 }
 
 .buddy-widget__anchor--fullscreen .buddy-widget__avatar {
-  display: none;
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  z-index: 4;
 }
 
 .buddy-widget__anchor--left .buddy-widget__panel {
@@ -1590,8 +1778,11 @@ function formatErrorMessage(error: unknown): string {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  z-index: 5;
+  z-index: 3;
   width: min(330px, calc(100vw - 56px));
+  max-height: min(520px, calc(100vh - 132px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -1613,7 +1804,7 @@ function formatErrorMessage(error: unknown): string {
 .buddy-widget__sessions-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
 }
 
@@ -1623,7 +1814,6 @@ function formatErrorMessage(error: unknown): string {
   line-height: 1.2;
 }
 
-.buddy-widget__session-new,
 .buddy-widget__session-delete,
 .buddy-widget__session-item {
   appearance: none;
@@ -1631,26 +1821,11 @@ function formatErrorMessage(error: unknown): string {
   font: inherit;
 }
 
-.buddy-widget__session-new {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  border-radius: 8px;
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-}
-
 .buddy-widget__session-list {
   display: grid;
   gap: 6px;
-  max-height: 148px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .buddy-widget__session-row {
@@ -1708,7 +1883,14 @@ function formatErrorMessage(error: unknown): string {
   cursor: pointer;
 }
 
-.buddy-widget__session-new:disabled,
+.buddy-widget__session-delete--confirm,
+.buddy-widget__session-delete--confirm:hover,
+.buddy-widget__session-delete--confirm:focus-visible {
+  border-color: rgba(185, 28, 28, 0.18);
+  background: rgb(185, 28, 28);
+  color: #fff;
+}
+
 .buddy-widget__session-item:disabled,
 .buddy-widget__session-delete:disabled {
   cursor: not-allowed;
@@ -1717,6 +1899,36 @@ function formatErrorMessage(error: unknown): string {
 
 .buddy-widget__sessions-status {
   margin: 0;
+}
+
+.buddy-widget__confirm-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  padding: 6px 12px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  box-shadow: 0 14px 32px rgba(60, 41, 20, 0.14);
+}
+
+.buddy-widget__confirm-hint--delete {
+  border-color: rgba(185, 28, 28, 0.16);
+  background: rgba(255, 248, 248, 0.98);
+  color: rgb(153, 27, 27);
+}
+
+:deep(.buddy-widget__confirm-popover.el-popper) {
+  border: none;
+  border-radius: 999px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .buddy-widget__messages {
@@ -2054,9 +2266,9 @@ function formatErrorMessage(error: unknown): string {
   }
 
   .buddy-widget__panel--fullscreen {
-    width: calc(100vw - 24px);
-    height: calc(100vh - 24px);
-    max-height: calc(100vh - 24px);
+    width: calc(100vw - 18px);
+    height: calc(100vh - 18px);
+    max-height: calc(100vh - 18px);
   }
 
   .buddy-widget__messages {
