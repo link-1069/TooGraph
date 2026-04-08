@@ -102,7 +102,7 @@
               class="buddy-widget__icon-button"
               :title="t('buddy.newSession')"
               :aria-label="t('buddy.newSession')"
-              :disabled="isSessionSwitchLocked"
+              :disabled="!canCreateNewSession"
               @click="createNewSession"
             >
               <ElIcon><Plus /></ElIcon>
@@ -212,7 +212,7 @@
               </button>
               <div v-if="shouldShowRunTraceBody" class="buddy-widget__run-trace-body">
                 <div
-                  v-for="entry in runTraceEntries"
+                  v-for="entry in visibleRunTraceEntries"
                   :key="entry.replaceKey"
                   class="buddy-widget__run-trace-entry"
                   :class="`buddy-widget__run-trace-entry--${entry.tone}`"
@@ -285,6 +285,7 @@
         :aria-label="t('buddy.open')"
         @pointerdown="handlePointerDown"
         @click="handleAvatarClick"
+        @dblclick.stop="handleAvatarDoubleClick"
       >
         <BuddyMascot :mood="mood" :dragging="isDragging" :tap-nonce="tapNonce" />
       </button>
@@ -375,6 +376,7 @@ const BUDDY_HISTORY_STORAGE_KEY = "graphiteui:buddy-history";
 const BUDDY_ACTIVE_SESSION_STORAGE_KEY = "graphiteui:buddy-active-session";
 const BUDDY_MODEL_STORAGE_KEY = "graphiteui:buddy-model";
 const DRAG_THRESHOLD_PX = 4;
+const AVATAR_SINGLE_CLICK_DELAY_MS = 220;
 const RUN_POLL_INTERVAL_MS = 700;
 const RUN_POLL_TIMEOUT_MS = 240000;
 const RUN_TRACE_MAX_ENTRIES = 24;
@@ -422,6 +424,7 @@ let suppressNextClick = false;
 let eventSource: EventSource | null = null;
 let activeAbortController: AbortController | null = null;
 let isDrainingBuddyQueue = false;
+let avatarSingleClickTimerId: number | null = null;
 let speakingIdleTimerId: number | null = null;
 let chatSessionInitializationPromise: Promise<void> | null = null;
 const backgroundReviewAbortControllers = new Set<AbortController>();
@@ -435,6 +438,8 @@ const isSessionSwitchLocked = computed(
     activeRunId.value !== null ||
     (activeTraceMessageId.value !== null && runTraceFinishedAtMs.value === null),
 );
+const hasCurrentSessionContent = computed(() => messages.value.some((message) => message.content.trim()));
+const canCreateNewSession = computed(() => !isSessionSwitchLocked.value && hasCurrentSessionContent.value);
 const buddyModeLabel = computed(() => {
   const option = BUDDY_MODE_OPTIONS.find((candidate) => candidate.value === buddyMode.value);
   return option ? `${t(option.labelKey)} - ${t(option.descriptionKey)}` : t("buddy.modes.advisory");
@@ -469,6 +474,12 @@ const latestActivityText = computed(() => {
   return latestPendingMessage?.activityText?.trim() ?? "";
 });
 const shouldShowRunTraceBody = computed(() => runTraceFinishedAtMs.value === null || isRunTraceExpanded.value);
+const visibleRunTraceEntries = computed(() => {
+  if (isRunTraceExpanded.value || runTraceEntries.value.length <= 1) {
+    return runTraceEntries.value;
+  }
+  return runTraceEntries.value.slice(-1);
+});
 const runTraceHeaderText = computed(() => {
   const startedAt = runTraceStartedAtMs.value;
   const finishedAt = runTraceFinishedAtMs.value;
@@ -509,6 +520,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointerup", handlePointerUp);
   queuedTurns.value = [];
   clearSessionDeleteConfirmTimeout();
+  clearAvatarSingleClickTimer();
   clearSpeakingIdleTimer();
   closeEventSource();
   activeAbortController?.abort();
@@ -536,6 +548,28 @@ function handleAvatarClick() {
     suppressNextClick = false;
     return;
   }
+  clearAvatarSingleClickTimer();
+  avatarSingleClickTimerId = window.setTimeout(() => {
+    avatarSingleClickTimerId = null;
+    performAvatarSingleClick();
+  }, AVATAR_SINGLE_CLICK_DELAY_MS);
+}
+
+function handleAvatarDoubleClick() {
+  clearAvatarSingleClickTimer();
+  if (suppressNextClick) {
+    suppressNextClick = false;
+    return;
+  }
+  tapNonce.value += 1;
+  isPanelOpen.value = true;
+  isPanelFullscreen.value = true;
+  isSessionPanelOpen.value = false;
+  clearSessionDeleteConfirmState();
+  void scrollMessagesToBottom();
+}
+
+function performAvatarSingleClick() {
   tapNonce.value += 1;
   isPanelOpen.value = !isPanelOpen.value;
   if (!isPanelOpen.value) {
@@ -893,7 +927,7 @@ async function ensureActiveChatSession(): Promise<string | null> {
 }
 
 async function createNewSession() {
-  if (isSessionSwitchLocked.value) {
+  if (!canCreateNewSession.value) {
     return;
   }
   await waitForChatSessionInitialization();
@@ -1365,6 +1399,14 @@ function clearSpeakingIdleTimer() {
   }
   window.clearTimeout(speakingIdleTimerId);
   speakingIdleTimerId = null;
+}
+
+function clearAvatarSingleClickTimer() {
+  if (avatarSingleClickTimerId === null) {
+    return;
+  }
+  window.clearTimeout(avatarSingleClickTimerId);
+  avatarSingleClickTimerId = null;
 }
 
 async function scrollMessagesToBottom() {
@@ -2115,13 +2157,14 @@ function formatErrorMessage(error: unknown): string {
 }
 
 .buddy-widget__run-trace-body {
-  max-height: calc(3 * 1.45em + 18px);
-  overflow: auto;
+  max-height: calc(1 * 1.45em + 14px);
+  overflow: hidden;
   padding: 7px 8px;
 }
 
 .buddy-widget__run-trace--expanded .buddy-widget__run-trace-body {
   max-height: 180px;
+  overflow: auto;
 }
 
 .buddy-widget__run-trace-entry {
@@ -2139,6 +2182,7 @@ function formatErrorMessage(error: unknown): string {
 }
 
 .buddy-widget__run-trace-dot {
+  --buddy-run-trace-pulse-color: rgba(154, 52, 18, 0.24);
   width: 7px;
   height: 7px;
   margin-top: 4px;
@@ -2146,7 +2190,13 @@ function formatErrorMessage(error: unknown): string {
   background: rgba(154, 52, 18, 0.28);
 }
 
+.buddy-widget__run-trace-entry--info .buddy-widget__run-trace-dot,
 .buddy-widget__run-trace-entry--stream .buddy-widget__run-trace-dot {
+  animation: buddy-widget-run-trace-dot-pulse 1.08s ease-in-out infinite;
+}
+
+.buddy-widget__run-trace-entry--stream .buddy-widget__run-trace-dot {
+  --buddy-run-trace-pulse-color: rgba(37, 99, 235, 0.24);
   background: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
@@ -2187,6 +2237,20 @@ function formatErrorMessage(error: unknown): string {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   white-space: pre-wrap;
+}
+
+@keyframes buddy-widget-run-trace-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.82);
+    box-shadow: 0 0 0 0 var(--buddy-run-trace-pulse-color);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 5px rgba(37, 99, 235, 0);
+  }
 }
 
 .buddy-widget__run-trace--expanded .buddy-widget__run-trace-preview {

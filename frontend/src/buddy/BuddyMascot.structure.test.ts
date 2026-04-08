@@ -20,6 +20,12 @@ function normalizePathData(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function extractCssBlock(source: string, selector: string) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`));
+  return match?.[1] ?? "";
+}
+
 const teardropLeftEarPath = "M-146-143 C-114-132-82-101-55-61 C-60-24-84 25-124 63 C-158 95-190 53-168-4 C-174-52-164-106-146-143Z";
 const teardropRightEarPath = "M146-143 C114-132 82-101 55-61 C60-24 84 25 124 63 C158 95 190 53 168-4 C174-52 164-106 146-143Z";
 const separatedHeadPath =
@@ -76,15 +82,30 @@ test("BuddyMascot changes the eyes into chevrons while dragging", () => {
 test("BuddyMascot gives the star idle sway and thinking pseudo-3D spin", () => {
   assert.match(componentSource, /@keyframes buddy-mascot-star-sway/);
   assert.match(componentSource, /@keyframes buddy-mascot-star-flip/);
-  assert.match(componentSource, /scaleX\(0\.18\)/);
-  assert.match(componentSource, /filter:\s*brightness\(1\.22\)/);
+  assert.match(componentSource, /scaleX\(0\.12\)/);
+  assert.match(componentSource, /rotate\(18deg\)/);
+  assert.match(componentSource, /filter:\s*brightness\(1\.35\)/);
 });
 
 test("BuddyMascot keeps the tail animated while thinking and speaking", () => {
-  assert.match(componentSource, /\.buddy-mascot--thinking[\s\S]*\.buddy-mascot__tail[\s\S]*animation:\s*buddy-mascot-tail-thinking 920ms ease-in-out infinite;/);
-  assert.match(componentSource, /\.buddy-mascot--speaking[\s\S]*\.buddy-mascot__tail[\s\S]*animation:\s*buddy-mascot-tail-speaking 560ms ease-in-out infinite;/);
-  assert.match(componentSource, /@keyframes buddy-mascot-tail-thinking[\s\S]*rotate\(4deg\)[\s\S]*rotate\(12deg\)/);
-  assert.match(componentSource, /@keyframes buddy-mascot-tail-speaking[\s\S]*rotate\(-3deg\)[\s\S]*rotate\(18deg\)/);
+  assert.match(componentSource, /\.buddy-mascot--thinking[\s\S]*\.buddy-mascot__tail[\s\S]*animation:\s*buddy-mascot-tail-thinking 760ms ease-in-out infinite;/);
+  assert.match(componentSource, /\.buddy-mascot--speaking[\s\S]*\.buddy-mascot__tail[\s\S]*animation:\s*buddy-mascot-tail-speaking 430ms ease-in-out infinite;/);
+  assert.match(componentSource, /@keyframes buddy-mascot-tail-thinking[\s\S]*rotate\(-8deg\)[\s\S]*rotate\(24deg\)/);
+  assert.match(componentSource, /@keyframes buddy-mascot-tail-speaking[\s\S]*rotate\(-12deg\)[\s\S]*rotate\(28deg\)/);
+});
+
+test("BuddyMascot keeps the thinking body steady while ears, tail, and sparkle move", () => {
+  assert.equal(extractCssBlock(componentSource, ".buddy-mascot--thinking .buddy-mascot__body").trim(), "");
+  assert.match(componentSource, /\.buddy-mascot--thinking[\s\S]*\.buddy-mascot__sparkle-wrap[\s\S]*animation:\s*buddy-mascot-thinking-orbit 1\.6s ease-in-out infinite;/);
+  assert.match(componentSource, /\.buddy-mascot--thinking[\s\S]*\.buddy-mascot__left-ear[\s\S]*animation:\s*buddy-mascot-ear-think-left 860ms ease-in-out infinite;/);
+  assert.match(componentSource, /\.buddy-mascot--thinking[\s\S]*\.buddy-mascot__right-ear[\s\S]*animation:\s*buddy-mascot-ear-think-right 860ms ease-in-out infinite;/);
+  assert.match(componentSource, /@keyframes buddy-mascot-thinking-orbit/);
+  assert.doesNotMatch(componentSource, /@keyframes buddy-mascot-thinking-body/);
+});
+
+test("BuddyMascot keeps speaking body motion visibly distinct", () => {
+  assert.match(componentSource, /\.buddy-mascot--speaking[\s\S]*\.buddy-mascot__body[\s\S]*animation:\s*buddy-mascot-speaking-body 460ms ease-in-out infinite;/);
+  assert.match(componentSource, /@keyframes buddy-mascot-speaking-body[\s\S]*scaleX\(1\.06\) scaleY\(0\.95\)[\s\S]*scaleX\(0\.96\) scaleY\(1\.05\)/);
 });
 
 test("BuddyMascot makes idle tail and ear motion visible without changing body scale", () => {

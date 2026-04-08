@@ -45,6 +45,21 @@ test("BuddyWidget tracks dragging and click pulses for mascot animation", () => 
   assert.match(componentSource, /tapNonce\.value \+= 1;/);
 });
 
+test("BuddyWidget opens fullscreen chat from a mascot double click without firing the single-click toggle", () => {
+  assert.match(componentSource, /@dblclick\.stop="handleAvatarDoubleClick"/);
+  assert.match(componentSource, /const AVATAR_SINGLE_CLICK_DELAY_MS = 220;/);
+  assert.match(componentSource, /let avatarSingleClickTimerId: number \| null = null;/);
+  assert.match(
+    componentSource,
+    /function handleAvatarClick\(\)[\s\S]*clearAvatarSingleClickTimer\(\);[\s\S]*avatarSingleClickTimerId = window\.setTimeout\(\(\) => \{[\s\S]*performAvatarSingleClick\(\);[\s\S]*\}, AVATAR_SINGLE_CLICK_DELAY_MS\);/,
+  );
+  assert.match(
+    componentSource,
+    /function handleAvatarDoubleClick\(\)[\s\S]*clearAvatarSingleClickTimer\(\);[\s\S]*isPanelOpen\.value = true;[\s\S]*isPanelFullscreen\.value = true;[\s\S]*void scrollMessagesToBottom\(\);/,
+  );
+  assert.match(componentSource, /onBeforeUnmount\(\(\) => \{[\s\S]*clearAvatarSingleClickTimer\(\);/);
+});
+
 test("BuddyWidget keeps buddy transitions enabled even when reduced motion is enabled", () => {
   assert.doesNotMatch(componentSource, /@media \(prefers-reduced-motion: reduce\)/);
   assert.doesNotMatch(componentSource, /animation:\s*none/);
@@ -136,9 +151,12 @@ test("BuddyWidget renders assistant replies as safe markdown and keeps a compact
   assert.match(componentSource, /v-html="renderBuddyMarkdown\(message\.content\)"/);
   assert.match(componentSource, /class="buddy-widget__run-trace"/);
   assert.match(componentSource, /const runTraceEntries = ref<BuddyRunTraceEntry\[\]>\(\[\]\);/);
+  assert.match(componentSource, /const visibleRunTraceEntries = computed\(\(\) =>/);
   assert.match(componentSource, /resolveBuddyRunTraceFromRunEvent/);
   assert.match(componentSource, /appendRunTraceEntry\(eventType, traceEntry\);/);
-  assert.match(componentSource, /\.buddy-widget__run-trace-body[\s\S]*max-height:\s*calc\(3 \* 1\.45em \+ 18px\);/);
+  assert.match(componentSource, /v-for="entry in visibleRunTraceEntries"/);
+  assert.match(componentSource, /\.buddy-widget__run-trace-body[\s\S]*max-height:\s*calc\(1 \* 1\.45em \+ 14px\);[\s\S]*overflow:\s*hidden;/);
+  assert.match(componentSource, /\.buddy-widget__run-trace--expanded \.buddy-widget__run-trace-body[\s\S]*max-height:\s*180px;[\s\S]*overflow:\s*auto;/);
 });
 
 test("BuddyWidget records and displays per-stage run trace durations", () => {
@@ -150,6 +168,14 @@ test("BuddyWidget records and displays per-stage run trace durations", () => {
   assert.match(componentSource, /durationMs: Math\.max\(1, Math\.round\(nowRunTraceMs\(\) - startedAt\)\),/);
   assert.match(componentSource, /class="buddy-widget__run-trace-duration"/);
   assert.match(componentSource, /formatRunTraceDuration\(entry\.durationMs\)/);
+});
+
+test("BuddyWidget pulses the run trace dot for currently running steps only", () => {
+  assert.match(componentSource, /\.buddy-widget__run-trace-entry--info \.buddy-widget__run-trace-dot,[\s\S]*\.buddy-widget__run-trace-entry--stream \.buddy-widget__run-trace-dot\s*\{[\s\S]*animation:\s*buddy-widget-run-trace-dot-pulse 1\.08s ease-in-out infinite;/);
+  assert.match(componentSource, /\.buddy-widget__run-trace-entry--stream \.buddy-widget__run-trace-dot\s*\{[\s\S]*--buddy-run-trace-pulse-color:\s*rgba\(37,\s*99,\s*235,\s*0\.24\);/);
+  assert.match(componentSource, /@keyframes buddy-widget-run-trace-dot-pulse[\s\S]*box-shadow:\s*0 0 0 0 var\(--buddy-run-trace-pulse-color\);[\s\S]*box-shadow:\s*0 0 0 5px rgba\(37,\s*99,\s*235,\s*0\);/);
+  assert.doesNotMatch(extractCssBlock(".buddy-widget__run-trace-entry--success .buddy-widget__run-trace-dot"), /animation:/);
+  assert.doesNotMatch(extractCssBlock(".buddy-widget__run-trace-entry--error .buddy-widget__run-trace-dot"), /animation:/);
 });
 
 test("BuddyWidget keeps the run trace above the formal reply and collapses to elapsed summary", () => {
@@ -197,7 +223,10 @@ test("BuddyWidget uses the top toolbar for new chat and fullscreen expansion", (
   assert.match(componentSource, /import \{ ArrowDown, Check, Clock, Close, Delete, FullScreen, Plus, Promotion, SemiSelect \} from "@element-plus\/icons-vue";/);
   assert.match(componentSource, /const isPanelFullscreen = ref\(false\);/);
   assert.match(componentSource, /const avatarStyle = computed\(\(\) => \{[\s\S]*left:\s*`\$\{position\.value\.x\}px`,[\s\S]*top:\s*`\$\{position\.value\.y\}px`,/);
-  assert.match(componentSource, /:title="t\('buddy\.newSession'\)"[\s\S]*@click="createNewSession"[\s\S]*<ElIcon><Plus \/><\/ElIcon>/);
+  assert.match(componentSource, /const hasCurrentSessionContent = computed\(\(\) => messages\.value\.some\(\(message\) => message\.content\.trim\(\)\)\);/);
+  assert.match(componentSource, /const canCreateNewSession = computed\(\(\) => !isSessionSwitchLocked\.value && hasCurrentSessionContent\.value\);/);
+  assert.match(componentSource, /:title="t\('buddy\.newSession'\)"[\s\S]*:disabled="!canCreateNewSession"[\s\S]*@click="createNewSession"[\s\S]*<ElIcon><Plus \/><\/ElIcon>/);
+  assert.match(componentSource, /async function createNewSession\(\) \{[\s\S]*if \(!canCreateNewSession\.value\) \{/);
   assert.match(componentSource, /:title="isPanelFullscreen \? t\('buddy\.exitFullscreen'\) : t\('buddy\.fullscreen'\)"/);
   assert.match(componentSource, /@click="togglePanelFullscreen"/);
   assert.match(componentSource, /<SemiSelect v-if="isPanelFullscreen" \/>/);
