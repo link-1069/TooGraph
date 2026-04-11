@@ -3,7 +3,7 @@
     <svg
       class="buddy-mascot__svg"
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="-260 -180 640 560"
+      viewBox="-320 -180 640 560"
       focusable="false"
     >
       <defs>
@@ -22,7 +22,7 @@
           <stop offset="44%" stop-color="#222222" />
           <stop offset="100%" stop-color="#171818" />
         </radialGradient>
-        <filter id="buddyMascotSoftness" x="-280" y="-210" width="700" height="640" filterUnits="userSpaceOnUse">
+        <filter id="buddyMascotSoftness" x="-340" y="-210" width="680" height="640" filterUnits="userSpaceOnUse">
           <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.12" />
         </filter>
       </defs>
@@ -122,10 +122,10 @@
               d="M-55-61 C-25-66 25-66 55-61 C90-61 130-43 168-4 C196 22 214 66 218 116 C226 208 145 264 0 264 C-145 264-226 208-218 116 C-214 66-196 22-168-4 C-130-43-90-61-55-61Z"
             />
             <g class="buddy-mascot__look-eye buddy-mascot__look-eye--left">
-              <ellipse class="buddy-mascot__resting-eye buddy-mascot__resting-eye--left" cx="-62" cy="82" rx="24" ry="52" fill="url(#buddyMascotEyeGold)" />
+              <ellipse class="buddy-mascot__resting-eye buddy-mascot__resting-eye--left" cx="-80" cy="82" rx="24" ry="52" fill="url(#buddyMascotEyeGold)" />
             </g>
             <g class="buddy-mascot__look-eye buddy-mascot__look-eye--right">
-              <ellipse class="buddy-mascot__resting-eye buddy-mascot__resting-eye--right" cx="62" cy="82" rx="24" ry="52" fill="url(#buddyMascotEyeGold)" />
+              <ellipse class="buddy-mascot__resting-eye buddy-mascot__resting-eye--right" cx="80" cy="82" rx="24" ry="52" fill="url(#buddyMascotEyeGold)" />
             </g>
             <path class="buddy-mascot__drag-eye buddy-mascot__drag-eye--left" d="M-104 52 L-64 82 L-104 112" />
             <path class="buddy-mascot__drag-eye buddy-mascot__drag-eye--right" d="M104 52 L64 82 L104 112" />
@@ -185,8 +185,9 @@ const mascotClasses = computed(() => ({
   "buddy-mascot--tap": tapAnimating.value && !props.dragging,
 }));
 const eyeLookStyle = computed<Record<string, string>>(() => {
-  const x = clampLookAxis(props.lookX) * 12;
-  const y = clampLookAxis(props.lookY) * 7;
+  const shouldTrackPointer = props.facing === "front";
+  const x = shouldTrackPointer ? clampLookAxis(props.lookX) * 12 : 0;
+  const y = shouldTrackPointer ? clampLookAxis(props.lookY) * 7 : 0;
   return {
     "--buddy-mascot-look-x": `${x.toFixed(2)}px`,
     "--buddy-mascot-look-y": `${y.toFixed(2)}px`,
@@ -242,8 +243,9 @@ function clampLookAxis(value: number | undefined) {
   display: block;
   width: 100%;
   height: 100%;
-  --buddy-mascot-facing-eye-x: 0px;
-  --buddy-mascot-facing-eye-y: 0px;
+  --buddy-mascot-left-eye-facing-x: 0px;
+  --buddy-mascot-right-eye-facing-x: 0px;
+  --buddy-mascot-eye-facing-y: 0px;
   --buddy-mascot-left-ear-x: 0px;
   --buddy-mascot-left-ear-y: 0px;
   --buddy-mascot-left-ear-scale: 1;
@@ -296,7 +298,10 @@ function clampLookAxis(value: number | undefined) {
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0;
-  transition: opacity 160ms ease;
+  transform-origin: 50% 78%;
+  transition:
+    opacity 160ms ease,
+    transform 420ms ease;
 }
 
 .buddy-mascot__tail-pose--right {
@@ -325,21 +330,9 @@ function clampLookAxis(value: number | undefined) {
 }
 
 .buddy-mascot--facing-left {
-  --buddy-mascot-facing-eye-x: -10px;
-  --buddy-mascot-facing-eye-y: 1px;
-  --buddy-mascot-left-ear-x: -12px;
-  --buddy-mascot-left-ear-y: 0px;
-  --buddy-mascot-left-ear-scale: 1;
-  --buddy-mascot-left-ear-rotate: -3deg;
-  --buddy-mascot-right-ear-x: -18px;
-  --buddy-mascot-right-ear-y: 4px;
-  --buddy-mascot-right-ear-scale: 0.96;
-  --buddy-mascot-right-ear-rotate: -4deg;
-}
-
-.buddy-mascot--facing-right {
-  --buddy-mascot-facing-eye-x: 10px;
-  --buddy-mascot-facing-eye-y: 1px;
+  --buddy-mascot-left-eye-facing-x: -70px;
+  --buddy-mascot-right-eye-facing-x: -110px;
+  --buddy-mascot-eye-facing-y: 1px;
   --buddy-mascot-left-ear-x: 18px;
   --buddy-mascot-left-ear-y: 4px;
   --buddy-mascot-left-ear-scale: 0.96;
@@ -350,28 +343,72 @@ function clampLookAxis(value: number | undefined) {
   --buddy-mascot-right-ear-rotate: 3deg;
 }
 
+.buddy-mascot--facing-right {
+  --buddy-mascot-left-eye-facing-x: 110px;
+  --buddy-mascot-right-eye-facing-x: 70px;
+  --buddy-mascot-eye-facing-y: 1px;
+  --buddy-mascot-left-ear-x: -12px;
+  --buddy-mascot-left-ear-y: 0px;
+  --buddy-mascot-left-ear-scale: 1;
+  --buddy-mascot-left-ear-rotate: -3deg;
+  --buddy-mascot-right-ear-x: -18px;
+  --buddy-mascot-right-ear-y: 4px;
+  --buddy-mascot-right-ear-scale: 0.96;
+  --buddy-mascot-right-ear-rotate: -4deg;
+}
+
 .buddy-mascot--facing-left .buddy-mascot__tail-pose--right {
-  opacity: 0;
+  opacity: 1;
 }
 
 .buddy-mascot--facing-left .buddy-mascot__tail-pose--left {
-  opacity: 1;
-}
-
-.buddy-mascot--facing-right .buddy-mascot__tail-pose--left {
   opacity: 0;
 }
 
-.buddy-mascot--facing-right .buddy-mascot__tail-pose--right {
+.buddy-mascot--facing-right .buddy-mascot__tail-pose--left {
   opacity: 1;
 }
 
+.buddy-mascot--facing-right .buddy-mascot__tail-pose--right {
+  opacity: 0;
+}
+
+.buddy-mascot--idle.buddy-mascot--facing-front .buddy-mascot__tail-pose--right {
+  animation: buddy-mascot-front-tail-right 9.6s ease-in-out infinite;
+}
+
+.buddy-mascot--idle.buddy-mascot--facing-front .buddy-mascot__tail-pose--back-right {
+  animation: buddy-mascot-front-tail-back-right 9.6s ease-in-out infinite;
+}
+
+.buddy-mascot--idle.buddy-mascot--facing-front .buddy-mascot__tail-pose--back-center {
+  animation: buddy-mascot-front-tail-back-center 9.6s ease-in-out infinite;
+}
+
+.buddy-mascot--idle.buddy-mascot--facing-front .buddy-mascot__tail-pose--back-left {
+  animation: buddy-mascot-front-tail-back-left 9.6s ease-in-out infinite;
+}
+
+.buddy-mascot--idle.buddy-mascot--facing-front .buddy-mascot__tail-pose--left {
+  animation: buddy-mascot-front-tail-left 9.6s ease-in-out infinite;
+}
+
 .buddy-mascot__look-eye {
-  transform: translate(
-    calc(var(--buddy-mascot-look-x, 0px) + var(--buddy-mascot-facing-eye-x, 0px)),
-    calc(var(--buddy-mascot-look-y, 0px) + var(--buddy-mascot-facing-eye-y, 0px))
-  );
   transition: transform 90ms ease-out;
+}
+
+.buddy-mascot__look-eye--left {
+  transform: translate(
+    calc(var(--buddy-mascot-look-x, 0px) + var(--buddy-mascot-left-eye-facing-x, 0px)),
+    calc(var(--buddy-mascot-look-y, 0px) + var(--buddy-mascot-eye-facing-y, 0px))
+  );
+}
+
+.buddy-mascot__look-eye--right {
+  transform: translate(
+    calc(var(--buddy-mascot-look-x, 0px) + var(--buddy-mascot-right-eye-facing-x, 0px)),
+    calc(var(--buddy-mascot-look-y, 0px) + var(--buddy-mascot-eye-facing-y, 0px))
+  );
 }
 
 .buddy-mascot__resting-eye {
@@ -391,7 +428,7 @@ function clampLookAxis(value: number | undefined) {
 }
 
 .buddy-mascot--idle .buddy-mascot__tail {
-  animation: buddy-mascot-tail-sway 7.2s ease-in-out infinite;
+  animation: buddy-mascot-tail-sway 1.8s ease-in-out infinite;
 }
 
 .buddy-mascot--idle .buddy-mascot__sparkle-wrap {
@@ -433,6 +470,14 @@ function clampLookAxis(value: number | undefined) {
 
 .buddy-mascot--speaking .buddy-mascot__tail {
   animation: buddy-mascot-tail-speaking 1.08s ease-in-out infinite;
+}
+
+.buddy-mascot--speaking .buddy-mascot__body-turn {
+  animation: buddy-mascot-speaking-hop 1.04s ease-in-out infinite;
+}
+
+.buddy-mascot--speaking .buddy-mascot__body {
+  animation: buddy-mascot-speaking-body-squash 1.04s ease-in-out infinite;
 }
 
 .buddy-mascot--speaking .buddy-mascot__sparkle {
@@ -483,6 +528,14 @@ function clampLookAxis(value: number | undefined) {
   animation: buddy-mascot-star-tap 520ms ease-out both;
 }
 
+.buddy-mascot--tap .buddy-mascot__body-turn {
+  animation: buddy-mascot-tap-hop 520ms ease-out both;
+}
+
+.buddy-mascot--tap .buddy-mascot__body {
+  animation: buddy-mascot-tap-body-squash 520ms ease-out both;
+}
+
 .buddy-mascot--tap .buddy-mascot__left-ear {
   animation: buddy-mascot-ear-tap-left 520ms ease-out both;
 }
@@ -494,10 +547,94 @@ function clampLookAxis(value: number | undefined) {
 @keyframes buddy-mascot-tail-sway {
   0%,
   100% {
-    transform: rotate(-1deg);
+    transform: rotate(-2deg);
   }
   50% {
-    transform: rotate(2deg);
+    transform: rotate(7deg);
+  }
+}
+
+@keyframes buddy-mascot-front-tail-right {
+  0%,
+  14%,
+  98%,
+  100% {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+  24%,
+  88% {
+    opacity: 0;
+    transform: rotate(-7deg);
+  }
+}
+
+@keyframes buddy-mascot-front-tail-back-right {
+  0%,
+  12%,
+  34%,
+  82%,
+  100% {
+    opacity: 0;
+    transform: rotate(-8deg);
+  }
+  20%,
+  28%,
+  92%,
+  96% {
+    opacity: 1;
+    transform: rotate(-3deg);
+  }
+}
+
+@keyframes buddy-mascot-front-tail-back-center {
+  0%,
+  28%,
+  52%,
+  66%,
+  100% {
+    opacity: 0;
+    transform: rotate(0deg);
+  }
+  38%,
+  44%,
+  82%,
+  88% {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes buddy-mascot-front-tail-back-left {
+  0%,
+  42%,
+  64%,
+  78%,
+  100% {
+    opacity: 0;
+    transform: rotate(8deg);
+  }
+  52%,
+  60%,
+  72%,
+  76% {
+    opacity: 1;
+    transform: rotate(3deg);
+  }
+}
+
+@keyframes buddy-mascot-front-tail-left {
+  0%,
+  54%,
+  92%,
+  100% {
+    opacity: 0;
+    transform: rotate(7deg);
+  }
+  66%,
+  84% {
+    opacity: 1;
+    transform: rotate(0deg);
   }
 }
 
@@ -651,6 +788,35 @@ function clampLookAxis(value: number | undefined) {
   }
 }
 
+@keyframes buddy-mascot-speaking-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  34% {
+    transform: translateY(-5px);
+  }
+  62% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes buddy-mascot-speaking-body-squash {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.025, 0.975) translateY(2px);
+  }
+  36% {
+    transform: scale(0.982, 1.025) translateY(-2px);
+  }
+  68% {
+    transform: scale(1.01, 0.99);
+  }
+}
+
 @keyframes buddy-mascot-ear-speak-left {
   0%,
   100% {
@@ -739,6 +905,35 @@ function clampLookAxis(value: number | undefined) {
   100% {
     transform: scale(1) rotate(0deg);
     filter: brightness(1);
+  }
+}
+
+@keyframes buddy-mascot-tap-hop {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  34% {
+    transform: translateY(-10px);
+  }
+  62% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes buddy-mascot-tap-body-squash {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(1.04, 0.96) translateY(4px);
+  }
+  38% {
+    transform: scale(0.97, 1.04) translateY(-3px);
+  }
+  68% {
+    transform: scale(1.015, 0.985);
   }
 }
 
