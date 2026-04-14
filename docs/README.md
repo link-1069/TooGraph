@@ -21,11 +21,12 @@
 
 - [future/buddy-autonomous-agent-roadmap.md](future/buddy-autonomous-agent-roadmap.md)
   - 伙伴、自主工具循环、技能生成和长期协作能力的唯一长期参考
-  - 包含 graph-first 运行模型、可追踪资产与本地设置分离、Buddy Home、伙伴循环子图化、子图组件、skill manifest 契约、`capability` state、`result_package` 动态结果包、技能说明胶囊、技能绑定 state、能力选择、Skill 生成能力、伙伴断点交互、已落地基线、剩余优先级、活动事件和 function call 取舍
+  - 已合并 Hermes Agent、Claude Code 和伙伴循环模板调研中的有效结论，包含目标主模板、子图边界、节点契约、`capability` / `result_package` 协议、暂停恢复、悬浮窗体验、并行策略、Buddy Home 写回、活动事件、图编辑命令流和近期优先级
 
 ## 已清理
 
 - 迁移闭环记录：`task_plan.md`、`findings.md`、`progress.md`
+- Hermes Agent、Claude Code 和伙伴循环模板的一次性调研/设计文档，已折叠进 `docs/future/buddy-autonomous-agent-roadmap.md`
 - 已完成的 agent-only LangGraph runtime 规划文档
 - 已完成或偏离当前 `skill/official` / `skill/user` 资产目录主线的旧 skill 重构文档
 - 阶段性的外部 Agent 框架对标和 LangGraph 高级能力基线分析
