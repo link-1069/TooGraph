@@ -366,6 +366,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["selected_capability"]["type"], "capability")
         self.assertEqual(states["capability_found"]["type"], "boolean")
         self.assertEqual(states["capability_result"]["type"], "result_package")
+        self.assertEqual(states["capability_selection_audit"]["type"], "json")
         self.assertEqual(states["capability_gap"]["type"], "json")
         self.assertEqual(states["capability_trace"]["type"], "json")
         self.assertEqual(states["visible_reply"]["type"], "markdown")
@@ -458,10 +459,12 @@ class TemplateLayoutTests(unittest.TestCase):
                     "outputMapping": {
                         "capability": "selected_capability",
                         "found": "capability_found",
+                        "audit": "capability_selection_audit",
                     },
                 }
             ],
         )
+        self.assertIn({"state": "capability_selection_audit", "mode": "replace"}, selector_node["writes"])
         for removed_node_id in [
             "review_capability_permission",
             "needs_capability_approval",
@@ -476,8 +479,13 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"state": "selected_capability", "required": True}, execute_node["reads"])
         self.assertEqual(execute_node["writes"], [{"state": "capability_result", "mode": "replace"}])
         self.assertEqual(cycle_graph["state_schema"]["capability_result"]["type"], "result_package")
+        self.assertEqual(cycle_graph["state_schema"]["capability_selection_audit"]["type"], "json")
         self.assertEqual(cycle_graph["state_schema"]["capability_gap"]["type"], "json")
         self.assertEqual(cycle_graph["state_schema"]["capability_trace"]["type"], "json")
+        self.assertEqual(
+            cycle_graph["nodes"]["output_capability_selection_audit"]["reads"],
+            [{"state": "capability_selection_audit", "required": False}],
+        )
         missing_node = cycle_graph["nodes"]["review_missing_capability"]
         self.assertIn({"state": "capability_gap", "mode": "replace"}, missing_node["writes"])
         self.assertIn("should_offer_build", missing_node["config"]["taskInstruction"])
@@ -502,26 +510,65 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(draft_graph["nodes"]["draft_final_reply"]["config"]["thinkingMode"], "low")
         self.assertEqual(draft_graph["nodes"]["output_final_reply"]["reads"], [{"state": "final_reply", "required": True}])
 
-    def test_buddy_self_review_template_contract(self) -> None:
-        template = load_template_record("buddy_self_review")
+    def test_buddy_autonomous_review_template_contract(self) -> None:
+        template = load_template_record("buddy_autonomous_review")
         states = template["state_schema"]
         nodes = template["nodes"]
 
         self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
         self.assertEqual(template["metadata"]["origin"], "buddy")
+        self.assertEqual(template["metadata"]["role"], "buddy_autonomous_review")
         self.assertIs(template["metadata"]["internal"], True)
+        self.assertEqual(template["label"], "自主复盘")
         self.assertEqual(states["final_reply"]["type"], "markdown")
-        self.assertEqual(states["memory_update_plan"]["type"], "json")
-        self.assertEqual(states["buddy_evolution_plan"]["type"], "json")
-        self.assertEqual([node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"], ["review_buddy_memory"])
+        self.assertEqual(states["autonomous_review"]["type"], "json")
+        self.assertEqual(states["writeback_commands"]["type"], "json")
+        self.assertEqual(states["writeback_result"]["type"], "markdown")
+        self.assertEqual(states["writeback_revisions"]["type"], "json")
+        self.assertEqual([node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"], [])
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
-            ["output_memory_update_plan", "output_buddy_evolution_plan"],
+            ["output_autonomous_review", "output_writeback_result", "output_writeback_revisions"],
         )
-        review_graph = nodes["review_buddy_memory"]["config"]["graph"]
-        self.assertEqual(review_graph["nodes"]["decide_memory_update"]["config"]["thinkingMode"], "low")
-        self.assertIn({"source": "review_buddy_memory", "target": "output_memory_update_plan"}, template["edges"])
-        self.assertIn({"source": "review_buddy_memory", "target": "output_buddy_evolution_plan"}, template["edges"])
+        self.assertEqual(nodes["decide_autonomous_review"]["kind"], "agent")
+        self.assertEqual(nodes["decide_autonomous_review"]["config"]["thinkingMode"], "low")
+        self.assertEqual(nodes["should_write_buddy_home"]["kind"], "condition")
+        self.assertEqual(
+            nodes["should_write_buddy_home"]["config"]["rule"],
+            {"source": "$state.autonomous_review.should_write", "operator": "==", "value": True},
+        )
+        writer_node = nodes["apply_buddy_home_writeback"]
+        self.assertEqual(writer_node["kind"], "agent")
+        self.assertEqual(writer_node["config"]["skillKey"], "buddy_home_writer")
+        self.assertEqual(
+            writer_node["config"]["skillBindings"],
+            [
+                {
+                    "skillKey": "buddy_home_writer",
+                    "outputMapping": {
+                        "success": "writeback_success",
+                        "result": "writeback_result",
+                        "applied_commands": "applied_writeback_commands",
+                        "skipped_commands": "skipped_writeback_commands",
+                        "revisions": "writeback_revisions",
+                    },
+                }
+            ],
+        )
+        self.assertIn({"source": "decide_autonomous_review", "target": "should_write_buddy_home"}, template["edges"])
+        self.assertEqual(
+            template["conditional_edges"],
+            [
+                {
+                    "source": "should_write_buddy_home",
+                    "branches": {
+                        "true": "apply_buddy_home_writeback",
+                        "false": "output_autonomous_review",
+                        "exhausted": "output_autonomous_review",
+                    },
+                }
+            ],
+        )
 
         graph = NodeSystemGraphPayload.model_validate(
             {
@@ -530,7 +577,7 @@ class TemplateLayoutTests(unittest.TestCase):
                     for key, value in template.items()
                     if key not in {"template_id", "label", "description", "default_graph_name", "source"}
                 },
-                "graph_id": "test_buddy_self_review",
+                "graph_id": "test_buddy_autonomous_review",
                 "name": template["default_graph_name"],
             }
         )
