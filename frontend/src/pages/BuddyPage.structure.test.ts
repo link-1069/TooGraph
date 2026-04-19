@@ -36,6 +36,32 @@ test("BuddyPage manages profile, policy, memories, summary, and revisions", () =
   assert.match(source, /validateBuddyRunTemplateBinding/);
 });
 
+test("BuddyPage opens template binding first and renders it as Buddy input rows", () => {
+  const bindingIndex = source.indexOf('name="binding"');
+  const profileIndex = source.indexOf('name="profile"');
+  assert.ok(bindingIndex > -1);
+  assert.ok(profileIndex > -1);
+  assert.ok(bindingIndex < profileIndex);
+  assert.match(source, /const activeTab = ref\("binding"\);/);
+  assert.match(source, /buildBuddyRunTemplateSourceRows/);
+  assert.match(source, /buildBuddyRunInputNodeOptions/);
+  assert.match(source, /setBuddyRunTemplateSourceBinding/);
+  assert.match(source, /v-for="row in bindingSourceRows"/);
+  assert.match(source, /class="buddy-page__binding-card"/);
+  assert.match(source, /class="buddy-page__template-select toograph-select"/);
+  assert.match(source, /popper-class="toograph-select-popper buddy-page__binding-select-popper"/);
+  assert.match(source, /class="buddy-page__binding-select toograph-select"/);
+  assert.match(source, /class="buddy-page__binding-option"/);
+  assert.match(source, /bindingOptionDisabledReason\(option\)/);
+  assert.match(source, /class="buddy-page__binding-action buddy-page__binding-action--primary"/);
+  assert.match(source, /class="buddy-page__binding-action buddy-page__binding-action--secondary"/);
+  assert.match(source, /:model-value="row\.selectedNodeId"/);
+  assert.match(source, /@update:model-value="setBindingInputNode\(row\.source, \$event\)"/);
+  assert.doesNotMatch(source, /:model-value="bindingDraft\.input_bindings\[row\.nodeId\]/);
+  assert.doesNotMatch(source, /function setBindingSource\(nodeId: string, value: unknown\)/);
+  assert.doesNotMatch(source, /<ElTable :data="bindingSourceRows"/);
+});
+
 test("BuddyPage exposes the unified buddy permission mode", () => {
   assert.match(source, /<ElSegmented[\s\S]*v-model="policyDraft\.graph_permission_mode"[\s\S]*:options="permissionModeOptions"/);
   assert.match(source, /permissionModeOptions/);
