@@ -174,6 +174,151 @@ class BuddyStoreTests(unittest.TestCase):
             ],
         )
 
+    def test_chat_messages_persist_display_metadata_for_trace_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+                session = store.create_chat_session({}, changed_by="user", change_reason="测试创建会话")
+                trace_metadata = {
+                    "kind": "output_trace",
+                    "outputTrace": {
+                        "segmentId": "segment_1",
+                        "boundaryNodeId": "llm_1",
+                        "boundaryLabel": "回复",
+                    },
+                }
+                trace_message = store.append_chat_message(
+                    session["session_id"],
+                    {
+                        "role": "assistant",
+                        "content": "",
+                        "client_order": 1,
+                        "include_in_context": False,
+                        "run_id": "run_1",
+                        "metadata": trace_metadata,
+                    },
+                    changed_by="buddy",
+                    change_reason="测试追加运行胶囊",
+                )
+                messages = store.list_chat_messages(session["session_id"])
+
+        self.assertEqual(trace_message["metadata"], trace_metadata)
+        self.assertEqual(messages[0]["metadata"], trace_metadata)
+        self.assertEqual(messages[0]["content"], "")
+        self.assertFalse(messages[0]["include_in_context"])
+
+    def test_report_create_writes_markdown_file_and_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home = Path(temp_dir) / "buddy_home"
+            with patch.object(store, "BUDDY_HOME_DIR", buddy_home):
+                report = store.create_report(
+                    {
+                        "kind": "autonomous_review",
+                        "title": "能力使用复盘",
+                        "summary": "本轮联网搜索能力有效。",
+                        "content": "用户要求查资料，伙伴选择 web_search 并产出最终回复。",
+                        "source": {"run_id": "run_review_report"},
+                    },
+                    changed_by="buddy_command",
+                    change_reason="自主复盘生成报告。",
+                )
+                revisions = store.list_revisions(target_type="report", target_id=report["id"])
+                report_path = buddy_home / report["path"]
+                report_exists = report_path.exists()
+                report_text = report_path.read_text(encoding="utf-8")
+
+        self.assertTrue(report["id"].startswith("report_"))
+        self.assertEqual(report["path"], f"reports/{report['id']}.md")
+        self.assertTrue(report_exists)
+        self.assertIn("# 能力使用复盘", report_text)
+        self.assertEqual(len(revisions), 1)
+        self.assertEqual(revisions[0]["operation"], "create")
+        self.assertEqual(revisions[0]["next_value"]["summary"], "本轮联网搜索能力有效。")
+
+    def test_report_create_revision_restore_removes_created_report_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home = Path(temp_dir) / "buddy_home"
+            with patch.object(store, "BUDDY_HOME_DIR", buddy_home):
+                report = store.create_report(
+                    {"title": "临时报告", "content": "这是一份可撤销的报告。"},
+                    changed_by="buddy_command",
+                    change_reason="自主复盘生成报告。",
+                )
+                revision = store.list_revisions(target_type="report", target_id=report["id"])[0]
+                restored = store.restore_revision(
+                    revision["revision_id"],
+                    changed_by="user",
+                    change_reason="用户恢复报告创建前状态。",
+                )
+                report_exists = (buddy_home / report["path"]).exists()
+
+        self.assertEqual(restored["target_type"], "report")
+        self.assertEqual(restored["target_id"], report["id"])
+        self.assertEqual(restored["current_value"], {})
+        self.assertFalse(report_exists)
+
+    def test_capability_usage_stats_update_accumulates_counts_and_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+                stats = store.update_capability_usage_stats(
+                    {
+                        "entries": [
+                            {
+                                "capability": {"kind": "skill", "key": "web_search", "name": "联网搜索"},
+                                "success": True,
+                                "run_id": "run_capability_1",
+                                "summary": "用于查找资料。",
+                                "duration_ms": 1250,
+                            },
+                            {
+                                "capability": {"kind": "skill", "key": "web_search", "name": "联网搜索"},
+                                "success": False,
+                                "run_id": "run_capability_2",
+                                "summary": "外部搜索失败。",
+                            },
+                        ]
+                    },
+                    changed_by="buddy_command",
+                    change_reason="自主复盘更新能力使用统计。",
+                )
+                revisions = store.list_revisions(target_type="capability_usage_stats", target_id="capability_usage_stats")
+                loaded = store.load_capability_usage_stats()
+
+        web_search = stats["capabilities"]["skill:web_search"]
+        self.assertEqual(web_search["use_count"], 2)
+        self.assertEqual(web_search["success_count"], 1)
+        self.assertEqual(web_search["failure_count"], 1)
+        self.assertEqual(web_search["recent_runs"][0]["run_id"], "run_capability_2")
+        self.assertEqual(loaded["capabilities"]["skill:web_search"]["use_count"], 2)
+        self.assertEqual(len(revisions), 1)
+        self.assertEqual(revisions[0]["next_value"]["capabilities"]["skill:web_search"]["last_summary"], "外部搜索失败。")
+
+    def test_capability_usage_stats_restore_returns_previous_value(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+                store.update_capability_usage_stats(
+                    {
+                        "capability": {"kind": "subgraph", "key": "advanced_web_research_loop", "name": "高级联网搜索"},
+                        "success": True,
+                        "run_id": "run_capability_restore",
+                    },
+                    changed_by="buddy_command",
+                    change_reason="自主复盘更新能力使用统计。",
+                )
+                revision = store.list_revisions(
+                    target_type="capability_usage_stats",
+                    target_id="capability_usage_stats",
+                )[0]
+                restored = store.restore_revision(
+                    revision["revision_id"],
+                    changed_by="user",
+                    change_reason="用户恢复能力统计。",
+                )
+                loaded = store.load_capability_usage_stats()
+
+        self.assertEqual(restored["target_type"], "capability_usage_stats")
+        self.assertEqual(restored["target_id"], "capability_usage_stats")
+        self.assertEqual(loaded["capabilities"], {})
+
     def test_buddy_database_migrates_legacy_messages_before_client_order_index(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             buddy_home = Path(temp_dir) / "buddy_home"
@@ -235,6 +380,7 @@ class BuddyStoreTests(unittest.TestCase):
 
         self.assertEqual(messages[0]["client_order"], 0)
         self.assertEqual(messages[0]["content"], "旧消息")
+        self.assertEqual(messages[0]["metadata"], {})
 
 
 if __name__ == "__main__":

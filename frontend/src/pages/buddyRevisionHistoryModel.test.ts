@@ -226,3 +226,45 @@ test("revision history includes run template binding target", () => {
   );
   assert.equal(filterBuddyRevisionHistoryRows(rows, "run_template_binding").length, 1);
 });
+
+test("revision history includes report target", () => {
+  assert.ok(BUDDY_REVISION_HISTORY_TARGET_FILTERS.includes("report"));
+  const rows = buildBuddyRevisionHistoryRows(
+    [
+      {
+        revision_id: "rev_report",
+        target_type: "report",
+        target_id: "report_1",
+        operation: "create",
+        previous_value: {},
+        next_value: { title: "运行复盘", path: "reports/report_1.md" },
+        changed_by: "buddy_command",
+        change_reason: "自主复盘生成报告。",
+        created_at: "2026-05-14T00:00:00Z",
+      },
+    ],
+    [],
+  );
+  assert.equal(filterBuddyRevisionHistoryRows(rows, "report").length, 1);
+});
+
+test("revision history includes capability usage stats target", () => {
+  assert.ok(BUDDY_REVISION_HISTORY_TARGET_FILTERS.includes("capability_usage_stats"));
+  const rows = buildBuddyRevisionHistoryRows(
+    [
+      {
+        revision_id: "rev_stats",
+        target_type: "capability_usage_stats",
+        target_id: "capability_usage_stats",
+        operation: "update",
+        previous_value: {},
+        next_value: { capabilities: { "skill:web_search": { use_count: 1 } } },
+        changed_by: "buddy_command",
+        change_reason: "自主复盘更新能力使用统计。",
+        created_at: "2026-05-14T00:00:00Z",
+      },
+    ],
+    [],
+  );
+  assert.equal(filterBuddyRevisionHistoryRows(rows, "capability_usage_stats").length, 1);
+});

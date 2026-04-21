@@ -188,6 +188,74 @@ class BuddyCommandRouteTests(unittest.TestCase):
         self.assertEqual(revisions_response.status_code, 200)
         self.assertEqual(revisions_response.json()[-1]["previous_value"]["template_id"], "buddy_autonomous_loop")
 
+    def test_report_create_command_records_file_report_and_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home = Path(temp_dir) / "buddy_home"
+            with patch.object(store, "BUDDY_HOME_DIR", buddy_home):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/buddy/commands",
+                        json={
+                            "action": "report.create",
+                            "payload": {
+                                "title": "能力复盘",
+                                "summary": "本轮能力调用成功。",
+                                "content": "能力调用过程和结果已经进入运行详情。",
+                                "source": {"run_id": "run_report_1"},
+                            },
+                            "run_id": "run_report_1",
+                            "change_reason": "Buddy generated a review report.",
+                        },
+                    )
+                    revisions_response = client.get("/api/buddy/revisions", params={"target_type": "report"})
+                    response_body = response.json()
+                    report_exists = (buddy_home / response_body["result"]["path"]).exists() if response.status_code == 200 else False
+
+        self.assertEqual(response.status_code, 200)
+        body = response_body
+        self.assertEqual(body["command"]["action"], "report.create")
+        self.assertEqual(body["command"]["target_type"], "report")
+        self.assertEqual(body["command"]["run_id"], "run_report_1")
+        self.assertTrue(body["command"]["target_id"].startswith("report_"))
+        self.assertTrue(body["command"]["revision_id"].startswith("rev_"))
+        self.assertEqual(body["result"]["path"], f"reports/{body['command']['target_id']}.md")
+        self.assertTrue(report_exists)
+        self.assertEqual(revisions_response.status_code, 200)
+        self.assertEqual(revisions_response.json()[-1]["target_type"], "report")
+
+    def test_capability_usage_stats_update_command_records_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/buddy/commands",
+                        json={
+                            "action": "capability_usage_stats.update",
+                            "payload": {
+                                "capability": {"kind": "skill", "key": "web_search", "name": "联网搜索"},
+                                "success": True,
+                                "run_id": "run_stats_1",
+                                "summary": "能力调用成功。",
+                            },
+                            "run_id": "run_stats_1",
+                            "change_reason": "Buddy updated capability usage stats.",
+                        },
+                    )
+                    revisions_response = client.get(
+                        "/api/buddy/revisions",
+                        params={"target_type": "capability_usage_stats"},
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["command"]["action"], "capability_usage_stats.update")
+        self.assertEqual(body["command"]["target_type"], "capability_usage_stats")
+        self.assertEqual(body["command"]["target_id"], "capability_usage_stats")
+        self.assertEqual(body["result"]["capabilities"]["skill:web_search"]["use_count"], 1)
+        self.assertTrue(body["command"]["revision_id"].startswith("rev_"))
+        self.assertEqual(revisions_response.status_code, 200)
+        self.assertEqual(revisions_response.json()[-1]["target_id"], "capability_usage_stats")
+
     def test_command_rejects_unsupported_action(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):

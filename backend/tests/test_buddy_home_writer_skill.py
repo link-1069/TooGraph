@@ -130,6 +130,128 @@ class BuddyHomeWriterSkillTests(unittest.TestCase):
         self.assertEqual(result["applied_commands"], [])
         self.assertEqual(result["skipped_commands"][0]["error_type"], "permission_boundary")
 
+    def test_writer_applies_safe_policy_preference_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home_dir = Path(temp_dir) / "buddy_home"
+            result = _run_writer(
+                {
+                    "run_id": "run_review_policy",
+                    "commands": [
+                        {
+                            "action": "policy.update",
+                            "payload": {
+                                "communication_preferences": [
+                                    "默认在回复开头给出结论。",
+                                    "涉及副作用时说明会走图或 Skill。",
+                                ]
+                            },
+                            "change_reason": "自主复盘识别到稳定沟通偏好。",
+                        }
+                    ],
+                },
+                buddy_home_dir=buddy_home_dir,
+            )
+            policy = json.loads((buddy_home_dir / "policy.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result["success"], True)
+        self.assertEqual(len(result["applied_commands"]), 1)
+        applied = result["applied_commands"][0]
+        self.assertEqual(applied["command"]["action"], "policy.update")
+        self.assertEqual(applied["command"]["target_type"], "policy")
+        self.assertEqual(applied["command"]["run_id"], "run_review_policy")
+        self.assertEqual(policy["graph_permission_mode"], "ask_first")
+        self.assertIn("默认在回复开头给出结论。", policy["communication_preferences"])
+        self.assertTrue(applied["command"]["revision_id"].startswith("rev_"))
+
+    def test_writer_rejects_unknown_policy_writeback_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home_dir = Path(temp_dir) / "buddy_home"
+            result = _run_writer(
+                {
+                    "commands": [
+                        {
+                            "action": "policy.update",
+                            "payload": {"favorite_color": "green"},
+                            "change_reason": "尝试写入未声明的 policy 字段。",
+                        }
+                    ],
+                },
+                buddy_home_dir=buddy_home_dir,
+            )
+            policy = json.loads((buddy_home_dir / "policy.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result["success"], False)
+        self.assertEqual(result["applied_commands"], [])
+        self.assertEqual(result["skipped_commands"][0]["error_type"], "unsupported_policy_field")
+        self.assertNotIn("favorite_color", policy)
+
+    def test_writer_applies_report_create_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home_dir = Path(temp_dir) / "buddy_home"
+            result = _run_writer(
+                {
+                    "run_id": "run_review_report",
+                    "commands": [
+                        {
+                            "action": "report.create",
+                            "payload": {
+                                "kind": "autonomous_review",
+                                "title": "运行复盘报告",
+                                "summary": "这次运行沉淀为一份报告。",
+                                "content": "报告正文只保存精炼结论，不保存完整日志。",
+                                "source": {"run_id": "run_review_report"},
+                            },
+                            "change_reason": "自主复盘生成报告。",
+                        }
+                    ],
+                },
+                buddy_home_dir=buddy_home_dir,
+            )
+            report_exists = (buddy_home_dir / result["applied_commands"][0]["result"]["path"]).exists()
+
+        self.assertEqual(result["success"], True)
+        applied = result["applied_commands"][0]
+        self.assertEqual(applied["command"]["action"], "report.create")
+        self.assertEqual(applied["command"]["target_type"], "report")
+        self.assertEqual(applied["command"]["run_id"], "run_review_report")
+        self.assertEqual(result["activity_events"][0]["kind"], "buddy_home_write")
+        self.assertTrue(report_exists)
+
+    def test_writer_applies_capability_usage_stats_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            result = _run_writer(
+                {
+                    "run_id": "run_review_stats",
+                    "commands": [
+                        {
+                            "action": "capability_usage_stats.update",
+                            "payload": {
+                                "entries": [
+                                    {
+                                        "capability": {
+                                            "kind": "subgraph",
+                                            "key": "advanced_web_research_loop",
+                                            "name": "高级联网搜索",
+                                        },
+                                        "success": True,
+                                        "run_id": "run_review_stats",
+                                        "summary": "用于完成资料查询。",
+                                    }
+                                ]
+                            },
+                            "change_reason": "自主复盘更新能力使用统计。",
+                        }
+                    ],
+                },
+                buddy_home_dir=Path(temp_dir) / "buddy_home",
+            )
+
+        self.assertEqual(result["success"], True)
+        applied = result["applied_commands"][0]
+        self.assertEqual(applied["command"]["action"], "capability_usage_stats.update")
+        self.assertEqual(applied["command"]["target_type"], "capability_usage_stats")
+        self.assertEqual(applied["result"]["capabilities"]["subgraph:advanced_web_research_loop"]["use_count"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

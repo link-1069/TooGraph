@@ -50,6 +50,12 @@ DEFAULT_SESSION_SUMMARY = {
     "content": "当前对话尚未形成摘要。",
     "updated_at": "",
 }
+CAPABILITY_USAGE_STATS_KEY = "capability_usage_stats"
+DEFAULT_CAPABILITY_USAGE_STATS = {
+    "version": 1,
+    "capabilities": {},
+    "updated_at": "",
+}
 
 DEFAULT_AGENTS_MD = """# AGENTS.md - Buddy Workspace
 
@@ -207,6 +213,7 @@ def ensure_buddy_database(home_dir: Path) -> Path:
                 client_order REAL,
                 include_in_context INTEGER NOT NULL DEFAULT 1,
                 run_id TEXT,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(session_id) REFERENCES buddy_sessions(session_id)
@@ -240,6 +247,7 @@ def ensure_buddy_database(home_dir: Path) -> Path:
 
 def _migrate_buddy_database(connection: sqlite3.Connection) -> None:
     _ensure_column(connection, "buddy_messages", "client_order", "client_order REAL")
+    _ensure_column(connection, "buddy_messages", "metadata_json", "metadata_json TEXT NOT NULL DEFAULT '{}'")
     _backfill_message_client_order(connection)
 
 
@@ -303,6 +311,7 @@ def build_buddy_home_context_pack(home_dir: Path | None = None) -> dict[str, Any
         "memory_markdown": _read_markdown(buddy_home / MEMORY_PATH, warnings=warnings, label="MEMORY.md"),
         "memories": included_memories,
         "session_summary": session_summary,
+        "capability_usage_stats": _read_capability_usage_stats_from_db(buddy_home, warnings=warnings),
         "meta": {
             "memory_count": len(memories),
             "included_memory_count": len(included_memories),
@@ -501,6 +510,26 @@ def _read_session_summary_from_db(home_dir: Path, *, warnings: list[str]) -> dic
         warnings.append(f"Could not decode session_summary: {exc}")
         return deepcopy(DEFAULT_SESSION_SUMMARY)
     return value if isinstance(value, dict) else deepcopy(DEFAULT_SESSION_SUMMARY)
+
+
+def _read_capability_usage_stats_from_db(home_dir: Path, *, warnings: list[str]) -> dict[str, Any]:
+    try:
+        with open_buddy_database(home_dir) as connection:
+            row = connection.execute(
+                "SELECT value_json FROM buddy_kv WHERE key = ?",
+                (CAPABILITY_USAGE_STATS_KEY,),
+            ).fetchone()
+    except Exception as exc:
+        warnings.append(f"Could not read capability_usage_stats: {exc}")
+        return deepcopy(DEFAULT_CAPABILITY_USAGE_STATS)
+    if not row:
+        return deepcopy(DEFAULT_CAPABILITY_USAGE_STATS)
+    try:
+        value = json.loads(str(row["value_json"] or "{}"))
+    except Exception as exc:
+        warnings.append(f"Could not decode capability_usage_stats: {exc}")
+        return deepcopy(DEFAULT_CAPABILITY_USAGE_STATS)
+    return value if isinstance(value, dict) else deepcopy(DEFAULT_CAPABILITY_USAGE_STATS)
 
 
 def _memory_from_row(row: sqlite3.Row) -> dict[str, Any]:

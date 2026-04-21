@@ -8,11 +8,14 @@ from typing import Any, Iterator
 from uuid import uuid4
 
 from app.buddy.home import (
+    CAPABILITY_USAGE_STATS_KEY,
+    DEFAULT_CAPABILITY_USAGE_STATS,
     DEFAULT_POLICY,
     DEFAULT_PROFILE,
     DEFAULT_SESSION_SUMMARY,
     MEMORY_PATH,
     POLICY_PATH,
+    REPORTS_DIR,
     SOUL_PATH,
     ensure_buddy_home,
     get_default_buddy_home_dir,
@@ -32,6 +35,9 @@ RUN_TEMPLATE_BINDING_KEY = "run_template_binding"
 RUN_TEMPLATE_BINDING_TARGET_TYPE = "run_template_binding"
 RUN_TEMPLATE_BINDING_TARGET_ID = "run_template_binding"
 RUN_TEMPLATE_BINDING_VERSION = 1
+CAPABILITY_USAGE_STATS_TARGET_TYPE = "capability_usage_stats"
+CAPABILITY_USAGE_STATS_TARGET_ID = "capability_usage_stats"
+MAX_CAPABILITY_USAGE_RECENT_RUNS = 5
 ALLOWED_RUN_TEMPLATE_INPUT_SOURCES = {
     "current_message",
     "conversation_history",
@@ -219,6 +225,64 @@ def save_session_summary(payload: dict[str, Any], *, changed_by: str, change_rea
     return load_session_summary()
 
 
+def create_report(payload: dict[str, Any], *, changed_by: str, change_reason: str) -> dict[str, Any]:
+    initialize_buddy_home()
+    now = utc_now_iso()
+    report_id = _normalize_report_id(payload.get("id")) or f"report_{uuid4().hex[:12]}"
+    report = {
+        "id": report_id,
+        "kind": str(payload.get("kind") or "autonomous_review").strip() or "autonomous_review",
+        "title": str(payload.get("title") or "Buddy report").strip() or "Buddy report",
+        "summary": str(payload.get("summary") or "").strip(),
+        "content": str(payload.get("content") or "").strip(),
+        "source": payload.get("source") if isinstance(payload.get("source"), dict) else {},
+        "path": _report_relative_path(report_id),
+        "created_at": now,
+        "updated_at": now,
+    }
+    report_path = _report_path(report_id)
+    if report_path.exists():
+        raise ValueError(f"Report already exists: {report_id}")
+    _write_with_revision("report", report_id, "create", {}, report, changed_by, change_reason)
+    _write_report_file(report)
+    return report
+
+
+def load_capability_usage_stats() -> dict[str, Any]:
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT value_json FROM buddy_kv WHERE key = ?",
+            (CAPABILITY_USAGE_STATS_KEY,),
+        ).fetchone()
+    if not row:
+        return _normalize_capability_usage_stats(deepcopy(DEFAULT_CAPABILITY_USAGE_STATS))
+    try:
+        value = json.loads(str(row["value_json"] or "{}"))
+    except Exception:
+        value = {}
+    return _normalize_capability_usage_stats(value if isinstance(value, dict) else {})
+
+
+def update_capability_usage_stats(payload: dict[str, Any], *, changed_by: str, change_reason: str) -> dict[str, Any]:
+    previous = load_capability_usage_stats()
+    next_value = deepcopy(previous)
+    now = utc_now_iso()
+    for entry in _coerce_capability_usage_entries(payload):
+        _apply_capability_usage_entry(next_value, entry, now=now)
+    next_value["updated_at"] = now
+    _write_with_revision(
+        CAPABILITY_USAGE_STATS_TARGET_TYPE,
+        CAPABILITY_USAGE_STATS_TARGET_ID,
+        "update",
+        previous,
+        next_value,
+        changed_by,
+        change_reason,
+    )
+    _write_kv(CAPABILITY_USAGE_STATS_KEY, next_value, now)
+    return load_capability_usage_stats()
+
+
 def load_run_template_binding() -> dict[str, Any]:
     with _connection() as connection:
         row = connection.execute("SELECT value_json FROM buddy_kv WHERE key = ?", (RUN_TEMPLATE_BINDING_KEY,)).fetchone()
@@ -377,7 +441,7 @@ def delete_chat_session(session_id: str, *, changed_by: str, change_reason: str)
 def list_chat_messages(session_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
     get_chat_session(session_id)
     query = """
-        SELECT message_id, session_id, role, content, client_order, include_in_context, run_id, created_at, updated_at
+        SELECT message_id, session_id, role, content, client_order, include_in_context, run_id, metadata_json, created_at, updated_at
         FROM buddy_messages
         WHERE session_id = ?
         ORDER BY client_order IS NULL ASC, client_order ASC, created_at ASC, rowid ASC
@@ -404,7 +468,8 @@ def append_chat_message(
     if role not in {"user", "assistant"}:
         raise ValueError("Message role must be user or assistant.")
     content = str(payload.get("content") or "")
-    if not content.strip():
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    if not content.strip() and metadata.get("kind") != "output_trace":
         raise ValueError("Message content cannot be empty.")
     now = utc_now_iso()
     client_order = _coerce_chat_message_client_order(payload.get("client_order"))
@@ -416,6 +481,7 @@ def append_chat_message(
         "client_order": client_order,
         "include_in_context": bool(payload.get("include_in_context", True)),
         "run_id": payload.get("run_id") if payload.get("run_id") is None else str(payload.get("run_id")),
+        "metadata": metadata,
         "created_at": now,
         "updated_at": now,
     }
@@ -425,8 +491,8 @@ def append_chat_message(
         connection.execute(
             """
             INSERT INTO buddy_messages
-                (message_id, session_id, role, content, client_order, include_in_context, run_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (message_id, session_id, role, content, client_order, include_in_context, run_id, metadata_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 message["message_id"],
@@ -436,6 +502,7 @@ def append_chat_message(
                 message["client_order"],
                 int(message["include_in_context"]),
                 message["run_id"],
+                _json_dumps(message["metadata"]),
                 message["created_at"],
                 message["updated_at"],
             ),
@@ -512,6 +579,32 @@ def restore_revision(revision_id: str, *, changed_by: str, change_reason: str) -
                 ("session_summary", _json_dumps(restored), utc_now_iso()),
             )
             connection.commit()
+    elif target_type == "report":
+        current = _load_report_value(target_id)
+        _write_with_revision("report", target_id, "restore", current, restored, changed_by, change_reason)
+        if restored:
+            restored = {
+                **restored,
+                "id": target_id,
+                "path": restored.get("path") or _report_relative_path(target_id),
+                "updated_at": utc_now_iso(),
+            }
+            _write_report_file(restored)
+        else:
+            _report_path(target_id).unlink(missing_ok=True)
+    elif target_type == CAPABILITY_USAGE_STATS_TARGET_TYPE:
+        current = load_capability_usage_stats()
+        restored = _normalize_capability_usage_stats(restored)
+        _write_with_revision(
+            CAPABILITY_USAGE_STATS_TARGET_TYPE,
+            CAPABILITY_USAGE_STATS_TARGET_ID,
+            "restore",
+            current,
+            restored,
+            changed_by,
+            change_reason,
+        )
+        _write_kv(CAPABILITY_USAGE_STATS_KEY, restored, utc_now_iso())
     elif target_type == RUN_TEMPLATE_BINDING_TARGET_TYPE:
         current = load_run_template_binding()
         restored = _normalize_run_template_binding(restored)
@@ -712,6 +805,160 @@ def _write_json(file_name: str, payload: Any) -> None:
     write_json_file(buddy_home_path(file_name), payload)
 
 
+def _write_kv(key: str, payload: dict[str, Any], updated_at: str) -> None:
+    with _connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO buddy_kv (key, value_json, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+            """,
+            (key, _json_dumps(payload), updated_at),
+        )
+        connection.commit()
+
+
+def _normalize_capability_usage_stats(payload: dict[str, Any]) -> dict[str, Any]:
+    capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
+    normalized_capabilities: dict[str, Any] = {}
+    for capability_id, record in capabilities.items():
+        if isinstance(record, dict):
+            normalized_capabilities[str(capability_id)] = _normalize_capability_usage_record(record)
+    return {
+        "version": 1,
+        "capabilities": normalized_capabilities,
+        "updated_at": str(payload.get("updated_at") or ""),
+    }
+
+
+def _normalize_capability_usage_record(record: dict[str, Any]) -> dict[str, Any]:
+    recent_runs = record.get("recent_runs") if isinstance(record.get("recent_runs"), list) else []
+    return {
+        "kind": str(record.get("kind") or "skill"),
+        "key": str(record.get("key") or ""),
+        "name": str(record.get("name") or record.get("key") or ""),
+        "use_count": int(record.get("use_count") or 0),
+        "success_count": int(record.get("success_count") or 0),
+        "failure_count": int(record.get("failure_count") or 0),
+        "last_used_at": str(record.get("last_used_at") or ""),
+        "last_run_id": str(record.get("last_run_id") or ""),
+        "last_summary": str(record.get("last_summary") or ""),
+        "last_duration_ms": int(record.get("last_duration_ms") or 0),
+        "recent_runs": [item for item in recent_runs if isinstance(item, dict)][:MAX_CAPABILITY_USAGE_RECENT_RUNS],
+    }
+
+
+def _coerce_capability_usage_entries(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    entries = payload.get("entries")
+    if isinstance(entries, list):
+        return [entry for entry in entries if isinstance(entry, dict)]
+    return [payload]
+
+
+def _apply_capability_usage_entry(stats: dict[str, Any], entry: dict[str, Any], *, now: str) -> None:
+    capability = entry.get("capability") if isinstance(entry.get("capability"), dict) else {}
+    kind = str(capability.get("kind") or entry.get("kind") or "skill").strip() or "skill"
+    key = str(capability.get("key") or entry.get("key") or "").strip()
+    if not key:
+        raise ValueError("capability_usage_stats.update requires capability.key.")
+    name = str(capability.get("name") or entry.get("name") or key).strip() or key
+    capability_id = f"{kind}:{key}"
+    capabilities = stats.setdefault("capabilities", {})
+    existing = _normalize_capability_usage_record(capabilities.get(capability_id) if isinstance(capabilities.get(capability_id), dict) else {})
+    success = bool(entry.get("success", True))
+    run_id = str(entry.get("run_id") or "").strip()
+    summary = str(entry.get("summary") or "").strip()
+    duration_ms = _coerce_non_negative_int(entry.get("duration_ms"))
+    next_record = {
+        **existing,
+        "kind": kind,
+        "key": key,
+        "name": name,
+        "use_count": int(existing.get("use_count") or 0) + 1,
+        "success_count": int(existing.get("success_count") or 0) + (1 if success else 0),
+        "failure_count": int(existing.get("failure_count") or 0) + (0 if success else 1),
+        "last_used_at": now,
+        "last_run_id": run_id,
+        "last_summary": summary,
+        "last_duration_ms": duration_ms,
+    }
+    recent_entry = {
+        "run_id": run_id,
+        "success": success,
+        "summary": summary,
+        "duration_ms": duration_ms,
+        "used_at": now,
+    }
+    next_record["recent_runs"] = [recent_entry, *existing.get("recent_runs", [])][:MAX_CAPABILITY_USAGE_RECENT_RUNS]
+    capabilities[capability_id] = next_record
+
+
+def _coerce_non_negative_int(value: Any) -> int:
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _normalize_report_id(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    normalized = "".join(character if character.isalnum() or character in {"_", "-"} else "_" for character in raw)
+    return normalized[:80]
+
+
+def _report_relative_path(report_id: str) -> str:
+    return f"{REPORTS_DIR}/{report_id}.md"
+
+
+def _report_path(report_id: str) -> Path:
+    initialize_buddy_home()
+    return BUDDY_HOME_DIR / REPORTS_DIR / f"{report_id}.md"
+
+
+def _write_report_file(report: dict[str, Any]) -> None:
+    report_id = _normalize_report_id(report.get("id"))
+    if not report_id:
+        raise ValueError("Report id is required.")
+    path = _report_path(report_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_render_report_markdown(report), encoding="utf-8")
+
+
+def _load_report_value(report_id: str) -> dict[str, Any]:
+    path = _report_path(report_id)
+    if not path.exists():
+        return {}
+    return {
+        "id": report_id,
+        "path": _report_relative_path(report_id),
+        "content": path.read_text(encoding="utf-8"),
+    }
+
+
+def _render_report_markdown(report: dict[str, Any]) -> str:
+    title = str(report.get("title") or "Buddy report").strip() or "Buddy report"
+    summary = str(report.get("summary") or "").strip()
+    content = str(report.get("content") or "").strip()
+    source = report.get("source") if isinstance(report.get("source"), dict) else {}
+    lines = [
+        f"# {title}",
+        "",
+        f"- ID: {report.get('id') or ''}",
+        f"- Kind: {report.get('kind') or 'autonomous_review'}",
+        f"- Created: {report.get('created_at') or ''}",
+        f"- Updated: {report.get('updated_at') or ''}",
+    ]
+    if source:
+        lines.extend(["", "## Source", "", "```json", json.dumps(source, ensure_ascii=False, indent=2), "```"])
+    if summary:
+        lines.extend(["", "## Summary", "", summary])
+    if content:
+        lines.extend(["", "## Content", "", content])
+    return "\n".join(lines).rstrip() + "\n"
+
+
 @contextmanager
 def _connection() -> Iterator[Any]:
     connection = open_buddy_database(BUDDY_HOME_DIR)
@@ -775,7 +1022,7 @@ def _get_chat_message(message_id: str) -> dict[str, Any]:
     with _connection() as connection:
         row = connection.execute(
             """
-            SELECT message_id, session_id, role, content, client_order, include_in_context, run_id, created_at, updated_at
+            SELECT message_id, session_id, role, content, client_order, include_in_context, run_id, metadata_json, created_at, updated_at
             FROM buddy_messages
             WHERE message_id = ?
             """,
@@ -833,6 +1080,7 @@ def _chat_message_from_row(row: Any) -> dict[str, Any]:
         "client_order": row["client_order"],
         "include_in_context": bool(row["include_in_context"]),
         "run_id": row["run_id"],
+        "metadata": _json_loads_object(row["metadata_json"]),
         "created_at": str(row["created_at"] or ""),
         "updated_at": str(row["updated_at"] or ""),
     }
