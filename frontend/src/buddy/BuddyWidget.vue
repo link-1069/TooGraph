@@ -4,7 +4,10 @@
       v-if="virtualCursorEnabled"
       type="button"
       class="buddy-widget__virtual-cursor"
-      :class="{ 'buddy-widget__virtual-cursor--docked': !virtualCursorDetached }"
+      :class="{
+        'buddy-widget__virtual-cursor--docked': !virtualCursorDetached,
+        'buddy-widget__virtual-cursor--floating': shouldFloatVirtualCursor,
+      }"
       :style="virtualCursorStyle"
       :title="t('buddy.virtualCursor')"
       :aria-label="t('buddy.virtualCursor')"
@@ -334,6 +337,8 @@
         :class="{
           'buddy-widget__avatar--roaming': mascotMotion === 'roam',
           'buddy-widget__avatar--hopping': mascotMotion === 'hop',
+          'buddy-widget__avatar--hop-cycle-a': avatarHopCycle % 2 === 0,
+          'buddy-widget__avatar--hop-cycle-b': avatarHopCycle % 2 === 1,
         }"
         :style="avatarStyle"
         :title="t('buddy.dragHint')"
@@ -507,13 +512,12 @@ const AVATAR_SINGLE_CLICK_DELAY_MS = 220;
 const RUN_POLL_INTERVAL_MS = 700;
 const BUDDY_ROAM_MIN_DELAY_MS = 8000;
 const BUDDY_ROAM_MAX_DELAY_MS = 18000;
-const BUDDY_ROAM_MOVE_DURATION_MS = 980;
-const BUDDY_ROAM_STEP_PAUSE_MS = 120;
 const BUDDY_ROAM_STEP_DISTANCE_PX = DEFAULT_BUDDY_SIZE.width;
 const BUDDY_ROAM_TARGET_MIN_DISTANCE_PX = DEFAULT_BUDDY_SIZE.width;
 const BUDDY_ROAM_TARGET_MAX_DISTANCE_PX = DEFAULT_BUDDY_SIZE.width * 3;
 const BUDDY_ROAM_TARGET_REACHED_DISTANCE_PX = 1;
 const BUDDY_VIRTUAL_CURSOR_SIZE = { width: 42, height: 42 };
+const BUDDY_VIRTUAL_CURSOR_RESTING_ANGLE_DEG = -14;
 const BUDDY_VIRTUAL_CURSOR_FOLLOW_MAX_DISTANCE_PX = DEFAULT_BUDDY_SIZE.width * 2.15;
 const BUDDY_VIRTUAL_CURSOR_FOLLOW_TARGET_DISTANCE_PX = DEFAULT_BUDDY_SIZE.width * 1.25;
 const TRACE_DURATION_SMOOTH_OPTIONS = {
@@ -524,14 +528,21 @@ const { t } = useI18n();
 const route = useRoute();
 const buddyContextStore = useBuddyContextStore();
 const buddyMascotDebugStore = useBuddyMascotDebugStore();
-const { latestRequest: mascotDebugRequest, virtualCursorEnabled } = storeToRefs(buddyMascotDebugStore);
+const {
+  latestRequest: mascotDebugRequest,
+  motionConfig: buddyMascotMotionConfig,
+  virtualCursorEnabled,
+} = storeToRefs(buddyMascotDebugStore);
 
 const viewport = ref(resolveViewport());
 const position = ref(resolveDefaultBuddyPosition(viewport.value));
 const virtualCursorPosition = ref(resolveDefaultVirtualCursorPosition(viewport.value, position.value));
+const virtualCursorAngleDeg = ref(BUDDY_VIRTUAL_CURSOR_RESTING_ANGLE_DEG);
 const virtualCursorDetached = ref(false);
+const virtualCursorDragging = ref(false);
 const isPanelOpen = ref(false);
 const draft = ref("");
+const avatarHopCycle = ref(0);
 const buddyMode = ref<BuddyMode>(DEFAULT_BUDDY_MODE);
 const buddyModelRef = ref("");
 const buddyModelOptions = ref<BuddyModelOption[]>([]);
@@ -634,11 +645,16 @@ const buddyModelPlaceholder = computed(() =>
   buddyModelLoadError.value ? t("buddy.modelLoadFailed") : t("buddy.modelLoading"),
 );
 const anchorStyle = computed(() => ({
+  "--buddy-widget-roam-duration-ms": `${buddyMascotMotionConfig.value.moveDurationMs}ms`,
+  "--buddy-widget-hop-duration-ms": `${buddyMascotMotionConfig.value.moveDurationMs}ms`,
   transform: isPanelFullscreen.value ? "none" : `translate3d(${position.value.x}px, ${position.value.y}px, 0)`,
 }));
 const virtualCursorStyle = computed(() => ({
-  transform: `translate3d(${virtualCursorPosition.value.x}px, ${virtualCursorPosition.value.y}px, 0)`,
+  transform: `translate3d(${virtualCursorPosition.value.x}px, ${virtualCursorPosition.value.y}px, 0) rotate(${virtualCursorAngleDeg.value}deg)`,
 }));
+const shouldFloatVirtualCursor = computed(() =>
+  virtualCursorEnabled.value && virtualCursorDetached.value && !virtualCursorDragging.value,
+);
 const avatarStyle = computed(() => {
   if (!isPanelFullscreen.value) {
     return {};
@@ -859,8 +875,12 @@ function handlePointerUp(event: PointerEvent) {
 function activateVirtualCursor() {
   cancelBuddyRoamTimers();
   clearBuddyDebugActionTimer();
+  cancelMascotLookFrame();
+  pendingMascotLookPointer = null;
+  virtualCursorDragging.value = false;
   virtualCursorDetached.value = false;
   virtualCursorPosition.value = resolveDefaultVirtualCursorPosition(viewport.value, position.value);
+  settleVirtualCursorRotation();
   updateMascotLookFromVirtualCursor();
   requestBuddyFollowVirtualCursor();
 }
@@ -872,6 +892,7 @@ function handleVirtualCursorPointerDown(event: PointerEvent) {
   clearBuddyDebugActionTimer();
   clearVirtualCursorDrag();
   virtualCursorDetached.value = true;
+  virtualCursorDragging.value = true;
   virtualCursorDrag = {
     pointerId: event.pointerId,
     startX: event.clientX,
@@ -889,14 +910,16 @@ function handleVirtualCursorPointerMove(event: PointerEvent) {
   event.preventDefault();
   const deltaX = event.clientX - virtualCursorDrag.startX;
   const deltaY = event.clientY - virtualCursorDrag.startY;
-  virtualCursorPosition.value = clampBuddyPosition(
-    {
-      x: virtualCursorDrag.startPosition.x + deltaX,
-      y: virtualCursorDrag.startPosition.y + deltaY,
-    },
-    viewport.value,
-    BUDDY_VIRTUAL_CURSOR_SIZE,
-    DEFAULT_BUDDY_MARGIN,
+  moveVirtualCursorTo(
+    clampBuddyPosition(
+      {
+        x: virtualCursorDrag.startPosition.x + deltaX,
+        y: virtualCursorDrag.startPosition.y + deltaY,
+      },
+      viewport.value,
+      BUDDY_VIRTUAL_CURSOR_SIZE,
+      DEFAULT_BUDDY_MARGIN,
+    ),
   );
   updateMascotLookFromVirtualCursor();
   requestBuddyFollowVirtualCursor();
@@ -908,11 +931,13 @@ function handleVirtualCursorPointerUp(event: PointerEvent) {
   }
   event.preventDefault();
   requestBuddyFollowVirtualCursor();
+  settleVirtualCursorRotation();
   clearVirtualCursorDrag();
 }
 
 function clearVirtualCursorDrag() {
   virtualCursorDrag = null;
+  virtualCursorDragging.value = false;
   window.removeEventListener("pointermove", handleVirtualCursorPointerMove);
   window.removeEventListener("pointerup", handleVirtualCursorPointerUp);
 }
@@ -1003,6 +1028,7 @@ function runBuddyRoamStep(sequenceId: number) {
   }
 
   const nextPosition = resolveBuddyRoamStepPosition(position.value, targetPosition);
+  restartAvatarHopAnimation();
   mascotFacing.value = resolveBuddyRoamFacing(nextPosition.x - position.value.x);
   mascotMotion.value = "roam";
   position.value = nextPosition;
@@ -1023,8 +1049,8 @@ function runBuddyRoamStep(sequenceId: number) {
     buddyRoamStepTimerId = window.setTimeout(() => {
       buddyRoamStepTimerId = null;
       runBuddyRoamStep(sequenceId);
-    }, BUDDY_ROAM_STEP_PAUSE_MS);
-  }, BUDDY_ROAM_MOVE_DURATION_MS);
+    }, buddyMascotMotionConfig.value.stepPauseMs);
+  }, buddyMascotMotionConfig.value.moveDurationMs);
 }
 
 function resolveBuddyRoamTargetPosition(): BuddyPosition {
@@ -1164,6 +1190,7 @@ function runBuddyVirtualCursorFollowStep(sequenceId: number) {
   }
 
   const nextPosition = resolveBuddyRoamStepPosition(position.value, targetPosition);
+  restartAvatarHopAnimation();
   mascotFacing.value = resolveBuddyRoamFacing(nextPosition.x - position.value.x);
   mascotMotion.value = "roam";
   position.value = nextPosition;
@@ -1186,8 +1213,8 @@ function runBuddyVirtualCursorFollowStep(sequenceId: number) {
     buddyVirtualCursorFollowStepTimerId = window.setTimeout(() => {
       buddyVirtualCursorFollowStepTimerId = null;
       runBuddyVirtualCursorFollowStep(sequenceId);
-    }, BUDDY_ROAM_STEP_PAUSE_MS);
-  }, BUDDY_ROAM_MOVE_DURATION_MS);
+    }, buddyMascotMotionConfig.value.stepPauseMs);
+  }, buddyMascotMotionConfig.value.moveDurationMs);
 }
 
 function resolveBuddyVirtualCursorFollowTargetPosition(): BuddyPosition {
@@ -1278,9 +1305,14 @@ function clearTraceClockTimer() {
   traceClockTimerId = null;
 }
 
+function restartAvatarHopAnimation() {
+  avatarHopCycle.value += 1;
+}
+
 function playMascotDebugMotion(motion: BuddyMascotMotion, durationMs: number, facing: BuddyMascotFacing) {
   mood.value = "idle";
   mascotFacing.value = facing;
+  restartAvatarHopAnimation();
   mascotMotion.value = motion;
   buddyDebugActionTimerId = window.setTimeout(() => {
     mascotMotion.value = "idle";
@@ -1327,10 +1359,10 @@ function triggerMascotDebugAction(action: BuddyMascotDebugAction) {
       }, 1100);
       break;
     case "hop":
-      playMascotDebugMotion("hop", 760, "front");
+      playMascotDebugMotion("hop", buddyMascotMotionConfig.value.moveDurationMs, "front");
       break;
     case "roam":
-      playMascotDebugMotion("roam", BUDDY_ROAM_MOVE_DURATION_MS, "right");
+      playMascotDebugMotion("roam", buddyMascotMotionConfig.value.moveDurationMs, "right");
       break;
     case "face-left":
       mood.value = "idle";
@@ -1367,6 +1399,24 @@ function resolveDefaultVirtualCursorPosition(currentViewport: { width: number; h
     BUDDY_VIRTUAL_CURSOR_SIZE,
     DEFAULT_BUDDY_MARGIN,
   );
+}
+
+function moveVirtualCursorTo(nextPosition: BuddyPosition) {
+  virtualCursorAngleDeg.value = resolveVirtualCursorFlightAngle(virtualCursorPosition.value, nextPosition);
+  virtualCursorPosition.value = nextPosition;
+}
+
+function settleVirtualCursorRotation() {
+  virtualCursorAngleDeg.value = BUDDY_VIRTUAL_CURSOR_RESTING_ANGLE_DEG;
+}
+
+function resolveVirtualCursorFlightAngle(fromPosition: BuddyPosition, toPosition: BuddyPosition): number {
+  const deltaX = toPosition.x - fromPosition.x;
+  const deltaY = toPosition.y - fromPosition.y;
+  if (Math.hypot(deltaX, deltaY) < 1) {
+    return BUDDY_VIRTUAL_CURSOR_RESTING_ANGLE_DEG;
+  }
+  return Math.atan2(deltaY, deltaX) * (180 / Math.PI) + 90;
 }
 
 function resolveBoxCenter(positionValue: BuddyPosition, size: { width: number; height: number }) {
@@ -2739,7 +2789,7 @@ function formatErrorMessage(error: unknown): string {
 }
 
 .buddy-widget__anchor--roaming {
-  transition: transform 980ms cubic-bezier(0.2, 1.05, 0.32, 1);
+  transition: transform var(--buddy-widget-roam-duration-ms, 420ms) cubic-bezier(0.2, 1.05, 0.32, 1);
 }
 
 .buddy-widget__anchor--fullscreen {
@@ -2775,10 +2825,15 @@ function formatErrorMessage(error: unknown): string {
   pointer-events: auto;
   touch-action: none;
   user-select: none;
+  transform-origin: 50% 58%;
+  will-change: transform;
   filter:
     drop-shadow(0 5px 9px rgba(40, 32, 20, 0.22))
+    drop-shadow(0 0 8px rgba(242, 201, 104, 0.32))
     drop-shadow(0 0 2px rgba(255, 251, 235, 0.82));
-  transition: filter 140ms ease;
+  transition:
+    transform 160ms cubic-bezier(0.16, 1, 0.3, 1),
+    filter 140ms ease;
 }
 
 .buddy-widget__virtual-cursor img {
@@ -2793,10 +2848,15 @@ function formatErrorMessage(error: unknown): string {
   visibility: hidden;
 }
 
+.buddy-widget__virtual-cursor--floating img {
+  animation: buddy-widget-virtual-cursor-float 1.8s ease-in-out infinite;
+}
+
 .buddy-widget__virtual-cursor:active {
   cursor: grabbing;
   filter:
     drop-shadow(0 4px 7px rgba(40, 32, 20, 0.26))
+    drop-shadow(0 0 8px rgba(242, 201, 104, 0.36))
     drop-shadow(0 0 2px rgba(255, 251, 235, 0.9));
 }
 
@@ -2839,12 +2899,20 @@ function formatErrorMessage(error: unknown): string {
     drop-shadow(0 0 4px rgba(255, 255, 255, 0.98));
 }
 
-.buddy-widget__avatar--roaming {
-  animation: buddy-widget-avatar-hop-path 980ms cubic-bezier(0.2, 1.05, 0.32, 1) both;
+.buddy-widget__avatar--roaming.buddy-widget__avatar--hop-cycle-a {
+  animation: buddy-widget-avatar-hop-path-a var(--buddy-widget-roam-duration-ms, 420ms) cubic-bezier(0.2, 1.05, 0.32, 1) both;
 }
 
-.buddy-widget__avatar--hopping {
-  animation: buddy-widget-avatar-hop-path 760ms cubic-bezier(0.2, 1.05, 0.32, 1) both;
+.buddy-widget__avatar--roaming.buddy-widget__avatar--hop-cycle-b {
+  animation: buddy-widget-avatar-hop-path-b var(--buddy-widget-roam-duration-ms, 420ms) cubic-bezier(0.2, 1.05, 0.32, 1) both;
+}
+
+.buddy-widget__avatar--hopping.buddy-widget__avatar--hop-cycle-a {
+  animation: buddy-widget-avatar-hop-path-a var(--buddy-widget-hop-duration-ms, 420ms) cubic-bezier(0.2, 1.05, 0.32, 1) both;
+}
+
+.buddy-widget__avatar--hopping.buddy-widget__avatar--hop-cycle-b {
+  animation: buddy-widget-avatar-hop-path-b var(--buddy-widget-hop-duration-ms, 420ms) cubic-bezier(0.2, 1.05, 0.32, 1) both;
 }
 
 .buddy-widget__avatar:active {
@@ -2870,7 +2938,7 @@ function formatErrorMessage(error: unknown): string {
   box-shadow: 0 0 0 3px rgba(210, 162, 117, 0.3);
 }
 
-@keyframes buddy-widget-avatar-hop-path {
+@keyframes buddy-widget-avatar-hop-path-a {
   0%,
   100% {
     transform: translateY(0);
@@ -2880,6 +2948,29 @@ function formatErrorMessage(error: unknown): string {
   }
   66% {
     transform: translateY(-6px);
+  }
+}
+
+@keyframes buddy-widget-avatar-hop-path-b {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  34% {
+    transform: translateY(-18px);
+  }
+  66% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes buddy-widget-virtual-cursor-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-2px) rotate(-1deg);
   }
 }
 
