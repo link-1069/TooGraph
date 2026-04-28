@@ -500,6 +500,7 @@ import {
   buildBuddyOutputTracePlan,
   buildBuddyOutputTraceStateFromRunDetail,
   createBuddyOutputTraceRuntimeState,
+  createBuddyPendingOutputTraceRuntimeState,
   listBuddyOutputTraceSegmentsForDisplay,
   reduceBuddyOutputTraceEvent,
   type BuddyOutputTraceRecord,
@@ -552,6 +553,11 @@ type BuddyQueuedTurn = {
 
 type BuddyPauseHandlingOptions = {
   persist?: boolean;
+};
+
+type BuddyStreamingRunDisplaySnapshot = {
+  publicOutputState: BuddyPublicOutputRuntimeState;
+  outputTraceState: BuddyOutputTraceRuntimeState;
 };
 
 type TraceDurationTarget = {
@@ -2504,6 +2510,7 @@ async function sendMessage() {
   const userEntry = createMessage("user", userMessage, undefined, allocateBuddyMessageClientOrder());
   const assistantEntry = createMessage("assistant", "", undefined, allocateBuddyMessageClientOrder());
   messages.value.push(userEntry, assistantEntry);
+  showBuddyImmediatePendingTrace(assistantEntry.id);
   const history = buildHistoryBeforeMessage(userEntry.id);
   void persistBuddyMessage(sessionId, userEntry);
   queuedTurns.value.push({
@@ -2568,10 +2575,11 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
       },
       binding,
     );
+    const publicOutputBindings = buildBuddyPublicOutputBindings(graph);
+    showBuddyGraphPendingTrace(assistantMessage.id, graph, publicOutputBindings);
     setAssistantActivityText(assistantMessage.id, t("buddy.activity.starting"));
     const run = await runGraph(graph);
     activeRunId.value = run.run_id;
-    const publicOutputBindings = buildBuddyPublicOutputBindings(graph);
     startRunEventStream(run.run_id, assistantMessage.id, graph, publicOutputBindings);
     const runDetail = await pollRunUntilFinished(run.run_id, activeAbortController.signal);
     if (runDetail.status === "awaiting_human") {
@@ -2587,6 +2595,7 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
     mood.value = "error";
     const message = error instanceof Error ? error.message : t("buddy.runFailed");
     errorMessage.value = message;
+    removeBuddyRunDisplayMessages(assistantMessage.id);
     updateAssistantMessage(assistantMessage.id, t("buddy.errorReply", { error: message }), { includeInContext: false });
     void persistBuddyMessage(turn.sessionId, messages.value.find((entry) => entry.id === assistantMessage.id), {
       includeInContext: false,
@@ -3167,6 +3176,41 @@ function persistPosition() {
   window.localStorage.setItem(BUDDY_POSITION_STORAGE_KEY, serializeBuddyPosition(position.value));
 }
 
+function showBuddyImmediatePendingTrace(assistantMessageId: string) {
+  const outputTrace: BuddyOutputTraceSegment = {
+    segmentId: "__pending__",
+    boundaryNodeId: "__pending__",
+    boundaryLabel: t("buddy.activity.preparing"),
+    outputNodeIds: [],
+    status: "running",
+    startedAtMs: nowPublicOutputMs(),
+    completedAtMs: null,
+    durationMs: null,
+    records: [],
+  };
+  const existingMessages = new Map(messages.value.map((message) => [message.id, message]));
+  removeBuddyRunDisplayMessages(assistantMessageId);
+  messages.value.splice(resolveBuddyRunDisplayInsertionIndex(assistantMessageId), 0, buildOutputTraceMessage(assistantMessageId, "", outputTrace, existingMessages));
+}
+
+function showBuddyGraphPendingTrace(
+  assistantMessageId: string,
+  graph: GraphPayload,
+  publicOutputBindings: BuddyPublicOutputBinding[],
+) {
+  const outputTracePlan = buildBuddyOutputTracePlan(graph, publicOutputBindings);
+  const outputTraceState = createBuddyPendingOutputTraceRuntimeState(outputTracePlan, nowPublicOutputMs());
+  if (listBuddyOutputTraceSegmentsForDisplay(outputTraceState).length === 0) {
+    return;
+  }
+  syncStreamingBuddyRunDisplay(
+    assistantMessageId,
+    "",
+    outputTraceState,
+    createBuddyPublicOutputRuntimeState(),
+  );
+}
+
 function startRunEventStream(
   runId: string,
   assistantMessageId: string,
@@ -3182,7 +3226,19 @@ function startRunEventStream(
   let publicOutputState = createBuddyPublicOutputRuntimeState();
   const outputTracePlan = buildBuddyOutputTracePlan(graph, publicOutputBindings);
   let outputTraceState = createBuddyOutputTraceRuntimeState(outputTracePlan);
-  eventSource = new EventSource(streamUrl);
+  const source = new EventSource(streamUrl);
+  eventSource = source;
+  void hydrateBuddyStreamingRunDisplayFromSnapshot(runId, source, graph, publicOutputBindings, outputTracePlan).then((snapshot) => {
+    if (!snapshot || eventSource !== source) {
+      return;
+    }
+    if (!hasVisibleBuddyRunDisplaySnapshot(snapshot)) {
+      return;
+    }
+    outputTraceState = snapshot.outputTraceState;
+    publicOutputState = snapshot.publicOutputState;
+    syncStreamingBuddyRunDisplay(assistantMessageId, runId, outputTraceState, publicOutputState);
+  });
   const handleStreamingEvent = (eventType: string, event: Event) => {
     const payload = parseRunEventPayload(event);
     if (!payload) {
@@ -3206,37 +3262,48 @@ function startRunEventStream(
       payload,
       nowPublicOutputMs(),
     );
-    const { publicOutputMessages, outputTraceMessages } = syncBuddyRunDisplayMessages(
-      assistantMessageId,
-      runId,
-      outputTraceState,
-      publicOutputState,
-    );
-    if (publicOutputMessages.length > 0) {
-      mood.value = "speaking";
-    }
-    if (publicOutputMessages.length > 0 || outputTraceMessages.length > 0) {
-      const controllerMessage = messages.value.find((message) => message.id === assistantMessageId);
-      if (controllerMessage) {
-        controllerMessage.activityText = "";
-        controllerMessage.runId = runId;
-        controllerMessage.includeInContext = false;
-      }
-      void scrollMessagesToBottom();
-    }
+    syncStreamingBuddyRunDisplay(assistantMessageId, runId, outputTraceState, publicOutputState);
     setAssistantActivityFromRunEvent(assistantMessageId, eventType, payload, graph);
   };
-  eventSource.addEventListener("node.started", (event) => handleStreamingEvent("node.started", event));
-  eventSource.addEventListener("node.output.delta", (event) => handleStreamingEvent("node.output.delta", event));
-  eventSource.addEventListener("node.output.completed", (event) => handleStreamingEvent("node.output.completed", event));
-  eventSource.addEventListener("state.updated", (event) => handleStreamingEvent("state.updated", event));
-  eventSource.addEventListener("activity.event", (event) => handleStreamingEvent("activity.event", event));
-  eventSource.addEventListener("node.completed", (event) => handleStreamingEvent("node.completed", event));
-  eventSource.addEventListener("node.failed", (event) => handleStreamingEvent("node.failed", event));
-  eventSource.addEventListener("run.completed", closeEventSource);
-  eventSource.addEventListener("run.failed", closeEventSource);
-  eventSource.addEventListener("run.cancelled", closeEventSource);
-  eventSource.onerror = closeEventSource;
+  source.addEventListener("node.started", (event) => handleStreamingEvent("node.started", event));
+  source.addEventListener("node.output.delta", (event) => handleStreamingEvent("node.output.delta", event));
+  source.addEventListener("node.output.completed", (event) => handleStreamingEvent("node.output.completed", event));
+  source.addEventListener("state.updated", (event) => handleStreamingEvent("state.updated", event));
+  source.addEventListener("activity.event", (event) => handleStreamingEvent("activity.event", event));
+  source.addEventListener("node.completed", (event) => handleStreamingEvent("node.completed", event));
+  source.addEventListener("node.failed", (event) => handleStreamingEvent("node.failed", event));
+  source.addEventListener("run.completed", () => closeEventSource(source));
+  source.addEventListener("run.failed", () => closeEventSource(source));
+  source.addEventListener("run.cancelled", () => closeEventSource(source));
+  source.onerror = () => closeEventSource(source);
+}
+
+async function hydrateBuddyStreamingRunDisplayFromSnapshot(
+  runId: string,
+  source: EventSource,
+  graph: GraphPayload,
+  publicOutputBindings: BuddyPublicOutputBinding[],
+  outputTracePlan: ReturnType<typeof buildBuddyOutputTracePlan>,
+): Promise<BuddyStreamingRunDisplaySnapshot | null> {
+  try {
+    const runDetail = await fetchRun(runId);
+    if (eventSource !== source) {
+      return null;
+    }
+    return {
+      outputTraceState: buildBuddyOutputTraceStateFromRunDetail(runDetail, outputTracePlan, graph),
+      publicOutputState: buildPublicOutputRuntimeStateFromRunDetail(runDetail, publicOutputBindings, graph),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function hasVisibleBuddyRunDisplaySnapshot(snapshot: BuddyStreamingRunDisplaySnapshot) {
+  return (
+    listBuddyOutputTraceSegmentsForDisplay(snapshot.outputTraceState).length > 0 ||
+    snapshot.publicOutputState.order.length > 0
+  );
 }
 
 async function pollRunUntilFinished(runId: string, signal: AbortSignal): Promise<RunDetail> {
@@ -3249,9 +3316,11 @@ async function pollRunUntilFinished(runId: string, signal: AbortSignal): Promise
   }
 }
 
-function closeEventSource() {
-  eventSource?.close();
-  eventSource = null;
+function closeEventSource(source: EventSource | null = eventSource) {
+  source?.close();
+  if (eventSource === source) {
+    eventSource = null;
+  }
 }
 
 function shouldRenderMessage(message: BuddyMessage) {
@@ -3275,6 +3344,40 @@ function shouldShowPausedRunCard(message: BuddyMessage) {
   );
 }
 
+function removeBuddyRunDisplayMessages(controllerMessageId: string) {
+  const displayPrefix = `${controllerMessageId}:`;
+  messages.value = messages.value.filter(
+    (message) => !message.id.startsWith(`${displayPrefix}trace:`) && !message.id.startsWith(`${displayPrefix}output:`),
+  );
+}
+
+function syncStreamingBuddyRunDisplay(
+  assistantMessageId: string,
+  runId: string,
+  outputTraceState: BuddyOutputTraceRuntimeState,
+  publicOutputState: BuddyPublicOutputRuntimeState,
+) {
+  const { publicOutputMessages, outputTraceMessages } = syncBuddyRunDisplayMessages(
+    assistantMessageId,
+    runId,
+    outputTraceState,
+    publicOutputState,
+  );
+  if (publicOutputMessages.length > 0) {
+    mood.value = "speaking";
+  }
+  if (publicOutputMessages.length > 0 || outputTraceMessages.length > 0) {
+    const controllerMessage = messages.value.find((message) => message.id === assistantMessageId);
+    if (controllerMessage) {
+      controllerMessage.activityText = "";
+      controllerMessage.runId = runId;
+      controllerMessage.includeInContext = false;
+    }
+    void scrollMessagesToBottom();
+  }
+  return { publicOutputMessages, outputTraceMessages };
+}
+
 function syncBuddyRunDisplayMessages(
   controllerMessageId: string,
   runId: string,
@@ -3282,10 +3385,7 @@ function syncBuddyRunDisplayMessages(
   outputState: BuddyPublicOutputRuntimeState,
 ) {
   const existingMessages = new Map(messages.value.map((message) => [message.id, message]));
-  const displayPrefix = `${controllerMessageId}:`;
-  messages.value = messages.value.filter(
-    (message) => !message.id.startsWith(`${displayPrefix}trace:`) && !message.id.startsWith(`${displayPrefix}output:`),
-  );
+  removeBuddyRunDisplayMessages(controllerMessageId);
 
   const outputTraceMessages: BuddyMessage[] = [];
   const publicOutputMessages: BuddyMessage[] = [];
@@ -3858,7 +3958,8 @@ function formatErrorMessage(error: unknown): string {
 
 <style scoped>
 .buddy-widget {
-  --buddy-widget-panel-width: 1680px;
+  --buddy-widget-bubble-max-width: 320px;
+  --buddy-widget-bubble-max-height: 256px;
 
   position: fixed;
   inset: 0;
@@ -4101,7 +4202,7 @@ function formatErrorMessage(error: unknown): string {
 .buddy-widget__panel {
   bottom: calc(100% + 12px);
   z-index: 1;
-  width: min(var(--buddy-widget-panel-width), calc(100vw - 32px));
+  width: min(420px, calc(100vw - 32px));
   max-height: min(640px, calc(100vh - 132px));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
@@ -4119,7 +4220,7 @@ function formatErrorMessage(error: unknown): string {
   left: 50%;
   right: auto;
   bottom: auto;
-  width: min(var(--buddy-widget-panel-width), calc(100vw - 96px));
+  width: min(1440px, calc(100vw - 96px));
   height: min(920px, calc(100vh - 80px));
   max-height: calc(100vh - 80px);
   transform: translate(-50%, -50%);
@@ -4873,8 +4974,10 @@ function formatErrorMessage(error: unknown): string {
 
 .buddy-widget__bubble {
   bottom: calc(100% + 10px);
-  max-width: min(380px, calc(100vw - 32px));
-  max-height: min(340px, calc(100vh - 120px));
+  width: max-content;
+  max-width: min(var(--buddy-widget-bubble-max-width), calc(100vw - 32px));
+  max-height: min(var(--buddy-widget-bubble-max-height), calc(100vh - 120px));
+  box-sizing: border-box;
   overflow: auto;
   padding: 9px 11px;
   border: 1px solid rgba(154, 52, 18, 0.14);
@@ -4894,8 +4997,9 @@ function formatErrorMessage(error: unknown): string {
 }
 
 .buddy-widget__bubble-html-frame {
-  width: min(356px, calc(100vw - 56px));
-  min-height: 240px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(154, 52, 18, 0.12);
   border-radius: 8px;

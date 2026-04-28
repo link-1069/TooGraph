@@ -567,14 +567,21 @@ test("BuddyWidget renders assistant replies from parent graph output nodes only"
   assert.doesNotMatch(componentSource, /resolveBuddyRunTraceFromRunEvent/);
 });
 
-test("BuddyWidget closed reply bubble is wider and renders markdown or sandboxed html", () => {
+test("BuddyWidget closed reply bubble uses compact maximum dimensions and renders markdown or sandboxed html", () => {
   assert.match(componentSource, /const bubblePreviewContent = computed/);
   assert.match(componentSource, /v-if="bubblePreviewContent\.kind === 'html'"/);
   assert.match(componentSource, /v-else-if="bubblePreviewContent\.kind === 'markdown'"/);
   assert.match(componentSource, /v-html="bubblePreviewContent\.html"/);
-  assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*max-width:\s*min\(380px, calc\(100vw - 32px\)\);/);
-  assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*max-height:\s*min\(340px, calc\(100vh - 120px\)\);/);
+  assert.match(componentSource, /--buddy-widget-bubble-max-width:\s*320px;/);
+  assert.match(componentSource, /--buddy-widget-bubble-max-height:\s*256px;/);
+  assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*width:\s*max-content;/);
+  assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*max-width:\s*min\(var\(--buddy-widget-bubble-max-width\), calc\(100vw - 32px\)\);/);
+  assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*max-height:\s*min\(var\(--buddy-widget-bubble-max-height\), calc\(100vh - 120px\)\);/);
+  assert.doesNotMatch(componentSource, /\.buddy-widget__bubble \{[\s\S]*\n\s*width:\s*min\(var\(--buddy-widget-bubble-max-width/);
+  assert.doesNotMatch(componentSource, /\.buddy-widget__bubble \{[\s\S]*\n\s*height:\s*min\(var\(--buddy-widget-bubble-max-height/);
+  assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*box-sizing:\s*border-box;/);
   assert.match(componentSource, /\.buddy-widget__bubble \{[\s\S]*overflow:\s*auto;/);
+  assert.match(componentSource, /\.buddy-widget__bubble-html-frame \{[\s\S]*width:\s*100%;/);
 });
 
 test("BuddyWidget renders output-segment run trace capsules instead of per-message duration chips", () => {
@@ -600,6 +607,36 @@ test("BuddyWidget renders output-segment run trace capsules instead of per-messa
   assert.match(componentSource, /outputTrace:\s*resolveOutputTraceBuddyMessageMetadata\(record\.metadata\) \?\? undefined/);
   assert.doesNotMatch(componentSource, /formatPublicOutputDuration/);
   assert.doesNotMatch(componentSource, /runTraceStartedAtByKey/);
+});
+
+test("BuddyWidget seeds streaming run trace capsules from the current run snapshot", () => {
+  assert.match(componentSource, /const source = new EventSource\(streamUrl\);[\s\S]*eventSource = source;[\s\S]*void hydrateBuddyStreamingRunDisplayFromSnapshot\(/);
+  assert.match(componentSource, /async function hydrateBuddyStreamingRunDisplayFromSnapshot\(/);
+  assert.match(componentSource, /fetchRun\(runId\)/);
+  assert.match(componentSource, /if \(eventSource !== source\) \{[\s\S]*return null;[\s\S]*\}/);
+  assert.match(componentSource, /buildBuddyOutputTraceStateFromRunDetail\(runDetail, outputTracePlan, graph\)/);
+  assert.match(componentSource, /buildPublicOutputRuntimeStateFromRunDetail\(runDetail, publicOutputBindings, graph\)/);
+  assert.match(componentSource, /function syncStreamingBuddyRunDisplay\(/);
+  assert.match(componentSource, /syncStreamingBuddyRunDisplay\(assistantMessageId, runId, outputTraceState, publicOutputState\)/);
+  assert.match(componentSource, /source\.addEventListener\("run\.completed", \(\) => closeEventSource\(source\)\);/);
+});
+
+test("BuddyWidget shows a pending run trace capsule immediately after sending", () => {
+  assert.match(componentSource, /import \{[\s\S]*createBuddyPendingOutputTraceRuntimeState,[\s\S]*\} from "\.\/buddyOutputTrace\.ts";/);
+  assert.match(
+    componentSource,
+    /messages\.value\.push\(userEntry, assistantEntry\);[\s\S]*showBuddyImmediatePendingTrace\(assistantEntry\.id\);[\s\S]*queuedTurns\.value\.push\(/,
+  );
+  assert.match(componentSource, /function showBuddyImmediatePendingTrace\(assistantMessageId: string\)/);
+  assert.match(componentSource, /segmentId:\s*"__pending__"/);
+  assert.match(componentSource, /boundaryLabel:\s*t\("buddy\.activity\.preparing"\)/);
+  assert.match(
+    componentSource,
+    /const publicOutputBindings = buildBuddyPublicOutputBindings\(graph\);[\s\S]*showBuddyGraphPendingTrace\(assistantMessage\.id, graph, publicOutputBindings\);[\s\S]*const run = await runGraph\(graph\);/,
+  );
+  assert.match(componentSource, /function showBuddyGraphPendingTrace\(/);
+  assert.match(componentSource, /createBuddyPendingOutputTraceRuntimeState\(outputTracePlan, nowPublicOutputMs\(\)\)/);
+  assert.match(componentSource, /function hasVisibleBuddyRunDisplaySnapshot\(/);
 });
 
 test("BuddyWidget groups consecutive visible messages by role label", () => {
@@ -653,15 +690,9 @@ test("BuddyWidget uses the top toolbar for new chat and fullscreen expansion", (
   assert.match(componentSource, /<FullScreen v-else \/>/);
   assert.match(componentSource, /@click="closePanel"/);
   assert.match(componentSource, /class="buddy-widget__backdrop"/);
-  assert.match(componentSource, /\.buddy-widget__panel--fullscreen\s*\{[\s\S]*width:\s*min\(var\(--buddy-widget-panel-width\), calc\(100vw - 96px\)\);/);
+  assert.match(componentSource, /\.buddy-widget__panel--fullscreen\s*\{[\s\S]*width:\s*min\(1440px,/);
   assert.match(componentSource, /\.buddy-widget__anchor--fullscreen \.buddy-widget__avatar\s*\{[\s\S]*position:\s*fixed;[\s\S]*right:\s*auto;[\s\S]*z-index:\s*4;/);
   assert.doesNotMatch(componentSource, /\.buddy-widget__anchor--fullscreen \.buddy-widget__avatar\s*\{[\s\S]*display:\s*none;/);
-});
-
-test("BuddyWidget keeps the chat panel wide for rendered replies", () => {
-  assert.match(componentSource, /--buddy-widget-panel-width:\s*1680px;/);
-  assert.match(componentSource, /\.buddy-widget__panel\s*\{[\s\S]*width:\s*min\(var\(--buddy-widget-panel-width\), calc\(100vw - 32px\)\);/);
-  assert.match(componentSource, /\.buddy-widget__panel--fullscreen\s*\{[\s\S]*width:\s*min\(var\(--buddy-widget-panel-width\), calc\(100vw - 96px\)\);/);
 });
 
 test("BuddyWidget leaves buddy self config loading and memory curation to the chat graph template", () => {
