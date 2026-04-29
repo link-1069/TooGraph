@@ -100,7 +100,6 @@ test("buildGraphEditPlaybackPlan compiles graph intentions without exposing mous
     "move_virtual_cursor",
     "open_node_creation_menu",
     "choose_node_type",
-    "apply_graph_command",
     "focus_node_field",
     "type_node_field",
     "focus_node_field",
@@ -110,12 +109,109 @@ test("buildGraphEditPlaybackPlan compiles graph intentions without exposing mous
     "open_state_panel",
     "apply_graph_command",
     "highlight_state_field",
-    "apply_graph_command",
     "highlight_node_port",
   ]);
   assert.equal(plan.playbackSteps.some((step) => JSON.stringify(step).includes("double_click")), false);
   assert.match(GRAPH_EDIT_PLAYBACK_CAPABILITY_MANUAL, /create_node/);
   assert.doesNotMatch(GRAPH_EDIT_PLAYBACK_CAPABILITY_MANUAL, /double-click|双击|CSS selector|坐标/i);
+});
+
+test("buildGraphEditPlaybackPlan targets precise editor affordances for human-like replay", () => {
+  const plan = buildGraphEditPlaybackPlan(emptyDocument(), {
+    operations: [
+      {
+        kind: "create_node",
+        ref: "input_name",
+        nodeId: "input_name",
+        nodeType: "input",
+        title: "input节点",
+        description: "输入姓名。",
+        position: { x: 120, y: 160 },
+      },
+      {
+        kind: "create_state",
+        ref: "name",
+        stateKey: "name",
+        name: "姓名",
+        valueType: "text",
+        nodeRef: "input_name",
+        bindingMode: "write",
+      },
+      {
+        kind: "bind_state",
+        nodeRef: "input_name",
+        stateRef: "name",
+        mode: "write",
+      },
+      {
+        kind: "create_node",
+        ref: "ask_name",
+        nodeId: "ask_name",
+        nodeType: "agent",
+        title: "LLM节点",
+        description: "给姓名加问号。",
+        taskInstruction: "读取姓名，给这个姓名加问号。",
+        position: { x: 360, y: 160 },
+        creationSource: { kind: "state", sourceNodeRef: "input_name", stateRef: "name" },
+      },
+      {
+        kind: "bind_state",
+        nodeRef: "ask_name",
+        stateRef: "name",
+        mode: "read",
+        required: true,
+        sourceNodeRef: "input_name",
+      },
+    ],
+  });
+
+  assert.equal(plan.valid, true);
+  assert.equal(plan.playbackSteps.find((step) => step.kind === "choose_node_type" && step.target === "editor.nodeType.input")?.commandId, "graph-command-1");
+  assert.equal(plan.playbackSteps.find((step) => step.kind === "choose_node_type" && step.target === "editor.nodeType.input")?.nodeId, "input_name");
+  assert.equal(plan.playbackSteps.find((step) => step.kind === "choose_node_type" && step.target === "editor.nodeType.agent")?.commandId, "graph-command-4");
+  assert.equal(plan.playbackSteps.find((step) => step.kind === "choose_node_type" && step.target === "editor.nodeType.agent")?.nodeId, "ask_name");
+  assert.deepEqual(plan.playbackSteps.find((step) => step.kind === "choose_node_type" && step.target === "editor.nodeType.agent")?.commandIds, [
+    "graph-command-4",
+    "graph-command-5",
+  ]);
+  assert.deepEqual(
+    plan.playbackSteps.map((step) => [step.kind, step.target]),
+    [
+      ["move_virtual_cursor", "editor.canvas.empty.createFirstNode"],
+      ["open_node_creation_menu", "editor.canvas.empty.createFirstNode"],
+      ["choose_node_type", "editor.nodeType.input"],
+      ["focus_node_field", "editor.canvas.node.input_name.title"],
+      ["type_node_field", "editor.canvas.node.input_name.title"],
+      ["focus_node_field", "editor.canvas.node.input_name.description"],
+      ["type_node_field", "editor.canvas.node.input_name.description"],
+      ["open_state_panel", "editor.canvas.node.input_name.port.output.create"],
+      ["type_state_field", "editor.canvas.node.input_name.port.output.create.name"],
+      ["commit_state_field", "editor.canvas.node.input_name.port.output.create.create"],
+      ["highlight_node_port", "editor.canvas.node.input_name.port.output.name"],
+      ["drag_state_edge_to_canvas", "editor.canvas.anchor.input_name:state-out:name"],
+      ["open_node_creation_menu", "editor.canvas.surface"],
+      ["choose_node_type", "editor.nodeType.agent"],
+      ["highlight_node_port", "editor.canvas.node.ask_name.port.input.name"],
+      ["focus_node_field", "editor.canvas.node.ask_name.title"],
+      ["type_node_field", "editor.canvas.node.ask_name.title"],
+      ["focus_node_field", "editor.canvas.node.ask_name.description"],
+      ["type_node_field", "editor.canvas.node.ask_name.description"],
+      ["focus_node_field", "editor.canvas.node.ask_name.taskInstruction"],
+      ["type_node_field", "editor.canvas.node.ask_name.taskInstruction"],
+    ],
+  );
+  const stateDragStep = plan.playbackSteps.find((step) => step.kind === "drag_state_edge_to_canvas");
+  assert.equal(stateDragStep?.endTarget, "editor.canvas.surface");
+  const bindIndex = plan.playbackSteps.findIndex((step) => step.commandIds?.includes("graph-command-5"));
+  const editAgentTitleIndex = plan.playbackSteps.findIndex((step) => step.kind === "focus_node_field" && step.target === "editor.canvas.node.ask_name.title");
+  assert.ok(bindIndex > -1 && editAgentTitleIndex > -1 && bindIndex < editAgentTitleIndex);
+  const stateCommitStep = plan.playbackSteps.find((step) => step.kind === "commit_state_field" && step.target === "editor.canvas.node.input_name.port.output.create.create");
+  assert.deepEqual(stateCommitStep?.commandIds, ["graph-command-2", "graph-command-3"]);
+  assert.equal(stateCommitStep?.stateKey, "name");
+  assert.equal(stateCommitStep?.nodeId, "input_name");
+  assert.equal(plan.playbackSteps.some((step) => step.kind === "apply_graph_command" && step.commandId === "graph-command-2"), false);
+  assert.equal(plan.playbackSteps.some((step) => step.kind === "apply_graph_command" && step.commandId === "graph-command-3"), false);
+  assert.equal(plan.playbackSteps.some((step) => step.kind === "apply_graph_command" && step.commandId === "graph-command-5"), false);
 });
 
 test("applyGraphEditPlaybackPlan applies semantic graph commands to the current document", () => {
@@ -236,7 +332,7 @@ test("graph edit playback supports updating and connecting existing graph nodes"
 
   assert.equal(plan.valid, true);
   assert.deepEqual(plan.graphCommands.map((command) => command.kind), ["update_node", "connect_nodes"]);
-  assert.equal(plan.playbackSteps.some((step) => step.target === "agent_1.taskInstruction" && step.value === "读取输入并输出行动建议。"), true);
+  assert.equal(plan.playbackSteps.some((step) => step.target === "editor.canvas.node.agent_1.taskInstruction" && step.value === "读取输入并输出行动建议。"), true);
 
   const result = applyGraphEditPlaybackPlan(document, plan);
 

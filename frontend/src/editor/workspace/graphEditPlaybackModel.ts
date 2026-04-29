@@ -35,16 +35,43 @@ export const GRAPH_EDIT_PLAYBACK_CAPABILITY_MANUAL = [
 
 export type GraphEditNodeType = "input" | "agent" | "output" | "condition";
 export type GraphEditStateBindingMode = "read" | "write";
+export type GraphEditWriteBindingMode = "replace" | "append";
+export type GraphEditNodeCreationSource =
+  | {
+      kind: "state";
+      sourceNodeRef: string;
+      stateRef: string;
+    }
+  | {
+      kind: "flow";
+      sourceNodeRef: string;
+    };
+
+export type GraphEditNodeCreationSourceCommand =
+  | {
+      kind: "state";
+      sourceNodeRef: string;
+      sourceNodeId: string;
+      stateRef: string;
+      stateKey: string;
+    }
+  | {
+      kind: "flow";
+      sourceNodeRef: string;
+      sourceNodeId: string;
+    };
 
 export type GraphEditCreateNodeIntent = {
   kind: "create_node";
   ref: string;
+  nodeId?: string;
   nodeType: GraphEditNodeType;
   title?: string;
   description?: string;
   taskInstruction?: string;
   position?: Partial<GraphPosition> | null;
   positionHint?: string;
+  creationSource?: GraphEditNodeCreationSource;
 };
 
 export type GraphEditUpdateNodeIntent = {
@@ -58,11 +85,14 @@ export type GraphEditUpdateNodeIntent = {
 export type GraphEditCreateStateIntent = {
   kind: "create_state";
   ref: string;
+  stateKey?: string;
   name?: string;
   description?: string;
   valueType?: string;
   value?: unknown;
   color?: string;
+  nodeRef?: string;
+  bindingMode?: GraphEditStateBindingMode;
 };
 
 export type GraphEditBindStateIntent = {
@@ -71,6 +101,8 @@ export type GraphEditBindStateIntent = {
   stateRef: string;
   mode: GraphEditStateBindingMode;
   required?: boolean;
+  writeMode?: GraphEditWriteBindingMode;
+  sourceNodeRef?: string;
 };
 
 export type GraphEditConnectNodesIntent = {
@@ -105,6 +137,8 @@ export type GraphEditCreateNodeCommand = GraphEditCommandBase & {
   taskInstruction: string;
   position: GraphPosition;
   positionHint: string;
+  menuTarget: string;
+  creationSource: GraphEditNodeCreationSourceCommand | null;
 };
 
 export type GraphEditUpdateNodeCommand = GraphEditCommandBase & {
@@ -125,6 +159,9 @@ export type GraphEditCreateStateCommand = GraphEditCommandBase & {
   valueType: string;
   value?: unknown;
   color?: string;
+  targetNodeRef?: string;
+  targetNodeId?: string;
+  bindingMode?: GraphEditStateBindingMode;
 };
 
 export type GraphEditBindStateCommand = GraphEditCommandBase & {
@@ -135,6 +172,9 @@ export type GraphEditBindStateCommand = GraphEditCommandBase & {
   stateKey: string;
   mode: GraphEditStateBindingMode;
   required: boolean;
+  writeMode: GraphEditWriteBindingMode;
+  sourceNodeRef?: string;
+  sourceNodeId?: string;
 };
 
 export type GraphEditConnectNodesCommand = GraphEditCommandBase & {
@@ -160,14 +200,28 @@ export type GraphEditPlaybackStep = {
     | "focus_node_field"
     | "type_node_field"
     | "open_state_panel"
+    | "type_state_field"
+    | "commit_state_field"
     | "highlight_state_field"
     | "highlight_node_port"
+    | "drag_state_edge_to_canvas"
+    | "drag_state_edge_to_node"
     | "draw_flow_edge"
     | "apply_graph_command";
   target: string;
+  endTarget?: string;
   label: string;
   commandId?: string;
+  commandIds?: string[];
   value?: string;
+  position?: GraphPosition;
+  nodeId?: string;
+  stateKey?: string;
+  bindingMode?: GraphEditStateBindingMode;
+  nodeType?: GraphEditNodeType;
+  sourceNodeId?: string;
+  sourceStateKey?: string;
+  sourceAnchorKind?: "state-out" | "flow-out";
 };
 
 export type GraphEditPlaybackPlan = {
@@ -219,8 +273,8 @@ export function buildGraphEditPlaybackPlan(
       continue;
     }
     graphCommands.push(command);
-    playbackSteps.push(...buildPlaybackStepsForCommand(command));
   }
+  playbackSteps.push(...buildPlaybackStepsForCommands(graphCommands));
 
   return {
     valid: issues.length === 0,
@@ -292,6 +346,43 @@ function compileGraphEditIntent(
   }
 }
 
+function resolveNodeCreationSource(
+  source: GraphEditNodeCreationSource | null,
+  index: number,
+  context: CompilerContext,
+  issues: string[],
+): GraphEditNodeCreationSourceCommand | null {
+  if (!source) {
+    return null;
+  }
+  const sourceNodeRef = compactText(source.sourceNodeRef);
+  const sourceNodeId = resolveNodeRef(context, sourceNodeRef);
+  if (!sourceNodeId) {
+    issues.push(`operations[${index}] create_node references unknown source node: ${sourceNodeRef}.`);
+    return null;
+  }
+  if (source.kind === "flow") {
+    return {
+      kind: "flow",
+      sourceNodeRef,
+      sourceNodeId,
+    };
+  }
+  const stateRef = compactText(source.stateRef);
+  const stateKey = resolveStateRef(context, stateRef);
+  if (!stateKey) {
+    issues.push(`operations[${index}] create_node references unknown source state: ${stateRef}.`);
+    return null;
+  }
+  return {
+    kind: "state",
+    sourceNodeRef,
+    sourceNodeId,
+    stateRef,
+    stateKey,
+  };
+}
+
 function compileCreateNodeCommand(
   operation: GraphEditCreateNodeIntent,
   index: number,
@@ -307,7 +398,12 @@ function compileCreateNodeCommand(
     issues.push(`operations[${index}] create_node ref already exists: ${nodeRef}.`);
     return null;
   }
-  const nodeId = reserveUniqueId(context.nodeIds, `${operation.nodeType}_${slugFromText(nodeRef)}`);
+  const creationSource = resolveNodeCreationSource(operation.creationSource ?? null, index, context, issues);
+  if (operation.creationSource && !creationSource) {
+    return null;
+  }
+  const isFirstNode = context.nextPositionIndex === 0 && Object.keys(context.document.nodes).length === 0;
+  const nodeId = reserveUniqueId(context.nodeIds, compactText(operation.nodeId) || `${operation.nodeType}_${slugFromText(nodeRef)}`);
   context.nodeRefs[nodeRef] = nodeId;
   const positionIndex = context.nextPositionIndex;
   context.nextPositionIndex += 1;
@@ -323,6 +419,8 @@ function compileCreateNodeCommand(
     taskInstruction: compactText(operation.taskInstruction),
     position: normalizePosition(operation.position, positionIndex),
     positionHint: compactText(operation.positionHint),
+    menuTarget: creationSource ? "editor.canvas.surface" : isFirstNode ? "editor.canvas.empty.createFirstNode" : "editor.canvas.surface",
+    creationSource,
     summary: `Create ${operation.nodeType} node ${title}.`,
   };
 }
@@ -366,7 +464,13 @@ function compileCreateStateCommand(
     issues.push(`operations[${index}] create_state ref already exists: ${stateRef}.`);
     return null;
   }
-  const stateKey = reserveUniqueId(context.stateKeys, `state_${slugFromText(stateRef)}`);
+  const targetNodeRef = compactText(operation.nodeRef);
+  const targetNodeId = targetNodeRef ? resolveNodeRef(context, targetNodeRef) : "";
+  if (targetNodeRef && !targetNodeId) {
+    issues.push(`operations[${index}] create_state references unknown node: ${targetNodeRef}.`);
+    return null;
+  }
+  const stateKey = reserveUniqueId(context.stateKeys, compactText(operation.stateKey) || `state_${slugFromText(stateRef)}`);
   context.stateRefs[stateRef] = stateKey;
   const name = compactText(operation.name) || stateRef;
   const valueType = compactText(operation.valueType) || "text";
@@ -380,6 +484,9 @@ function compileCreateStateCommand(
     valueType,
     value: operation.value,
     color: compactText(operation.color),
+    targetNodeRef: targetNodeRef || undefined,
+    targetNodeId: targetNodeId || undefined,
+    bindingMode: operation.bindingMode,
     summary: `Create state ${name}.`,
   };
 }
@@ -403,6 +510,12 @@ function compileBindStateCommand(
   if (!nodeId || !stateKey) {
     return null;
   }
+  const sourceNodeRef = compactText(operation.sourceNodeRef);
+  const sourceNodeId = sourceNodeRef ? resolveNodeRef(context, sourceNodeRef) : "";
+  if (sourceNodeRef && !sourceNodeId) {
+    issues.push(`operations[${index}] bind_state references unknown source node: ${sourceNodeRef}.`);
+    return null;
+  }
   return {
     kind: "bind_state",
     commandId: `graph-command-${index + 1}`,
@@ -412,6 +525,9 @@ function compileBindStateCommand(
     stateKey,
     mode: operation.mode,
     required: operation.required === true,
+    writeMode: operation.writeMode === "append" ? "append" : "replace",
+    sourceNodeRef: sourceNodeRef || undefined,
+    sourceNodeId: sourceNodeId || undefined,
     summary: `${operation.mode === "read" ? "Read" : "Write"} ${stateKey} on ${nodeId}.`,
   };
 }
@@ -446,73 +562,101 @@ function compileConnectNodesCommand(
   };
 }
 
+function buildPlaybackStepsForCommands(commands: GraphEditCommand[]): GraphEditPlaybackStep[] {
+  const steps: GraphEditPlaybackStep[] = [];
+  for (let index = 0; index < commands.length; index += 1) {
+    const command = commands[index];
+    if (command.kind === "create_node") {
+      const nextCommand = commands[index + 1];
+      const pairedCommand = resolveCreationSourceStateBinding(command, nextCommand) ?? resolveCreationSourceFlowConnection(command, nextCommand);
+      steps.push(...buildCreateNodePlaybackSteps(command, { includeTextSteps: false, pairedCommand }));
+      if (pairedCommand?.kind === "bind_state") {
+        steps.push(...buildCreationSourceBindingHighlightSteps(pairedCommand));
+        index += 1;
+      } else if (pairedCommand?.kind === "connect_nodes") {
+        index += 1;
+      }
+      steps.push(...nodeTextPlaybackSteps(command));
+      continue;
+    }
+    if (command.kind === "create_state") {
+      const nextCommand = commands[index + 1];
+      const pairedCommand = resolveCreatedStatePortBinding(command, nextCommand);
+      steps.push(...buildCreateStatePlaybackSteps(command, pairedCommand));
+      if (pairedCommand) {
+        index += 1;
+      }
+      continue;
+    }
+    steps.push(...buildPlaybackStepsForCommand(command));
+  }
+  return steps;
+}
+
+function resolveCreationSourceStateBinding(command: GraphEditCreateNodeCommand, nextCommand: GraphEditCommand | undefined) {
+  if (
+    command.creationSource?.kind !== "state" ||
+    nextCommand?.kind !== "bind_state" ||
+    nextCommand.mode !== "read" ||
+    nextCommand.nodeId !== command.nodeId ||
+    nextCommand.sourceNodeId !== command.creationSource.sourceNodeId ||
+    nextCommand.stateKey !== command.creationSource.stateKey
+  ) {
+    return null;
+  }
+  return nextCommand;
+}
+
+function resolveCreationSourceFlowConnection(command: GraphEditCreateNodeCommand, nextCommand: GraphEditCommand | undefined) {
+  if (
+    command.creationSource?.kind !== "flow" ||
+    nextCommand?.kind !== "connect_nodes" ||
+    nextCommand.sourceNodeId !== command.creationSource.sourceNodeId ||
+    nextCommand.targetNodeId !== command.nodeId
+  ) {
+    return null;
+  }
+  return nextCommand;
+}
+
+function resolveCreatedStatePortBinding(command: GraphEditCreateStateCommand, nextCommand: GraphEditCommand | undefined) {
+  if (
+    !command.targetNodeId ||
+    !command.bindingMode ||
+    nextCommand?.kind !== "bind_state" ||
+    nextCommand.nodeId !== command.targetNodeId ||
+    nextCommand.stateKey !== command.stateKey ||
+    nextCommand.mode !== command.bindingMode
+  ) {
+    return null;
+  }
+  return nextCommand;
+}
+
+function buildCreationSourceBindingHighlightSteps(command: GraphEditBindStateCommand): GraphEditPlaybackStep[] {
+  return [
+    {
+      kind: "highlight_node_port",
+      target: nodePortTarget(command.nodeId, command.mode, command.stateKey),
+      label: `Show ${command.stateKey} on the ${command.mode} port.`,
+    },
+  ];
+}
+
 function buildPlaybackStepsForCommand(command: GraphEditCommand): GraphEditPlaybackStep[] {
   switch (command.kind) {
     case "create_node":
-      return [
-        {
-          kind: "move_virtual_cursor",
-          target: "editor.canvas.surface",
-          label: command.positionHint || "Move to the intended canvas area.",
-        },
-        {
-          kind: "open_node_creation_menu",
-          target: "editor.canvas.surface",
-          label: "Open the node creation menu.",
-        },
-        {
-          kind: "choose_node_type",
-          target: `editor.nodeType.${command.nodeType}`,
-          label: `Choose ${command.nodeType} node.`,
-        },
-        {
-          kind: "apply_graph_command",
-          target: command.nodeId,
-          label: command.summary,
-          commandId: command.commandId,
-        },
-        ...nodeTextPlaybackSteps(command),
-      ];
+      return buildCreateNodePlaybackSteps(command, { includeTextSteps: true, pairedCommand: null });
     case "update_node":
-      return [
-        ...nodeTextPlaybackSteps(command),
-        {
-          kind: "apply_graph_command",
-          target: command.nodeId,
-          label: command.summary,
-          commandId: command.commandId,
-        },
-      ];
+      return nodeTextPlaybackSteps(command);
     case "create_state":
-      return [
-        {
-          kind: "open_state_panel",
-          target: "editor.statePanel",
-          label: "Open the state panel.",
-        },
-        {
-          kind: "apply_graph_command",
-          target: command.stateKey,
-          label: command.summary,
-          commandId: command.commandId,
-        },
-        {
-          kind: "highlight_state_field",
-          target: command.stateKey,
-          label: `Highlight state ${command.name}.`,
-        },
-      ];
+      return buildCreateStatePlaybackSteps(command, null);
     case "bind_state":
       return [
-        {
-          kind: "apply_graph_command",
-          target: `${command.nodeId}.${command.stateKey}`,
-          label: command.summary,
-          commandId: command.commandId,
-        },
+        ...stateBindingGestureSteps(command),
         {
           kind: "highlight_node_port",
-          target: `${command.nodeId}.${command.mode}`,
+          target: nodePortTarget(command.nodeId, command.mode, command.stateKey),
           label: `Show ${command.stateKey} on the ${command.mode} port.`,
         },
       ];
@@ -520,17 +664,184 @@ function buildPlaybackStepsForCommand(command: GraphEditCommand): GraphEditPlayb
       return [
         {
           kind: "draw_flow_edge",
-          target: `${command.sourceNodeId}->${command.targetNodeId}`,
+          target: flowAnchorTarget(command.sourceNodeId),
+          endTarget: flowInputAnchorTarget(command.targetNodeId),
           label: command.summary,
-        },
-        {
-          kind: "apply_graph_command",
-          target: `${command.sourceNodeId}->${command.targetNodeId}`,
-          label: command.summary,
-          commandId: command.commandId,
         },
       ];
   }
+}
+
+function buildCreateStatePlaybackSteps(command: GraphEditCreateStateCommand, pairedCommand: GraphEditBindStateCommand | null): GraphEditPlaybackStep[] {
+  if (!command.targetNodeId || !command.bindingMode) {
+    return [
+      {
+        kind: "open_state_panel",
+        target: createStateTarget(command),
+        label: "Open the state panel.",
+      },
+      {
+        kind: "apply_graph_command",
+        target: createStateTarget(command),
+        label: command.summary,
+        commandId: command.commandId,
+      },
+      {
+        kind: "highlight_state_field",
+        target: stateFieldTarget(command),
+        label: `Highlight state ${command.name}.`,
+        stateKey: command.stateKey,
+      },
+    ];
+  }
+
+  const createTarget = createStateTarget(command);
+  const commandIds = pairedCommand ? [command.commandId, pairedCommand.commandId] : [command.commandId];
+  const steps: GraphEditPlaybackStep[] = [
+    {
+      kind: "open_state_panel",
+      target: createTarget,
+      label: `Open the ${command.bindingMode === "read" ? "input" : "output"} state editor.`,
+      nodeId: command.targetNodeId,
+      stateKey: command.stateKey,
+      bindingMode: command.bindingMode,
+    },
+    {
+      kind: "type_state_field",
+      target: `${createTarget}.name`,
+      label: `Type state ${command.name}.`,
+      value: command.name,
+      nodeId: command.targetNodeId,
+      stateKey: command.stateKey,
+      bindingMode: command.bindingMode,
+    },
+  ];
+  if (command.description) {
+    steps.push({
+      kind: "type_state_field",
+      target: `${createTarget}.description`,
+      label: `Type state ${command.name} description.`,
+      value: command.description,
+      nodeId: command.targetNodeId,
+      stateKey: command.stateKey,
+      bindingMode: command.bindingMode,
+    });
+  }
+  steps.push(
+    {
+      kind: "commit_state_field",
+      target: `${createTarget}.create`,
+      label: command.summary,
+      commandId: command.commandId,
+      commandIds,
+      nodeId: command.targetNodeId,
+      stateKey: command.stateKey,
+      bindingMode: command.bindingMode,
+    },
+    {
+      kind: "highlight_node_port",
+      target: nodePortTarget(command.targetNodeId, command.bindingMode, command.stateKey),
+      label: `Show ${command.stateKey} on the ${command.bindingMode} port.`,
+      stateKey: command.stateKey,
+      nodeId: command.targetNodeId,
+      bindingMode: command.bindingMode,
+    },
+  );
+  return steps;
+}
+
+function nodeCreationGestureSteps(command: GraphEditCreateNodeCommand): GraphEditPlaybackStep[] {
+  if (command.creationSource?.kind === "state") {
+    return [
+      {
+        kind: "drag_state_edge_to_canvas",
+        target: stateAnchorTarget(command.creationSource.sourceNodeId, "out", command.creationSource.stateKey),
+        endTarget: command.menuTarget,
+        label: `Drag state ${command.creationSource.stateKey} from ${command.creationSource.sourceNodeId} to an empty canvas area.`,
+        position: command.position,
+        sourceNodeId: command.creationSource.sourceNodeId,
+        sourceStateKey: command.creationSource.stateKey,
+        sourceAnchorKind: "state-out",
+      },
+      openNodeCreationMenuStep(command, "Choose the next node from the state connection menu."),
+    ];
+  }
+  if (command.creationSource?.kind === "flow") {
+    return [
+      {
+        kind: "draw_flow_edge",
+        target: flowAnchorTarget(command.creationSource.sourceNodeId),
+        endTarget: command.menuTarget,
+        label: `Drag a flow edge from ${command.creationSource.sourceNodeId} to an empty canvas area.`,
+        position: command.position,
+        sourceNodeId: command.creationSource.sourceNodeId,
+        sourceAnchorKind: "flow-out",
+      },
+      openNodeCreationMenuStep(command, "Choose the next node from the flow connection menu."),
+    ];
+  }
+  return [
+    {
+      kind: "move_virtual_cursor",
+      target: command.menuTarget,
+      label: command.positionHint || "Move to the intended canvas area.",
+      position: command.position,
+    },
+    openNodeCreationMenuStep(command, command.menuTarget === "editor.canvas.empty.createFirstNode" ? "Double-click the empty canvas prompt." : "Double-click the canvas."),
+  ];
+}
+
+function buildCreateNodePlaybackSteps(
+  command: GraphEditCreateNodeCommand,
+  options: { includeTextSteps: boolean; pairedCommand: GraphEditBindStateCommand | GraphEditConnectNodesCommand | null },
+): GraphEditPlaybackStep[] {
+  const commandIds = options.pairedCommand ? [command.commandId, options.pairedCommand.commandId] : [command.commandId];
+  const steps: GraphEditPlaybackStep[] = [
+    ...nodeCreationGestureSteps(command),
+    {
+      kind: "choose_node_type",
+      target: `editor.nodeType.${command.nodeType}`,
+      label: `Choose ${command.nodeType} node.`,
+      commandId: command.commandId,
+      commandIds,
+      nodeId: command.nodeId,
+    },
+  ];
+  if (options.includeTextSteps) {
+    steps.push(...nodeTextPlaybackSteps(command));
+  }
+  return steps;
+}
+
+function openNodeCreationMenuStep(command: GraphEditCreateNodeCommand, label: string): GraphEditPlaybackStep {
+  const source = command.creationSource;
+  return {
+    kind: "open_node_creation_menu",
+    target: command.menuTarget,
+    label,
+    position: command.position,
+    nodeType: command.nodeType,
+    sourceNodeId: source?.sourceNodeId,
+    sourceStateKey: source?.kind === "state" ? source.stateKey : undefined,
+    sourceAnchorKind: source?.kind === "state" ? "state-out" : source?.kind === "flow" ? "flow-out" : undefined,
+  };
+}
+
+function stateBindingGestureSteps(command: GraphEditBindStateCommand): GraphEditPlaybackStep[] {
+  if (command.mode !== "read" || !command.sourceNodeId) {
+    return [];
+  }
+  return [
+    {
+      kind: "drag_state_edge_to_node",
+      target: stateAnchorTarget(command.sourceNodeId, "out", command.stateKey),
+      endTarget: canvasNodeTarget(command.nodeId),
+      label: `Drag state ${command.stateKey} into ${command.nodeId}.`,
+      sourceNodeId: command.sourceNodeId,
+      sourceStateKey: command.stateKey,
+      sourceAnchorKind: "state-out",
+    },
+  ];
 }
 
 function nodeTextPlaybackSteps(command: GraphEditCreateNodeCommand | GraphEditUpdateNodeCommand): GraphEditPlaybackStep[] {
@@ -539,12 +850,12 @@ function nodeTextPlaybackSteps(command: GraphEditCreateNodeCommand | GraphEditUp
     steps.push(
       {
         kind: "focus_node_field",
-        target: `${command.nodeId}.title`,
+        target: nodeFieldTarget(command.nodeId, "title"),
         label: "Focus the node title field.",
       },
       {
         kind: "type_node_field",
-        target: `${command.nodeId}.title`,
+        target: nodeFieldTarget(command.nodeId, "title"),
         label: "Type the node title.",
         value: command.title,
       },
@@ -554,12 +865,12 @@ function nodeTextPlaybackSteps(command: GraphEditCreateNodeCommand | GraphEditUp
     steps.push(
       {
         kind: "focus_node_field",
-        target: `${command.nodeId}.description`,
+        target: nodeFieldTarget(command.nodeId, "description"),
         label: "Focus the node description field.",
       },
       {
         kind: "type_node_field",
-        target: `${command.nodeId}.description`,
+        target: nodeFieldTarget(command.nodeId, "description"),
         label: "Type the node description.",
         value: command.description,
       },
@@ -569,18 +880,58 @@ function nodeTextPlaybackSteps(command: GraphEditCreateNodeCommand | GraphEditUp
     steps.push(
       {
         kind: "focus_node_field",
-        target: `${command.nodeId}.taskInstruction`,
+        target: nodeFieldTarget(command.nodeId, "taskInstruction"),
         label: "Focus the Agent task instruction field.",
       },
       {
         kind: "type_node_field",
-        target: `${command.nodeId}.taskInstruction`,
+        target: nodeFieldTarget(command.nodeId, "taskInstruction"),
         label: "Type the Agent task instruction.",
         value: command.taskInstruction,
       },
     );
   }
   return steps;
+}
+
+function canvasNodeTarget(nodeId: string) {
+  return `editor.canvas.node.${nodeId}`;
+}
+
+function nodeFieldTarget(nodeId: string, field: "title" | "description" | "taskInstruction") {
+  return `${canvasNodeTarget(nodeId)}.${field}`;
+}
+
+function nodePortTarget(nodeId: string, mode: GraphEditStateBindingMode, stateKey: string) {
+  return `${canvasNodeTarget(nodeId)}.port.${mode === "read" ? "input" : "output"}.${stateKey}`;
+}
+
+function nodePortCreateTarget(nodeId: string, mode: GraphEditStateBindingMode) {
+  return `${canvasNodeTarget(nodeId)}.port.${mode === "read" ? "input" : "output"}.create`;
+}
+
+function flowAnchorTarget(nodeId: string) {
+  return `editor.canvas.anchor.${nodeId}:flow-out`;
+}
+
+function flowInputAnchorTarget(nodeId: string) {
+  return `editor.canvas.anchor.${nodeId}:flow-in`;
+}
+
+function stateAnchorTarget(nodeId: string, direction: "in" | "out", stateKey: string) {
+  return `editor.canvas.anchor.${nodeId}:state-${direction}:${stateKey}`;
+}
+
+function createStateTarget(command: GraphEditCreateStateCommand) {
+  return command.targetNodeId && command.bindingMode
+    ? nodePortCreateTarget(command.targetNodeId, command.bindingMode)
+    : "editor.statePanel";
+}
+
+function stateFieldTarget(command: GraphEditCreateStateCommand) {
+  return command.targetNodeId && command.bindingMode
+    ? nodePortTarget(command.targetNodeId, command.bindingMode, command.stateKey)
+    : command.stateKey;
 }
 
 function applyGraphEditCommand<T extends GraphPayload | GraphDocument>(document: T, command: GraphEditCommand): T {
@@ -592,10 +943,34 @@ function applyGraphEditCommand<T extends GraphPayload | GraphDocument>(document:
     case "create_state":
       return createStateInDocument(document, command);
     case "bind_state":
-      return addStateBindingToDocument(document, command.stateKey, command.nodeId, command.mode);
+      return bindStateInDocument(document, command);
     case "connect_nodes":
       return connectFlowNodesInDocument(document, command.sourceNodeId, command.targetNodeId);
   }
+}
+
+function bindStateInDocument<T extends GraphPayload | GraphDocument>(document: T, command: GraphEditBindStateCommand): T {
+  const nextDocument = addStateBindingToDocument(document, command.stateKey, command.nodeId, command.mode);
+  if (nextDocument === document) {
+    return document;
+  }
+  const node = nextDocument.nodes[command.nodeId];
+  if (!node) {
+    return nextDocument;
+  }
+  if (command.mode === "read" && command.required) {
+    const readIndex = node.reads.findIndex((binding) => binding.state === command.stateKey);
+    if (readIndex >= 0) {
+      node.reads[readIndex] = { ...node.reads[readIndex], required: true };
+    }
+  }
+  if (command.mode === "write" && command.writeMode === "append") {
+    const writeIndex = node.writes.findIndex((binding) => binding.state === command.stateKey);
+    if (writeIndex >= 0) {
+      node.writes[writeIndex] = { ...node.writes[writeIndex], mode: "append" };
+    }
+  }
+  return nextDocument;
 }
 
 function createNodeInDocument<T extends GraphPayload | GraphDocument>(document: T, command: GraphEditCreateNodeCommand): T {
