@@ -716,7 +716,12 @@ const activeBuddyEditorSnapshot = computed(() => {
   }
 
   return {
+    activeTabId: tab.tabId,
     activeTabTitle: tab.title,
+    activeTabKind: tab.kind,
+    activeGraphId: resolveActiveGraphIdForPageFacts(tab, documentsByTabId.value[tab.tabId] ?? null),
+    activeGraphName: documentsByTabId.value[tab.tabId]?.name ?? tab.title,
+    activeGraphDirty: tab.dirty,
     document: documentsByTabId.value[tab.tabId] ?? null,
     focusedNodeId: focusedNodeIdByTabId.value[tab.tabId] ?? null,
     feedback: feedbackForTab(tab.tabId),
@@ -1135,6 +1140,8 @@ const { runActiveGraph, resumeHumanReviewRun } = useWorkspaceRunController({
   runActivityByTabId,
   refreshAgentModels,
   runGraph: runGraphWithPageOperationContext,
+  consumeVirtualOperationRunAttribution: (targetId) => buddyMascotDebugStore.consumeVirtualOperationRunAttribution(targetId),
+  recordVirtualOperationTriggeredRun: (record) => buddyMascotDebugStore.recordVirtualOperationTriggeredRun(record),
   resumeRun,
   cancelRunPolling,
   getRunGeneration,
@@ -1151,8 +1158,51 @@ async function runGraphWithPageOperationContext(payload: GraphPayload | GraphDoc
   const pageOperationContext = buildPageOperationRuntimeContext({
     routePath: route.fullPath,
     root: typeof document === "undefined" ? null : document,
+    editor: buildActivePageOperationEditorFacts(),
+    latestForegroundRun: buildLatestForegroundRunFact(),
   });
   return runGraph(attachPageOperationRuntimeContext(payload, pageOperationContext));
+}
+
+function buildActivePageOperationEditorFacts() {
+  const tab = activeTab.value;
+  if (!tab) {
+    return null;
+  }
+  const activeDocument = documentsByTabId.value[tab.tabId] ?? null;
+  return {
+    activeTabId: tab.tabId,
+    activeTabTitle: tab.title,
+    activeTabKind: tab.kind,
+    activeGraphId: resolveActiveGraphIdForPageFacts(tab, activeDocument),
+    activeGraphName: activeDocument?.name ?? tab.title,
+    activeGraphDirty: tab.dirty,
+  };
+}
+
+function buildLatestForegroundRunFact() {
+  const tab = activeTab.value;
+  const run = tab ? latestRunDetailByTabId.value[tab.tabId] ?? null : null;
+  if (!run) {
+    return null;
+  }
+  return {
+    runId: run.run_id,
+    status: run.status,
+    resultSummary: compactPageFactText(run.final_result),
+  };
+}
+
+function resolveActiveGraphIdForPageFacts(tab: EditorWorkspaceTab, activeDocument: GraphPayload | GraphDocument | null) {
+  if (activeDocument && "graph_id" in activeDocument && activeDocument.graph_id) {
+    return activeDocument.graph_id;
+  }
+  return tab.graphId;
+}
+
+function compactPageFactText(value: unknown) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 
 function handleWorkspaceRunActivityEvent(payload: Record<string, unknown>) {
