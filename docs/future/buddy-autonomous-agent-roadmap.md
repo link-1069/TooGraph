@@ -12,15 +12,17 @@
 用户消息和会话上下文
   -> 创建与该用户消息配对的助手消息和 run capsule
   -> 读取 Buddy Home、页面上下文、历史摘要和运行策略
+  -> 生成受预算约束的 context_brief
   -> 生成 request_understanding 和运行过程/暂停上下文中的早期 visible_reply
+  -> 必要时生成或更新本轮 task_plan
   -> 判断是否需要能力
   -> 选择一个 capability(kind=skill|subgraph|none)
   -> 由下游 LLM 节点为该能力准备输入
   -> 若能力是 Skill，运行时执行单次 Skill
   -> 若 capability.kind=subgraph，伙伴启动原生虚拟鼠标/键盘，多步选择或打开对应图模板、绑定输入、点击运行、等待完成并读取公开结果
   -> 将结果封装为 result_package state
-  -> 复盘结果并判断是否继续能力循环
-  -> 生成 final_reply 或其他父图 root output state
+  -> 对结果做结构化分类、复盘结果并判断是否继续能力循环
+  -> 基于事实简报、能力轨迹和缺口生成 final_reply 或其他父图 root output state
   -> 从完成的 run snapshot 启动后台自主复盘图
   -> 模型自行判断低风险 Buddy Home 写回，并通过受控 writer 生成 command / revision
 ```
@@ -85,23 +87,27 @@
 
 ## 目标主模板
 
-伙伴可见主模板应继续从 `buddy_autonomous_loop` 演进。下一版目标可以称为 `buddy_autonomous_loop_v2`，但不要求立刻改模板 ID。
+伙伴可见主模板应继续使用 `buddy_autonomous_loop` 作为默认官方模板 ID。文档描述的是该模板的完整目标形态；不要用版本后缀制造并行心智。模板内部可以迭代，但对外保持一个可演进的正式主循环。
 
 顶层只保留用户和维护者都能理解的稳定阶段：
 
 ```mermaid
 flowchart TD
-  U[Input: user_message] --> I[Subgraph: buddy_turn_intake]
-  H[Input: conversation_history] --> I
-  P[Input: page_context] --> I
-  B[Input: buddy_context Buddy Home] --> I
+  U[Input: user_message] --> R[Subgraph: buddy_context_recall]
+  H[Input: conversation_history] --> R
+  P[Input: page_context] --> R
+  B[Input: buddy_context Buddy Home] --> R
 
-  I --> C{requires_capability?}
+  R --> I[Subgraph: buddy_turn_intake]
+  I --> T{needs_task_plan?}
+  T -- true --> P0[Subgraph: buddy_task_plan]
+  T -- false --> C{requires_capability?}
+  P0 --> C
   C -- false --> F[Subgraph: buddy_final_reply]
   C -- true --> L[Subgraph: buddy_capability_loop]
   L --> F
   F --> O[Output: final_reply]
-  O -. run snapshot .-> R[Background Template: buddy_autonomous_review]
+  O -. run snapshot .-> BG[Background Template: buddy_autonomous_review]
 ```
 
 顶层图只承担编排职责，不把能力循环内部细节铺满主画布。
@@ -114,10 +120,13 @@ flowchart TD
 | `input_conversation_history` | input | 最近历史或会话摘要 | 否 |
 | `input_page_context` | input | 当前页面、图、节点、选区或运行详情上下文 | 否 |
 | `input_buddy_context` | input | Buddy Home 文件夹选择包 | 否 |
+| `buddy_context_recall` | subgraph | 整理历史、Buddy Home、页面上下文和预算，生成本轮可用 context brief | 是 |
 | `buddy_turn_intake` | subgraph | 请求理解、早期可见回复、必要澄清 | 是 |
+| `needs_task_plan` | condition | 复杂任务是否需要显式任务计划 | 否 |
+| `buddy_task_plan` | subgraph | 为 3 步以上或多目标任务生成/更新本轮任务计划 | 是 |
 | `needs_capability` | condition | 根据 `request_understanding.requires_capability` 分流 | 否 |
 | `buddy_capability_loop` | subgraph | 选择能力、执行能力、复盘结果、循环 | 是 |
-| `buddy_final_reply` | subgraph | 汇总最终回复 | 是 |
+| `buddy_final_reply` | subgraph | 事实简报、起草和校验最终回复 | 是 |
 | `output_final` | output | 只展示 `final_reply` | 否 |
 
 ### 顶层 state 契约
@@ -128,15 +137,20 @@ flowchart TD
 | `conversation_history` | markdown | input | intake、final、review | 最近对话，不是系统指令 |
 | `page_context` | markdown | input | intake、capability loop、final | 页面上下文 |
 | `buddy_context` | file | input | intake、capability loop、final、review | Buddy Home 选中文件 |
+| `context_brief` | json | context recall | intake、task plan、capability loop、final、review | 受预算约束的历史、页面和长期资料摘要；不是新指令 |
 | `visible_reply` | markdown | intake | run capsule、pause card | 早期过程回应，不代表完成；只有被父图 root output 节点导出时才进入聊天消息 |
 | `request_understanding` | json | intake | condition、capability loop、final、review | 请求结构化理解 |
+| `task_plan` | json | task plan | capability loop、final、review | 本轮多步任务计划、当前步骤和完成标准 |
 | `selected_capability` | capability | capability loop | execute capability | 单个动态能力 |
 | `capability_found` | boolean | capability loop | final | 是否找到能力 |
 | `capability_selection_audit` | json | capability loop | run detail、review | 候选数量、选择原因、拒绝候选、权限摘要和缺口说明 |
 | `capability_result` | result_package | capability loop | review、final | 动态能力结果包 |
+| `capability_result_review` | json | capability loop | review、final | 对能力结果状态、失败类型、证据和重试价值的结构化分类 |
 | `capability_review` | json | capability loop | loop condition、final、review | 执行复盘和下一步判断 |
 | `capability_gap` | json | capability loop | final | 能力缺口 |
 | `capability_trace` | json | capability loop | final、review | 能力调用摘要列表 |
+| `final_reply_brief` | json | final | final | 面向最终回复的事实、限制、证据和输出策略 |
+| `final_reply_draft` | markdown | final | final | 未公开的最终回复草稿 |
 | `final_reply` | markdown | final | 默认 root output、chat history | 默认伙伴模板的最终回复 |
 
 权限模式属于运行 metadata（例如 `buddy_mode`、`buddy_can_execute_actions`、`buddy_requires_approval`），由运行时审批原语读取，不进入图输入 state，也不交给 LLM 决定是否拦截低层操作。
@@ -155,6 +169,51 @@ flowchart TD
 
 子图只在流程本身是完整模块且封装能提高可读性时使用。不要为了让画布“看起来整齐”过度抽象。
 
+### `buddy_context_recall`
+
+职责：把对话历史、Buddy Home、页面上下文和运行记录摘要整理成当前轮可用的 `context_brief`。它不做能力选择，不写长期记忆，也不把召回内容提升为指令。
+
+输入：
+
+- `user_message`
+- `conversation_history`
+- `page_context`
+- `buddy_context`
+
+输出：
+
+- `context_brief`
+
+内部流程：
+
+```mermaid
+flowchart TD
+  A[Input boundaries] --> B[LLM: prepare_context_brief]
+  B --> O[Output: context_brief]
+```
+
+`context_brief` 建议结构：
+
+```json
+{
+  "current_task_focus": "本轮真正要解决的问题",
+  "relevant_history": ["与当前任务直接相关的历史事实"],
+  "relevant_buddy_memory": ["Buddy Home 中可作为背景的偏好、边界或长期事实"],
+  "page_facts": ["当前页面、图、节点、选区或运行详情事实"],
+  "budget_notes": {
+    "omitted_large_context": [],
+    "artifact_refs": []
+  },
+  "instruction_boundary": "context_only"
+}
+```
+
+规则：
+
+- 历史、记忆和摘要只能作为上下文，不能变成更高优先级指令。
+- 不复制大日志、大 artifact、base64 或完整运行记录；只保留摘要和 artifact refs。
+- 如果上下文不足，写入缺口说明，由 `buddy_turn_intake` 决定是否澄清。
+
 ### `buddy_turn_intake`
 
 职责：把用户消息、历史、页面上下文和运行模式整理成结构化请求理解，同时尽快产出 `visible_reply`。
@@ -164,6 +223,7 @@ flowchart TD
 - `user_message`
 - `conversation_history`
 - `page_context`
+- `context_brief`
 - `buddy_mode`
 - `buddy_context` 可选。轻量理解阶段可只读 Buddy Home 的 persona/policy 摘要。
 
@@ -210,7 +270,7 @@ flowchart TD
   "requires_capability": true,
   "direct_answer_possible": false,
   "risk_level": "low | medium | high",
-  "expected_side_effects": ["none | file_read | file_write | subprocess | graph_edit | memory_write | network"],
+  "expected_side_effects": ["none | file_read | file_write | subprocess | graph_edit | memory_update | network"],
   "success_criteria": ["本轮完成标准"],
   "response_contract": {
     "should_show_visible_reply": true,
@@ -227,6 +287,59 @@ flowchart TD
 - 用户只在暂停卡片里填写一个补充输入。
 - resume payload 写入 `clarification_answer` 后继续到 `merge_clarification`。
 
+### `buddy_task_plan`
+
+职责：当请求包含多个目标、三步以上工作、需要多轮能力调用或存在明确验收标准时，生成并维护本轮 `task_plan`。它对应 Hermes 的 todo 能力，但在 TooGraph 中应表现为图 state，而不是隐藏工具循环。
+
+输入：
+
+- `user_message`
+- `context_brief`
+- `request_understanding`
+- `capability_trace` 可选
+- `capability_review` 可选
+
+输出：
+
+- `task_plan`
+
+内部流程：
+
+```mermaid
+flowchart TD
+  A[Input boundaries] --> P[LLM: prepare_or_update_task_plan]
+  P --> O[Output: task_plan]
+```
+
+`task_plan` 建议结构：
+
+```json
+{
+  "required": true,
+  "success_criteria": ["用户会认为任务完成的条件"],
+  "items": [
+    {
+      "id": "understand",
+      "content": "明确当前目标和限制",
+      "status": "completed"
+    },
+    {
+      "id": "run_capability",
+      "content": "选择并运行一个合适能力",
+      "status": "in_progress"
+    }
+  ],
+  "active_item_id": "run_capability",
+  "plan_notes": []
+}
+```
+
+规则：
+
+- 同一时间最多一个 `in_progress` item。
+- 简单问答、闲聊和单步任务应跳过本子图，不制造空计划。
+- 计划只服务本轮运行，不写入长期记忆；是否沉淀经验由后台复盘决定。
+
 ### `buddy_capability_loop`
 
 职责：选择一个能力、执行一次能力、复盘结果、决定继续能力循环或收束。它是伙伴 Agent 循环的核心模块，必须是子图。
@@ -237,7 +350,9 @@ flowchart TD
 - `conversation_history`
 - `page_context`
 - `buddy_context`
+- `context_brief`
 - `request_understanding`
+- `task_plan` 可选
 - `visible_page_operation_capability`
 - `capability_review` 可选，供下一轮选择能力时读取上一轮复盘
 
@@ -246,6 +361,7 @@ flowchart TD
 - `selected_capability`
 - `capability_found`
 - `capability_result`
+- `capability_result_review`
 - `capability_review`
 - `capability_gap`
 - `capability_trace`
@@ -262,8 +378,9 @@ flowchart TD
   K -- false --> X[LLM + dynamic Skill: execute_capability]
   K -- true --> V[LLM + internal page operation subgraph: execute_visible_subgraph_operation]
   V --> A2[LLM + Skill: adapt_visible_subgraph_result]
-  A2 --> R[LLM: review_capability_result]
-  X --> R[LLM: review_capability_result]
+  A2 --> Q[LLM: classify_capability_result]
+  X --> Q[LLM: classify_capability_result]
+  Q --> R[LLM: review_capability_result]
   R --> C{needs_another_capability?}
   C -- true --> S
   C -- false --> Z
@@ -282,7 +399,8 @@ flowchart TD
 | `execute_capability` | LLM | 1 次，用于生成被选 Skill 输入 | 输入 `selected_capability`，仅处理 kind=skill | 用户消息、页面上下文、Buddy Home、请求理解 | `capability_result` |
 | `execute_visible_subgraph_operation` | LLM | 1 次，用于生成页面操作 workflow 的 `user_goal` | 输入固定 `visible_page_operation_capability`，目标模板来自 `capability_selection_audit.selected` | 用户消息、页面上下文、Buddy Home、请求理解、能力选择审计 | `visible_subgraph_operation_result` |
 | `adapt_visible_subgraph_result` | LLM + Skill | 1 次，用于复制适配参数 | 静态 `buddy_visible_subgraph_result_adapter` | 能力选择审计、可见页面操作结果、用户目标 | `capability_result` |
-| `review_capability_result` | LLM | 1 次 | 无 | 用户消息、请求理解、能力结果包 | `capability_review`、append `capability_trace` |
+| `classify_capability_result` | LLM | 1 次 | 无 | 用户消息、请求理解、任务计划、能力选择审计、能力结果包、既有轨迹 | `capability_result_review` |
+| `review_capability_result` | LLM | 1 次 | 无 | 用户消息、请求理解、任务计划、能力结果包、结果分类 | `capability_review`、append `capability_trace` |
 | `continue_capability_loop` | condition | 0 次 | 无 | `capability_review.needs_another_capability` | true/false/exhausted |
 | `finalize_capability_cycle` | LLM | 1 次 | 无 | found、result、review、gap、trace | 规整 `capability_review` |
 
@@ -317,12 +435,30 @@ flowchart TD
 - false 分支进入 `finalize_capability_cycle`。
 - exhausted 分支进入 `finalize_capability_cycle`，不视为运行失败。最终回复应说明已达到本轮能力调用上限，并基于已有结果收束。
 
+`capability_result_review` 建议结构：
+
+```json
+{
+  "status": "succeeded | failed | awaiting_human | cancelled | partial",
+  "success": true,
+  "retryable": false,
+  "failure_reason": "",
+  "failure_category": "none | missing_input | permission_denied | target_not_found | run_failed | interrupted | no_progress | invalid_result",
+  "evidence": ["可引用的简短证据、run id、artifact 或错误摘要"],
+  "artifact_refs": [],
+  "result_size_class": "small | medium | large",
+  "overclaim_risk": "low | medium | high",
+  "no_progress_signature": ""
+}
+```
+
 `capability_review` 建议结构：
 
 ```json
 {
   "executed": true,
   "success": true,
+  "stop_reason": "success",
   "summary": "本轮能力调用得到什么",
   "missing_information": [],
   "needs_another_capability": false,
@@ -334,11 +470,22 @@ flowchart TD
 }
 ```
 
+`stop_reason` 允许值：
+
+- `success`：已有结果足够进入最终回复。
+- `needs_another_capability`：需要回到能力选择，但仍遵守一次只运行一个能力。
+- `no_capability`：没有可用能力。
+- `loop_exhausted`：达到本轮能力调用上限，用已有结果收束。
+- `blocked`：权限、用户补充或安全边界阻止继续。
+- `failed`：能力失败且当前没有可恢复路径。
+- `partial`：已有部分结果，可以诚实回复并说明缺口。
+
 `capability_trace` 条目建议：
 
 ```json
 {
   "round": 1,
+  "task_item_id": "run_capability",
   "capability": {
     "kind": "skill",
     "key": "web_search",
@@ -382,9 +529,12 @@ flowchart TD
 - `conversation_history`
 - `page_context`
 - `buddy_context`
+- `context_brief`
 - `request_understanding`
+- `task_plan`
 - `capability_found`
 - `capability_result`
+- `capability_result_review`
 - `capability_review`
 - `capability_gap`
 - `capability_trace`
@@ -393,7 +543,45 @@ flowchart TD
 
 - `final_reply`
 
-内部只需要一个 `draft_final_reply` LLM 节点和一个 output 边界。除非后续明确引入“起草 -> 校验 -> 修正”流程，否则不要继续拆小。
+内部流程：
+
+```mermaid
+flowchart TD
+  A[Input boundaries] --> B[LLM: prepare_final_reply_brief]
+  B --> D[LLM: draft_final_reply]
+  D --> V[LLM: finalize_final_reply]
+  V --> O[Output: final_reply]
+```
+
+节点契约：
+
+| 节点 | 类型 | LLM 调用 | Skill | reads | writes |
+| --- | --- | --- | --- | --- | --- |
+| `prepare_final_reply_brief` | LLM | 1 次 | 无 | 用户消息、context brief、请求理解、任务计划、能力结果、结果分类、复盘、缺口、轨迹 | `final_reply_brief` |
+| `draft_final_reply` | LLM | 1 次 | 无 | 用户消息、context brief、final reply brief | `final_reply_draft` |
+| `finalize_final_reply` | LLM | 1 次 | 无 | final reply brief、final reply draft、能力复盘、能力缺口 | `final_reply` |
+
+`final_reply_brief` 建议结构：
+
+```json
+{
+  "answer_mode": "direct_answer | result_summary | ask_user | explain_gap | partial_result",
+  "must_say": ["用户必须知道的结论、路径、run id、artifact 或限制"],
+  "must_not_say": ["不能声称已经完成、不能暴露的内部字段、不能承诺的能力"],
+  "evidence": [],
+  "completed_actions": [],
+  "limitations": [],
+  "suggested_next_action": "",
+  "style": "concise"
+}
+```
+
+规则：
+
+- `prepare_final_reply_brief` 只做事实压缩和边界整理，不写用户可见最终文本。
+- `draft_final_reply` 不调用能力，不继续规划执行。
+- `finalize_final_reply` 只做诚实性、格式和用户可见性校验；它可以修正草稿，但不能补造事实。
+- 最终只通过父图 root output 展示 `final_reply`，`final_reply_brief` 和 `final_reply_draft` 属于内部 run 详情。
 
 `final_reply` 规则：
 
@@ -743,6 +931,116 @@ buddy_home/
 - 每次 persistent self-configuration、memory、policy、session-summary 更新都必须有 revision。
 - Buddy Home 写回必须通过显式模板、受控 Skill、命令记录和 revision 完成；低风险自动写回由自主复盘图判定并可恢复，高风险或权限边界变更必须拒绝或进入显式审批路径。
 
+## 长期记忆系统方针
+
+长期记忆系统是 TooGraph 的平台级上下文层，不只服务 Buddy，也服务普通图模板、业务模板、知识库增强和评测闭环。它的目标不是把更多历史文本塞进 LLM prompt，而是让长期事实、偏好、经验、会话摘要和能力统计具备可召回、可证据化、可审计和可恢复的生命周期。
+
+边界：
+
+```text
+Run State：单次运行内的短期状态和中间产物。
+Memory：跨运行复用的偏好、事实、经验、策略摘要和能力使用统计。
+Knowledge：外部文档、业务资料、规范、案例、素材库和可引用资料。
+Artifact：某次运行生成或下载的文件、报告、图片、视频和结构化结果。
+Policy：权限、行为边界和安全规则；可被记忆引用，但不能被普通记忆静默改写。
+```
+
+记忆不是权限来源。召回到图运行中的 `memory_context`、`context_brief` 或 Buddy Home 摘要都必须标注为 reference only / context only，不能覆盖系统规则、项目规则、权限策略或用户本轮明确指令。
+
+### 记忆分层
+
+| layer | 含义 | 示例 | 默认写入路径 |
+| --- | --- | --- | --- |
+| `semantic` | 稳定事实和偏好 | 用户偏好简洁回复；项目使用 `npm start` | 手动写入或后台复盘候选 |
+| `episodic_summary` | 会话或运行摘要 | 某次模板运行的目标、结果和未完成项 | 后台复盘图 |
+| `procedural` | 工作流、模板和 Skill 经验 | 视频分析失败时使用文本素材降级 | 模板复盘或能力使用统计 |
+| `profile` | 用户或伙伴画像摘要 | 用户关心审计和可见操作 | Buddy Home writer |
+| `policy_note` | 低风险策略备注 | 某模板默认需要人工确认写入文件 | 受控 writer；不得扩大权限 |
+| `capability_stat` | 能力使用统计 | 某模板最近 5 次运行失败原因 | 运行后聚合 |
+
+每条记忆必须有 `summary` 和 `content`。`summary` 用于列表、召回和预算裁剪；`content` 是可审计正文。大型日志、完整 artifact、base64、大媒体和临时路径不写进正文，只通过 artifact refs 指向。
+
+### 作用域和可见性
+
+| scope | 含义 | scope_key 示例 |
+| --- | --- | --- |
+| `global` | 本地 TooGraph 实例通用事实 | 空字符串 |
+| `user` | 用户偏好和长期事实 | `default_user` |
+| `project` | 当前 workspace / repo 事实 | `toograph_workspace` |
+| `buddy` | Buddy Home 长期资料 | `default_buddy` |
+| `graph` | 单张 graph 的运行经验 | `graph_xxx` |
+| `template` | 图模板经验和默认偏好 | `slg_creative_factory` |
+| `skill` | 单个 Skill 的使用经验 | `web_search` |
+| `knowledge_collection` | 知识库召回策略或资料经验 | `slg_creative_docs` |
+
+默认召回顺序是 user / project / buddy / template / graph / skill，再按相关性和预算裁剪。图模板只能自动读取自己声明的作用域；跨用户、跨项目或跨 Buddy 的记忆需要显式选择或管理员策略。
+
+Buddy Home 中的 `AGENTS.md`、`SOUL.md`、`USER.md`、`MEMORY.md`、`policy.json` 是用户可编辑投影；底层 SQLite 记忆记录、command 和 revision 是审计与恢复来源。
+
+### 记忆生命周期
+
+```text
+observed fact / run result / user correction
+  -> memory_candidate
+  -> dedupe + conflict check
+  -> risk classification
+  -> apply automatically / request approval / reject
+  -> memory revision
+  -> recall, decay, supersede, archive
+```
+
+状态字段：
+
+| status | 含义 |
+| --- | --- |
+| `candidate` | 候选记忆，尚未写入长期召回池 |
+| `active` | 可被召回 |
+| `superseded` | 被新记忆替代，默认不召回 |
+| `archived` | 保留审计但默认不召回 |
+| `rejected` | 被用户、策略或 writer 拒绝 |
+
+写入规则：
+
+- 用户手动保存偏好或事实时，可以进入候选审查或明确写入。
+- Buddy 后台复盘可以自动应用低风险 profile、memory、session summary、能力统计和精炼报告，但必须生成 command、revision 和 activity event。
+- 业务模板应输出候选记忆和证据，不直接绕过审批或 revision 写长期资料。
+- 权限升级、行为边界扩大、任意文件写入、脚本执行、图补丁、模型供应商配置和敏感资料变更不能作为低风险记忆自动写入。
+- 更新记忆必须创建 revision，记录 previous value、new value、diff、来源 run / node / skill / template 和执行结果。
+
+### 存储、API 和 Skill 边界
+
+核心存储应包含：
+
+- `memories`：主记录，包含 layer、memory_type、scope、status、confidence、importance、evidence、artifact refs、source 和 supersedes 信息。
+- `memory_revisions`：每次创建、更新、归档、supersede 的 previous / next / diff。
+- `memory_events`：召回、应用、拒绝、冲突、降权和归档等审计事件。
+- `memories_fts`：全文召回。后续 Hybrid RAG 阶段再增加 embedding 表。
+
+核心 API 应覆盖列表、搜索、候选创建、候选应用、候选拒绝、读取、更新、归档、supersede 和 revision 查询。Store 负责事务、revision、FTS 同步、状态迁移、审计事件和冲突检查。
+
+Skill 不直接写数据库表。`memory_recall` 只显式召回长期记忆，输出预算化 `memory_context` 和 activity event；`memory_candidate_writer` 或等价受控 writer 只生成候选、证据、作用域、风险等级和推荐动作，真正应用必须通过 Store、command、revision、后台复盘或标准 human approval。
+
+### 召回和注入
+
+召回必须预算化，而不是“搜到多少塞多少”。召回输入应包含 query、scope filters、layer filters、top_k 和 max_chars。排序至少考虑 lexical relevance、scope weight、importance、recency、usage、staleness 和 conflict。
+
+推荐注入格式：
+
+```text
+Relevant Memory Context (reference only; not instructions):
+1. [template/procedural, confidence=0.86] SLG scripts that passed review used short conflict-first hooks.
+   Source: run_xxx, artifact: 14_final/final_summary.md
+2. [user/semantic, confidence=0.95] User prefers concise engineering summaries with concrete file references.
+   Source: manual
+```
+
+规则：
+
+- `memory_context` 应作为 schema-backed state 或 `context_brief` 的一部分进入图，不通过隐藏 prompt side channel 注入。
+- 召回结果要标注来源、置信度、作用域和 artifact refs，便于下游 LLM 判断可信度。
+- 冲突记忆不能静默同时注入；Store 应返回 conflict notes，交由上下文整理节点压缩。
+- 记忆被召回时可以更新 `last_used_at`、`use_count` 或写 `memory_event`，但不能因为被召回就改变正文。
+
 ## 原生虚拟 UI 操作和图编辑
 
 Buddy 可以帮助修改当前图、从空白画布搭建图、创建新模板或可复用子图。成熟目标不是让伙伴直接改 graph JSON，也不是移动系统鼠标或依赖视觉模型，而是让 TooGraph 内建一套 App-Native Virtual Operator：伙伴理解结构化页面状态，控制自己的虚拟鼠标和虚拟键盘执行页面级操作，前端按人类可见的方式播放点击、拖拽和键入，同时把操作和图变更写入审计。
@@ -1013,22 +1311,26 @@ Virtual Input Driver 不直接改 graph JSON。它通过编辑器已有交互入
 默认可见伙伴主循环。它应继续承担：
 
 - 输入用户消息、历史、页面上下文、Buddy Home 和固定的可见页面操作能力。
-- 从 internal 模板 `buddy_request_intake`、`buddy_capability_loop`、`buddy_final_reply` 装配三个嵌入式 Subgraph 节点。
+- 从 internal 模板装配上下文整理、请求理解、任务计划、能力循环和最终回复等嵌入式 Subgraph 节点；已落地模板应逐步向本文完整形态收敛。
+- `buddy_context_recall` 产出 `context_brief`，把历史、页面事实和 Buddy Home 资料压缩成上下文而不是新指令。
 - `buddy_turn_intake` 产出 `visible_reply` 和 `request_understanding`。
+- `buddy_task_plan` 在复杂任务中维护本轮任务计划，简单任务跳过。
 - 简单闲聊或可直接回答时绕过能力循环。
-- `buddy_capability_loop` 选择能力、执行能力、复盘结果、必要时循环；当 `selected_capability.kind` 为 `subgraph` 时，经固定内部 `toograph_page_operation_workflow` 启动原生虚拟鼠标/键盘，多步定位并运行对应图模板，等待结果并把公开输出包装回能力复盘。
-- `buddy_final_reply` 产出唯一 `final_reply`。
+- `buddy_capability_loop` 选择能力、执行能力、分类结果、复盘结果、必要时循环；当 `selected_capability.kind` 为 `subgraph` 时，经固定内部 `toograph_page_operation_workflow` 启动原生虚拟鼠标/键盘，多步定位并运行对应图模板，等待结果并把公开输出包装回能力复盘。
+- `buddy_final_reply` 通过事实简报、草稿和最终校验产出唯一 `final_reply`。
 - `output_final` 只展示 `final_reply`。
 
 ### Buddy 内部子图模板
 
 这些模板是搭建 `buddy_autonomous_loop` 的来源资产，标记为 `metadata.internal=true`，不进入普通模板列表和能力选择候选：
 
+- `buddy_context_recall`：整理历史、Buddy Home、页面上下文和预算，生成 `context_brief`。
 - `buddy_request_intake`：请求理解、早期可见回复和必要澄清。
-- `buddy_capability_loop`：能力选择、Skill 或可见图模板运行、结果复盘和循环判断。
-- `buddy_final_reply`：把请求理解、能力结果、复盘、Buddy Home 上下文汇总为唯一 `final_reply`。
+- `buddy_task_plan`：复杂任务的本轮任务计划和当前步骤。
+- `buddy_capability_loop`：能力选择、Skill 或可见图模板运行、结果分类、结果复盘和循环判断。
+- `buddy_final_reply`：把请求理解、任务计划、能力结果、复盘、Buddy Home 上下文整理为事实简报，再起草和校验唯一 `final_reply`。
 
-当前 Subgraph 节点仍保存嵌入式 `config.graph`，所以主循环不会在运行时引用模板 ID；模板优先的约束由契约测试保证：主循环三份嵌入图必须等于对应 internal 模板去掉 `metadata.internal` 后的 graph core。
+当前 Subgraph 节点仍保存嵌入式 `config.graph`，所以主循环不会在运行时引用模板 ID；模板优先的约束由契约测试保证：主循环嵌入图必须等于对应 internal 模板去掉 `metadata.internal` 后的 graph core。
 
 ### `buddy_autonomous_review`
 
@@ -1121,6 +1423,135 @@ Virtual Input Driver 不直接改 graph JSON。它通过编辑器已有交互入
 - 可并行的只读任务能通过图结构并行，副作用任务仍保持审批、顺序和回放清晰。
 - 命名迁移后，用户看到的是 LLM 节点语义，底层仍保持协议唯一和兼容可控。
 
+### 阶段 5：长期记忆系统落地
+
+目标：把长期记忆从 Buddy Home 的基础读写和零散文件投影，升级为可召回、可提议、可审计、可恢复的平台级记忆系统，并让 Buddy、自定义图模板和业务模板都能通过显式图节点使用它。
+
+小目标：
+
+1. 记忆存储：建立 `memories`、`memory_revisions`、`memory_events` 和 `memories_fts`，支持 layer、memory_type、scope、scope_key、status、confidence、importance、evidence、artifact refs、source run / node / skill / template 和 supersedes 信息。
+2. 记忆 Store：实现候选创建、应用、拒绝、更新、归档、supersede、revision 查询、FTS 同步、冲突检查和审计事件；所有更新必须事务化。
+3. 记忆 API：提供列表、搜索、候选、应用、拒绝、读取、更新、归档、supersede 和 revision 查询；API 输出应包含来源、置信度、artifact refs 和 conflict notes。
+4. 预算化召回：实现 scope/layer/type/status 过滤、top_k、max_chars、相关性排序和冲突提示，召回结果以 `memory_context` 或 `context_brief` 进入图 state。
+5. 记忆 Skills：新增 `memory_recall` 和 `memory_candidate_writer`，前者只读召回并返回 activity event，后者只生成候选和证据，不绕过 Store、command、revision 或审批。
+6. Buddy Home 对齐：让 Buddy Home 的 profile、session summary、memory、policy communication preferences、reports 和 capability usage stats 继续通过 command/revision 写回，并与长期记忆 Store 的来源和 revision 语义一致。
+7. 模板集成：官方模板可声明要召回的记忆 scope/layer；业务模板可在结束时输出成功/失败经验候选，并保留 evidence 与 artifact refs。
+8. 前端和运行详情：记忆候选、应用、拒绝、归档、supersede、召回命中和冲突提示应能在运行详情或 Buddy 历史中审计，不把长期资料变成看不见的 side effect。
+
+完成口径：
+
+- 可以创建、搜索、更新、归档和 supersede 记忆，并保留 revision。
+- 可以创建、应用和拒绝候选记忆，并追溯来源 run / node / skill / template。
+- 图模板可以接收预算化 `memory_context`，且注入文本明确标注为参考上下文。
+- `memory_recall` 可用，`memory_candidate_writer` 或等价受控 writer 可用。
+- Buddy Home 写回和长期记忆 Store 在 command、revision、activity event 和恢复路径上保持一致。
+
+### 阶段 6：业务模板和展示闭环
+
+目标：用可运行的业务模板证明 TooGraph 能承载复杂 Agent 应用，而不是只展示通用聊天或单次工具调用。SLG Creative Factory 是优先参考模板，但具体业务模板应继续遵守图优先、显式能力、artifact 输出、审计和评测约束。
+
+SLG Creative Factory 推荐链路：
+
+```text
+输入配置和 mock data
+  -> 抓取或读取新闻/竞品素材
+  -> 规范化素材
+  -> 选择 Top N 视频素材
+  -> 视频理解或文本降级分析
+  -> 总结竞品创意模式
+  -> 总结新闻辅助上下文
+  -> 生成 Creative Brief
+  -> 生成多版本创意脚本
+  -> 生成图片分镜脚本
+  -> 生成视频提示词
+  -> 评审创意版本
+  -> 条件返修循环
+  -> 输出最终摘要、最佳版本、TODO 和 artifacts
+  -> 生成候选记忆 / 进入 Eval
+```
+
+小目标：
+
+1. 模板文档：补齐业务模板目标、输入配置、Graph State、节点流程、Skill 列表、返修循环、输出 artifacts、长期记忆集成、mock data 模式和示例输出。
+2. 模板搭建：以 `node_system` 图模板表达初始化、抓取/读取、清洗、素材分析、brief、变体生成、分镜、视频提示词、评审、返修、final summary 和 output 节点。
+3. Skill 拆分：按可复用能力拆分 RSS/文章提取、广告素材获取、广告规范化、视频选择、视频理解、分镜包构建、视频提示词构建、创意评审等 Skill；每个 Skill 保持单职责和结构化输出。
+4. Mock Data：模板必须支持无外部网络依赖的稳定演示模式，关闭 RSS、广告抓取和视频下载时仍能跑通最小链路。
+5. Artifacts：运行应输出 brief、pattern summary、news context、script variants、storyboards、video prompts、review、best variant、final summary、TODO 清单和 final state 等可预览 artifact。
+6. 返修循环：`review_variants` 后通过 condition 判断是否回到生成节点；必须有最大返修轮次和耗尽后的诚实收束。
+7. 长期记忆：模板启动前显式召回 semantic / procedural / episodic_summary / capability_stat；结束后只输出带证据的候选记忆，由审批或后台复盘决定是否应用。
+8. 展示文档：README、模板说明、示例运行结果和截图应说明如何在无外部依赖下复现。
+
+完成口径：
+
+- 模板可在 mock data 模式下完整运行，生成 creative brief、多版本脚本、图片分镜、视频提示词、评审结果、最佳版本和 final summary。
+- 模板支持返修循环、最大返修轮次、artifact 输出和候选记忆输出。
+- 模板不依赖隐藏产品逻辑；外部抓取、视频理解、评审和写回都通过 Skill、Subgraph、output 或运行时原语表达。
+
+### 阶段 7：Hybrid RAG 知识库升级
+
+目标：把 Knowledge 从基础 FTS 检索升级为可扩展的 Hybrid RAG，使图模板能从文档、模板说明、历史案例、评分规则和业务资料中稳定取上下文，并带 citation 输出。
+
+目标链路：
+
+```text
+Query
+  -> Query Rewrite
+  -> FTS Keyword Recall
+  -> Vector Semantic Recall
+  -> Hybrid Merge
+  -> Rerank
+  -> Context Pack
+  -> Citation Grounding
+```
+
+小目标：
+
+1. Embedding 存储：增加 `knowledge_chunk_embeddings` 或等价表，记录 chunk_id、kb_id、provider、model、dimension、content_hash 和向量数据；MVP 可使用 SQLite JSON，后续可替换 FAISS、pgvector、Qdrant 或 Milvus。
+2. Embedding rebuild：提供知识库级 rebuild API，按 content_hash 避免重复生成，并记录 provider/model。
+3. Retrieve API：提供 hybrid retrieve，支持 query、knowledge base、top_k、mode、filters，返回 scores、citation、chunk metadata 和 context pack。
+4. Hybrid 排序：组合 FTS、vector、metadata boost 和可选 reranker；没有 reranker 时也要有可解释 scoring。
+5. Context Pack：Agent 不直接拼原始 chunk；先生成包含 citation_id、chunk_id、title、section、content、score 和引用规则的 context pack。
+6. 图模板集成：业务模板可在 brief、variant generation、review 等节点读取 `knowledge_context`，并和 `memory_context` 明确区分。
+7. SLG 知识库：准备 `slg_creative_factory_docs` 或同类业务知识库，包含模板说明、策略、评分规则、英文 UI 合规、视频生成限制和历史案例。
+
+完成口径：
+
+- 可以生成 embedding、执行 FTS、vector 和 hybrid retrieve。
+- Retrieve 返回 Context Pack 和 citation 信息。
+- Agent / LLM 节点可以使用 Knowledge Context，并在输出中保留必要 citation。
+- 至少一个业务模板使用知识库上下文并能在 Eval 中验证。
+
+### 阶段 8：Agent Eval 评测体系
+
+目标：让 TooGraph 的图模板具备可量化评估、可回归测试和可持续优化的能力。第一阶段保持轻量，不追求复杂平台化。
+
+核心对象：
+
+- `eval_suites`：一组针对 graph/template 的评测。
+- `eval_cases`：输入 state、期望输出、judge 配置和 tags。
+- `eval_runs`：一次 suite 运行的状态和汇总指标。
+- `eval_case_results`：每个 case 对应的 graph run、指标、judge 结果和错误。
+
+小目标：
+
+1. Eval API：支持创建 suite、创建 case、列出 case、运行 suite、查看 eval run 和 case result。
+2. Eval 运行：每个 case 发起独立 graph run，保留 run_id、状态、错误、节点失败和 artifacts。
+3. Rule-based Judge：先实现不依赖模型的结构化校验，例如必需 output、JSON schema、语言约束、最大返修轮次、artifact 是否生成。
+4. LLM Judge：可选引入模型评审，用于质量维度，例如 Hook 是否明确、冲突是否清晰、是否符合题材、提示词是否可执行。
+5. 通用指标：case pass rate、graph success rate、structured output valid rate、repair rate、latency、node failure、warning count。
+6. Skill 指标：expected skill hit rate、skill success rate、timeout、error count。
+7. 业务模板指标：以 SLG Creative Factory 为参考，验证 brief、variants、storyboard、video prompts、review、best variant、English UI compliance、revision loop 和 TODO outputs。
+8. 回归套件：至少准备 8 个业务模板 Eval Case，其中覆盖 mock data、关闭外部抓取、返修循环、最大轮次、视频分析降级、长期记忆召回和英文 UI 合规。
+
+完成口径：
+
+- 可以创建 Eval Suite / Case，并运行 Suite。
+- 每个 Eval Case 产生对应 graph run 和结构化结果。
+- Eval Run 记录状态、汇总指标和错误。
+- Rule-based Judge 可判断基础合规。
+- 至少一个 Case 验证长期记忆召回，至少一个 Case 验证返修循环，至少一个 Case 验证英文 UI 合规。
+- Eval 结果能在前端或 API 中查看。
+
 ### 贯穿所有阶段
 
 - 每个阶段开始前先对照 `docs/current_project_status.md`，确认哪些能力已落地、哪些描述已经过时。
@@ -1145,6 +1576,7 @@ Virtual Input Driver 不直接改 graph JSON。它通过编辑器已有交互入
 
 - 本文是 Buddy 自主 Agent 方向的唯一长期方针。
 - `docs/current_project_status.md` 记录当前实现快照；本文记录方向、原则和目标结构。
+- 原 `docs/future/toograph_p0_p1_development_goals.md` 的长期记忆、业务模板、Hybrid RAG 和 Eval 内容已经折叠进本文；不要恢复或重建该临时规划文档。
 - 阶段性调研、临时设计和完成记录应在有效内容折叠进本文或当前状态后删除。
 - `docs/future/` 不保留一事一议的调研文档。
 - 若本文和 `AGENTS.md` 冲突，以 `AGENTS.md` 的图优先、显式能力、显式权限、artifact 输出、审计和记忆卫生准则为准，并尽快修正文档。
