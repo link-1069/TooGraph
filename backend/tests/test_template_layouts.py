@@ -22,6 +22,36 @@ def _read_contracts(reads: list[dict]) -> list[dict]:
     return [{key: value for key, value in read.items() if not (key == "binding" and value is None)} for read in reads]
 
 
+BUDDY_INTERNAL_TEMPLATE_IDS = {
+    "buddy_request_intake",
+    "buddy_capability_loop",
+    "buddy_final_reply",
+    "buddy_autonomous_review",
+}
+
+BUDDY_MAIN_LOOP_SUBGRAPH_TEMPLATE_IDS = {
+    "buddy_turn_intake": "buddy_request_intake",
+    "buddy_capability_loop": "buddy_capability_loop",
+    "buddy_final_reply": "buddy_final_reply",
+}
+
+
+def _template_core(record: dict) -> dict:
+    return {
+        "state_schema": record["state_schema"],
+        "nodes": record["nodes"],
+        "edges": record["edges"],
+        "conditional_edges": record["conditional_edges"],
+        "metadata": record["metadata"],
+    }
+
+
+def _without_internal_metadata(core: dict) -> dict:
+    metadata = dict(core["metadata"])
+    metadata.pop("internal", None)
+    return {**core, "metadata": metadata}
+
+
 class TemplateLayoutTests(unittest.TestCase):
     def test_builtin_template_registry_contains_official_templates(self) -> None:
         records = _official_template_records()
@@ -381,6 +411,16 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["selected_capability"]["type"], "capability")
         self.assertEqual(states["capability_found"]["type"], "boolean")
         self.assertEqual(states["capability_result"]["type"], "result_package")
+        self.assertEqual(states["visible_page_operation_capability"]["type"], "capability")
+        self.assertEqual(
+            states["visible_page_operation_capability"]["value"],
+            {
+                "kind": "subgraph",
+                "key": "toograph_page_operation_workflow",
+                "name": "操作 TooGraph 页面",
+                "description": "内部可见页面操作通道，用于打开并运行选中的目标图模板。",
+            },
+        )
         self.assertEqual(states["capability_selection_audit"]["type"], "json")
         self.assertEqual(states["capability_gap"]["type"], "json")
         self.assertEqual(states["capability_trace"]["type"], "json")
@@ -447,6 +487,17 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(
             buddy_context_node["config"]["value"]["selected"],
             ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
+        )
+        visible_page_operation_input = nodes["input_visible_page_operation_capability"]
+        self.assertEqual(visible_page_operation_input["kind"], "input")
+        self.assertEqual(visible_page_operation_input["config"]["boundaryType"], "capability")
+        self.assertEqual(
+            visible_page_operation_input["config"]["value"]["key"],
+            "toograph_page_operation_workflow",
+        )
+        self.assertIn(
+            {"state": "visible_page_operation_capability", "required": True},
+            _read_contracts(nodes["buddy_capability_loop"]["reads"]),
         )
 
         intake_graph = nodes["buddy_turn_intake"]["config"]["graph"]
@@ -529,6 +580,50 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(cycle_graph["state_schema"]["capability_selection_audit"]["type"], "json")
         self.assertEqual(cycle_graph["state_schema"]["capability_gap"]["type"], "json")
         self.assertEqual(cycle_graph["state_schema"]["capability_trace"]["type"], "json")
+        self.assertEqual(cycle_graph["state_schema"]["visible_page_operation_capability"]["type"], "capability")
+        self.assertEqual(
+            cycle_graph["state_schema"]["visible_page_operation_capability"]["value"],
+            {
+                "kind": "subgraph",
+                "key": "toograph_page_operation_workflow",
+                "name": "操作 TooGraph 页面",
+                "description": "内部可见页面操作通道，用于打开并运行选中的目标图模板。",
+            },
+        )
+        self.assertEqual(cycle_graph["state_schema"]["visible_subgraph_operation_result"]["type"], "result_package")
+        self.assertIn("input_visible_page_operation_capability", cycle_graph["nodes"])
+        self.assertEqual(
+            cycle_graph["nodes"]["selected_capability_is_subgraph"]["config"]["rule"],
+            {"source": "$state.selected_capability.kind", "operator": "==", "value": "subgraph"},
+        )
+        visible_executor = cycle_graph["nodes"]["execute_visible_subgraph_operation"]
+        self.assertEqual(visible_executor["config"]["skillKey"], "")
+        self.assertEqual(
+            _read_contracts(visible_executor["reads"])[:1],
+            [
+                {"state": "visible_page_operation_capability", "required": True},
+            ],
+        )
+        self.assertNotIn({"state": "selected_capability", "required": True}, _read_contracts(visible_executor["reads"]))
+        self.assertIn({"state": "capability_selection_audit", "required": True}, _read_contracts(visible_executor["reads"]))
+        self.assertEqual(visible_executor["writes"], [{"state": "visible_subgraph_operation_result", "mode": "replace"}])
+        self.assertIn("toograph_page_operation_workflow", visible_executor["config"]["taskInstruction"])
+        self.assertIn("user_goal", visible_executor["config"]["taskInstruction"])
+        adapt_node = cycle_graph["nodes"]["adapt_visible_subgraph_result"]
+        self.assertEqual(adapt_node["config"]["skillKey"], "buddy_visible_subgraph_result_adapter")
+        self.assertEqual(
+            adapt_node["config"]["skillBindings"],
+            [
+                {
+                    "skillKey": "buddy_visible_subgraph_result_adapter",
+                    "outputMapping": {
+                        "result_package": "capability_result",
+                    },
+                }
+            ],
+        )
+        self.assertNotIn({"state": "selected_capability", "required": True}, _read_contracts(adapt_node["reads"]))
+        self.assertIn({"state": "visible_subgraph_operation_result", "required": True}, _read_contracts(adapt_node["reads"]))
         self.assertEqual(
             _read_contracts(cycle_graph["nodes"]["output_capability_selection_audit"]["reads"]),
             [{"state": "capability_selection_audit", "required": False}],
@@ -544,12 +639,25 @@ class TemplateLayoutTests(unittest.TestCase):
             {
                 "source": "capability_found_condition",
                 "branches": {
-                    "true": "execute_capability",
+                    "true": "selected_capability_is_subgraph",
                     "false": "review_missing_capability",
                     "exhausted": "review_missing_capability",
                 },
             },
         )
+        self.assertEqual(
+            cycle_graph["conditional_edges"][1],
+            {
+                "source": "selected_capability_is_subgraph",
+                "branches": {
+                    "true": "execute_visible_subgraph_operation",
+                    "false": "execute_capability",
+                    "exhausted": "execute_capability",
+                },
+            },
+        )
+        self.assertIn({"source": "execute_visible_subgraph_operation", "target": "adapt_visible_subgraph_result"}, cycle_graph["edges"])
+        self.assertIn({"source": "adapt_visible_subgraph_result", "target": "review_capability_result"}, cycle_graph["edges"])
         self.assertNotIn("output_approval_prompt", cycle_graph["nodes"])
 
         draft_graph = nodes["buddy_final_reply"]["config"]["graph"]
@@ -560,6 +668,44 @@ class TemplateLayoutTests(unittest.TestCase):
             _read_contracts(draft_graph["nodes"]["output_final_reply"]["reads"]),
             [{"state": "final_reply", "required": True}],
         )
+
+    def test_buddy_internal_templates_are_hidden_but_loadable(self) -> None:
+        public_template_ids = {record["template_id"] for record in _official_template_records()}
+
+        self.assertTrue(BUDDY_INTERNAL_TEMPLATE_IDS.isdisjoint(public_template_ids))
+        for template_id in sorted(BUDDY_INTERNAL_TEMPLATE_IDS):
+            with self.subTest(template_id=template_id):
+                template = load_template_record(template_id)
+                self.assertEqual(template["template_id"], template_id)
+                self.assertIs(template["metadata"]["internal"], True)
+                self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
+                payload = {
+                    key: value
+                    for key, value in template.items()
+                    if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+                }
+                graph = NodeSystemGraphPayload.model_validate(
+                    {
+                        **payload,
+                        "graph_id": f"test_{template_id}",
+                        "name": template["default_graph_name"],
+                    }
+                )
+                validation = validate_graph(graph)
+                self.assertEqual([issue.model_dump() for issue in validation.issues], [])
+                self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
+
+    def test_buddy_main_loop_embeds_internal_subgraph_template_sources(self) -> None:
+        template = load_template_record("buddy_autonomous_loop")
+
+        for node_id, template_id in BUDDY_MAIN_LOOP_SUBGRAPH_TEMPLATE_IDS.items():
+            with self.subTest(node_id=node_id, template_id=template_id):
+                embedded_graph = template["nodes"][node_id]["config"]["graph"]
+                source_template = load_template_record(template_id)
+                self.assertEqual(
+                    embedded_graph,
+                    _without_internal_metadata(_template_core(source_template)),
+                )
 
     def test_toograph_page_operation_workflow_contract(self) -> None:
         template = next(
@@ -730,6 +876,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "open_library_page",
                 "create_blank_graph",
                 "open_named_graph",
+                "run_named_template",
                 "run_current_graph",
                 "create_basic_llm_graph",
                 "rename_current_node",
@@ -740,15 +887,19 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("app.nav.library", flows_by_id["open_library_page"]["operationTargets"])
         self.assertIn("library.action.newBlankGraph", flows_by_id["create_blank_graph"]["operationTargets"])
         self.assertIn("library.graph.<graphId>.open", flows_by_id["open_named_graph"]["operationTargets"])
+        self.assertIn("template_target", flows_by_id["run_named_template"]["operationTargets"])
+        self.assertIn("library.template.<templateId>.open", flows_by_id["run_named_template"]["operationTargets"])
+        self.assertIn("editor.canvas.node.<inputNodeId>.input.value", flows_by_id["run_named_template"]["operationTargets"])
         self.assertIn("editor.action.runActiveGraph", flows_by_id["run_current_graph"]["operationTargets"])
         self.assertIn("editor.graph.playback", flows_by_id["create_basic_llm_graph"]["operationTargets"])
         self.assertIn("editor.graph.playback", flows_by_id["rename_current_node"]["operationTargets"])
+        self.assertIn("operation_result.commands includes run_template", flows_by_id["run_named_template"]["completionEvidence"])
         self.assertIn("triggered_run_status terminal", flows_by_id["run_current_graph"]["completionEvidence"])
         for flow_id, flow in flows_by_id.items():
             with self.subTest(flow_id=flow_id):
                 self.assertTrue(flow["sampleGoal"])
                 self.assertTrue(flow["completionEvidence"])
-                self.assertLessEqual(len(flow["operationTargets"]), 5)
+                self.assertLessEqual(len(flow["operationTargets"]), 6)
 
     def test_toograph_page_operation_workflow_declares_failure_guidance(self) -> None:
         template = next(
