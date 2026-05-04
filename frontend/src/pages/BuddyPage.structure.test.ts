@@ -50,13 +50,30 @@ test("BuddyPage opens template binding first and renders it as Buddy input rows"
   assert.match(source, /class="buddy-page__binding-card"/);
   assert.match(source, /class="buddy-page__template-select toograph-select"/);
   assert.match(source, /popper-class="toograph-select-popper buddy-page__binding-select-popper"/);
+  assert.match(source, /:fit-input-width="true"/);
+  assert.match(
+    source,
+    /const buddyBindingSelectFallbackPlacements: \("bottom-start" \| "top-start"\)\[] = \["bottom-start", "top-start"\];/,
+  );
+  const bindingSelectBlocks =
+    source.match(/<ElSelect[\s\S]*?class="buddy-page__(?:template-select|binding-select) toograph-select"[\s\S]*?>/g) ?? [];
+  assert.equal(bindingSelectBlocks.length, 2);
+  for (const block of bindingSelectBlocks) {
+    assert.match(block, /:teleported="true"/);
+    assert.match(block, /placement="bottom-start"/);
+    assert.match(block, /:fallback-placements="buddyBindingSelectFallbackPlacements"/);
+  }
   assert.match(source, /class="buddy-page__binding-select toograph-select"/);
   assert.match(source, /class="buddy-page__binding-option"/);
   assert.match(source, /bindingOptionDisabledReason\(option\)/);
   assert.match(source, /class="buddy-page__binding-action buddy-page__binding-action--primary"/);
   assert.match(source, /class="buddy-page__binding-action buddy-page__binding-action--secondary"/);
   assert.match(source, /:model-value="row\.selectedNodeId"/);
-  assert.match(source, /@update:model-value="setBindingInputNode\(row\.source, \$event\)"/);
+  assert.match(source, /@change="setBindingInputNode\(row\.source, \$event\)"/);
+  assert.match(source, /function closeBindingSelect/);
+  assert.match(source, /bindingTemplateSelectRef/);
+  assert.match(source, /setBindingInputSelectRef/);
+  assert.match(source, /closeBindingSelect\(source\);/);
   assert.doesNotMatch(source, /:model-value="bindingDraft\.input_bindings\[row\.nodeId\]/);
   assert.doesNotMatch(source, /function setBindingSource\(nodeId: string, value: unknown\)/);
   assert.doesNotMatch(source, /<ElTable :data="bindingSourceRows"/);
@@ -71,7 +88,7 @@ test("BuddyPage exposes the unified buddy permission mode", () => {
 });
 
 test("BuddyPage reloads buddy data when the widget reports external updates", () => {
-  assert.match(source, /import \{ computed, onMounted, ref, watch \} from "vue";/);
+  assert.match(source, /import \{ computed, nextTick, onMounted, ref, watch \} from "vue";/);
   assert.match(source, /import \{ useBuddyContextStore \} from "@\/stores\/buddyContext";/);
   assert.match(source, /const buddyContextStore = useBuddyContextStore\(\);/);
   assert.match(source, /function hasActiveBuddyPageWrite\(\)/);
