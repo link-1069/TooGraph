@@ -204,7 +204,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 175
+          "y": 476
         },
         "collapsed": false
       },
@@ -227,7 +227,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 290
+          "y": 892
         },
         "collapsed": false
       },
@@ -250,7 +250,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 405
+          "y": 1308
         },
         "collapsed": false
       },
@@ -273,7 +273,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 635
+          "y": 1724
         },
         "collapsed": false
       },
@@ -306,7 +306,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 750
+          "y": 2140
         },
         "collapsed": false
       },
@@ -329,7 +329,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 865
+          "y": 2556
         },
         "collapsed": false
       },
@@ -352,7 +352,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 980
+          "y": 2972
         },
         "collapsed": false
       },
@@ -375,7 +375,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 1095
+          "y": 3388
         },
         "collapsed": false
       },
@@ -471,7 +471,7 @@
       "description": "只有自主复盘明确需要低风险写回时才执行 Buddy Home Writer；否则只输出复盘审计。",
       "ui": {
         "position": {
-          "x": 1160,
+          "x": 1176,
           "y": 440
         },
         "collapsed": false,
@@ -591,7 +591,7 @@
       "description": "",
       "ui": {
         "position": {
-          "x": 2240,
+          "x": 2256,
           "y": 210
         },
         "collapsed": false
@@ -616,8 +616,8 @@
       "description": "",
       "ui": {
         "position": {
-          "x": 2240,
-          "y": 400
+          "x": 2256,
+          "y": 646
         },
         "collapsed": false
       },
@@ -641,8 +641,8 @@
       "description": "",
       "ui": {
         "position": {
-          "x": 2240,
-          "y": 590
+          "x": 2256,
+          "y": 1082
         },
         "collapsed": false
       },

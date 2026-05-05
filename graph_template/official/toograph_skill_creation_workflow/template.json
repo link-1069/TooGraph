@@ -405,7 +405,7 @@
       "description": "从启用的模板和 Skill 中检查是否已有能力能满足目标需求。",
       "ui": {
         "position": {
-          "x": 440,
+          "x": 596,
           "y": 470
         },
         "collapsed": false
@@ -458,7 +458,7 @@
       "description": "判断需求是否清晰，是否需要澄清，以及是否继续创建新 Skill。",
       "ui": {
         "position": {
-          "x": 940,
+          "x": 1152,
           "y": 430
         },
         "collapsed": false
@@ -508,7 +508,7 @@
       "description": "需求不清晰或已有能力可能已满足时，先让用户确认。",
       "ui": {
         "position": {
-          "x": 1460,
+          "x": 1708,
           "y": 470
         },
         "collapsed": false
@@ -544,7 +544,7 @@
       "description": "把不清晰的点转成用户容易回答的选择题和少量开放问题。",
       "ui": {
         "position": {
-          "x": 2100,
+          "x": 2364,
           "y": 170
         },
         "collapsed": false
@@ -706,7 +706,7 @@
       "description": "调用 TooGraph Skill Builder 生成 Skill 包必要文件内容。",
       "ui": {
         "position": {
-          "x": 5940,
+          "x": 5976,
           "y": 360
         },
         "collapsed": false
@@ -792,7 +792,7 @@
       "description": "判断生成的生命周期脚本是否需要运行 pytest 测试。",
       "ui": {
         "position": {
-          "x": 6480,
+          "x": 6532,
           "y": 360
         },
         "collapsed": false
@@ -838,7 +838,7 @@
       "description": "有 Python 生命周期脚本时进入测试，否则进入生成方案审查。",
       "ui": {
         "position": {
-          "x": 6980,
+          "x": 7088,
           "y": 430
         },
         "collapsed": false
@@ -874,7 +874,7 @@
       "description": "调用脚本测试技能编写 pytest 并运行生成的 Python 脚本。",
       "ui": {
         "position": {
-          "x": 7640,
+          "x": 7744,
           "y": 240
         },
         "collapsed": false
@@ -940,7 +940,7 @@
       "description": "测试失败时回到修复上下文，最多修复三轮。",
       "ui": {
         "position": {
-          "x": 8180,
+          "x": 8300,
           "y": 310
         },
         "collapsed": false
@@ -976,7 +976,7 @@
       "description": "总结生成的 Skill 文件、测试结果和准备写入的路径，作为断点供用户审查。",
       "ui": {
         "position": {
-          "x": 8940,
+          "x": 8956,
           "y": 360
         },
         "collapsed": false
@@ -1088,7 +1088,7 @@
       "description": "把生成的 SKILL.md 写入用户 Skill 目录。",
       "ui": {
         "position": {
-          "x": 11080,
+          "x": 11136,
           "y": 300
         },
         "collapsed": false
@@ -1138,7 +1138,7 @@
       "description": "只有生成了 before_llm.py 时才写入。",
       "ui": {
         "position": {
-          "x": 11580,
+          "x": 11692,
           "y": 360
         },
         "collapsed": false
@@ -1174,7 +1174,7 @@
       "description": "写入可选 before_llm.py。",
       "ui": {
         "position": {
-          "x": 12220,
+          "x": 12348,
           "y": 180
         },
         "collapsed": false
@@ -1224,7 +1224,7 @@
       "description": "只有生成了 after_llm.py 时才写入。",
       "ui": {
         "position": {
-          "x": 12700,
+          "x": 12904,
           "y": 360
         },
         "collapsed": false
@@ -1260,7 +1260,7 @@
       "description": "写入可选 after_llm.py。",
       "ui": {
         "position": {
-          "x": 13340,
+          "x": 13560,
           "y": 180
         },
         "collapsed": false
@@ -1310,7 +1310,7 @@
       "description": "只有生成了 requirements.txt 时才写入。",
       "ui": {
         "position": {
-          "x": 13820,
+          "x": 14116,
           "y": 360
         },
         "collapsed": false
@@ -1346,7 +1346,7 @@
       "description": "写入可选 requirements.txt。",
       "ui": {
         "position": {
-          "x": 14460,
+          "x": 14772,
           "y": 180
         },
         "collapsed": false
@@ -1396,7 +1396,7 @@
       "description": "汇总写入结果、测试状态和下一步使用方式。",
       "ui": {
         "position": {
-          "x": 14960,
+          "x": 15328,
           "y": 360
         },
         "collapsed": false
@@ -1479,7 +1479,7 @@
       "ui": {
         "position": {
           "x": 3740,
-          "y": 780
+          "y": 816
         },
         "collapsed": false
       },
@@ -1520,7 +1520,7 @@
       "description": "展示最终 Skill 创建结果。",
       "ui": {
         "position": {
-          "x": 15460,
+          "x": 15884,
           "y": 420
         },
         "collapsed": false
@@ -1546,7 +1546,7 @@
       "ui": {
         "position": {
           "x": 40,
-          "y": 760
+          "y": 936
         },
         "collapsed": false
       },

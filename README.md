@@ -273,7 +273,7 @@ TooGraph/
 ├── knowledge/TooGraph-official/
 │   └── *.md                  # 项目官方知识库源文档
 ├── docs/
-│   ├── current_project_status.md
+│   ├── structured-output-and-function-calling.md
 │   └── future/
 ├── scripts/
 │   ├── start.mjs             # 跨平台单端口启动器
@@ -316,23 +316,30 @@ TooGraph/
 
 - `advanced_web_research_loop`（界面名称：高级联网搜索）
 - `buddy_autonomous_loop`（界面名称：伙伴自主循环）
+- `buddy_capability_loop`（界面名称：伙伴能力循环，官方基础能力子图，默认不被能力发现）
+- `toograph_page_operation_workflow`（界面名称：操作 TooGraph 页面）
 - `toograph_skill_creation_workflow`（界面名称：创建自定义 Skill）
 - `buddy_autonomous_review`（界面名称：自主复盘，伙伴运行后的内部后台写回模板，不作为普通用户入口）
+- `buddy_request_intake`（界面名称：请求理解，Buddy 内部子图模板，不作为普通用户入口）
 
 `advanced_web_research_loop` 是当前联网搜索基线模板：它会规划搜索词、调用 `web_search`、判断证据是否足够、按需循环补查，并输出最终答案；证据链接和本地 source documents 作为中间 state 供后续节点使用，不直接连接 output 节点。
 
-`buddy_autonomous_loop` 是当前 Buddy 的可见运行路径：读取 Buddy Home 和用户请求，选择一个 Skill 或动态图模板能力，执行后回到 LLM 复盘，并在需要时继续循环、暂停补充信息或输出唯一用户可见的 `final_reply`。
+`buddy_autonomous_loop` 是当前 Buddy 的可见运行路径：读取 Buddy Home 和用户请求，进行请求理解、按需任务计划、能力循环和最终回复。需求不明确或能力缺口通过 `final_reply` 询问用户并结束本轮，不在聊天中透传断点 resume。
+
+`buddy_capability_loop` 是 Buddy 的官方能力循环子图：选择一个 Skill 或可运行图模板能力，执行后复盘结果，并决定继续能力循环、透传目标模板输出、说明失败或交给最终回复收束。
+
+`toograph_page_operation_workflow` 是 Buddy 可见操作 TooGraph 页面和运行指定图模板的官方入口：页面操作器负责固定化映射，例如进入图与模板、搜索目标模板、打开模板、写入本次目标、点击运行、等待结果并回收公开输出。
 
 `buddy_autonomous_review` 是当前 Buddy 的后台自主复盘路径：可见回复完成后由前端用 run snapshot 启动，模型自行判断是否需要低风险写回 Buddy Home，并通过 `buddy_home_writer` 走 command / revision 路径留下可回滚记录。
 
-`toograph_skill_creation_workflow` 是创建用户自定义 Skill 的官方流程模板：它会检查已有能力、澄清需求、让用户确认示例输入输出，调用 `toograph_skill_builder` 生成 `skill_key` / `skill.json` / `SKILL.md` / `before_llm.py` / `after_llm.py` / `requirements.txt`，再用 `toograph_script_tester` 测试生命周期脚本或相关文件；测试失败会回到构建节点修复，最后只有在用户明确批准后才通过 `local_workspace_executor` 写入 `skill/user/<skill_key>/`。
+`toograph_skill_creation_workflow` 是创建用户自定义 Skill 的官方流程模板：它会检查已有能力、澄清需求、生成示例输入输出，调用 `toograph_skill_builder` 生成 `skill_key` / `skill.json` / `SKILL.md` / `before_llm.py` / `after_llm.py` / `requirements.txt`，再用 `toograph_script_tester` 测试生命周期脚本或相关文件；测试失败会回到构建节点修复，最后通过受控执行器写入 `skill/user/<skill_key>/`。
 
 ## 文档与知识库
 
-- `README.md`：项目入口、启动方式、当前能力和未来方向。
-- `docs/current_project_status.md`：当前状态快照。
+- `README.md`：项目入口、启动方式、项目结构和使用说明。
 - `skill/SKILL_AUTHORING_GUIDE.md`：官方 Skill 根目录下的 Skill 包结构、生命周期入口、权限边界和新建 Skill 注意事项。
-- `docs/future/`：仍未完成的长期设想。
+- `docs/future/buddy-autonomous-agent-roadmap.md`：Buddy 和平台能力的剩余路线图，只记录待做内容。
+- `docs/structured-output-and-function-calling.md`：结构化输出与 function calling 适配层待办。
 - `knowledge/TooGraph-official/`：可导入的项目官方知识库源文档。
 - `AGENTS.md`：协作代理工作约定。
 

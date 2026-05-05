@@ -14,10 +14,10 @@ Current phase:
 - Supports safe `click`, `focus`, `clear`, `type`, `press`, and `wait` commands from the current page operation book.
 - Supports `graph_edit editor.graph.playback` on editor pages. For graph editing, the LLM outputs product-semantic `graph_edit_intents`; the frontend compiles them into graph commands and visible playback steps.
 - Validates commands against the current runtime page operation book. Off-book, stale-page, hidden, disabled, destructive, or confirmation-gated targets are rejected before a virtual operation event is accepted.
-- Emits a deterministic `operation_request_id` plus `expected_continuation` metadata so the frontend can resume the paused graph with `page_operation_context`, `page_context`, `operation_result`, and compact `operation_report` after real UI execution.
+- Emits a deterministic `operation_request_id` plus runtime-owned `expected_continuation` metadata so the frontend can resume the internal page-operation waitpoint with `page_operation_context`, `page_context`, `operation_result`, and compact `operation_report` after real UI execution. Official templates do not declare this as breakpoint metadata.
 - Rejects Buddy self surfaces such as the Buddy page, Buddy floating window, Buddy avatar, and debug controls.
 - Does not expose DOM selectors, screen coordinates, double-click recipes, or low-level mouse trajectories to the LLM.
-- The official `toograph_page_operation_workflow` graph template is the preferred multi-step wrapper around this Skill. As a subgraph capability it exposes only the user's `user_goal`; page operation books and refreshed page facts come from Skill runtime context and resume payloads. The Skill accepts or rejects one semantic operation; the template loops, waits for frontend confirmation, verifies refreshed page facts, and writes the final user explanation.
+- The official `toograph_page_operation_workflow` graph template is the preferred multi-step wrapper around this Skill. As a subgraph capability it exposes only the user's `user_goal`; page operation books and refreshed page facts come from Skill runtime context and runtime continuation payloads. The Skill accepts or rejects one semantic operation; the template loops, waits for frontend confirmation, verifies refreshed page facts, and writes the final user explanation.
 
 Graph state inputs:
 

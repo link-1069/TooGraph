@@ -28,7 +28,7 @@ class LangGraphInterruptsTests(unittest.TestCase):
         self.assertEqual(source_node_from_after_breakpoint(wrapped), "draft")
         self.assertEqual(source_node_from_after_breakpoint("draft"), "draft")
 
-    def test_resolve_interrupt_configuration_uses_only_interrupt_after_metadata(self) -> None:
+    def test_resolve_interrupt_configuration_ignores_legacy_keys(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(
             {
                 "graph_id": "graph",
@@ -48,6 +48,25 @@ class LangGraphInterruptsTests(unittest.TestCase):
         interrupt_after = resolve_interrupt_configuration(graph, allowed_nodes={"draft", "review"})
 
         self.assertEqual(interrupt_after, ["review"])
+
+    def test_resolve_interrupt_configuration_ignores_internal_ui_operation_continuations(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph",
+                "name": "Graph",
+                "state_schema": {},
+                "nodes": {},
+                "edges": [],
+                "conditional_edges": [],
+                "metadata": {
+                    "auto_resume_after_ui_operation_nodes": ["execute_page_operation", "missing"],
+                },
+            }
+        )
+
+        interrupt_after = resolve_interrupt_configuration(graph, allowed_nodes={"execute_page_operation"})
+
+        self.assertIsNone(interrupt_after)
 
     def test_waiting_detection_and_interrupt_serialization(self) -> None:
         interrupt = SimpleNamespace(id="interrupt-1", value={"prompt": "Review"})

@@ -187,7 +187,7 @@
                       </span>
                       <ElSwitch
                         :model-value="item.status === 'active' && item.capabilityDiscoverable"
-                        :disabled="item.status !== 'active' || isItemActionPending(item)"
+                        :disabled="!item.canToggleCapabilityDiscoverable || isItemActionPending(item)"
                         :aria-label="capabilityDiscoverableToggleLabel(item)"
                         @change="setTemplateCapabilityDiscoverable(item, Boolean($event))"
                       />
@@ -339,6 +339,9 @@ function isItemActionPending(item: GraphLibraryItem): boolean {
 }
 
 function capabilityDiscoverableToggleLabel(item: GraphLibraryItem): string {
+  if (item.capabilityDiscoverableBlockedReason) {
+    return t("graphLibrary.capabilityDiscoverableBlocked");
+  }
   return item.capabilityDiscoverable && item.status === "active"
     ? t("graphLibrary.disableCapabilityDiscovery")
     : t("graphLibrary.enableCapabilityDiscovery");
@@ -468,7 +471,7 @@ async function setItemEnabled(item: GraphLibraryItem, enabled: boolean) {
 }
 
 async function setTemplateCapabilityDiscoverable(item: GraphLibraryItem, capabilityDiscoverable: boolean) {
-  if (item.kind !== "template" || item.status !== "active") {
+  if (item.kind !== "template" || !item.canToggleCapabilityDiscoverable) {
     return;
   }
   actionItemKey.value = capabilityActionKey(item);

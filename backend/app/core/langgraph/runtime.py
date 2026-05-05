@@ -67,7 +67,13 @@ from app.core.runtime.node_system_executor import (
     _execute_node,
 )
 from app.core.runtime.state import create_initial_run_state, set_run_status, touch_run_lifecycle, utc_now_iso
-from app.core.schemas.node_system import NodeSystemGraphDocument, NodeSystemInputNode, NodeSystemOutputNode, NodeSystemSubgraphNode
+from app.core.schemas.node_system import (
+    NodeSystemAgentNode,
+    NodeSystemGraphDocument,
+    NodeSystemInputNode,
+    NodeSystemOutputNode,
+    NodeSystemSubgraphNode,
+)
 from app.core.storage.run_store import save_run
 from app.templates.loader import load_template_record
 
@@ -159,7 +165,11 @@ def execute_node_system_graph_langgraph(
             ),
         )
 
-    interrupt_after = _resolve_interrupt_configuration(graph, allowed_nodes=set(build_plan.runtime_nodes))
+    interrupt_after = _resolve_runtime_interrupt_after_nodes(
+        graph,
+        configured_interrupt_after=_resolve_interrupt_configuration(graph, allowed_nodes=set(build_plan.runtime_nodes)),
+        runtime_nodes=set(build_plan.runtime_nodes),
+    )
     after_breakpoint_nodes = _build_after_breakpoint_node_map(
         interrupt_after,
         runtime_nodes=set(build_plan.runtime_nodes),
@@ -733,6 +743,28 @@ def _subgraph_input_boundaries(node: NodeSystemSubgraphNode) -> list[tuple[str, 
         if isinstance(inner_node, NodeSystemInputNode) and inner_node.writes:
             boundaries.append((inner_node_name, inner_node.writes[0].state))
     return boundaries
+
+
+def _resolve_runtime_interrupt_after_nodes(
+    graph: NodeSystemGraphDocument,
+    *,
+    configured_interrupt_after: list[str] | None,
+    runtime_nodes: set[str],
+) -> list[str] | None:
+    nodes = list(configured_interrupt_after or [])
+    for node_id in runtime_nodes:
+        node = graph.nodes.get(node_id)
+        if _is_runtime_page_operation_node(node) and node_id not in nodes:
+            nodes.append(node_id)
+    return nodes or None
+
+
+def _is_runtime_page_operation_node(node: Any) -> bool:
+    if not isinstance(node, NodeSystemAgentNode):
+        return False
+    if node.config.skill_key == "toograph_page_operator":
+        return True
+    return any(binding.skill_key == "toograph_page_operator" for binding in node.config.skill_bindings)
 
 
 def _subgraph_output_boundaries(node: NodeSystemSubgraphNode) -> list[tuple[str, str]]:

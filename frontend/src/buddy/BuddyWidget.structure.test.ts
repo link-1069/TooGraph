@@ -872,50 +872,41 @@ test("BuddyWidget starts autonomous review as a separate background run after th
   assert.doesNotMatch(componentSource, /activeRunId\.value = reviewRun\.run_id/);
 });
 
-test("BuddyWidget treats awaiting-human graph runs as conversational pauses", () => {
-  assert.match(componentSource, /import \{ cancelRun, fetchRun, resumeRun \} from "\.\.\/api\/runs\.ts";/);
-  assert.match(componentSource, /buildBuddyConversationalPausePrompt/);
-  assert.match(componentSource, /buildBuddyConversationalPauseResumePayload/);
+test("BuddyWidget keeps awaiting-human runs out of the normal chat resume flow", () => {
+  assert.match(componentSource, /import \{ fetchRun, resumeRun \} from "\.\.\/api\/runs\.ts";/);
+  assert.doesNotMatch(componentSource, /buildBuddyConversationalPausePrompt/);
+  assert.doesNotMatch(componentSource, /buildBuddyConversationalPauseResumePayload/);
   assert.match(componentSource, /const pausedBuddyRun = ref<RunDetail \| null>\(null\);/);
   assert.match(componentSource, /const pausedBuddyAssistantMessageId = ref<string \| null>\(null\);/);
   assert.doesNotMatch(componentSource, /<BuddyPauseCard[\s\S]*shouldShowPausedRunCard/);
   assert.doesNotMatch(componentSource, /import BuddyPauseCard from "\.\/BuddyPauseCard\.vue";/);
-  assert.match(componentSource, /resumePausedBuddyRun/);
   assert.match(componentSource, /runDetail\.status === "awaiting_human"/);
-  assert.match(componentSource, /shouldHoldBuddyQueueDrain\(\{ hasPausedRun: Boolean\(pausedBuddyRun\.value\) \}\)/);
+  assert.doesNotMatch(componentSource, /resumePausedBuddyRunFromChatReply/);
+  assert.doesNotMatch(componentSource, /composerDecision\.kind === "resume_paused_run"/);
   assert.doesNotMatch(componentSource, /void startBuddyAutonomousReviewRun\(runDetail\);[\s\S]*runDetail\.status === "awaiting_human"/);
 });
 
 test("BuddyWidget does not surface paused runs as an in-chat action card", () => {
   assert.match(pauseCardSource, /buddy\.pause\.cancelRun/);
   assert.doesNotMatch(componentSource, /@cancel="cancelPausedBuddyRun"/);
-  assert.match(componentSource, /async function cancelPausedBuddyRun\(\)/);
-  assert.match(componentSource, /await cancelRun\(run\.run_id,\s*t\("buddy\.pause\.cancelReason"\)\)/);
-  assert.match(
-    componentSource,
-    /updateAssistantMessage\(assistantMessageId,\s*t\("buddy\.pause\.cancelledReply"\),\s*\{[\s\S]*includeInContext:\s*false/,
-  );
-  assert.match(componentSource, /void persistBuddyMessage\(sessionId,[\s\S]*runId:\s*run\.run_id,[\s\S]*includeInContext:\s*false/);
+  assert.doesNotMatch(componentSource, /async function cancelPausedBuddyRun\(\)/);
+  assert.doesNotMatch(componentSource, /await cancelRun\(run\.run_id/);
 });
 
-test("BuddyWidget persists only conversational awaiting-human pauses outside model context", () => {
+test("BuddyWidget keeps page-operation waiting state internal to auto resume", () => {
   assert.match(componentSource, /type BuddyPauseHandlingOptions = \{[\s\S]*persist\?: boolean;[\s\S]*\};/);
   assert.match(componentSource, /handleBuddyRunAwaitingHuman\(runDetail,\s*assistantMessage\.id,\s*\{ persist: true \}\)/);
   assert.match(componentSource, /handleBuddyRunAwaitingHuman\(resumedRunDetail,\s*assistantMessageId,\s*\{ persist: true \}\)/);
-  assert.match(
-    componentSource,
-    /const isAutoResumablePageOperationPause = Boolean\(findAutoResumablePageOperationRequestId\(run\)\);[\s\S]*const pauseReply = isAutoResumablePageOperationPause[\s\S]*t\("buddy\.pause\.autoResumingPageOperation"\)[\s\S]*buildBuddyConversationalPausePrompt\(run,\s*graph\);[\s\S]*updateAssistantMessage\(assistantMessageId,\s*pauseReply,\s*\{[\s\S]*includeInContext:\s*!isAutoResumablePageOperationPause,[\s\S]*runId:\s*run\.run_id/,
-  );
-  assert.match(
-    componentSource,
-    /if \(options\.persist && activeSessionId\.value && !isAutoResumablePageOperationPause\) \{[\s\S]*persistBuddyMessage\(activeSessionId\.value,[\s\S]*runId:\s*run\.run_id,[\s\S]*includeInContext:\s*!isAutoResumablePageOperationPause/,
-  );
+  assert.match(componentSource, /const isAutoResumablePageOperationPause = Boolean\(findAutoResumablePageOperationRequestId\(run\)\);/);
+  assert.match(componentSource, /if \(isAutoResumablePageOperationPause\) \{[\s\S]*updateAssistantMessage\(assistantMessageId,\s*""/);
+  assert.doesNotMatch(componentSource, /buildBuddyConversationalPausePrompt/);
+  assert.doesNotMatch(componentSource, /includeInContext:\s*!isAutoResumablePageOperationPause/);
 });
 
 test("BuddyWidget finishes auto-resumed page-operation runs back into the chat reply", () => {
   assert.match(
     componentSource,
-    /const completedTriggeredRunDetail = await waitForTriggeredRunCompletion\(triggeredRun,[\s\S]*\);[\s\S]*triggeredRunDetail = completedTriggeredRunDetail;[\s\S]*if \(completedTriggeredRunDetail\) \{[\s\S]*promoteBackgroundTemplateRunResultToBuddyReply\(operationPlan,\s*completedTriggeredRunDetail,\s*execution\.graph\);[\s\S]*\}[\s\S]*status = isVirtualOperationInterrupted\(token\) \? "interrupted" : "succeeded";/,
+    /const completedTriggeredRunDetail = await waitForTriggeredRunCompletion\(triggeredRun,[\s\S]*\);[\s\S]*triggeredRunDetail = completedTriggeredRunDetail;[\s\S]*if \(completedTriggeredRunDetail\) \{[\s\S]*promoteBackgroundTemplateRunResultToBuddyReply\(operationPlan,\s*completedTriggeredRunDetail,\s*execution\.graph\);[\s\S]*\}[\s\S]*status = completedTriggeredRunDetail\?\.status === "failed" \? "failed" : "succeeded";/,
   );
   assert.match(componentSource, /function promoteBackgroundTemplateRunResultToBuddyReply\(/);
   assert.match(componentSource, /function findPrimaryCompletedTextPublicOutput\(/);
@@ -932,6 +923,17 @@ test("BuddyWidget finishes auto-resumed page-operation runs back into the chat r
   assert.match(componentSource, /function clearAutoResumingPageOperationPlaceholder\(assistantMessageId: string, runId: string\)/);
 });
 
+test("BuddyWidget still resumes page-operation runs when visible playback is interrupted after a target run exists", () => {
+  assert.doesNotMatch(
+    extractSourceBetween("async function maybeAutoResumePageOperationRun(", "function resolveBackgroundTemplateRunOperation"),
+    /if \(operationResult\.status === "interrupted"\) \{[\s\S]*return;[\s\S]*\}/,
+  );
+  assert.match(
+    extractSourceBetween("async function executeVirtualOperationRequest(", "async function executeVirtualOperationCommands"),
+    /triggeredRunDetail\?\.status \?\? triggeredRun\?\.initialStatus/,
+  );
+});
+
 test("BuddyWidget hides parent trace capsules while a background template target is running", () => {
   assert.match(componentSource, /function syncBackgroundTemplateRunDisplay\(/);
   assert.match(
@@ -944,35 +946,29 @@ test("BuddyWidget hides parent trace capsules while a background template target
   );
 });
 
-test("BuddyWidget recovers awaiting-human paused runs after session activation", () => {
-  assert.match(
-    componentSource,
-    /import \{ findLatestRecoverablePausedRunMessage, isRecoverablePausedRunStatus \} from "\.\/buddyPausedRunRecovery\.ts";/,
-  );
+test("BuddyWidget does not recover paused runs as chat-resumable prompts after session activation", () => {
+  assert.doesNotMatch(componentSource, /findLatestRecoverablePausedRunMessage/);
+  assert.doesNotMatch(componentSource, /isRecoverablePausedRunStatus/);
   assert.match(componentSource, /let chatSessionActivationGeneration = 0;/);
   assert.match(componentSource, /const activationGeneration = \+\+chatSessionActivationGeneration;/);
-  assert.match(componentSource, /await recoverPausedBuddyRunFromLoadedMessages\(sessionId,\s*activationGeneration\);/);
-  assert.match(componentSource, /async function recoverPausedBuddyRunFromLoadedMessages\(sessionId: string, activationGeneration: number\)/);
-  assert.match(componentSource, /const candidate = findLatestRecoverablePausedRunMessage\(messages\.value\);/);
-  assert.match(componentSource, /const run = await fetchRun\(candidate\.runId\);/);
-  assert.match(componentSource, /if \(!isRecoverablePausedRunStatus\(run\.status\)\) \{/);
+  assert.match(componentSource, /void activationGeneration;/);
+  assert.doesNotMatch(componentSource, /recoverPausedBuddyRunFromLoadedMessages/);
   assert.doesNotMatch(componentSource, /resetRunTraceForMessage\(candidate\.messageId\);/);
-  assert.match(componentSource, /handleBuddyRunAwaitingHuman\(run,\s*candidate\.messageId\);/);
-  assert.match(componentSource, /buddy\.pause\.recoveryFailed/);
+  assert.doesNotMatch(componentSource, /handleBuddyRunAwaitingHuman\(run,\s*candidate\.messageId\);/);
 });
 
-test("BuddyWidget keeps recovered paused runs session-locked and queue-safe", () => {
+test("BuddyWidget keeps paused background runs from locking the chat queue", () => {
   assert.match(componentSource, /const isSessionSwitchLocked = computed\([\s\S]*activeRunId\.value !== null/);
   assert.doesNotMatch(componentSource, /isActiveTraceUnfinished\(\)/);
   assert.match(componentSource, /shouldHoldBuddyQueueDrain\(\{ hasPausedRun: Boolean\(pausedBuddyRun\.value\) \}\)/);
   assert.doesNotMatch(componentSource, /:disabled="Boolean\(pausedBuddyRun\)"/);
   assert.match(componentSource, /resolveBuddyComposerDecision\(\{[\s\S]*hasPausedRun: Boolean\(pausedBuddyRun\.value\),[\s\S]*isResumeBusy: pausedBuddyResumeBusy\.value/);
-  assert.match(componentSource, /if \(composerDecision\.kind === "resume_paused_run"\) \{[\s\S]*resumePausedBuddyRunFromChatReply/);
+  assert.doesNotMatch(componentSource, /resumePausedBuddyRunFromChatReply/);
 });
 
 test("BuddyWidget can deny a pending permission approval from the pause card", () => {
   assert.doesNotMatch(componentSource, /function denyPausedBuddyPermissionApproval\(\)/);
-  assert.match(componentSource, /buildBuddyConversationalPauseResumePayload/);
+  assert.doesNotMatch(componentSource, /buildBuddyConversationalPauseResumePayload/);
   assert.doesNotMatch(componentSource, /BuddyPauseCard/);
 });
 
@@ -992,18 +988,17 @@ test("BuddyWidget shows pause context before asking for more input", () => {
   assert.doesNotMatch(pauseCardSource, /<label[\s\S]*v-for="row in pausedBuddyRequiredRows"[\s\S]*class="buddy-widget__pause-input"/);
 });
 
-test("BuddyWidget scrolls conversational pauses like normal messages", () => {
+test("BuddyWidget does not render conversational pause UI inside chat", () => {
   assert.doesNotMatch(componentSource, /function scrollPausedBuddyCardIntoView\(\)/);
   assert.doesNotMatch(componentSource, /\.buddy-widget__pause-card/);
-  assert.match(componentSource, /if \(keepRunPaused\) \{[\s\S]*await scrollMessagesToBottom\(\);[\s\S]*\}/);
+  assert.doesNotMatch(componentSource, /buildBuddyConversationalPausePrompt/);
   assert.doesNotMatch(componentSource, /await scrollPausedBuddyCardIntoView\(\)/);
 });
 
-test("BuddyWidget resumes paused runs from the next chat reply", () => {
-  assert.match(componentSource, /async function resumePausedBuddyRunFromChatReply\(userMessage: string, assistantMessageId: string\)/);
-  assert.match(componentSource, /buildBuddyConversationalPauseResumePayload\(run,\s*graph,\s*userMessage\)/);
+test("BuddyWidget does not resume paused runs from the next chat reply", () => {
+  assert.doesNotMatch(componentSource, /async function resumePausedBuddyRunFromChatReply/);
+  assert.doesNotMatch(componentSource, /buildBuddyConversationalPauseResumePayload\(run,\s*graph,\s*userMessage\)/);
   assert.doesNotMatch(componentSource, /errorMessage\.value = t\("buddy\.pause\.useCard"\)/);
-  assert.match(componentSource, /setAssistantActivityText\(assistantMessageId,\s*t\("buddy\.activity\.resuming"\)\)/);
   assert.doesNotMatch(componentSource, /appendRunTraceEntry\("node\.started"/);
   assert.doesNotMatch(componentSource, /appendRunTraceEntry\("node\.completed"/);
 });

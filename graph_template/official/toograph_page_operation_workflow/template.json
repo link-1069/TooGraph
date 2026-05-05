@@ -154,22 +154,51 @@
       "kind": "input",
       "name": "输入用户目标",
       "description": "提供要完成的页面操作目标。",
-      "ui": { "position": { "x": 80, "y": 100 }, "collapsed": false },
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 100
+        },
+        "collapsed": false
+      },
       "reads": [],
-      "writes": [{ "state": "user_goal", "mode": "replace" }],
-      "config": { "value": "打开运行记录", "boundaryType": "text" }
+      "writes": [
+        {
+          "state": "user_goal",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "打开运行记录",
+        "boundaryType": "text"
+      }
     },
     "classify_goal": {
       "kind": "agent",
       "name": "解析页面目标",
       "description": "把用户意图转成可验证页面目标和成功标准。",
-      "ui": { "position": { "x": 460, "y": 320 }, "collapsed": false },
+      "ui": {
+        "position": {
+          "x": 636,
+          "y": 320
+        },
+        "collapsed": false
+      },
       "reads": [
-        { "state": "user_goal", "required": true }
+        {
+          "state": "user_goal",
+          "required": true
+        }
       ],
       "writes": [
-        { "state": "goal_plan", "mode": "replace" },
-        { "state": "loop_trace", "mode": "replace" }
+        {
+          "state": "goal_plan",
+          "mode": "replace"
+        },
+        {
+          "state": "loop_trace",
+          "mode": "replace"
+        }
       ],
       "config": {
         "skillKey": "",
@@ -186,83 +215,318 @@
       "kind": "subgraph",
       "name": "页面操作循环",
       "description": "计划一步页面操作，调用页面操作器，暂停等待前端执行，恢复后验证目标并决定是否继续。",
-      "ui": { "position": { "x": 900, "y": 320 }, "collapsed": false },
+      "ui": {
+        "position": {
+          "x": 1192,
+          "y": 320
+        },
+        "collapsed": false
+      },
       "reads": [
-        { "state": "user_goal", "required": true },
-        { "state": "goal_plan", "required": true },
-        { "state": "loop_trace", "required": true }
+        {
+          "state": "user_goal",
+          "required": true
+        },
+        {
+          "state": "goal_plan",
+          "required": true
+        },
+        {
+          "state": "loop_trace",
+          "required": true
+        }
       ],
       "writes": [
-        { "state": "operation_request", "mode": "replace" },
-        { "state": "operation_ok", "mode": "replace" },
-        { "state": "operation_request_id", "mode": "replace" },
-        { "state": "operation_journal", "mode": "replace" },
-        { "state": "operation_error", "mode": "replace" },
-        { "state": "operation_result", "mode": "replace" },
-        { "state": "page_snapshot", "mode": "replace" },
-        { "state": "goal_review", "mode": "replace" },
-        { "state": "loop_trace", "mode": "replace" },
-        { "state": "operation_report", "mode": "replace" }
+        {
+          "state": "operation_request",
+          "mode": "replace"
+        },
+        {
+          "state": "operation_ok",
+          "mode": "replace"
+        },
+        {
+          "state": "operation_request_id",
+          "mode": "replace"
+        },
+        {
+          "state": "operation_journal",
+          "mode": "replace"
+        },
+        {
+          "state": "operation_error",
+          "mode": "replace"
+        },
+        {
+          "state": "operation_result",
+          "mode": "replace"
+        },
+        {
+          "state": "page_snapshot",
+          "mode": "replace"
+        },
+        {
+          "state": "goal_review",
+          "mode": "replace"
+        },
+        {
+          "state": "loop_trace",
+          "mode": "replace"
+        },
+        {
+          "state": "operation_report",
+          "mode": "replace"
+        }
       ],
       "config": {
         "graph": {
           "state_schema": {
-            "user_goal": { "name": "用户目标", "description": "用户希望完成的页面操作目标。", "type": "text", "value": "", "color": "#d97706", "binding": null },
-            "page_context": { "name": "页面上下文", "description": "当前页面可读上下文。", "type": "markdown", "value": "", "color": "#0891b2", "binding": null },
-            "page_operation_context": { "name": "页面操作上下文", "description": "页面操作书、快照和事实。", "type": "json", "value": {}, "color": "#0284c7", "binding": null },
-            "goal_plan": { "name": "目标计划", "description": "目标分类、成功标准和停止条件。", "type": "json", "value": {}, "color": "#16a34a", "binding": null },
-            "operation_request": { "name": "下一步操作请求", "description": "本轮页面操作计划。", "type": "json", "value": {}, "color": "#7c3aed", "binding": null },
-            "operation_ok": { "name": "操作请求已接受", "description": "页面操作器是否接受本轮请求。", "type": "boolean", "value": false, "color": "#16a34a", "binding": { "kind": "skill_output", "skillKey": "toograph_page_operator", "nodeId": "execute_page_operation", "fieldKey": "ok", "managed": true } },
-            "operation_request_id": { "name": "操作请求 ID", "description": "关联 activity event、前端执行确认和恢复的稳定 ID。", "type": "text", "value": "", "color": "#2563eb", "binding": { "kind": "skill_output", "skillKey": "toograph_page_operator", "nodeId": "execute_page_operation", "fieldKey": "operation_request_id", "managed": true } },
-            "operation_journal": { "name": "操作日志", "description": "页面操作器返回的请求日志和校验摘要。", "type": "json", "value": {}, "color": "#4f46e5", "binding": { "kind": "skill_output", "skillKey": "toograph_page_operator", "nodeId": "execute_page_operation", "fieldKey": "journal", "managed": true } },
-            "operation_error": { "name": "操作错误", "description": "页面操作器拒绝请求时返回的结构化错误。", "type": "json", "value": {}, "color": "#dc2626", "binding": { "kind": "skill_output", "skillKey": "toograph_page_operator", "nodeId": "execute_page_operation", "fieldKey": "error", "managed": true } },
-            "operation_result": { "name": "前端操作结果", "description": "前端执行后的确认结果。", "type": "json", "value": {}, "color": "#0f766e", "binding": null },
-            "page_snapshot": { "name": "页面快照", "description": "恢复后的最新页面快照。", "type": "json", "value": {}, "color": "#0891b2", "binding": null },
-            "goal_review": { "name": "目标验证", "description": "目标完成、继续、澄清或失败判断。", "type": "json", "value": {}, "color": "#0f766e", "binding": null },
-            "loop_trace": { "name": "循环轨迹", "description": "已尝试操作与验证摘要。", "type": "json", "value": [], "color": "#9333ea", "binding": null },
-            "operation_report": { "name": "操作报告", "description": "供运行详情展示的结构化报告。", "type": "json", "value": {}, "color": "#7c2d12", "binding": null }
+            "user_goal": {
+              "name": "用户目标",
+              "description": "用户希望完成的页面操作目标。",
+              "type": "text",
+              "value": "",
+              "color": "#d97706",
+              "binding": null
+            },
+            "page_context": {
+              "name": "页面上下文",
+              "description": "当前页面可读上下文。",
+              "type": "markdown",
+              "value": "",
+              "color": "#0891b2",
+              "binding": null
+            },
+            "page_operation_context": {
+              "name": "页面操作上下文",
+              "description": "页面操作书、快照和事实。",
+              "type": "json",
+              "value": {},
+              "color": "#0284c7",
+              "binding": null
+            },
+            "goal_plan": {
+              "name": "目标计划",
+              "description": "目标分类、成功标准和停止条件。",
+              "type": "json",
+              "value": {},
+              "color": "#16a34a",
+              "binding": null
+            },
+            "operation_request": {
+              "name": "下一步操作请求",
+              "description": "本轮页面操作计划。",
+              "type": "json",
+              "value": {},
+              "color": "#7c3aed",
+              "binding": null
+            },
+            "operation_ok": {
+              "name": "操作请求已接受",
+              "description": "页面操作器是否接受本轮请求。",
+              "type": "boolean",
+              "value": false,
+              "color": "#16a34a",
+              "binding": {
+                "kind": "skill_output",
+                "skillKey": "toograph_page_operator",
+                "nodeId": "execute_page_operation",
+                "fieldKey": "ok",
+                "managed": true
+              }
+            },
+            "operation_request_id": {
+              "name": "操作请求 ID",
+              "description": "关联 activity event、前端执行确认和恢复的稳定 ID。",
+              "type": "text",
+              "value": "",
+              "color": "#2563eb",
+              "binding": {
+                "kind": "skill_output",
+                "skillKey": "toograph_page_operator",
+                "nodeId": "execute_page_operation",
+                "fieldKey": "operation_request_id",
+                "managed": true
+              }
+            },
+            "operation_journal": {
+              "name": "操作日志",
+              "description": "页面操作器返回的请求日志和校验摘要。",
+              "type": "json",
+              "value": {},
+              "color": "#4f46e5",
+              "binding": {
+                "kind": "skill_output",
+                "skillKey": "toograph_page_operator",
+                "nodeId": "execute_page_operation",
+                "fieldKey": "journal",
+                "managed": true
+              }
+            },
+            "operation_error": {
+              "name": "操作错误",
+              "description": "页面操作器拒绝请求时返回的结构化错误。",
+              "type": "json",
+              "value": {},
+              "color": "#dc2626",
+              "binding": {
+                "kind": "skill_output",
+                "skillKey": "toograph_page_operator",
+                "nodeId": "execute_page_operation",
+                "fieldKey": "error",
+                "managed": true
+              }
+            },
+            "operation_result": {
+              "name": "前端操作结果",
+              "description": "前端执行后的确认结果。",
+              "type": "json",
+              "value": {},
+              "color": "#0f766e",
+              "binding": null
+            },
+            "page_snapshot": {
+              "name": "页面快照",
+              "description": "恢复后的最新页面快照。",
+              "type": "json",
+              "value": {},
+              "color": "#0891b2",
+              "binding": null
+            },
+            "goal_review": {
+              "name": "目标验证",
+              "description": "目标完成、继续、澄清或失败判断。",
+              "type": "json",
+              "value": {},
+              "color": "#0f766e",
+              "binding": null
+            },
+            "loop_trace": {
+              "name": "循环轨迹",
+              "description": "已尝试操作与验证摘要。",
+              "type": "json",
+              "value": [],
+              "color": "#9333ea",
+              "binding": null
+            },
+            "operation_report": {
+              "name": "操作报告",
+              "description": "供运行详情展示的结构化报告。",
+              "type": "json",
+              "value": {},
+              "color": "#7c2d12",
+              "binding": null
+            }
           },
           "nodes": {
             "input_user_goal": {
               "kind": "input",
               "name": "用户目标边界",
               "description": "从父图读取用户目标。",
-              "ui": { "position": { "x": 60, "y": 120 }, "collapsed": false },
+              "ui": {
+                "position": {
+                  "x": 60,
+                  "y": 120
+                },
+                "collapsed": false
+              },
               "reads": [],
-              "writes": [{ "state": "user_goal", "mode": "replace" }],
-              "config": { "value": "", "boundaryType": "text" }
+              "writes": [
+                {
+                  "state": "user_goal",
+                  "mode": "replace"
+                }
+              ],
+              "config": {
+                "value": "",
+                "boundaryType": "text"
+              }
             },
             "input_goal_plan": {
               "kind": "input",
               "name": "目标计划边界",
               "description": "从父图读取目标计划。",
-              "ui": { "position": { "x": 60, "y": 280 }, "collapsed": false },
+              "ui": {
+                "position": {
+                  "x": 60,
+                  "y": 536
+                },
+                "collapsed": false
+              },
               "reads": [],
-              "writes": [{ "state": "goal_plan", "mode": "replace" }],
-              "config": { "value": {}, "boundaryType": "json" }
+              "writes": [
+                {
+                  "state": "goal_plan",
+                  "mode": "replace"
+                }
+              ],
+              "config": {
+                "value": {},
+                "boundaryType": "json"
+              }
             },
             "input_loop_trace": {
               "kind": "input",
               "name": "循环轨迹边界",
               "description": "从父图读取已有循环轨迹。",
-              "ui": { "position": { "x": 60, "y": 440 }, "collapsed": false },
+              "ui": {
+                "position": {
+                  "x": 60,
+                  "y": 952
+                },
+                "collapsed": false
+              },
               "reads": [],
-              "writes": [{ "state": "loop_trace", "mode": "replace" }],
-              "config": { "value": [], "boundaryType": "json" }
+              "writes": [
+                {
+                  "state": "loop_trace",
+                  "mode": "replace"
+                }
+              ],
+              "config": {
+                "value": [],
+                "boundaryType": "json"
+              }
             },
             "plan_next_operation": {
               "kind": "agent",
               "name": "规划下一步页面操作",
               "description": "根据目标计划、最新页面操作书和循环轨迹选择下一步可验证操作。",
-              "ui": { "position": { "x": 480, "y": 460 }, "collapsed": false },
+              "ui": {
+                "position": {
+                  "x": 616,
+                  "y": 460
+                },
+                "collapsed": false
+              },
               "reads": [
-                { "state": "user_goal", "required": true },
-                { "state": "goal_plan", "required": true },
-                { "state": "operation_result", "required": false },
-                { "state": "goal_review", "required": false },
-                { "state": "loop_trace", "required": false }
+                {
+                  "state": "user_goal",
+                  "required": true
+                },
+                {
+                  "state": "goal_plan",
+                  "required": true
+                },
+                {
+                  "state": "operation_result",
+                  "required": false
+                },
+                {
+                  "state": "goal_review",
+                  "required": false
+                },
+                {
+                  "state": "loop_trace",
+                  "required": false
+                }
               ],
-              "writes": [{ "state": "operation_request", "mode": "replace" }],
+              "writes": [
+                {
+                  "state": "operation_request",
+                  "mode": "replace"
+                }
+              ],
               "config": {
                 "skillKey": "",
                 "skillBindings": [],
@@ -278,18 +542,48 @@
               "kind": "agent",
               "name": "执行页面操作",
               "description": "调用 TooGraph 页面操作器请求一次可见 UI 操作；运行时在本节点后暂停等待前端确认。",
-              "ui": { "position": { "x": 940, "y": 460 }, "collapsed": false },
+              "ui": {
+                "position": {
+                  "x": 1172,
+                  "y": 460
+                },
+                "collapsed": false
+              },
               "reads": [
-                { "state": "user_goal", "required": true },
-                { "state": "goal_plan", "required": true },
-                { "state": "operation_request", "required": true },
-                { "state": "loop_trace", "required": false }
+                {
+                  "state": "user_goal",
+                  "required": true
+                },
+                {
+                  "state": "goal_plan",
+                  "required": true
+                },
+                {
+                  "state": "operation_request",
+                  "required": true
+                },
+                {
+                  "state": "loop_trace",
+                  "required": false
+                }
               ],
               "writes": [
-                { "state": "operation_ok", "mode": "replace" },
-                { "state": "operation_request_id", "mode": "replace" },
-                { "state": "operation_journal", "mode": "replace" },
-                { "state": "operation_error", "mode": "replace" }
+                {
+                  "state": "operation_ok",
+                  "mode": "replace"
+                },
+                {
+                  "state": "operation_request_id",
+                  "mode": "replace"
+                },
+                {
+                  "state": "operation_journal",
+                  "mode": "replace"
+                },
+                {
+                  "state": "operation_error",
+                  "mode": "replace"
+                }
               ],
               "config": {
                 "skillKey": "toograph_page_operator",
@@ -323,25 +617,76 @@
               "kind": "agent",
               "name": "验证刷新后的页面目标",
               "description": "读取前端恢复写入的操作结果和最新页面上下文，判断目标是否真正完成。",
-              "ui": { "position": { "x": 1400, "y": 460 }, "collapsed": false },
+              "ui": {
+                "position": {
+                  "x": 1728,
+                  "y": 460
+                },
+                "collapsed": false
+              },
               "reads": [
-                { "state": "user_goal", "required": true },
-                { "state": "page_context", "required": true },
-                { "state": "page_operation_context", "required": true },
-                { "state": "goal_plan", "required": true },
-                { "state": "operation_request", "required": true },
-                { "state": "operation_ok", "required": true },
-                { "state": "operation_request_id", "required": false },
-                { "state": "operation_journal", "required": false },
-                { "state": "operation_error", "required": false },
-                { "state": "operation_result", "required": true },
-                { "state": "loop_trace", "required": false }
+                {
+                  "state": "user_goal",
+                  "required": true
+                },
+                {
+                  "state": "page_context",
+                  "required": true
+                },
+                {
+                  "state": "page_operation_context",
+                  "required": true
+                },
+                {
+                  "state": "goal_plan",
+                  "required": true
+                },
+                {
+                  "state": "operation_request",
+                  "required": true
+                },
+                {
+                  "state": "operation_ok",
+                  "required": true
+                },
+                {
+                  "state": "operation_request_id",
+                  "required": false
+                },
+                {
+                  "state": "operation_journal",
+                  "required": false
+                },
+                {
+                  "state": "operation_error",
+                  "required": false
+                },
+                {
+                  "state": "operation_result",
+                  "required": true
+                },
+                {
+                  "state": "loop_trace",
+                  "required": false
+                }
               ],
               "writes": [
-                { "state": "page_snapshot", "mode": "replace" },
-                { "state": "goal_review", "mode": "replace" },
-                { "state": "loop_trace", "mode": "replace" },
-                { "state": "operation_report", "mode": "replace" }
+                {
+                  "state": "page_snapshot",
+                  "mode": "replace"
+                },
+                {
+                  "state": "goal_review",
+                  "mode": "replace"
+                },
+                {
+                  "state": "loop_trace",
+                  "mode": "replace"
+                },
+                {
+                  "state": "operation_report",
+                  "mode": "replace"
+                }
               ],
               "config": {
                 "skillKey": "",
@@ -358,13 +703,31 @@
               "kind": "condition",
               "name": "继续页面操作?",
               "description": "目标未完成且仍可继续时回到规划节点；达到上限时输出失败或待澄清结果。",
-              "ui": { "position": { "x": 1860, "y": 500 }, "collapsed": false },
-              "reads": [{ "state": "goal_review", "required": true }],
+              "ui": {
+                "position": {
+                  "x": 2284,
+                  "y": 500
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "goal_review",
+                  "required": true
+                }
+              ],
               "writes": [],
               "config": {
-                "branches": ["true", "false", "exhausted"],
+                "branches": [
+                  "true",
+                  "false",
+                  "exhausted"
+                ],
                 "loopLimit": 6,
-                "branchMapping": { "true": "true", "false": "false" },
+                "branchMapping": {
+                  "true": "true",
+                  "false": "false"
+                },
                 "rule": {
                   "source": "$state.goal_review.needs_more_operations",
                   "operator": "==",
@@ -376,100 +739,278 @@
               "kind": "output",
               "name": "输出操作请求",
               "description": "公开最后一次操作请求。",
-              "ui": { "position": { "x": 2200, "y": 120 }, "collapsed": false },
-              "reads": [{ "state": "operation_request", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 120
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_request",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_operation_ok": {
               "kind": "output",
               "name": "输出操作接受状态",
               "description": "公开页面操作器接受状态。",
-              "ui": { "position": { "x": 2200, "y": 240 }, "collapsed": false },
-              "reads": [{ "state": "operation_ok", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 556
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_ok",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "auto", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "auto",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_operation_request_id": {
               "kind": "output",
               "name": "输出操作请求 ID",
               "description": "公开最后一次操作请求 ID。",
-              "ui": { "position": { "x": 2200, "y": 360 }, "collapsed": false },
-              "reads": [{ "state": "operation_request_id", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 992
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_request_id",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "plain", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "plain",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_operation_journal": {
               "kind": "output",
               "name": "输出操作日志",
               "description": "公开页面操作器日志。",
-              "ui": { "position": { "x": 2200, "y": 480 }, "collapsed": false },
-              "reads": [{ "state": "operation_journal", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 1428
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_journal",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_operation_error": {
               "kind": "output",
               "name": "输出操作错误",
               "description": "公开页面操作器错误。",
-              "ui": { "position": { "x": 2200, "y": 600 }, "collapsed": false },
-              "reads": [{ "state": "operation_error", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 1864
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_error",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_operation_result": {
               "kind": "output",
               "name": "输出前端操作结果",
               "description": "公开前端执行确认。",
-              "ui": { "position": { "x": 2200, "y": 720 }, "collapsed": false },
-              "reads": [{ "state": "operation_result", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 2300
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_result",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_page_snapshot": {
               "kind": "output",
               "name": "输出页面快照",
               "description": "公开最新页面快照。",
-              "ui": { "position": { "x": 2200, "y": 840 }, "collapsed": false },
-              "reads": [{ "state": "page_snapshot", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 2736
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "page_snapshot",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_goal_review": {
               "kind": "output",
               "name": "输出目标验证",
               "description": "公开目标验证结果。",
-              "ui": { "position": { "x": 2200, "y": 960 }, "collapsed": false },
-              "reads": [{ "state": "goal_review", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 3172
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "goal_review",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_loop_trace": {
               "kind": "output",
               "name": "输出循环轨迹",
               "description": "公开循环轨迹。",
-              "ui": { "position": { "x": 2200, "y": 1080 }, "collapsed": false },
-              "reads": [{ "state": "loop_trace", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 3608
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "loop_trace",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             },
             "output_operation_report": {
               "kind": "output",
               "name": "输出操作报告",
               "description": "公开紧凑操作报告。",
-              "ui": { "position": { "x": 2200, "y": 1200 }, "collapsed": false },
-              "reads": [{ "state": "operation_report", "required": false }],
+              "ui": {
+                "position": {
+                  "x": 2940,
+                  "y": 4044
+                },
+                "collapsed": false
+              },
+              "reads": [
+                {
+                  "state": "operation_report",
+                  "required": false
+                }
+              ],
               "writes": [],
-              "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+              "config": {
+                "displayMode": "json",
+                "persistEnabled": false,
+                "persistFormat": "auto",
+                "fileNameTemplate": ""
+              }
             }
           },
           "edges": [
-            { "source": "input_user_goal", "target": "plan_next_operation" },
-            { "source": "input_goal_plan", "target": "plan_next_operation" },
-            { "source": "input_loop_trace", "target": "plan_next_operation" },
-            { "source": "plan_next_operation", "target": "execute_page_operation" },
-            { "source": "execute_page_operation", "target": "verify_goal_against_refreshed_context" },
-            { "source": "verify_goal_against_refreshed_context", "target": "continue_operation_loop" }
+            {
+              "source": "input_user_goal",
+              "target": "plan_next_operation"
+            },
+            {
+              "source": "input_goal_plan",
+              "target": "plan_next_operation"
+            },
+            {
+              "source": "input_loop_trace",
+              "target": "plan_next_operation"
+            },
+            {
+              "source": "plan_next_operation",
+              "target": "execute_page_operation"
+            },
+            {
+              "source": "execute_page_operation",
+              "target": "verify_goal_against_refreshed_context"
+            },
+            {
+              "source": "verify_goal_against_refreshed_context",
+              "target": "continue_operation_loop"
+            }
           ],
           "conditional_edges": [
             {
@@ -483,8 +1024,7 @@
           ],
           "metadata": {
             "graphProtocol": "node_system",
-            "role": "page_operation_loop",
-            "interrupt_after": ["execute_page_operation"]
+            "role": "page_operation_loop"
           }
         }
       }
@@ -493,16 +1033,45 @@
       "kind": "agent",
       "name": "起草最终回复",
       "description": "根据目标验证和操作报告生成用户可见结果。",
-      "ui": { "position": { "x": 1320, "y": 320 }, "collapsed": false },
+      "ui": {
+        "position": {
+          "x": 1748,
+          "y": 320
+        },
+        "collapsed": false
+      },
       "reads": [
-        { "state": "user_goal", "required": true },
-        { "state": "goal_plan", "required": true },
-        { "state": "goal_review", "required": true },
-        { "state": "operation_result", "required": false },
-        { "state": "operation_report", "required": false },
-        { "state": "loop_trace", "required": false }
+        {
+          "state": "user_goal",
+          "required": true
+        },
+        {
+          "state": "goal_plan",
+          "required": true
+        },
+        {
+          "state": "goal_review",
+          "required": true
+        },
+        {
+          "state": "operation_result",
+          "required": false
+        },
+        {
+          "state": "operation_report",
+          "required": false
+        },
+        {
+          "state": "loop_trace",
+          "required": false
+        }
       ],
-      "writes": [{ "state": "final_reply", "mode": "replace" }],
+      "writes": [
+        {
+          "state": "final_reply",
+          "mode": "replace"
+        }
+      ],
       "config": {
         "skillKey": "",
         "skillBindings": [],
@@ -518,27 +1087,74 @@
       "kind": "output",
       "name": "输出最终回复",
       "description": "展示页面操作工作流的最终回复。",
-      "ui": { "position": { "x": 1740, "y": 260 }, "collapsed": false },
-      "reads": [{ "state": "final_reply", "required": true }],
+      "ui": {
+        "position": {
+          "x": 2304,
+          "y": 260
+        },
+        "collapsed": false
+      },
+      "reads": [
+        {
+          "state": "final_reply",
+          "required": true
+        }
+      ],
       "writes": [],
-      "config": { "displayMode": "markdown", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+      "config": {
+        "displayMode": "markdown",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
     },
     "output_operation_report": {
       "kind": "output",
       "name": "输出操作报告",
       "description": "展示结构化页面操作报告，供运行详情审计。",
-      "ui": { "position": { "x": 1740, "y": 440 }, "collapsed": false },
-      "reads": [{ "state": "operation_report", "required": false }],
+      "ui": {
+        "position": {
+          "x": 2304,
+          "y": 696
+        },
+        "collapsed": false
+      },
+      "reads": [
+        {
+          "state": "operation_report",
+          "required": false
+        }
+      ],
       "writes": [],
-      "config": { "displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": "" }
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
     }
   },
   "edges": [
-    { "source": "input_user_goal", "target": "classify_goal" },
-    { "source": "classify_goal", "target": "operation_loop" },
-    { "source": "operation_loop", "target": "draft_final_reply" },
-    { "source": "draft_final_reply", "target": "output_final_reply" },
-    { "source": "operation_loop", "target": "output_operation_report" }
+    {
+      "source": "input_user_goal",
+      "target": "classify_goal"
+    },
+    {
+      "source": "classify_goal",
+      "target": "operation_loop"
+    },
+    {
+      "source": "operation_loop",
+      "target": "draft_final_reply"
+    },
+    {
+      "source": "draft_final_reply",
+      "target": "output_final_reply"
+    },
+    {
+      "source": "operation_loop",
+      "target": "output_operation_report"
+    }
   ],
   "conditional_edges": [],
   "metadata": {
@@ -549,88 +1165,184 @@
       {
         "id": "open_runs_page",
         "sampleGoal": "打开运行记录",
-        "operationTargets": ["app.nav.runs", "runs.action.refresh"],
-        "completionEvidence": ["page_facts.route.path == /runs", "visibleRuns contains run cards"]
+        "operationTargets": [
+          "app.nav.runs",
+          "runs.action.refresh"
+        ],
+        "completionEvidence": [
+          "page_facts.route.path == /runs",
+          "visibleRuns contains run cards"
+        ]
       },
       {
         "id": "open_run_detail",
         "sampleGoal": "打开某个运行详情",
-        "operationTargets": ["app.nav.runs", "runs.search.graphName", "runs.run.<runId>.openDetail"],
-        "completionEvidence": ["page_facts.route.path starts with /runs/", "visible run detail matches requested run id"]
+        "operationTargets": [
+          "app.nav.runs",
+          "runs.search.graphName",
+          "runs.run.<runId>.openDetail"
+        ],
+        "completionEvidence": [
+          "page_facts.route.path starts with /runs/",
+          "visible run detail matches requested run id"
+        ]
       },
       {
         "id": "open_library_page",
         "sampleGoal": "打开图与模板页面",
-        "operationTargets": ["app.nav.library", "library.search.query"],
-        "completionEvidence": ["page_facts.route.path == /library", "visibleGraphs or visibleTemplates are available"]
+        "operationTargets": [
+          "app.nav.library",
+          "library.search.query"
+        ],
+        "completionEvidence": [
+          "page_facts.route.path == /library",
+          "visibleGraphs or visibleTemplates are available"
+        ]
       },
       {
         "id": "create_blank_graph",
         "sampleGoal": "新建一个空白图",
-        "operationTargets": ["app.nav.library", "library.action.newBlankGraph", "editor.launcher.createNew"],
-        "completionEvidence": ["page_facts.route.path starts with /editor", "page_facts.activeGraph exists", "active graph is dirty or unnamed draft"]
+        "operationTargets": [
+          "app.nav.library",
+          "library.action.newBlankGraph",
+          "editor.launcher.createNew"
+        ],
+        "completionEvidence": [
+          "page_facts.route.path starts with /editor",
+          "page_facts.activeGraph exists",
+          "active graph is dirty or unnamed draft"
+        ]
       },
       {
         "id": "open_named_graph",
         "sampleGoal": "打开名为 X 的图",
-        "operationTargets": ["app.nav.library", "library.search.query", "library.graph.<graphId>.open", "editor.launcher.openGraph.<graphId>"],
-        "completionEvidence": ["page_facts.activeGraph.name matches target", "page_facts.activeGraph.graphId matches visible graph id"]
+        "operationTargets": [
+          "app.nav.library",
+          "library.search.query",
+          "library.graph.<graphId>.open",
+          "editor.launcher.openGraph.<graphId>"
+        ],
+        "completionEvidence": [
+          "page_facts.activeGraph.name matches target",
+          "page_facts.activeGraph.graphId matches visible graph id"
+        ]
       },
       {
         "id": "run_named_template",
         "sampleGoal": "运行名为 X 的图模板并拿取结果",
-        "operationTargets": ["template_target", "app.nav.library", "library.search.query", "library.template.<templateId>.open", "editor.canvas.node.<inputNodeId>.input.value", "editor.action.runActiveGraph"],
-        "completionEvidence": ["operation_result.commands includes run_template", "operation_result.input_text matches user_goal", "triggered_run_id present", "triggered_run_status terminal", "page_facts.latestForegroundRun.runId matches triggered_run_id"]
+        "operationTargets": [
+          "template_target",
+          "app.nav.library",
+          "library.search.query",
+          "library.template.<templateId>.open",
+          "editor.canvas.node.<inputNodeId>.input.value",
+          "editor.action.runActiveGraph"
+        ],
+        "completionEvidence": [
+          "operation_result.commands includes run_template",
+          "operation_result.input_text matches user_goal",
+          "triggered_run_id present",
+          "triggered_run_status terminal",
+          "page_facts.latestForegroundRun.runId matches triggered_run_id"
+        ]
       },
       {
         "id": "run_current_graph",
         "sampleGoal": "运行当前图并告诉我结果",
-        "operationTargets": ["editor.action.runActiveGraph", "editor.action.toggleRunActivity"],
-        "completionEvidence": ["triggered_run_id present", "triggered_run_status terminal", "page_facts.latestForegroundRun.runId matches triggered_run_id"]
+        "operationTargets": [
+          "editor.action.runActiveGraph",
+          "editor.action.toggleRunActivity"
+        ],
+        "completionEvidence": [
+          "triggered_run_id present",
+          "triggered_run_status terminal",
+          "page_facts.latestForegroundRun.runId matches triggered_run_id"
+        ]
       },
       {
         "id": "create_basic_llm_graph",
         "sampleGoal": "新建一个包含输入、LLM、输出的图",
-        "operationTargets": ["app.nav.library", "library.action.newBlankGraph", "editor.graph.playback", "editor.action.saveActiveGraph"],
-        "completionEvidence": ["graph_edit_summary.applied is true", "page_facts.activeGraph exists", "node labels include input, LLM, output"]
+        "operationTargets": [
+          "app.nav.library",
+          "library.action.newBlankGraph",
+          "editor.graph.playback",
+          "editor.action.saveActiveGraph"
+        ],
+        "completionEvidence": [
+          "graph_edit_summary.applied is true",
+          "page_facts.activeGraph exists",
+          "node labels include input, LLM, output"
+        ]
       },
       {
         "id": "rename_current_node",
         "sampleGoal": "编辑当前图，给某个节点改名",
-        "operationTargets": ["editor.canvas.node.<nodeId>", "editor.graph.playback", "editor.action.saveActiveGraph"],
-        "completionEvidence": ["graph_edit_summary.applied is true", "page_facts.activeGraph.dirty or saved revision updated", "target node label changed"]
+        "operationTargets": [
+          "editor.canvas.node.<nodeId>",
+          "editor.graph.playback",
+          "editor.action.saveActiveGraph"
+        ],
+        "completionEvidence": [
+          "graph_edit_summary.applied is true",
+          "page_facts.activeGraph.dirty or saved revision updated",
+          "target node label changed"
+        ]
       }
     ],
     "failureGuidance": {
       "target_graph_not_found": {
         "failureReason": "target_graph_not_found",
         "replyGuidance": "说明没有找到目标图，请用户确认图名称或先打开目标图。",
-        "evidence": ["page_facts.visibleGraphs", "page_facts.activeGraph", "goal_plan.target_hints"]
+        "evidence": [
+          "page_facts.visibleGraphs",
+          "page_facts.activeGraph",
+          "goal_plan.target_hints"
+        ]
       },
       "run_record_not_found": {
         "failureReason": "run_record_not_found",
         "replyGuidance": "说明没有找到匹配的运行记录，请用户提供 run id 或更明确的图名称。",
-        "evidence": ["page_facts.visibleRuns", "operation_result.triggered_run_id", "goal_plan.target_hints"]
+        "evidence": [
+          "page_facts.visibleRuns",
+          "operation_result.triggered_run_id",
+          "goal_plan.target_hints"
+        ]
       },
       "stale_page_snapshot": {
         "failureReason": "stale_page_snapshot",
         "replyGuidance": "说明当前页面快照已过期，需要刷新页面上下文后再继续。",
-        "evidence": ["operation_result.page_snapshot_after", "page_operation_context.page_snapshot", "operation_request_id"]
+        "evidence": [
+          "operation_result.page_snapshot_after",
+          "page_operation_context.page_snapshot",
+          "operation_request_id"
+        ]
       },
       "destructive_operation_blocked": {
         "failureReason": "destructive_operation_blocked",
         "replyGuidance": "说明目标属于破坏性或需确认操作，页面操作器已阻止执行。",
-        "evidence": ["operation_error.code", "operation_request.blocked_reason", "operation_journal"]
+        "evidence": [
+          "operation_error.code",
+          "operation_request.blocked_reason",
+          "operation_journal"
+        ]
       },
       "triggered_run_failed": {
         "failureReason": "triggered_run_failed",
         "replyGuidance": "说明已触发运行但 run 以失败终态结束，并给出 run id。",
-        "evidence": ["operation_result.triggered_run_id", "operation_result.triggered_run_status", "page_facts.latestForegroundRun"]
+        "evidence": [
+          "operation_result.triggered_run_id",
+          "operation_result.triggered_run_status",
+          "page_facts.latestForegroundRun"
+        ]
       },
       "operation_interrupted": {
         "failureReason": "operation_interrupted",
         "replyGuidance": "说明页面操作被用户、运行时或前端流程中断，未完成目标。",
-        "evidence": ["operation_result.status", "operation_result.error", "operation_journal"]
+        "evidence": [
+          "operation_result.status",
+          "operation_result.error",
+          "operation_journal"
+        ]
       }
     }
   }

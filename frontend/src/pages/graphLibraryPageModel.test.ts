@@ -65,6 +65,22 @@ const templates: TemplateRecord[] = [
     metadata: {},
   },
   {
+    template_id: "paused_loop",
+    label: "Paused Loop",
+    description: "Template with a breakpoint",
+    default_graph_name: "Paused Loop",
+    source: "user",
+    status: "active",
+    capabilityDiscoverable: false,
+    hasBreakpointMetadata: true,
+    capabilityDiscoverableBlockedReason: "breakpoint_metadata",
+    state_schema: {},
+    nodes: {},
+    edges: [],
+    conditional_edges: [],
+    metadata: { interrupt_after: ["review"] },
+  },
+  {
     template_id: "user_summary",
     label: "Summary Template",
     description: "User template",
@@ -96,9 +112,19 @@ test("buildGraphLibraryItems marks official templates read-only and user-owned i
       { id: "graph_research", kind: "graph", source: "user", status: "active", capabilityDiscoverable: false, canManage: true },
       { id: "graph_archived", kind: "graph", source: "user", status: "disabled", capabilityDiscoverable: false, canManage: true },
       { id: "official_loop", kind: "template", source: "official", status: "active", capabilityDiscoverable: false, canManage: false },
+      { id: "paused_loop", kind: "template", source: "user", status: "active", capabilityDiscoverable: false, canManage: true },
       { id: "user_summary", kind: "template", source: "user", status: "disabled", capabilityDiscoverable: false, canManage: true },
     ],
   );
+});
+
+test("buildGraphLibraryItems blocks capability discovery controls for breakpoint templates", () => {
+  const items = buildGraphLibraryItems(graphs, templates);
+  const paused = items.find((item) => item.id === "paused_loop");
+
+  assert.equal(paused?.capabilityDiscoverable, false);
+  assert.equal(paused?.capabilityDiscoverableBlockedReason, "breakpoint_metadata");
+  assert.equal(paused?.canToggleCapabilityDiscoverable, false);
 });
 
 test("filterGraphLibraryItems filters by kind, status, and search text", () => {
@@ -122,9 +148,9 @@ test("buildGraphLibraryOverview summarizes graph and template management invento
   const items = buildGraphLibraryItems(graphs, templates);
 
   assert.deepEqual(buildGraphLibraryOverview(items), {
-    total: 4,
+    total: 5,
     graphs: 2,
-    templates: 2,
+    templates: 3,
     officialTemplates: 1,
     disabled: 2,
   });
@@ -133,6 +159,6 @@ test("buildGraphLibraryOverview summarizes graph and template management invento
 test("splitGraphLibraryItems separates templates and graphs for the management columns", () => {
   const columns = splitGraphLibraryItems(buildGraphLibraryItems(graphs, templates));
 
-  assert.deepEqual(columns.templates.map((item) => item.id), ["official_loop", "user_summary"]);
+  assert.deepEqual(columns.templates.map((item) => item.id), ["official_loop", "paused_loop", "user_summary"]);
   assert.deepEqual(columns.graphs.map((item) => item.id), ["graph_research", "graph_archived"]);
 });

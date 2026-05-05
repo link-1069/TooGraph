@@ -317,6 +317,39 @@ class TemplateRouteTests(unittest.TestCase):
                 {"official_loop": False, "custom_loop": False},
             )
 
+    def test_template_with_breakpoint_metadata_cannot_be_capability_discoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            official_dir = root / "official"
+            user_dir = root / "user"
+            official_dir.mkdir()
+            user_dir.mkdir()
+            user_template_dir = user_dir / "paused_loop"
+            user_template_dir.mkdir()
+            payload = _template_payload("paused_loop", "Paused Loop")
+            payload["metadata"] = {"interrupt_after": ["review"]}
+            (user_template_dir / "template.json").write_text(json.dumps(payload), encoding="utf-8")
+
+            with (
+                patch("app.templates.loader.OFFICIAL_TEMPLATES_ROOT", official_dir),
+                patch("app.templates.loader.USER_TEMPLATES_ROOT", user_dir),
+                patch("app.templates.loader.TEMPLATE_SETTINGS_PATH", root / "settings.json", create=True),
+                TestClient(app) as client,
+            ):
+                listed_before = client.get("/api/templates?include_disabled=true")
+                enable_response = client.post(
+                    "/api/templates/paused_loop/capability-discoverable",
+                    json={"capabilityDiscoverable": True},
+                )
+                listed_after = client.get("/api/templates?include_disabled=true")
+
+            self.assertEqual(listed_before.status_code, 200)
+            self.assertEqual(listed_before.json()[0]["capabilityDiscoverable"], False)
+            self.assertIs(listed_before.json()[0]["hasBreakpointMetadata"], True)
+            self.assertEqual(listed_before.json()[0]["capabilityDiscoverableBlockedReason"], "breakpoint_metadata")
+            self.assertEqual(enable_response.status_code, 409)
+            self.assertEqual(listed_after.json()[0]["capabilityDiscoverable"], False)
+
 
 if __name__ == "__main__":
     unittest.main()

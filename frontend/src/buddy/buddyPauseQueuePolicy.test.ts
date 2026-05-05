@@ -18,25 +18,25 @@ test("resolveBuddyComposerDecision enqueues a new turn when no run is paused", (
   );
 });
 
-test("resolveBuddyComposerDecision resumes paused runs from the normal chat composer", () => {
+test("resolveBuddyComposerDecision treats paused runs as background work and enqueues a new turn", () => {
   assert.deepEqual(
     resolveBuddyComposerDecision({
-      draftText: "这是给当前断点的补充",
+      draftText: "这是一条新的用户消息",
       hasPausedRun: true,
       isResumeBusy: false,
     }),
-    { kind: "resume_paused_run", userMessage: "这是给当前断点的补充" },
+    { kind: "enqueue_new_turn", userMessage: "这是一条新的用户消息" },
   );
 });
 
-test("resolveBuddyComposerDecision ignores sends while a paused run is resuming", () => {
+test("resolveBuddyComposerDecision does not route user text into paused-run resume payloads", () => {
   assert.deepEqual(
     resolveBuddyComposerDecision({
       draftText: "继续",
       hasPausedRun: true,
       isResumeBusy: true,
     }),
-    { kind: "ignore_resume_busy", userMessage: "继续" },
+    { kind: "enqueue_new_turn", userMessage: "继续" },
   );
 });
 
@@ -45,7 +45,7 @@ test("resolveInitialBuddyPauseActionMode starts in supplement mode only when req
   assert.equal(resolveInitialBuddyPauseActionMode(2), "supplement");
 });
 
-test("shouldHoldBuddyQueueDrain stops queued turns behind the active paused run", () => {
-  assert.equal(shouldHoldBuddyQueueDrain({ hasPausedRun: true }), true);
+test("shouldHoldBuddyQueueDrain keeps Buddy chat turns independent from background paused runs", () => {
+  assert.equal(shouldHoldBuddyQueueDrain({ hasPausedRun: true }), false);
   assert.equal(shouldHoldBuddyQueueDrain({ hasPausedRun: false }), false);
 });

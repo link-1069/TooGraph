@@ -110,7 +110,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 180
+          "y": 476
         },
         "collapsed": false
       },
@@ -133,7 +133,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 300
+          "y": 892
         },
         "collapsed": false
       },
@@ -156,7 +156,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 420
+          "y": 1724
         },
         "collapsed": false
       },
@@ -178,7 +178,7 @@
       "description": "判断用户目标、输入缺口、权限风险和是否需要澄清。",
       "ui": {
         "position": {
-          "x": 430,
+          "x": 616,
           "y": 270
         },
         "collapsed": false
@@ -232,7 +232,7 @@
       "description": "根据请求理解判断是否暂停询问用户。",
       "ui": {
         "position": {
-          "x": 790,
+          "x": 1172,
           "y": 270
         },
         "collapsed": false
@@ -268,7 +268,7 @@
       "description": "把缺失信息转成用户容易回答的问题。",
       "ui": {
         "position": {
-          "x": 1150,
+          "x": 1828,
           "y": 100
         },
         "collapsed": false
@@ -314,8 +314,8 @@
       "description": "",
       "ui": {
         "position": {
-          "x": 1880,
-          "y": 430
+          "x": 2384,
+          "y": 706
         },
         "collapsed": false
       },
@@ -339,7 +339,7 @@
       "description": "",
       "ui": {
         "position": {
-          "x": 1880,
+          "x": 2384,
           "y": 270
         },
         "collapsed": false
@@ -365,7 +365,7 @@
       "ui": {
         "position": {
           "x": 60,
-          "y": 420
+          "y": 1308
         },
         "collapsed": false
       },

@@ -49,6 +49,8 @@ test("BuddyPage opens template binding first and renders it as Buddy input rows"
   assert.match(source, /v-for="row in bindingSourceRows"/);
   assert.match(source, /class="buddy-page__binding-card"/);
   assert.match(source, /class="buddy-page__template-select toograph-select"/);
+  assert.match(source, /:disabled="option\.disabled"/);
+  assert.match(source, /templateBreakpointBlocked/);
   assert.match(source, /popper-class="toograph-select-popper buddy-page__binding-select-popper"/);
   assert.match(source, /:fit-input-width="true"/);
   assert.match(

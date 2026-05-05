@@ -149,6 +149,9 @@ export function validateBuddyRunTemplateBinding(
   if (template.status === "disabled") {
     issues.push("Selected template is disabled.");
   }
+  if (template.hasBreakpointMetadata || template.capabilityDiscoverableBlockedReason === "breakpoint_metadata") {
+    issues.push("Selected template contains breakpoint metadata and cannot be used as the Buddy main loop.");
+  }
   if (binding.template_id !== template.template_id) {
     issues.push("Binding template_id does not match the selected template.");
   }

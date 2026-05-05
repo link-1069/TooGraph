@@ -216,6 +216,8 @@ export type TemplateRecord = {
   source?: TemplateSource;
   status?: GraphCatalogStatus;
   capabilityDiscoverable?: boolean;
+  hasBreakpointMetadata?: boolean;
+  capabilityDiscoverableBlockedReason?: string;
   state_schema: Record<string, StateDefinition>;
   nodes: Record<string, GraphNode>;
   edges: GraphEdge[];

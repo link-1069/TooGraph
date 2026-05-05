@@ -232,7 +232,7 @@ class TooGraphPageOperatorSkillTests(unittest.TestCase):
             {
                 "mode": "auto_resume_after_ui_operation",
                 "operation_request_id": result["operation_request_id"],
-                "resume_state_keys": ["page_operation_context", "page_context", "operation_result"],
+                "resume_state_keys": ["page_operation_context", "page_context", "operation_result", "operation_report"],
             },
         )
         self.assertEqual(event["detail"]["operation"]["kind"], "click")

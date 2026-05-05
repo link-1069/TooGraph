@@ -96,6 +96,8 @@ def update_template_capability_discoverable_endpoint(
 ) -> dict[str, Any]:
     try:
         return update_template_capability_discoverable(template_id, payload.capability_discoverable)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=f"Template '{template_id}' does not exist.") from exc
 

@@ -153,7 +153,9 @@ class BuddyCommandRouteTests(unittest.TestCase):
 
     def test_run_template_binding_update_command_records_command_and_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_run_template_can_be_bound", lambda _template_id: None
+            ):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/buddy/commands",

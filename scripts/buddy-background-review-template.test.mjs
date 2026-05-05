@@ -75,7 +75,8 @@ test("buddy autonomous review stays out of visible template and capability catal
     ].join("; "),
     { TOOGRAPH_REPO_ROOT: process.cwd() },
   );
-  assert.equal(capabilityList.includes("buddy_autonomous_loop"), true);
+  assert.equal(capabilityList.includes("buddy_autonomous_loop"), false);
+  assert.equal(capabilityList.includes("buddy_capability_loop"), false);
   assert.equal(capabilityList.includes("buddy_self_review"), false);
   assert.equal(capabilityList.includes("buddy_autonomous_review"), false);
   assert.equal(capabilityList.includes("buddy_home_writer"), false);

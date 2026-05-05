@@ -75,21 +75,22 @@ These instructions apply to all work in this repository and should persist acros
 
 ## Buddy Autonomous Agent Direction
 
-- Treat `docs/future/buddy-autonomous-agent-roadmap.md` as the durable direction for Buddy autonomy and self-evolution. Treat `docs/current_project_status.md` as the current implementation snapshot. If these conflict, update the snapshot or fold still-valid facts into the roadmap instead of inventing a third source of truth.
+- Treat code, official template JSON, Skill manifests, and tests as the source of current implementation truth. Treat `docs/future/buddy-autonomous-agent-roadmap.md` as the durable remaining-work roadmap for Buddy autonomy and self-evolution. Do not recreate `docs/current_project_status.md` or any parallel current-state snapshot unless the user explicitly asks for one.
 - The `demo/hermes-agent/` project is a capability reference, not an architecture to copy. TooGraph should translate Hermes-style abilities into graph templates, explicit Skill calls, state, approvals, run records, revisions, and artifacts.
 - Hermes-style autonomy means more than tool use: multi-step capability loops, memory/session recall, skill creation and improvement, scheduled or triggered runs, delegation, safety guardrails, result budgeting, and self-improvement from execution traces. In TooGraph these must be expressed as auditable graph flows rather than a hidden agent loop.
 - Skill in TooGraph means a single controlled capability call for one LLM-node turn. A Skill can read context, prepare deterministic data, run a script, search, write one controlled output, or return artifacts. It must not own multi-step autonomy, retry loops, result review, final response generation, long-term memory policy, or follow-up capability selection.
 - Multi-step intelligence belongs to graph templates: LLM node -> condition -> one Skill or dynamic subgraph execution -> `result_package` or mapped Skill outputs -> LLM review -> condition loop, pause, approval, failure handling, or final output.
 - Do not create a monolithic `self_evolve` Skill or Buddy-specific hidden runtime. Buddy self-evolution should be a graph-template pipeline that turns run traces, user corrections, failures, successes, and Buddy Home context into structured improvement candidates, validates or tests them, asks for human review when needed, and only then applies changes through controlled commands or Skills.
 - Existing Buddy templates are the starting point, not throwaway scaffolding:
-  - `buddy_autonomous_loop` is the visible Buddy run path: context input, request intake, capability loop, final response, and a single user-facing `final_reply`.
-  - `buddy_self_review` is the background review path: it should produce memory and evolution plans, not silently mutate Buddy Home or graph assets.
+  - `buddy_autonomous_loop` is the visible Buddy run path: context input, request intake, capability loop, optional direct capability-result output, and final response.
+  - `buddy_autonomous_review` is the background review path: it should produce memory and evolution plans, not silently mutate Buddy Home or graph assets.
   - `toograph_skill_creation_workflow` is the reference pattern for graph-expressed creation workflows: clarify, confirm examples, generate files, test, review, approve, then write through controlled capability calls.
+- Buddy clarification and capability-review gaps should end the current run through a normal final reply, not through a user-visible `interrupt_after` breakpoint. Official Buddy ability templates must not contain breakpoint-like metadata such as `interrupt_after`, `interrupt_before`, `agent_breakpoint_timing`, or `auto_resume_after_ui_operation_nodes`. Page-operation auto-resume is a runtime-derived waitpoint for LLM nodes using the `toograph_page_operator` Skill, carried by activity-event continuation metadata such as `pending_page_operation_continuation`, not by template JSON.
 - Buddy graph orchestration has two target modes:
   - Modify the current graph through app-native virtual UI playback or a validated command draft, with diff/preview, human approval when needed, graph revision, and undo/redo.
   - Create a new graph template or reusable subgraph from a user goal, validate it, optionally test-run it, preview it, ask for approval, then save it as a user template that later capability selection can discover.
-- The established Buddy baseline now includes dynamic subgraph breakpoint propagation, Buddy floating-window reuse of standard `awaiting_human` pause/resume cards, Buddy Home writeback through command/revision paths, and app-native virtual graph replay. Pause UIs should show the current produced content and context before asking for supplemental user input. The remaining highest-priority Buddy infrastructure is virtual UI operation journals/activity events, graph diff/revision/undo/redo plumbing, editing existing graphs, run/result validation, context budgeting, and richer low-level operation summaries.
-- Buddy self-evolution should prefer narrow, reversible improvements first: memory updates, session summaries, Skill revisions, graph patch drafts, reusable subgraph/template proposals, and policy suggestions. Riskier changes such as graph edits, file writes, script execution, network access, automation creation, or persona/policy changes require explicit approval and recoverable revisions.
+- The established Buddy baseline now includes dynamic subgraph breakpoint propagation as a runtime primitive, Buddy Home writeback through command/revision paths, app-native virtual graph replay, and Buddy chat capsules segmented only by output boundaries. Buddy chat should not turn `awaiting_human` into an in-chat resume card or consume the next chat message as a hidden resume payload; non-page-operation pauses remain background runs that can be inspected through standard review surfaces. The remaining highest-priority Buddy infrastructure is virtual UI operation journals/activity events, graph diff/revision/undo/redo plumbing, editing existing graphs, run/result validation, context budgeting, and richer low-level operation summaries.
+- Buddy self-evolution should prefer narrow, reversible improvements first: memory updates, session summaries, Skill revisions, reusable subgraph/template proposals, and policy suggestions. Riskier changes such as graph edits, file writes, script execution, network access, automation creation, or persona/policy changes require explicit approval and recoverable revisions.
 
 ## Skill Package Boundaries
 
@@ -133,8 +134,8 @@ These instructions apply to all work in this repository and should persist acros
 
 ## Documentation Hygiene
 
-- Keep repository documentation aligned with current product architecture. When a plan is completed, superseded, or contradicted by newer principles, delete it, fold its still-valid parts into a current document, or clearly mark it as superseded.
-- `docs/` should contain current formal docs and durable future direction, not one-off progress logs, stale implementation plans, or documents that encode rejected architecture.
+- Keep repository documentation aligned with current product architecture. When a plan is completed, superseded, or contradicted by newer principles, delete it or fold its still-valid remaining work into `docs/future/buddy-autonomous-agent-roadmap.md`.
+- `docs/` should contain current usage/reference docs and durable remaining-work roadmaps, not current-state snapshots, one-off progress logs, stale implementation plans, or documents that encode rejected architecture.
 
 ## Notes
 

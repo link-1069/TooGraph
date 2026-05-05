@@ -18,7 +18,7 @@ When repository guidance overlaps, prefer the current files in this order:
 
 1. `AGENTS.md`
 2. `README.md`
-3. `docs/current_project_status.md`
+3. `docs/future/buddy-autonomous-agent-roadmap.md`
 4. The code itself
 
 Keep this file aligned with those sources and with the actual codebase.
@@ -317,6 +317,9 @@ Current official templates live in `graph_template/official/<template_id>/templa
 
 - `advanced_web_research_loop`
 - `buddy_autonomous_loop`
+- `buddy_capability_loop`
+- `buddy_request_intake` - internal Buddy request intake subgraph template, not a normal user-facing template entry
+- `toograph_page_operation_workflow`
 - `toograph_skill_creation_workflow`
 - `buddy_autonomous_review` - internal background Buddy autonomous review and Buddy Home writeback template, not a normal user-facing template entry
 
@@ -329,6 +332,7 @@ Current official Skill packages live in `skill/official/<skill_key>/`:
 - `toograph_script_tester`
 - `local_workspace_executor`
 - `buddy_home_writer` - internal Buddy Home command/revision writer
+- `buddy_visible_subgraph_result_adapter` - internal Buddy visible subgraph result adapter
 
 ## Working Expectations For Agents
 
@@ -336,4 +340,4 @@ Current official Skill packages live in `skill/official/<skill_key>/`:
 - Follow the existing Vue + Pinia + Element Plus patterns on the frontend.
 - Follow the existing FastAPI + Pydantic + storage-layer separation on the backend.
 - Keep edits scoped to the current request. Do not revive stale planning work or broad refactors unless the task clearly needs them.
-- When updating docs, keep `README.md`, `AGENTS.md`, `CLAUDE.md`, and `docs/current_project_status.md` mutually consistent.
+- When updating docs, keep `README.md`, `AGENTS.md`, `CLAUDE.md`, `AGENT_ZH.md`, and `docs/future/buddy-autonomous-agent-roadmap.md` mutually consistent.

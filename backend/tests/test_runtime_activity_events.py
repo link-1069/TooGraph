@@ -132,7 +132,7 @@ class RuntimeActivityEventsTests(unittest.TestCase):
             {
                 "mode": "auto_resume_after_ui_operation",
                 "operation_request_id": "vop_1234567890abcdef",
-                "resume_state_keys": ["page_operation_context", "page_context", "operation_result"],
+                "resume_state_keys": ["page_operation_context", "page_context", "operation_result", "operation_report"],
                 "run_id": "run-activity",
                 "node_id": "execute_page_operation",
                 "subgraph_node_id": "operation_loop",
@@ -144,7 +144,7 @@ class RuntimeActivityEventsTests(unittest.TestCase):
             {
                 "mode": "auto_resume_after_ui_operation",
                 "operation_request_id": "vop_1234567890abcdef",
-                "resume_state_keys": ["page_operation_context", "page_context", "operation_result"],
+                "resume_state_keys": ["page_operation_context", "page_context", "operation_result", "operation_report"],
             },
         )
         self.assertEqual(published[0][2]["detail"]["expected_continuation"]["mode"], "auto_resume_after_ui_operation")
@@ -185,7 +185,7 @@ class RuntimeActivityEventsTests(unittest.TestCase):
         expected = {
             "mode": "auto_resume_after_ui_operation",
             "operation_request_id": "vop_template",
-            "resume_state_keys": ["page_operation_context", "page_context", "operation_result"],
+            "resume_state_keys": ["page_operation_context", "page_context", "operation_result", "operation_report"],
             "run_id": "run-activity",
             "node_id": "run_visible_template_operation",
             "subgraph_node_id": "buddy_capability_loop",

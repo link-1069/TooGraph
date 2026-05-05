@@ -58,10 +58,11 @@
                     :key="option.value"
                     :label="option.label"
                     :value="option.value"
+                    :disabled="option.disabled"
                   >
                     <span class="buddy-page__template-option">
                       <strong>{{ option.name }}</strong>
-                      <small>{{ option.value }}</small>
+                      <small>{{ option.disabledReason || option.value }}</small>
                     </span>
                   </ElOption>
                 </ElSelect>
@@ -96,7 +97,7 @@
                   <label class="buddy-page__binding-picker">
                     <span>{{ t("buddyPage.binding.inputNode") }}</span>
                     <ElSelect
-                      :ref="(select) => setBindingInputSelectRef(row.source, select)"
+                      :ref="bindingInputSelectRefHandler(row.source)"
                       class="buddy-page__binding-select toograph-select"
                       :model-value="row.selectedNodeId"
                       :placeholder="t('buddyPage.binding.selectInputNode')"
@@ -754,11 +755,23 @@ const bindingInputRows = computed(() => buildBuddyRunTemplateInputRows(selectedB
 const bindingSourceRows = computed(() => buildBuddyRunTemplateSourceRows(bindingDraft.value));
 const bindingValidation = computed(() => validateBuddyRunTemplateBinding(selectedBindingTemplate.value, bindingDraft.value));
 const bindingTemplateOptions = computed(() =>
-  availableTemplates.value.map((template) => ({
-    label: `${template.label} (${template.template_id})`,
-    name: template.label,
-    value: template.template_id,
-  })),
+  availableTemplates.value.map((template) => {
+    const breakpointBlocked =
+      template.hasBreakpointMetadata || template.capabilityDiscoverableBlockedReason === "breakpoint_metadata";
+    const disabledReason =
+      template.status === "disabled"
+        ? t("buddyPage.binding.templateDisabled")
+        : breakpointBlocked
+          ? t("buddyPage.binding.templateBreakpointBlocked")
+          : "";
+    return {
+      label: `${template.label} (${template.template_id})`,
+      name: template.label,
+      value: template.template_id,
+      disabled: Boolean(disabledReason),
+      disabledReason,
+    };
+  }),
 );
 const historyTargetOptions = computed(() =>
   BUDDY_REVISION_HISTORY_TARGET_FILTERS.map((value) => ({
@@ -892,6 +905,10 @@ function setBindingInputSelectRef(source: BuddyRunInputSource, select: unknown) 
     return;
   }
   bindingInputSelectRefs.set(source, select as BindingSelectInstance);
+}
+
+function bindingInputSelectRefHandler(source: BuddyRunInputSource) {
+  return (select: unknown) => setBindingInputSelectRef(source, select);
 }
 
 function closeSelect(select: BindingSelectInstance | null | undefined) {

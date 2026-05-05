@@ -68,27 +68,29 @@
   - 大型 Buddy 或自动化模板应在可行时把稳定阶段拆为 Subgraph 节点。优先使用可读的顶层图流，并通过可检查子图表达上下文打包、capability loop 和最终回复生成，而不是把所有逻辑塞进一张拥挤画布。回复后的 self-review 应作为一个独立、可审计的后台图/模板，从已完成 run snapshot 运行，不要延长可见回复路径并阻塞下一轮用户输入。
   - Skill 节点执行受控 capability 和副作用，例如写本地文件、更新记忆存储、下载资源或创建 revision。
   - Output 节点负责显示、预览、导出或链接结果。它们不应拥有持久化 mutation 逻辑。
+- Buddy 聊天运行胶囊必须只按 output 边界分段。边界是直接连接一个或多个 `output` 节点的上游非 output 节点；一个胶囊展示从上一个 output 边界之后到当前边界节点为止的运行过程，所有连接到同一个边界节点的 output 都跟在这个胶囊后展示。不要为父图决策分支、内部能力选择节点或其他没有连接 output 的图内部节点创建额外 Buddy 胶囊。例如线性流程 `A -> B -> C -> D -> E` 中，如果 `C` 连接两个 output 节点，`E` 连接一个 output 节点，应展示一个 `A, B, C` 胶囊和 C 的两个输出，再展示一个 `D, E` 胶囊和 E 的一个输出。
 - 后端代码应提供可复用 primitives、存储 API、校验器、revision 机制和 skill runtime。避免把 Buddy memory policy、persona 更新规则或工作流决策等产品行为埋进后端 endpoint；当行为可以表达为图/模板时，应通过图/模板表达。
 - Buddy 行为、记忆管理、persona 更新和文件编辑工作流应建模为可审计图流：input/context -> LLM planning -> optional validation/approval -> skill/subgraph execution -> output display。
 - 低层操作应通过图运行保持可见和可回放。当功能需要修改本地文档、profile 数据、policy 数据、memories、templates 或其他本地状态时，优先添加或复用一个 skill 加一个模板来执行操作，并返回清晰 artifacts，如本地文件路径、diff、revision ID 和状态消息。
 
 ## Buddy 自治 Agent 方向
 
-- 将 `docs/future/buddy-autonomous-agent-roadmap.md` 视为 Buddy 自治与自演化的长期方向。将 `docs/current_project_status.md` 视为当前实现快照。如果二者冲突，应更新快照或把仍有效的信息折叠进 roadmap，而不是发明第三个事实来源。
+- 将代码、官方模板 JSON、Skill manifest 和测试视为当前实现事实来源。将 `docs/future/buddy-autonomous-agent-roadmap.md` 视为 Buddy 自治与自演化的长期剩余路线图。除非用户明确要求，不要恢复 `docs/current_project_status.md` 或创建平行的当前状态快照。
 - `demo/hermes-agent/` 项目是 capability 参考，不是要照搬的架构。TooGraph 应把 Hermes 风格能力翻译为图模板、显式 Skill 调用、state、approval、run record、revision 和 artifact。
 - Hermes 风格自治不只是工具调用：它包括多步骤 capability loop、memory/session recall、skill 创建和改进、计划或触发运行、delegation、安全 guardrail、结果预算，以及从执行 trace 中自我改进。在 TooGraph 中，这些必须表达为可审计图流，而不是隐藏 agent loop。
 - TooGraph 中的 Skill 表示一个 LLM-node turn 中的一次受控 capability 调用。Skill 可以读取上下文、准备确定性数据、运行脚本、搜索、写入一个受控输出，或返回 artifact。它不应拥有多步骤自治、retry loop、结果复盘、最终回复生成、长期记忆策略或后续 capability 选择。
 - 多步骤智能属于图模板：LLM node -> condition -> one Skill or dynamic subgraph execution -> `result_package` or mapped Skill outputs -> LLM review -> condition loop, pause, approval, failure handling, or final output。
 - 不要创建单体 `self_evolve` Skill 或 Buddy 专用隐藏 runtime。Buddy 自演化应是图模板 pipeline：把 run trace、用户修正、失败、成功和 Buddy Home context 转成结构化改进候选，验证或测试它们，必要时请求人工 review，然后才通过受控 command 或 Skill 应用改动。
 - 现有 Buddy 模板是起点，不是可丢弃脚手架：
-  - `buddy_autonomous_loop` 是可见 Buddy 运行路径：context input、request intake、capability loop、final response，以及单个面向用户的 `final_reply`。
-  - `buddy_self_review` 是后台复盘路径：它应产生 memory 和 evolution plan，而不是静默修改 Buddy Home 或图资产。
+  - `buddy_autonomous_loop` 是可见 Buddy 运行路径：context input、request intake、capability loop、可选的直接能力结果输出和 final response。
+  - `buddy_autonomous_review` 是后台复盘路径：它应产生 memory 和 evolution plan，而不是静默修改 Buddy Home 或图资产。
   - `toograph_skill_creation_workflow` 是图表达创建工作流的参考模式：clarify、confirm examples、generate files、test、review、approve，然后通过受控 capability calls 写入。
+- Buddy clarification 和 capability-review gaps 应通过普通最终回复结束当前 run，而不是通过用户可见的 `interrupt_after` breakpoint。官方 Buddy 能力模板不能包含 `interrupt_after`、`interrupt_before`、`agent_breakpoint_timing` 或 `auto_resume_after_ui_operation_nodes` 这类 breakpoint-like metadata。页面操作自动恢复是运行时根据使用 `toograph_page_operator` Skill 的 LLM 节点派生的等待点，通过 `pending_page_operation_continuation` 等 activity-event continuation metadata 表达，不写入模板 JSON。
 - Buddy 图编排有两个目标模式：
   - 通过应用内虚拟 UI playback 或已验证 command draft 修改当前图，并保留 diff/preview、必要的 human approval、graph revision 和 undo/redo。
   - 根据用户目标创建新的图模板或可复用子图，验证它，可选试运行它，预览它，请求批准，然后保存为用户模板，供后续 capability selection 发现。
-- 当前 Buddy baseline 已包括动态 subgraph breakpoint 传播、Buddy 悬浮窗口复用标准 `awaiting_human` pause/resume cards、Buddy Home 通过 command/revision 写回，以及应用内虚拟图回放。Pause UI 应在请求补充用户输入前显示当前已产出内容和上下文。剩余最高优先级 Buddy 基础设施包括虚拟 UI operation journal / activity events、graph diff / revision / undo / redo plumbing、编辑已有图、运行/结果校验、上下文预算，以及更完整的低层操作摘要。
-- Buddy 自演化应优先选择窄且可逆的改进：memory updates、session summaries、Skill revisions、graph patch drafts、reusable subgraph/template proposals 和 policy suggestions。更高风险改动，如 graph edits、file writes、script execution、network access、automation creation 或 persona/policy changes，需要显式 approval 和可恢复 revisions。
+- 当前 Buddy baseline 已包括动态 subgraph breakpoint 传播作为运行时原语、Buddy Home 通过 command/revision 写回、应用内虚拟图回放，以及只按 output 边界分段的 Buddy 聊天胶囊。Buddy 聊天不应把 `awaiting_human` 转成聊天内 resume 卡片，也不应把下一条聊天消息消费为隐藏 resume payload；非页面操作暂停保持为可通过标准 review surface 检查的后台 run。剩余最高优先级 Buddy 基础设施包括虚拟 UI operation journal / activity events、graph diff / revision / undo / redo plumbing、编辑已有图、运行/结果校验、上下文预算，以及更完整的低层操作摘要。
+- Buddy 自演化应优先选择窄且可逆的改进：memory updates、session summaries、Skill revisions、reusable subgraph/template proposals 和 policy suggestions。更高风险改动，如 graph edits、file writes、script execution、network access、automation creation 或 persona/policy changes，需要显式 approval 和可恢复 revisions。
 
 ## Skill 包边界
 
@@ -132,8 +134,8 @@
 
 ## 文档卫生
 
-- 仓库文档应与当前产品架构保持一致。当计划已完成、被取代或与新原则冲突时，应删除它，将仍有效部分折叠进当前文档，或明确标记为 superseded。
-- `docs/` 应包含当前正式文档和持久未来方向，而不是一次性进度日志、过时实现计划，或记录已被否定架构的文档。
+- 仓库文档应与当前产品架构保持一致。当计划已完成、被取代或与新原则冲突时，应删除它，或将仍有效的剩余工作折叠进 `docs/future/buddy-autonomous-agent-roadmap.md`。
+- `docs/` 应包含当前使用/参考文档和持久剩余路线图，而不是当前状态快照、一次性进度日志、过时实现计划，或记录已被否定架构的文档。
 
 ## 备注
 

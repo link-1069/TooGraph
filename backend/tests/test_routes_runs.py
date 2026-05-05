@@ -216,7 +216,7 @@ class RunRouteTests(unittest.TestCase):
             "pending_page_operation_continuation": {
                 "mode": "auto_resume_after_ui_operation",
                 "operation_request_id": "vop_expected",
-                "resume_state_keys": ["page_operation_context", "page_context", "operation_result"],
+                "resume_state_keys": ["page_operation_context", "page_context", "operation_result", "operation_report"],
             },
         }
 
@@ -243,7 +243,7 @@ class RunRouteTests(unittest.TestCase):
             "pending_page_operation_continuation": {
                 "mode": "auto_resume_after_ui_operation",
                 "operation_request_id": "vop_expected",
-                "resume_state_keys": ["page_operation_context", "page_context", "operation_result"],
+                "resume_state_keys": ["page_operation_context", "page_context", "operation_result", "operation_report"],
             },
         }
         resume_payload = {

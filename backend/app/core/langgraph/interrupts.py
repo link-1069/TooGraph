@@ -40,8 +40,7 @@ def resolve_interrupt_configuration(
         normalized = [item for item in items if item and (allowed_nodes is None or item in allowed_nodes)]
         return normalized or None
 
-    interrupt_after = _normalize(metadata.get("interrupt_after"))
-    return interrupt_after
+    return _normalize(metadata.get("interrupt_after"))
 
 
 def is_waiting_for_human(snapshot: Any) -> bool:

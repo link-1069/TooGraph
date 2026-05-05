@@ -40,7 +40,8 @@ TOOGRAPH_PROJECT_DOC_FILES = [
     REPO_ROOT / "knowledge" / "TooGraph-official" / "current-architecture.md",
     REPO_ROOT / "knowledge" / "TooGraph-official" / "runtime-and-roadmap.md",
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "current_project_status.md",
+    REPO_ROOT / "docs" / "future" / "buddy-autonomous-agent-roadmap.md",
+    REPO_ROOT / "docs" / "structured-output-and-function-calling.md",
 ]
 
 

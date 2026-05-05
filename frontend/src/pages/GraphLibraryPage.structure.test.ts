@@ -54,6 +54,7 @@ test("GraphLibraryPage exposes a separate capability discovery switch for templa
   assert.match(componentSource, /item\.kind === ['"]template['"]/);
   assert.match(componentSource, /graphLibrary\.capabilityDiscoverable/);
   assert.match(componentSource, /updateTemplateCapabilityDiscoverable/);
+  assert.match(componentSource, /!item\.canToggleCapabilityDiscoverable/);
   assert.match(componentSource, /setTemplateCapabilityDiscoverable\(item, Boolean\(\$event\)\)/);
 });
 

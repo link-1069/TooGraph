@@ -8,7 +8,7 @@ from app.core.runtime.run_events import publish_run_event
 from app.core.runtime.state import utc_now_iso
 
 AUTO_RESUME_AFTER_UI_OPERATION = "auto_resume_after_ui_operation"
-PAGE_OPERATION_RESUME_STATE_KEYS = ["page_operation_context", "page_context", "operation_result"]
+PAGE_OPERATION_RESUME_STATE_KEYS = ["page_operation_context", "page_context", "operation_result", "operation_report"]
 
 
 def record_activity_event(

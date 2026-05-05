@@ -481,7 +481,7 @@ import {
   fetchBuddyRunTemplateBinding,
 } from "../api/buddy.ts";
 import { fetchTemplate, fetchTemplates, runGraph } from "../api/graphs.ts";
-import { cancelRun, fetchRun, resumeRun } from "../api/runs.ts";
+import { fetchRun, resumeRun } from "../api/runs.ts";
 import { fetchSettings } from "../api/settings.ts";
 import SandboxedHtmlFrame from "../components/SandboxedHtmlFrame.vue";
 import { resolveOutputPreviewContent } from "../editor/nodes/outputPreviewContentModel.ts";
@@ -512,10 +512,6 @@ import type { SettingsPayload } from "../types/settings.ts";
 import BuddyMascot from "./BuddyMascot.vue";
 import type { BuddyMascotDebugAction } from "./buddyMascotDebug.ts";
 import {
-  buildBuddyConversationalPausePrompt,
-  buildBuddyConversationalPauseResumePayload,
-} from "./buddyConversationalPause.ts";
-import {
   buildOutputTraceBuddyMessageMetadata,
   resolveOutputTraceBuddyMessageMetadata,
 } from "./buddyMessageMetadata.ts";
@@ -539,7 +535,6 @@ import {
   resolveBuddyVirtualOperationUserAction,
   shouldHandleVirtualCursorPointerDown,
 } from "./buddyVirtualOperationInteractionPolicy.ts";
-import { findLatestRecoverablePausedRunMessage, isRecoverablePausedRunStatus } from "./buddyPausedRunRecovery.ts";
 import {
   resolveBuddyComposerDecision,
   shouldHoldBuddyQueueDrain,
@@ -2412,28 +2407,24 @@ async function executeVirtualOperationRequest(request: BuddyVirtualOperationRequ
           pageOperationContextBefore,
         );
         triggeredRun = execution.triggeredRun;
-        if (isVirtualOperationInterrupted(token)) {
-          status = "interrupted";
-        } else {
-          const completedTriggeredRunDetail = await waitForTriggeredRunCompletion(triggeredRun, {
-            token,
-            onSnapshot: (runDetail) => syncBackgroundTemplateRunDisplay(operationPlan, runDetail, execution.graph),
-          });
-          triggeredRunDetail = completedTriggeredRunDetail;
-          if (completedTriggeredRunDetail) {
-            promoteBackgroundTemplateRunResultToBuddyReply(operationPlan, completedTriggeredRunDetail, execution.graph);
-          }
-          status = isVirtualOperationInterrupted(token) ? "interrupted" : "succeeded";
+        const completedTriggeredRunDetail = await waitForTriggeredRunCompletion(triggeredRun, {
+          onSnapshot: (runDetail) => syncBackgroundTemplateRunDisplay(operationPlan, runDetail, execution.graph),
+        });
+        triggeredRunDetail = completedTriggeredRunDetail;
+        if (completedTriggeredRunDetail) {
+          promoteBackgroundTemplateRunResultToBuddyReply(operationPlan, completedTriggeredRunDetail, execution.graph);
         }
+        status = completedTriggeredRunDetail?.status === "failed" ? "failed" : "succeeded";
       } finally {
         finishVirtualOperation(token);
       }
     } else {
       buddyMascotDebugStore.beginVirtualOperationRunAttribution(operationPlan);
       status = await executeVirtualOperationCommands(operationPlan);
-      if (status !== "interrupted") {
-        triggeredRun = await waitForVirtualOperationTriggeredRun(operationPlan);
-        triggeredRunDetail = triggeredRun ? await waitForTriggeredRunCompletion(triggeredRun) : null;
+      triggeredRun = await waitForVirtualOperationTriggeredRun(operationPlan);
+      triggeredRunDetail = triggeredRun ? await waitForTriggeredRunCompletion(triggeredRun) : null;
+      if (triggeredRunDetail && !shouldPollRunStatus(triggeredRunDetail.status)) {
+        status = triggeredRunDetail.status === "failed" ? "failed" : "succeeded";
       }
     }
   } catch (caughtError) {
@@ -2496,9 +2487,6 @@ async function maybeAutoResumePageOperationRun(
   pageOperationContextAfter: ReturnType<typeof buildPageOperationRuntimeContext>,
 ) {
   if (!operationPlan.runId || !operationPlan.operationRequestId || !operationPlan.expectedContinuation) {
-    return;
-  }
-  if (operationResult.status === "interrupted") {
     return;
   }
   const runDetail = await fetchRun(operationPlan.runId);
@@ -4005,7 +3993,7 @@ async function sendMessage() {
     hasPausedRun: Boolean(pausedBuddyRun.value),
     isResumeBusy: pausedBuddyResumeBusy.value,
   });
-  if (composerDecision.kind === "ignore_empty" || composerDecision.kind === "ignore_resume_busy") {
+  if (composerDecision.kind === "ignore_empty") {
     return;
   }
   const userMessage = composerDecision.userMessage;
@@ -4019,18 +4007,6 @@ async function sendMessage() {
   if (!sessionId) {
     return;
   }
-  if (composerDecision.kind === "resume_paused_run") {
-    draft.value = "";
-    const userEntry = createMessage("user", userMessage, undefined, allocateBuddyMessageClientOrder());
-    const assistantEntry = createMessage("assistant", "", undefined, allocateBuddyMessageClientOrder());
-    messages.value.push(userEntry, assistantEntry);
-    showBuddyImmediatePendingTrace(assistantEntry.id);
-    void persistBuddyMessage(sessionId, userEntry);
-    await resumePausedBuddyRunFromChatReply(userMessage, assistantEntry.id);
-    await scrollMessagesToBottom();
-    return;
-  }
-
   draft.value = "";
 
   const userEntry = createMessage("user", userMessage, undefined, allocateBuddyMessageClientOrder());
@@ -4079,7 +4055,6 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
   clearSpeakingIdleTimer();
   const history = turn.history;
   const assistantMessage = ensureAssistantMessageForTurn(turn);
-  let keepRunPaused = false;
   mood.value = "thinking";
   setAssistantActivityText(assistantMessage.id, t("buddy.activity.preparing"));
   await scrollMessagesToBottom();
@@ -4109,7 +4084,6 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
     startRunEventStream(run.run_id, assistantMessage.id, graph, publicOutputBindings);
     const runDetail = await pollRunUntilFinished(run.run_id, activeAbortController.signal);
     if (runDetail.status === "awaiting_human") {
-      keepRunPaused = true;
       handleBuddyRunAwaitingHuman(runDetail, assistantMessage.id, { persist: true });
       return;
     }
@@ -4128,116 +4102,7 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
     });
   } finally {
     closeEventSource();
-    if (!keepRunPaused) {
-      activeRunId.value = null;
-    }
-    activeAbortController = null;
-    scheduleBuddySpeakingIdleIfNeeded();
-    if (keepRunPaused) {
-      await scrollMessagesToBottom();
-    } else {
-      await scrollMessagesToBottom();
-    }
-  }
-}
-
-async function resumePausedBuddyRun(resumePayloadOverride: Record<string, unknown> | null = null) {
-  const run = pausedBuddyRun.value;
-  const assistantMessageId = pausedBuddyAssistantMessageId.value;
-  const sessionId = activeSessionId.value;
-  if (!run || !assistantMessageId || !sessionId || pausedBuddyResumeBusy.value) {
-    return;
-  }
-
-  clearSpeakingIdleTimer();
-  errorMessage.value = "";
-  mood.value = "thinking";
-  pausedBuddyResumeBusy.value = true;
-  setAssistantActivityText(assistantMessageId, t("buddy.activity.resuming"));
-
-  try {
-    const resumePayload = resumePayloadOverride ?? {};
-    activeAbortController = new AbortController();
-    const response = await resumeRun(run.run_id, resumePayload);
-    activeRunId.value = response.run_id;
-    resetPausedBuddyPause();
-    const graph = run.graph_snapshot as unknown as GraphPayload;
-    startRunEventStream(response.run_id, assistantMessageId, graph, buildBuddyPublicOutputBindings(graph));
-    const resumedRunDetail = await pollRunUntilFinished(response.run_id, activeAbortController.signal);
-    if (resumedRunDetail.status === "awaiting_human") {
-      handleBuddyRunAwaitingHuman(resumedRunDetail, assistantMessageId, { persist: true });
-      return;
-    }
-    finishBuddyVisibleRun(resumedRunDetail, assistantMessageId, sessionId, response.run_id);
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      return;
-    }
-    mood.value = "error";
-    const message = error instanceof Error ? error.message : t("buddy.runFailed");
-    errorMessage.value = message;
-  } finally {
-    pausedBuddyResumeBusy.value = false;
-    closeEventSource();
-    if (!pausedBuddyRun.value) {
-      activeRunId.value = null;
-    }
-    activeAbortController = null;
-    scheduleBuddySpeakingIdleIfNeeded();
-    if (pausedBuddyRun.value) {
-      await scrollMessagesToBottom();
-    } else {
-      await scrollMessagesToBottom();
-    }
-  }
-}
-
-async function resumePausedBuddyRunFromChatReply(userMessage: string, assistantMessageId: string) {
-  const run = pausedBuddyRun.value;
-  const sessionId = activeSessionId.value;
-  if (!run || !sessionId || pausedBuddyResumeBusy.value) {
-    return;
-  }
-
-  clearSpeakingIdleTimer();
-  errorMessage.value = "";
-  mood.value = "thinking";
-  pausedBuddyResumeBusy.value = true;
-  pausedBuddyAssistantMessageId.value = assistantMessageId;
-  setAssistantActivityText(assistantMessageId, t("buddy.activity.resuming"));
-
-  try {
-    const graph = run.graph_snapshot as unknown as GraphPayload;
-    const resumePayload = buildBuddyConversationalPauseResumePayload(run, graph, userMessage);
-    activeAbortController = new AbortController();
-    const response = await resumeRun(run.run_id, resumePayload);
-    activeRunId.value = response.run_id;
-    resetPausedBuddyPause();
-    startRunEventStream(response.run_id, assistantMessageId, graph, buildBuddyPublicOutputBindings(graph));
-    const resumedRunDetail = await pollRunUntilFinished(response.run_id, activeAbortController.signal);
-    if (resumedRunDetail.status === "awaiting_human") {
-      handleBuddyRunAwaitingHuman(resumedRunDetail, assistantMessageId, { persist: true });
-      return;
-    }
-    finishBuddyVisibleRun(resumedRunDetail, assistantMessageId, sessionId, response.run_id);
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      return;
-    }
-    mood.value = "error";
-    const message = error instanceof Error ? error.message : t("buddy.runFailed");
-    errorMessage.value = message;
-    removeBuddyRunDisplayMessages(assistantMessageId);
-    updateAssistantMessage(assistantMessageId, t("buddy.errorReply", { error: message }), { includeInContext: false });
-    void persistBuddyMessage(sessionId, messages.value.find((entry) => entry.id === assistantMessageId), {
-      includeInContext: false,
-    });
-  } finally {
-    pausedBuddyResumeBusy.value = false;
-    closeEventSource();
-    if (!pausedBuddyRun.value) {
-      activeRunId.value = null;
-    }
+    activeRunId.value = null;
     activeAbortController = null;
     scheduleBuddySpeakingIdleIfNeeded();
     await scrollMessagesToBottom();
@@ -4305,50 +4170,6 @@ function clearAutoResumingPageOperationPlaceholder(assistantMessageId: string, r
   });
 }
 
-async function cancelPausedBuddyRun() {
-  const run = pausedBuddyRun.value;
-  const assistantMessageId = pausedBuddyAssistantMessageId.value;
-  const sessionId = activeSessionId.value;
-  if (!run || !assistantMessageId || !sessionId || pausedBuddyResumeBusy.value) {
-    return;
-  }
-
-  clearSpeakingIdleTimer();
-  errorMessage.value = "";
-  mood.value = "thinking";
-  pausedBuddyResumeBusy.value = true;
-  setAssistantActivityText(assistantMessageId, t("buddy.activity.cancelling"));
-
-  try {
-    await cancelRun(run.run_id, t("buddy.pause.cancelReason"));
-    updateAssistantMessage(assistantMessageId, t("buddy.pause.cancelledReply"), {
-      includeInContext: false,
-      runId: run.run_id,
-    });
-    void persistBuddyMessage(sessionId, messages.value.find((message) => message.id === assistantMessageId), {
-      runId: run.run_id,
-      includeInContext: false,
-    });
-    resetPausedBuddyPause();
-    closeEventSource();
-    activeRunId.value = null;
-    mood.value = "idle";
-  } catch (error) {
-    mood.value = "error";
-    const message = error instanceof Error ? error.message : t("buddy.runFailed");
-    errorMessage.value = message;
-  } finally {
-    pausedBuddyResumeBusy.value = false;
-    activeAbortController = null;
-    scheduleBuddySpeakingIdleIfNeeded();
-    if (pausedBuddyRun.value) {
-      await scrollMessagesToBottom();
-    } else {
-      await scrollMessagesToBottom();
-    }
-  }
-}
-
 function handleBuddyRunAwaitingHuman(
   run: RunDetail,
   assistantMessageId: string,
@@ -4359,19 +4180,22 @@ function handleBuddyRunAwaitingHuman(
   activeRunId.value = run.run_id;
   mood.value = "thinking";
   setAssistantActivityText(assistantMessageId, t("buddy.pause.activity"));
-  const graph = run.graph_snapshot as unknown as GraphPayload;
   const isAutoResumablePageOperationPause = Boolean(findAutoResumablePageOperationRequestId(run));
-  const pauseReply = isAutoResumablePageOperationPause
-    ? t("buddy.pause.autoResumingPageOperation")
-    : buildBuddyConversationalPausePrompt(run, graph);
-  updateAssistantMessage(assistantMessageId, pauseReply, {
-    includeInContext: !isAutoResumablePageOperationPause,
+  if (isAutoResumablePageOperationPause) {
+    updateAssistantMessage(assistantMessageId, "", {
+      includeInContext: false,
+      runId: run.run_id,
+    });
+    return;
+  }
+  updateAssistantMessage(assistantMessageId, t("buddy.pause.backgroundRequired"), {
+    includeInContext: false,
     runId: run.run_id,
   });
-  if (options.persist && activeSessionId.value && !isAutoResumablePageOperationPause) {
+  if (options.persist && activeSessionId.value) {
     void persistBuddyMessage(activeSessionId.value, messages.value.find((message) => message.id === assistantMessageId), {
       runId: run.run_id,
-      includeInContext: !isAutoResumablePageOperationPause,
+      includeInContext: false,
     });
   }
 }
@@ -4588,39 +4412,12 @@ async function activateChatSession(sessionId: string, options: { skipInitializat
     messages.value = records.map(messageRecordToBuddyMessage);
     resetNextBuddyMessageClientOrder();
     resetVisibleBuddyRunState();
-    await recoverPausedBuddyRunFromLoadedMessages(sessionId, activationGeneration);
+    void activationGeneration;
     await scrollMessagesToBottom();
   } catch (error) {
     errorMessage.value = t("buddy.historyLoadFailed", { error: formatErrorMessage(error) });
   } finally {
     isSessionLoading.value = false;
-  }
-}
-
-function isCurrentChatSessionActivation(sessionId: string, activationGeneration: number) {
-  return activeSessionId.value === sessionId && chatSessionActivationGeneration === activationGeneration;
-}
-
-async function recoverPausedBuddyRunFromLoadedMessages(sessionId: string, activationGeneration: number) {
-  const candidate = findLatestRecoverablePausedRunMessage(messages.value);
-  if (!candidate) {
-    return;
-  }
-
-  try {
-    const run = await fetchRun(candidate.runId);
-    if (!isCurrentChatSessionActivation(sessionId, activationGeneration)) {
-      return;
-    }
-    if (!isRecoverablePausedRunStatus(run.status)) {
-      return;
-    }
-    handleBuddyRunAwaitingHuman(run, candidate.messageId);
-    await scrollMessagesToBottom();
-  } catch (error) {
-    if (isCurrentChatSessionActivation(sessionId, activationGeneration)) {
-      errorMessage.value = t("buddy.pause.recoveryFailed", { error: formatErrorMessage(error) });
-    }
   }
 }
 

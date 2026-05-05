@@ -101,6 +101,25 @@ test("binding model validates current message and duplicate sources", () => {
   assert.match(duplicate.issues.join("\n"), /exactly once/);
 });
 
+test("binding model rejects templates with breakpoint metadata", () => {
+  const pausedTemplate = {
+    ...template(),
+    hasBreakpointMetadata: true,
+    capabilityDiscoverableBlockedReason: "breakpoint_metadata",
+    metadata: { interrupt_after: ["review"] },
+  };
+
+  const validation = validateBuddyRunTemplateBinding(pausedTemplate, {
+    template_id: "custom_loop",
+    input_bindings: {
+      input_prompt: "current_message",
+    },
+  });
+
+  assert.equal(validation.valid, false);
+  assert.match(validation.issues.join("\n"), /breakpoint/);
+});
+
 test("binding model exposes Buddy input rows with current message required", () => {
   const rows = buildBuddyRunTemplateSourceRows({
     template_id: "custom_loop",

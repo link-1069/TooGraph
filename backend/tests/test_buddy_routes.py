@@ -107,7 +107,9 @@ class BuddyRouteTests(unittest.TestCase):
 
     def test_run_template_binding_default_save_and_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_run_template_can_be_bound", lambda _template_id: None
+            ):
                 with TestClient(app) as client:
                     default_response = client.get("/api/buddy/run-template-binding")
                     save_response = client.post(
@@ -144,7 +146,9 @@ class BuddyRouteTests(unittest.TestCase):
 
     def test_run_template_binding_rejects_missing_current_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_run_template_can_be_bound", lambda _template_id: None
+            ):
                 with TestClient(app) as client:
                     response = client.post(
                         "/api/buddy/commands",

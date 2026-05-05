@@ -49,6 +49,54 @@ def _without_internal_metadata(core: dict) -> dict:
     return {**core, "metadata": metadata}
 
 
+FORBIDDEN_TEMPLATE_BREAKPOINT_KEYS = {
+    "interrupt_after",
+    "interrupt_before",
+    "agent_breakpoint_timing",
+    "auto_resume_after_ui_operation_nodes",
+}
+
+
+def _iter_graphs(record: dict, path: str | None = None):
+    graph_path = path or str(record.get("template_id") or "<template>")
+    yield graph_path, record
+    nodes = record.get("nodes") if isinstance(record.get("nodes"), dict) else {}
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict):
+            continue
+        config = node.get("config") if isinstance(node.get("config"), dict) else {}
+        embedded_graph = config.get("graph") if isinstance(config.get("graph"), dict) else None
+        if embedded_graph is not None:
+            yield from _iter_graphs(embedded_graph, f"{graph_path}.{node_id}")
+
+
+def _node_position(node: dict) -> tuple[float, float]:
+    ui = node.get("ui") if isinstance(node.get("ui"), dict) else {}
+    position = ui.get("position") if isinstance(ui.get("position"), dict) else {}
+    return float(position.get("x") or 0), float(position.get("y") or 0)
+
+
+def _node_size(node: dict) -> tuple[float, float]:
+    ui = node.get("ui") if isinstance(node.get("ui"), dict) else {}
+    size = ui.get("size") if isinstance(ui.get("size"), dict) else {}
+    kind = str(node.get("kind") or "")
+    if kind == "condition":
+        default_width, default_height = 560, 280
+    elif kind == "output":
+        default_width, default_height = 460, 340
+    elif kind == "input":
+        default_width, default_height = 460, 320
+    else:
+        default_width, default_height = 460, 360
+    return float(size.get("width") or default_width), float(size.get("height") or default_height)
+
+
+def _rects_overlap(a: tuple[float, float, float, float], b: tuple[float, float, float, float], *, gap: float = 32) -> bool:
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    return ax < bx + bw + gap and ax + aw + gap > bx and ay < by + bh + gap and ay + ah + gap > by
+
+
 class TemplateLayoutTests(unittest.TestCase):
     def test_builtin_template_registry_contains_official_templates(self) -> None:
         records = _official_template_records()
@@ -96,6 +144,62 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(page_operation_template["label"], "操作 TooGraph 页面")
         self.assertEqual(page_operation_template["default_graph_name"], "操作 TooGraph 页面")
         self.assertIn("页面操作", page_operation_template["description"])
+
+    def test_official_templates_do_not_embed_breakpoint_metadata(self) -> None:
+        for template in _official_template_records():
+            for graph_path, graph in _iter_graphs(template):
+                with self.subTest(graph=graph_path):
+                    metadata = graph.get("metadata") if isinstance(graph.get("metadata"), dict) else {}
+                    self.assertEqual(sorted(FORBIDDEN_TEMPLATE_BREAKPOINT_KEYS.intersection(metadata)), [])
+
+    def test_official_template_graphs_have_connected_spaced_nodes(self) -> None:
+        for template in _official_template_records():
+            for graph_path, graph in _iter_graphs(template):
+                nodes = graph.get("nodes") if isinstance(graph.get("nodes"), dict) else {}
+                edges = graph.get("edges") if isinstance(graph.get("edges"), list) else []
+                conditional_edges = graph.get("conditional_edges") if isinstance(graph.get("conditional_edges"), list) else []
+                incoming: dict[str, int] = {node_id: 0 for node_id in nodes}
+                outgoing: dict[str, int] = {node_id: 0 for node_id in nodes}
+                for edge in edges:
+                    if not isinstance(edge, dict):
+                        continue
+                    source = str(edge.get("source") or "")
+                    target = str(edge.get("target") or "")
+                    if source in outgoing:
+                        outgoing[source] += 1
+                    if target in incoming:
+                        incoming[target] += 1
+                for route in conditional_edges:
+                    if not isinstance(route, dict):
+                        continue
+                    source = str(route.get("source") or "")
+                    if source in outgoing:
+                        outgoing[source] += 1
+                    branches = route.get("branches") if isinstance(route.get("branches"), dict) else {}
+                    for target in branches.values():
+                        target_id = str(target or "")
+                        if target_id in incoming:
+                            incoming[target_id] += 1
+
+                for node_id, node in nodes.items():
+                    with self.subTest(graph=graph_path, node=node_id):
+                        kind = node.get("kind")
+                        self.assertFalse(
+                            kind not in {"input", "output"} and incoming[node_id] == 0,
+                            "non-boundary node has no incoming edge",
+                        )
+                        self.assertFalse(kind != "output" and outgoing[node_id] == 0, "non-output node has no outgoing edge")
+
+                rects = {
+                    node_id: (*_node_position(node), *_node_size(node))
+                    for node_id, node in nodes.items()
+                    if isinstance(node, dict)
+                }
+                node_ids = list(rects)
+                for index, left_id in enumerate(node_ids):
+                    for right_id in node_ids[index + 1:]:
+                        with self.subTest(graph=graph_path, left=left_id, right=right_id):
+                            self.assertFalse(_rects_overlap(rects[left_id], rects[right_id]))
 
     def test_advanced_web_research_loop_contract(self) -> None:
         template = next(record for record in _official_template_records() if record["template_id"] == "advanced_web_research_loop")
@@ -473,18 +577,18 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(_read_contracts(nodes["output_final"]["reads"]), [{"state": "final_reply", "required": True}])
         expected_positions = {
             "input_user_message": {"x": 80, "y": 100},
-            "input_conversation_history": {"x": 80, "y": 300},
-            "input_page_context": {"x": 80, "y": 500},
-            "input_buddy_context": {"x": 80, "y": 700},
+            "input_conversation_history": {"x": 80, "y": 516},
+            "input_page_context": {"x": 80, "y": 932},
+            "input_buddy_context": {"x": 80, "y": 1348},
             "buddy_context_recall": {"x": 660, "y": 360},
             "buddy_turn_intake": {"x": 1240, "y": 360},
             "needs_task_plan": {"x": 1820, "y": 360},
-            "buddy_task_plan": {"x": 2400, "y": 120},
-            "needs_capability": {"x": 2400, "y": 660},
-            "buddy_capability_loop": {"x": 3040, "y": 360},
+            "buddy_task_plan": {"x": 2476, "y": 120},
+            "needs_capability": {"x": 2476, "y": 660},
+            "buddy_capability_loop": {"x": 3132, "y": 360},
             "should_pass_through_capability_result": {"x": 3740, "y": 260},
-            "output_capability_passthrough": {"x": 4300, "y": 120},
-            "buddy_final_reply": {"x": 4300, "y": 520},
+            "output_capability_passthrough": {"x": 4396, "y": 120},
+            "buddy_final_reply": {"x": 4396, "y": 556},
             "output_final": {"x": 5000, "y": 520},
         }
         for node_id, expected_position in expected_positions.items():
@@ -629,7 +733,8 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"state": "task_plan", "mode": "replace"}, nodes["buddy_task_plan"]["writes"])
 
         cycle_graph = nodes["buddy_capability_loop"]["config"]["graph"]
-        self.assertEqual(cycle_graph["metadata"].get("interrupt_after", []), ["run_visible_template_operation"])
+        self.assertNotIn("interrupt_after", cycle_graph["metadata"])
+        self.assertNotIn("auto_resume_after_ui_operation_nodes", cycle_graph["metadata"])
         self.assertEqual(cycle_graph["metadata"]["role"], "buddy_capability_loop")
         self.assertEqual(cycle_graph["state_schema"]["context_brief"]["type"], "json")
         self.assertEqual(cycle_graph["state_schema"]["task_plan"]["type"], "json")
@@ -797,6 +902,21 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "run_visible_template_operation", "target": "adapt_visible_subgraph_result"}, cycle_graph["edges"])
         self.assertIn({"source": "adapt_visible_subgraph_result", "target": "review_capability_result"}, cycle_graph["edges"])
         self.assertNotIn("output_approval_prompt", cycle_graph["nodes"])
+        self.assertLessEqual(
+            max(node["ui"]["position"]["x"] for node in cycle_graph["nodes"].values())
+            - min(node["ui"]["position"]["x"] for node in cycle_graph["nodes"].values()),
+            6200,
+        )
+        for input_node_id in [
+            "input_user_message",
+            "input_conversation_history",
+            "input_page_context",
+            "input_buddy_context",
+            "input_request_understanding",
+            "input_context_brief",
+            "input_task_plan",
+        ]:
+            self.assertIn({"source": input_node_id, "target": "select_capability"}, cycle_graph["edges"])
 
         final_reply_node = nodes["buddy_final_reply"]
         self.assertEqual(final_reply_node["config"]["skillKey"], "")
@@ -910,7 +1030,8 @@ class TemplateLayoutTests(unittest.TestCase):
 
         loop_graph = nodes["operation_loop"]["config"]["graph"]
         self.assertEqual(loop_graph["metadata"]["role"], "page_operation_loop")
-        self.assertEqual(loop_graph["metadata"]["interrupt_after"], ["execute_page_operation"])
+        self.assertNotIn("interrupt_after", loop_graph["metadata"])
+        self.assertNotIn("auto_resume_after_ui_operation_nodes", loop_graph["metadata"])
         self.assertEqual(
             loop_graph["conditional_edges"],
             [

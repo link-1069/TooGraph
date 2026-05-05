@@ -206,6 +206,48 @@ class BuddyStoreTests(unittest.TestCase):
         self.assertEqual(messages[0]["content"], "")
         self.assertFalse(messages[0]["include_in_context"])
 
+    def test_run_template_binding_rejects_templates_with_breakpoint_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            buddy_home = root / "buddy_home"
+            official_dir = root / "official"
+            user_dir = root / "user"
+            user_template_dir = user_dir / "paused_loop"
+            official_dir.mkdir()
+            user_template_dir.mkdir(parents=True)
+            (user_template_dir / "template.json").write_text(
+                json.dumps(
+                    {
+                        "template_id": "paused_loop",
+                        "label": "Paused Loop",
+                        "description": "Has a breakpoint.",
+                        "default_graph_name": "Paused Loop",
+                        "state_schema": {},
+                        "nodes": {},
+                        "edges": [],
+                        "conditional_edges": [],
+                        "metadata": {"interrupt_after": ["review"]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(store, "BUDDY_HOME_DIR", buddy_home),
+                patch("app.templates.loader.OFFICIAL_TEMPLATES_ROOT", official_dir),
+                patch("app.templates.loader.USER_TEMPLATES_ROOT", user_dir),
+                patch("app.templates.loader.TEMPLATE_SETTINGS_PATH", root / "settings.json", create=True),
+            ):
+                with self.assertRaisesRegex(ValueError, "breakpoint"):
+                    store.save_run_template_binding(
+                        {
+                            "template_id": "paused_loop",
+                            "input_bindings": {"input_user_message": "current_message"},
+                        },
+                        changed_by="user",
+                        change_reason="测试拒绝断点模板绑定",
+                    )
+
     def test_report_create_writes_markdown_file_and_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             buddy_home = Path(temp_dir) / "buddy_home"

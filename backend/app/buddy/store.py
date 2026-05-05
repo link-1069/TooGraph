@@ -298,8 +298,8 @@ def load_run_template_binding() -> dict[str, Any]:
 
 
 def save_run_template_binding(payload: dict[str, Any], *, changed_by: str, change_reason: str) -> dict[str, Any]:
-    previous = load_run_template_binding()
     next_value = _normalize_run_template_binding(payload)
+    previous = load_run_template_binding()
     _write_with_revision(
         RUN_TEMPLATE_BINDING_TARGET_TYPE,
         RUN_TEMPLATE_BINDING_TARGET_ID,
@@ -778,6 +778,7 @@ def _normalize_run_template_binding(payload: dict[str, Any]) -> dict[str, Any]:
     template_id = str(payload.get("template_id") or "").strip()
     if not template_id:
         raise ValueError("template_id is required.")
+    _ensure_run_template_can_be_bound(template_id)
     raw_bindings = payload.get("input_bindings")
     if not isinstance(raw_bindings, dict):
         raise ValueError("input_bindings must be an object.")
@@ -799,6 +800,14 @@ def _normalize_run_template_binding(payload: dict[str, Any]) -> dict[str, Any]:
         "input_bindings": input_bindings,
         "updated_at": str(payload.get("updated_at") or utc_now_iso()),
     }
+
+
+def _ensure_run_template_can_be_bound(template_id: str) -> None:
+    from app.templates.loader import load_template_record, template_has_breakpoint_metadata
+
+    template = load_template_record(template_id)
+    if template_has_breakpoint_metadata(template):
+        raise ValueError("Buddy run template binding cannot target a template with breakpoint metadata.")
 
 
 def _write_json(file_name: str, payload: Any) -> None:

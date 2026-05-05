@@ -13,6 +13,8 @@ export type GraphLibraryItem = {
   source: TemplateSource;
   canManage: boolean;
   capabilityDiscoverable: boolean;
+  canToggleCapabilityDiscoverable: boolean;
+  capabilityDiscoverableBlockedReason: string;
   nodeCount: number;
   edgeCount: number;
   stateCount: number;
@@ -45,15 +47,19 @@ export function buildGraphLibraryItems(graphs: GraphDocument[], templates: Templ
       title: graph.name,
       description: readDescription(graph.metadata),
       status: graph.status ?? "active",
-      source: "user" as const,
-      canManage: true,
-      capabilityDiscoverable: false,
-      nodeCount: Object.keys(graph.nodes).length,
+        source: "user" as const,
+        canManage: true,
+        capabilityDiscoverable: false,
+        canToggleCapabilityDiscoverable: false,
+        capabilityDiscoverableBlockedReason: "",
+        nodeCount: Object.keys(graph.nodes).length,
       edgeCount: graph.edges.length + graph.conditional_edges.length,
       stateCount: Object.keys(graph.state_schema).length,
     })),
     ...templates.map((template) => {
       const source = template.source ?? "official";
+      const capabilityDiscoverableBlockedReason =
+        template.capabilityDiscoverableBlockedReason || (template.hasBreakpointMetadata ? "breakpoint_metadata" : "");
       return {
         id: template.template_id,
         kind: "template" as const,
@@ -63,6 +69,8 @@ export function buildGraphLibraryItems(graphs: GraphDocument[], templates: Templ
         source,
         canManage: source === "user",
         capabilityDiscoverable: template.status !== "disabled" && template.capabilityDiscoverable !== false,
+        canToggleCapabilityDiscoverable: (template.status ?? "active") === "active" && !capabilityDiscoverableBlockedReason,
+        capabilityDiscoverableBlockedReason,
         nodeCount: Object.keys(template.nodes).length,
         edgeCount: template.edges.length + template.conditional_edges.length,
         stateCount: Object.keys(template.state_schema).length,
