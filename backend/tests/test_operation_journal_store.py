@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -246,6 +248,108 @@ class OperationJournalStoreTests(unittest.TestCase):
         self.assertNotIn("debug_payload", entry["retry_chain"][0])
         self.assertEqual(result["entries"][0]["artifact_refs"], entry["artifact_refs"])
         self.assertEqual(result["entries"][0]["retry_chain"], entry["retry_chain"])
+
+    def test_operation_journal_backfills_jsonl_into_sqlite_storage(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            journal_path = temp_path / "operation_journal.jsonl"
+            db_path = temp_path / "operation_journal.sqlite3"
+            legacy_entry = {
+                "id": "opj_legacy",
+                "operation_request_id": "vop_legacy",
+                "run_id": "run_legacy",
+                "stage": "completion",
+                "status": "succeeded",
+                "summary": "Legacy JSONL entry.",
+                "target_id": "app.nav.runs",
+                "activity_sequence": 7,
+                "activity_created_at": "2026-05-18T10:00:12Z",
+                "recorded_at": "2026-05-18T10:00:13Z",
+            }
+            journal_path.write_text(json.dumps(legacy_entry, ensure_ascii=False) + "\n", encoding="utf-8")
+
+            with (
+                patch("app.core.storage.operation_journal_store.OPERATION_JOURNAL_PATH", journal_path),
+                patch("app.core.storage.operation_journal_store.OPERATION_JOURNAL_DB_PATH", db_path),
+            ):
+                migrated = list_operation_journal_entries(run_id="run_legacy")
+                journal_path.unlink()
+                durable = list_operation_journal_entries(run_id="run_legacy")
+
+            self.assertEqual(migrated["total"], 1)
+            self.assertEqual(migrated["entries"][0]["id"], "opj_legacy")
+            self.assertEqual(durable["total"], 1)
+            self.assertEqual(durable["entries"][0]["operation_request_id"], "vop_legacy")
+            connection = sqlite3.connect(db_path)
+            try:
+                count = connection.execute("SELECT COUNT(*) FROM operation_journal_entries").fetchone()[0]
+            finally:
+                connection.close()
+            self.assertEqual(count, 1)
+
+    def test_operation_journal_repairs_partial_sqlite_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            journal_path = temp_path / "operation_journal.jsonl"
+            db_path = temp_path / "operation_journal.sqlite3"
+            legacy_entry = {
+                "id": "opj_partial_marker",
+                "operation_request_id": "vop_partial_marker",
+                "run_id": "run_partial_marker",
+                "stage": "completion",
+                "status": "succeeded",
+                "summary": "Entry not present in the partial SQLite index.",
+                "target_id": "app.nav.runs",
+                "activity_sequence": 8,
+                "activity_created_at": "2026-05-18T10:00:14Z",
+                "recorded_at": "2026-05-18T10:00:15Z",
+            }
+            journal_path.write_text(json.dumps(legacy_entry, ensure_ascii=False) + "\n", encoding="utf-8")
+            stat = journal_path.stat()
+            connection = sqlite3.connect(db_path)
+            try:
+                connection.executescript(
+                    """
+                    CREATE TABLE operation_journal_metadata (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                    CREATE TABLE operation_journal_entries (
+                        id TEXT PRIMARY KEY,
+                        operation_request_id TEXT NOT NULL DEFAULT '',
+                        run_id TEXT NOT NULL DEFAULT '',
+                        stage TEXT NOT NULL DEFAULT '',
+                        status TEXT NOT NULL DEFAULT '',
+                        target_id TEXT NOT NULL DEFAULT '',
+                        failure_category TEXT NOT NULL DEFAULT '',
+                        activity_created_at TEXT NOT NULL DEFAULT '',
+                        activity_sequence INTEGER NOT NULL DEFAULT 0,
+                        recorded_at TEXT NOT NULL DEFAULT '',
+                        entry_json TEXT NOT NULL
+                    );
+                    """
+                )
+                connection.executemany(
+                    "INSERT INTO operation_journal_metadata (key, value) VALUES (?, ?)",
+                    [
+                        ("schema_version", "1"),
+                        ("jsonl_path", str(journal_path)),
+                        ("jsonl_size", str(stat.st_size)),
+                        ("jsonl_mtime_ns", str(stat.st_mtime_ns)),
+                    ],
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            with (
+                patch("app.core.storage.operation_journal_store.OPERATION_JOURNAL_PATH", journal_path),
+                patch("app.core.storage.operation_journal_store.OPERATION_JOURNAL_DB_PATH", db_path),
+            ):
+                repaired = list_operation_journal_entries(run_id="run_partial_marker")
+
+            self.assertEqual(repaired["total"], 1)
+            self.assertEqual(repaired["entries"][0]["id"], "opj_partial_marker")
 
 
 if __name__ == "__main__":

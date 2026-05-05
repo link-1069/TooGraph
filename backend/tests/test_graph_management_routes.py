@@ -104,6 +104,12 @@ class GraphManagementRouteTests(unittest.TestCase):
                 delete_response = client.delete("/api/graphs/graph_managed")
                 self.assertEqual(delete_response.status_code, 200)
                 self.assertEqual(delete_response.json(), {"graph_id": "graph_managed", "status": "deleted"})
+                revision_response = client.get("/api/graphs/graph_managed/revisions")
+                self.assertEqual(revision_response.status_code, 200)
+                revisions = revision_response.json()
+                self.assertEqual(len(revisions), 4)
+                self.assertIsNone(revisions[0]["next_graph"])
+                self.assertEqual(revisions[0]["reason"], "Delete saved graph.")
 
                 missing_response = client.get("/api/graphs/graph_managed")
                 self.assertEqual(missing_response.status_code, 404)
@@ -173,6 +179,54 @@ class GraphManagementRouteTests(unittest.TestCase):
                 self.assertEqual(graph["nodes"]["agent"]["ui"]["collapsed"], True)
                 self.assertEqual(graph["nodes"]["agent"]["ui"]["size"], {"width": 420.0, "height": 320.0})
                 self.assertEqual(graph["nodes"]["agent"]["config"], payload["nodes"]["agent"]["config"])
+
+    def test_saving_graph_records_revision_with_diff_and_audit_context(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            graph_dir = Path(temp_dir) / "graphs"
+            with (
+                patch("app.core.storage.database.GRAPH_DATA_DIR", graph_dir),
+                patch("app.core.storage.graph_store.GRAPH_DATA_DIR", graph_dir),
+                TestClient(app) as client,
+            ):
+                create_payload = {
+                    **_graph_payload("graph_revision_target", "Initial Graph"),
+                    "revision_context": {
+                        "actor": "buddy",
+                        "run_id": "run_graph_edit",
+                        "node_id": "execute_page_operation",
+                        "reason": "Create graph through virtual graph edit playback.",
+                    },
+                }
+                update_payload = {
+                    **_graph_payload("graph_revision_target", "Updated Graph"),
+                    "metadata": {"description": "Updated by playback."},
+                    "revision_context": {
+                        "actor": "buddy",
+                        "run_id": "run_graph_edit",
+                        "node_id": "execute_page_operation",
+                        "reason": "Rename graph through virtual graph edit playback.",
+                    },
+                }
+
+                self.assertEqual(client.post("/api/graphs/save", json=create_payload).status_code, 200)
+                self.assertEqual(client.post("/api/graphs/save", json=update_payload).status_code, 200)
+
+                revisions_response = client.get("/api/graphs/graph_revision_target/revisions")
+
+            self.assertEqual(revisions_response.status_code, 200)
+            revisions = revisions_response.json()
+            self.assertEqual(len(revisions), 2)
+            latest = revisions[0]
+            self.assertTrue(latest["revision_id"].startswith("grev_"))
+            self.assertEqual(latest["graph_id"], "graph_revision_target")
+            self.assertEqual(latest["actor"], "buddy")
+            self.assertEqual(latest["run_id"], "run_graph_edit")
+            self.assertEqual(latest["node_id"], "execute_page_operation")
+            self.assertEqual(latest["reason"], "Rename graph through virtual graph edit playback.")
+            self.assertEqual(latest["previous_graph"]["name"], "Initial Graph")
+            self.assertEqual(latest["next_graph"]["name"], "Updated Graph")
+            self.assertEqual(latest["validation"]["valid"], True)
+            self.assertIn({"op": "replace", "path": "/name", "previous": "Initial Graph", "next": "Updated Graph"}, latest["diff"])
 
 
 if __name__ == "__main__":

@@ -19,7 +19,15 @@ from app.core.schemas.node_system import (
     NodeSystemGraphDocument,
     NodeSystemGraphPayload,
 )
-from app.core.storage.graph_store import delete_graph, disable_graph, enable_graph, list_graphs, load_graph, save_graph
+from app.core.storage.graph_store import (
+    delete_graph,
+    disable_graph,
+    enable_graph,
+    list_graph_revisions,
+    list_graphs,
+    load_graph,
+    save_graph,
+)
 from app.core.storage.run_store import save_run
 
 logger = logging.getLogger(__name__)
@@ -39,6 +47,16 @@ def _schema_errors_to_paths(exc: ValidationError) -> list[dict[str, str]]:
 
 def _parse_graph_request(payload: dict[str, Any]) -> NodeSystemGraphPayload:
     return NodeSystemGraphPayload.model_validate(payload)
+
+
+def _parse_graph_revision_context(payload: dict[str, Any]) -> dict[str, str]:
+    context = payload.get("revision_context") if isinstance(payload.get("revision_context"), dict) else {}
+    return {
+        "actor": _compact_text(context.get("actor")) or "user",
+        "run_id": _compact_text(context.get("run_id")),
+        "node_id": _compact_text(context.get("node_id")),
+        "reason": _compact_text(context.get("reason")),
+    }
 
 
 def _build_runtime_graph_document(graph_payload: NodeSystemGraphPayload) -> NodeSystemGraphDocument:
@@ -70,7 +88,11 @@ def save_graph_endpoint(payload: dict[str, Any]) -> GraphSaveResponse:
     if not validation.valid:
         raise HTTPException(status_code=422, detail=validation.model_dump())
 
-    saved_graph = save_graph(graph_payload)
+    saved_graph = save_graph(
+        graph_payload,
+        **_parse_graph_revision_context(payload),
+        validation=validation.model_dump(mode="json"),
+    )
     return GraphSaveResponse(graph_id=saved_graph.graph_id, validation=validation)
 
 
@@ -80,6 +102,11 @@ def get_graph_endpoint(graph_id: str) -> NodeSystemGraphDocument:
         return load_graph(graph_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{graph_id}/revisions")
+def list_graph_revisions_endpoint(graph_id: str) -> list[dict[str, Any]]:
+    return list_graph_revisions(graph_id)
 
 
 @router.post("/{graph_id}/disable", response_model=NodeSystemGraphDocument)
@@ -216,3 +243,7 @@ def _run_graph_worker(
             "run.failed",
             {"status": "failed", "error": str(exc)},
         )
+
+
+def _compact_text(value: Any) -> str:
+    return str(value or "").strip()

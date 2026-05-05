@@ -3,6 +3,7 @@ import type {
   GraphDeleteResponse,
   GraphDocument,
   GraphPayload,
+  GraphRevisionRecord,
   GraphRunResponse,
   GraphSaveResponse,
   GraphValidationResponse,
@@ -53,6 +54,10 @@ export async function fetchGraphs(options: { includeDisabled?: boolean } = {}): 
 
 export async function fetchGraph(graphId: string): Promise<GraphDocument> {
   return apiGet<GraphDocument>(`/api/graphs/${graphId}`);
+}
+
+export async function fetchGraphRevisions(graphId: string): Promise<GraphRevisionRecord[]> {
+  return apiGet<GraphRevisionRecord[]>(`/api/graphs/${graphId}/revisions`);
 }
 
 export async function saveGraph(payload: GraphPayload): Promise<GraphSaveResponse> {

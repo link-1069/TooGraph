@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,11 @@ from app.core.storage.database import DATA_DIR
 from app.core.storage.json_file_utils import utc_now_iso
 
 
-OPERATION_JOURNAL_PATH = DATA_DIR / "operation_journal" / "virtual_ui_operations.jsonl"
+DEFAULT_OPERATION_JOURNAL_PATH = DATA_DIR / "operation_journal" / "virtual_ui_operations.jsonl"
+DEFAULT_OPERATION_JOURNAL_DB_PATH = DATA_DIR / "operation_journal" / "virtual_ui_operations.sqlite3"
+OPERATION_JOURNAL_PATH = DEFAULT_OPERATION_JOURNAL_PATH
+OPERATION_JOURNAL_DB_PATH = DEFAULT_OPERATION_JOURNAL_DB_PATH
+OPERATION_JOURNAL_SCHEMA_VERSION = "1"
 
 
 def record_operation_journal_event(*, run_id: str, event: dict[str, Any]) -> dict[str, Any] | None:
@@ -81,6 +86,7 @@ def record_operation_journal_event(*, run_id: str, event: dict[str, Any]) -> dic
     OPERATION_JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
     with OPERATION_JOURNAL_PATH.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+    _upsert_sqlite_entry(entry)
     return entry
 
 
@@ -98,7 +104,18 @@ def list_operation_journal_entries(
     normalized_operation_request_id = _compact_text(operation_request_id)
     normalized_status = _compact_text(status)
 
-    entries = _read_entries()
+    try:
+        return _list_sqlite_entries(
+            page=page,
+            size=size,
+            run_id=normalized_run_id,
+            operation_request_id=normalized_operation_request_id,
+            status=normalized_status,
+        )
+    except sqlite3.Error:
+        pass
+
+    entries = _read_jsonl_entries()
     if normalized_run_id:
         entries = [entry for entry in entries if entry.get("run_id") == normalized_run_id]
     if normalized_operation_request_id:
@@ -118,7 +135,7 @@ def list_operation_journal_entries(
     }
 
 
-def _read_entries() -> list[dict[str, Any]]:
+def _read_jsonl_entries() -> list[dict[str, Any]]:
     if not OPERATION_JOURNAL_PATH.exists():
         return []
     entries: list[dict[str, Any]] = []
@@ -131,6 +148,228 @@ def _read_entries() -> list[dict[str, Any]]:
             if isinstance(payload, dict):
                 entries.append(payload)
     return entries
+
+
+def _list_sqlite_entries(
+    *,
+    page: int,
+    size: int,
+    run_id: str,
+    operation_request_id: str,
+    status: str,
+) -> dict[str, Any]:
+    db_path = _effective_operation_journal_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(db_path)
+    clauses: list[str] = []
+    params: list[str] = []
+    if run_id:
+        clauses.append("run_id = ?")
+        params.append(run_id)
+    if operation_request_id:
+        clauses.append("operation_request_id = ?")
+        params.append(operation_request_id)
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+    where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    try:
+        connection.row_factory = sqlite3.Row
+        _ensure_sqlite_schema(connection)
+        _backfill_sqlite_from_jsonl_if_needed(connection)
+        total = int(
+            connection.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM operation_journal_entries
+                {where_clause}
+                """,
+                params,
+            ).fetchone()[0]
+        )
+        rows = connection.execute(
+            f"""
+            SELECT entry_json
+            FROM operation_journal_entries
+            {where_clause}
+            ORDER BY activity_created_at, activity_sequence, id
+            LIMIT ? OFFSET ?
+            """,
+            [*params, size, (page - 1) * size],
+        ).fetchall()
+    finally:
+        connection.close()
+    entries: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            payload = json.loads(row["entry_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return {
+        "entries": entries,
+        "total": total,
+        "page": page,
+        "size": size,
+        "pages": math.ceil(total / size) if total else 0,
+    }
+
+
+def _upsert_sqlite_entry(entry: dict[str, Any]) -> None:
+    db_path = _effective_operation_journal_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.row_factory = sqlite3.Row
+        _ensure_sqlite_schema(connection)
+        _upsert_sqlite_entries(connection, [entry])
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def _ensure_sqlite_schema(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS operation_journal_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS operation_journal_entries (
+            id TEXT PRIMARY KEY,
+            operation_request_id TEXT NOT NULL DEFAULT '',
+            run_id TEXT NOT NULL DEFAULT '',
+            stage TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT '',
+            target_id TEXT NOT NULL DEFAULT '',
+            failure_category TEXT NOT NULL DEFAULT '',
+            activity_created_at TEXT NOT NULL DEFAULT '',
+            activity_sequence INTEGER NOT NULL DEFAULT 0,
+            recorded_at TEXT NOT NULL DEFAULT '',
+            entry_json TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_operation_journal_run
+            ON operation_journal_entries (run_id, activity_created_at, activity_sequence);
+
+        CREATE INDEX IF NOT EXISTS idx_operation_journal_request
+            ON operation_journal_entries (operation_request_id, activity_created_at, activity_sequence);
+
+        CREATE INDEX IF NOT EXISTS idx_operation_journal_status
+            ON operation_journal_entries (status, activity_created_at, activity_sequence);
+        """
+    )
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO operation_journal_metadata (key, value)
+        VALUES ('schema_version', ?)
+        """,
+        (OPERATION_JOURNAL_SCHEMA_VERSION,),
+    )
+    connection.commit()
+
+
+def _backfill_sqlite_from_jsonl_if_needed(connection: sqlite3.Connection) -> None:
+    marker = _jsonl_file_marker()
+    stored_marker = {
+        row["key"]: row["value"]
+        for row in connection.execute(
+            """
+            SELECT key, value
+            FROM operation_journal_metadata
+            WHERE key IN ('jsonl_path', 'jsonl_size', 'jsonl_mtime_ns', 'jsonl_entry_count')
+            """
+        ).fetchall()
+    }
+    if all(stored_marker.get(key) == value for key, value in marker.items()) and stored_marker.get("jsonl_entry_count"):
+        return
+    entries = _read_jsonl_entries()
+    if entries:
+        _upsert_sqlite_entries(connection, entries)
+    _write_jsonl_migration_marker(connection, _jsonl_migration_marker(entry_count=len(entries)))
+    connection.commit()
+
+
+def _upsert_sqlite_entries(connection: sqlite3.Connection, entries: list[dict[str, Any]]) -> None:
+    for entry in entries:
+        entry_id = _compact_text(entry.get("id"))
+        if not entry_id:
+            continue
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO operation_journal_entries (
+                id,
+                operation_request_id,
+                run_id,
+                stage,
+                status,
+                target_id,
+                failure_category,
+                activity_created_at,
+                activity_sequence,
+                recorded_at,
+                entry_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                entry_id,
+                _compact_text(entry.get("operation_request_id")),
+                _compact_text(entry.get("run_id")),
+                _compact_text(entry.get("stage")),
+                _compact_text(entry.get("status")),
+                _compact_text(entry.get("target_id")),
+                _compact_text(entry.get("failure_category")),
+                _compact_text(entry.get("activity_created_at")),
+                _optional_int(entry.get("activity_sequence")) or 0,
+                _compact_text(entry.get("recorded_at")),
+                json.dumps(entry, ensure_ascii=False, separators=(",", ":"), default=str),
+            ),
+        )
+
+
+def _write_jsonl_migration_marker(connection: sqlite3.Connection, marker: dict[str, str]) -> None:
+    for key, value in marker.items():
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO operation_journal_metadata (key, value)
+            VALUES (?, ?)
+            """,
+            (key, value),
+        )
+
+
+def _jsonl_file_marker() -> dict[str, str]:
+    try:
+        stat = OPERATION_JOURNAL_PATH.stat()
+    except FileNotFoundError:
+        return {
+            "jsonl_path": str(OPERATION_JOURNAL_PATH),
+            "jsonl_size": "0",
+            "jsonl_mtime_ns": "0",
+        }
+    return {
+        "jsonl_path": str(OPERATION_JOURNAL_PATH),
+        "jsonl_size": str(stat.st_size),
+        "jsonl_mtime_ns": str(stat.st_mtime_ns),
+    }
+
+
+def _jsonl_migration_marker(*, entry_count: int) -> dict[str, str]:
+    return {
+        **_jsonl_file_marker(),
+        "jsonl_entry_count": str(max(0, entry_count)),
+    }
+
+
+def _effective_operation_journal_db_path() -> Path:
+    if OPERATION_JOURNAL_DB_PATH != DEFAULT_OPERATION_JOURNAL_DB_PATH:
+        return OPERATION_JOURNAL_DB_PATH
+    if OPERATION_JOURNAL_PATH != DEFAULT_OPERATION_JOURNAL_PATH:
+        return OPERATION_JOURNAL_PATH.with_suffix(".sqlite3")
+    return OPERATION_JOURNAL_DB_PATH
 
 
 def _operation_request_id_from_detail(detail: dict[str, Any]) -> str:

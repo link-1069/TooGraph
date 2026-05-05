@@ -5,6 +5,7 @@ import {
   deleteGraph,
   deleteTemplate,
   exportLangGraphPython,
+  fetchGraphRevisions,
   fetchGraphs,
   fetchTemplates,
   importGraphFromPythonSource,
@@ -164,6 +165,46 @@ test("fetchGraphs and fetchTemplates can request the management catalog includin
       "/api/templates",
       "/api/templates?include_disabled=true",
     ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchGraphRevisions requests graph revision history", async () => {
+  let requestedUrl = "";
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify([
+        {
+          revision_id: "grev_1",
+          graph_id: "graph_1",
+          previous_graph: null,
+          next_graph: null,
+          diff: [],
+          actor: "buddy",
+          run_id: "run_1",
+          node_id: "node_1",
+          reason: "Graph edit playback.",
+          validation: { valid: true, issues: [] },
+          created_at: "2026-05-18T10:00:00Z",
+        },
+      ]),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    const revisions = await fetchGraphRevisions("graph_1");
+
+    assert.equal(requestedUrl, "/api/graphs/graph_1/revisions");
+    assert.equal(revisions[0]?.revision_id, "grev_1");
   } finally {
     globalThis.fetch = originalFetch;
   }

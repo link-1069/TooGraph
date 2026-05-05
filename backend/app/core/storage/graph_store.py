@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from app.core.schemas.node_system import NodeSystemCatalogStatus, NodeSystemGraphDocument, NodeSystemGraphPayload
 from app.core.storage.database import GRAPH_DATA_DIR
+from app.core.storage.graph_revision_store import list_graph_revisions as list_stored_graph_revisions
+from app.core.storage.graph_revision_store import record_graph_revision
 from app.core.storage.json_file_utils import read_json_file, write_json_file
 
 
-def save_graph(graph_payload: NodeSystemGraphPayload) -> NodeSystemGraphDocument:
+def save_graph(
+    graph_payload: NodeSystemGraphPayload,
+    *,
+    actor: str = "user",
+    run_id: str = "",
+    node_id: str = "",
+    reason: str = "",
+    validation: dict[str, Any] | None = None,
+) -> NodeSystemGraphDocument:
     GRAPH_DATA_DIR.mkdir(parents=True, exist_ok=True)
     graph_id = graph_payload.graph_id or _generate_graph_id()
     path = _graph_path(graph_id)
@@ -24,6 +35,17 @@ def save_graph(graph_payload: NodeSystemGraphPayload) -> NodeSystemGraphDocument
         }
     )
     write_json_file(path, graph.model_dump(by_alias=True, mode="json"))
+    record_graph_revision(
+        graph_id=graph_id,
+        previous_graph=existing_document.model_dump(by_alias=True, mode="json") if existing_document else None,
+        next_graph=graph.model_dump(by_alias=True, mode="json"),
+        actor=actor,
+        run_id=run_id,
+        node_id=node_id,
+        reason=reason or ("Update saved graph." if existing_document else "Create saved graph."),
+        validation=validation,
+        storage_dir=_graph_revision_data_dir(),
+    )
     return graph
 
 
@@ -70,6 +92,14 @@ def set_graph_status(graph_id: str, status: NodeSystemCatalogStatus) -> NodeSyst
         }
     )
     write_json_file(_graph_path(graph_id), updated_graph.model_dump(by_alias=True, mode="json"))
+    record_graph_revision(
+        graph_id=graph_id,
+        previous_graph=graph.model_dump(by_alias=True, mode="json"),
+        next_graph=updated_graph.model_dump(by_alias=True, mode="json"),
+        actor="user",
+        reason=f"Set graph status to {status.value}.",
+        storage_dir=_graph_revision_data_dir(),
+    )
     return updated_graph
 
 
@@ -77,11 +107,29 @@ def delete_graph(graph_id: str) -> None:
     path = _graph_path(graph_id)
     if not path.exists():
         raise FileNotFoundError(f"Graph '{graph_id}' does not exist.")
+    existing_payload = read_json_file(path, default=None)
+    existing_document = NodeSystemGraphDocument.model_validate(existing_payload) if existing_payload else None
     path.unlink()
+    record_graph_revision(
+        graph_id=graph_id,
+        previous_graph=existing_document.model_dump(by_alias=True, mode="json") if existing_document else None,
+        next_graph=None,
+        actor="user",
+        reason="Delete saved graph.",
+        storage_dir=_graph_revision_data_dir(),
+    )
+
+
+def list_graph_revisions(graph_id: str) -> list[dict[str, Any]]:
+    return list_stored_graph_revisions(graph_id, storage_dir=_graph_revision_data_dir())
 
 
 def _graph_path(graph_id: str) -> Path:
     return GRAPH_DATA_DIR / f"{graph_id}.json"
+
+
+def _graph_revision_data_dir() -> Path:
+    return GRAPH_DATA_DIR.parent / "graph_revisions"
 
 
 def _generate_graph_id() -> str:

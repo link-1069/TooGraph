@@ -196,6 +196,27 @@ export type GraphSaveResponse = {
   validation: GraphValidationResponse;
 };
 
+export type GraphRevisionDiffEntry = {
+  op: "add" | "remove" | "replace";
+  path: string;
+  previous?: unknown;
+  next?: unknown;
+};
+
+export type GraphRevisionRecord = {
+  revision_id: string;
+  graph_id: string;
+  previous_graph: GraphDocument | null;
+  next_graph: GraphDocument | null;
+  diff: GraphRevisionDiffEntry[];
+  actor: string;
+  run_id: string;
+  node_id: string;
+  reason: string;
+  validation: GraphValidationResponse;
+  created_at: string;
+};
+
 export type GraphDeleteResponse = {
   graph_id: string;
   status: "deleted";
