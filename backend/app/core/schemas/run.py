@@ -149,6 +149,7 @@ class NodeExecutionArtifacts(BaseModel):
     runtime_config: dict[str, Any] | None = None
     selected_capabilities: list[dict[str, Any]] = Field(default_factory=list)
     capability_outputs: list[dict[str, Any]] = Field(default_factory=list)
+    context_assembly_report: dict[str, Any] | None = None
     state_reads: list[NodeStateReadRecord] = Field(default_factory=list)
     state_writes: list[NodeStateWriteRecord] = Field(default_factory=list)
 

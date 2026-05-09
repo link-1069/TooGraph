@@ -73,6 +73,24 @@ class BuddyVisibleSubgraphResultAdapterSkillTests(unittest.TestCase):
                     "key": "advanced_web_research_loop",
                     "name": "高级联网搜索",
                     "description": "多轮搜索并产出答案。",
+                    "output_contract": [
+                        {
+                            "key": "final_reply",
+                            "name": "最终回复",
+                            "type": "markdown",
+                            "role": "final_response",
+                            "pass_through": True,
+                            "required": True,
+                        },
+                        {
+                            "key": "evidence_cards",
+                            "name": "证据卡片",
+                            "type": "json",
+                            "role": "evidence",
+                            "pass_through": False,
+                            "required": False,
+                        },
+                    ],
                 },
                 "operation_report": {
                     "operation_request_id": "vop_template_123",
@@ -84,6 +102,62 @@ class BuddyVisibleSubgraphResultAdapterSkillTests(unittest.TestCase):
                     "triggered_run_final_result": "已运行模板并拿到结果。",
                     "input_text": "研究 TooGraph。",
                     "route_after": "/editor/advanced_web_research_loop",
+                    "artifact_refs": [
+                        {
+                            "title": "最终回复",
+                            "artifact_kind": "saved_output",
+                            "path": "runs/run_template_123/final.md",
+                            "local_path": None,
+                            "file_name": "final.md",
+                            "source_key": "final_reply",
+                            "node_id": "output_final",
+                            "format": "md",
+                            "content_type": None,
+                        }
+                    ],
+                    "target_run_validation": {
+                        "run_id": "run_template_123",
+                        "graph_id": "advanced_web_research_loop",
+                        "status": "completed",
+                        "final_result_preview": "已运行模板并拿到结果。",
+                        "root_outputs": [
+                            {
+                                "node_id": "output_final",
+                                "source_key": "final_reply",
+                                "label": "最终回复",
+                                "display_mode": "markdown",
+                                "persist_enabled": False,
+                                "persist_format": "md",
+                                "value_type": "text",
+                                "value_preview": "已运行模板并拿到结果。",
+                                "has_value": True,
+                            }
+                        ],
+                        "errors": [],
+                        "warnings": ["部分搜索源失败。"],
+                        "activity_events": [
+                            {
+                                "kind": "subgraph_invocation",
+                                "summary": "Ran target template.",
+                                "status": "succeeded",
+                                "node_id": "run_search",
+                                "error": None,
+                            }
+                        ],
+                        "artifact_refs": [
+                            {
+                                "title": "最终回复",
+                                "artifact_kind": "saved_output",
+                                "path": "runs/run_template_123/final.md",
+                                "local_path": None,
+                                "file_name": "final.md",
+                                "source_key": "final_reply",
+                                "node_id": "output_final",
+                                "format": "md",
+                                "content_type": None,
+                            }
+                        ],
+                    },
                 },
                 "user_goal": "研究 TooGraph。",
                 "reason": "目标模板通过可见页面操作运行。",
@@ -99,11 +173,70 @@ class BuddyVisibleSubgraphResultAdapterSkillTests(unittest.TestCase):
         self.assertEqual(package["status"], "succeeded")
         self.assertEqual(package["inputs"]["user_goal"], "研究 TooGraph。")
         self.assertEqual(package["inputs"]["visible_operation_capability"], "toograph_page_operator")
+        self.assertEqual(package["outputContract"][0]["key"], "final_reply")
         self.assertEqual(package["outputs"]["final_reply"]["value"], "已运行模板并拿到结果。")
         self.assertEqual(package["outputs"]["operation_report"]["value"]["operation_report"]["triggered_run_id"], "run_template_123")
+        validation_report = package["outputs"]["validation_report"]["value"]
+        self.assertEqual(validation_report["target_run"]["run_id"], "run_template_123")
+        self.assertEqual(validation_report["root_outputs"][0]["source_key"], "final_reply")
+        self.assertEqual(validation_report["missing_required_outputs"], [])
+        self.assertEqual(validation_report["final_response_strategy"], "pass_through")
+        self.assertEqual(validation_report["artifact_refs"][0]["path"], "runs/run_template_123/final.md")
+        self.assertEqual(validation_report["warnings"], ["部分搜索源失败。"])
         self.assertNotIn("page_operation_context", package["outputs"]["operation_report"]["value"])
         self.assertEqual(package["outputs"]["visible_operation_result"]["value"]["triggered_run_id"], "run_template_123")
         self.assertNotIn("fieldKey", package["outputs"]["final_reply"])
+
+    def test_after_llm_reports_repair_options_for_failed_target_run(self) -> None:
+        result = _run_skill_script(
+            ADAPTER_AFTER_LLM_PATH,
+            {
+                "selected_capability": {
+                    "kind": "subgraph",
+                    "key": "advanced_web_research_loop",
+                    "name": "高级联网搜索",
+                    "output_contract": [
+                        {
+                            "key": "final_reply",
+                            "name": "最终回复",
+                            "type": "markdown",
+                            "role": "final_response",
+                            "pass_through": True,
+                            "required": True,
+                        }
+                    ],
+                },
+                "operation_report": {
+                    "operation_request_id": "vop_template_failed",
+                    "status": "failed",
+                    "triggered_run_id": "run_template_failed",
+                    "triggered_graph_id": "advanced_web_research_loop",
+                    "triggered_run_status": "failed",
+                    "target_run_validation": {
+                        "run_id": "run_template_failed",
+                        "graph_id": "advanced_web_research_loop",
+                        "status": "failed",
+                        "final_result_preview": "",
+                        "root_outputs": [],
+                        "errors": ["required input query is missing"],
+                        "warnings": [],
+                        "activity_events": [],
+                        "artifact_refs": [],
+                    },
+                },
+                "user_goal": "研究 TooGraph。",
+            },
+        )
+
+        validation_report = result["result_package"]["outputs"]["validation_report"]["value"]
+        self.assertTrue(validation_report["needs_repair"])
+        self.assertEqual(validation_report["missing_required_outputs"], ["final_reply"])
+        self.assertEqual(validation_report["final_response_strategy"], "ask_user")
+        self.assertEqual(
+            [option["action"] for option in validation_report["repair_options"]],
+            ["rebind_inputs", "rerun_template", "switch_template", "ask_user", "end_with_gap"],
+        )
+        self.assertTrue(validation_report["repair_options"][0]["requires_user_input"])
 
     def test_after_llm_wraps_page_operation_workflow_outputs(self) -> None:
         result = _run_skill_script(

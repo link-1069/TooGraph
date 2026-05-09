@@ -21,7 +21,7 @@ def build_capability_catalog_context(*, origin: str = DEFAULT_ORIGIN) -> str:
         "If no item fits, return {\"kind\":\"none\"}. Do not invent keys outside this catalog.",
         "Also provide selection_reason and rejected_candidates so the run audit can explain the choice.",
         "Set invocation_purpose before execution: answer_delegate when the selected capability should directly answer the user, evidence_gathering when it only gathers material, action_execution when it performs an operation or side effect.",
-        "Set expected_final_response_strategy: pass_through for answer_delegate results that can become the final reply, compose when the outer loop must synthesize, ask_user when more user input is needed, continue when another capability will be needed.",
+        "Set expected_final_response_strategy: pass_through only when the selected capability outputContract has a final_response direct output that can become the final reply; otherwise use compose, ask_user, or continue.",
         "",
         "Graph Templates:",
     ]
@@ -89,6 +89,7 @@ def normalize_selected_capability(**skill_inputs: Any) -> dict[str, Any]:
             "name": candidate["name"],
             "description": candidate["description"],
             "permissions": list(candidate.get("permissions") or []),
+            "output_contract": list(candidate.get("output_contract") or []),
         },
         "audit": audit,
         "activity_events": [_build_selection_activity_event(audit, found=True)],
@@ -142,6 +143,7 @@ def _load_template_candidates(repo_root: Path) -> tuple[list[dict[str, Any]], li
                 continue
             permissions = _template_permissions(payload, skill_permissions)
             target_flows = _template_target_flow_summaries(payload.get("metadata"))
+            output_contract = _template_output_contract(payload)
             candidates.append(
                 {
                     "kind": "subgraph",
@@ -151,6 +153,7 @@ def _load_template_candidates(repo_root: Path) -> tuple[list[dict[str, Any]], li
                     "source": source,
                     "permissions": permissions,
                     "target_flows": target_flows,
+                    "output_contract": output_contract,
                 }
             )
     return candidates, errors
@@ -312,6 +315,96 @@ def _template_target_flow_summaries(metadata: Any) -> list[str]:
     return summaries
 
 
+def _template_output_contract(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    metadata = payload.get("metadata")
+    raw_contract = metadata.get("outputContract") if isinstance(metadata, dict) else None
+    state_schema = payload.get("state_schema") if isinstance(payload.get("state_schema"), dict) else {}
+    if isinstance(raw_contract, list) and raw_contract:
+        return _normalize_output_contract(raw_contract, state_schema=state_schema)
+    return _derive_output_contract_from_output_nodes(payload, state_schema=state_schema)
+
+
+def _derive_output_contract_from_output_nodes(
+    payload: dict[str, Any],
+    *,
+    state_schema: dict[str, Any],
+) -> list[dict[str, Any]]:
+    nodes = payload.get("nodes") if isinstance(payload.get("nodes"), dict) else {}
+    contract: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node in nodes.values():
+        if not isinstance(node, dict) or node.get("kind") != "output":
+            continue
+        reads = node.get("reads") if isinstance(node.get("reads"), list) else []
+        for read in reads:
+            if not isinstance(read, dict):
+                continue
+            state_key = _compact_text(read.get("state"))
+            if not state_key or state_key in seen:
+                continue
+            seen.add(state_key)
+            definition = state_schema.get(state_key) if isinstance(state_schema.get(state_key), dict) else {}
+            role = "final_response" if state_key == "final_reply" or not contract else "evidence"
+            contract.append(
+                {
+                    "key": state_key,
+                    "name": _compact_text(definition.get("name")) or _compact_text(node.get("name")) or state_key,
+                    "description": _compact_text(definition.get("description") or node.get("description")),
+                    "type": _normalize_output_contract_type(definition.get("type"), role=role),
+                    "role": role,
+                    "pass_through": role == "final_response",
+                    "required": read.get("required") is not False,
+                }
+            )
+    return contract
+
+
+def _normalize_output_contract(raw_contract: list[Any], *, state_schema: dict[str, Any]) -> list[dict[str, Any]]:
+    contract: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in raw_contract:
+        if not isinstance(item, dict):
+            continue
+        key = _compact_text(item.get("key") or item.get("state") or item.get("stateKey"))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        definition = state_schema.get(key) if isinstance(state_schema.get(key), dict) else {}
+        role = _normalize_output_contract_role(item.get("role"), key=key)
+        contract.append(
+            {
+                "key": key,
+                "name": _compact_text(item.get("name") or definition.get("name")) or key,
+                "description": _compact_text(item.get("description") or definition.get("description")),
+                "type": _normalize_output_contract_type(item.get("type") or item.get("valueType") or definition.get("type"), role=role),
+                "role": role,
+                "pass_through": _coerce_bool(item.get("pass_through", item.get("passThrough")), default=role == "final_response"),
+                "required": _coerce_bool(item.get("required"), default=False),
+            }
+        )
+    return contract
+
+
+def _normalize_output_contract_role(value: Any, *, key: str) -> str:
+    role = _compact_text(value).lower()
+    if role in {"final_response", "evidence", "artifact", "internal"}:
+        return role
+    return "final_response" if key == "final_reply" else "evidence"
+
+
+def _normalize_output_contract_type(value: Any, *, role: str) -> str:
+    output_type = _compact_text(value).lower()
+    if output_type:
+        return output_type
+    return "markdown" if role == "final_response" else "json"
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
 def _permissions_from_nodes(nodes: Any, skill_permissions: dict[str, list[str]]) -> list[str]:
     if not isinstance(nodes, dict):
         return []
@@ -384,7 +477,18 @@ def _format_candidate_lines(candidates: list[dict[str, Any]]) -> list[str]:
         target_flows = candidate.get("target_flows") or []
         if target_flows:
             lines.append(f"  targetFlows: {'; '.join(target_flows)}")
+        output_contract = candidate.get("output_contract") or []
+        if output_contract:
+            lines.append(f"  outputContract: {'; '.join(_format_output_contract_line(item) for item in output_contract)}")
     return lines
+
+
+def _format_output_contract_line(item: dict[str, Any]) -> str:
+    key = _compact_text(item.get("key")) or "unknown"
+    role = _compact_text(item.get("role")) or "evidence"
+    access = "direct" if item.get("pass_through") is True else "evidence"
+    requirement = "required" if item.get("required") is True else "optional"
+    return f"{key} {role} {access} {requirement}"
 
 
 def _build_selection_audit(
@@ -403,6 +507,8 @@ def _build_selection_audit(
         "key": candidate["key"] if candidate else selected["key"],
         "name": selected_name,
     }
+    if candidate:
+        selected_record["output_contract"] = list(candidate.get("output_contract") or [])
     selection_reason = _compact_text(skill_inputs.get("selection_reason"))
     if not selection_reason and candidate:
         selection_reason = f"Selected {selected_name or candidate['key']} from the enabled catalog."
@@ -410,6 +516,7 @@ def _build_selection_audit(
     expected_strategy = _normalize_final_response_strategy(
         skill_inputs.get("expected_final_response_strategy"),
         invocation_purpose=invocation_purpose,
+        candidate=candidate,
     )
     return {
         "candidate_count": len(all_candidates),
@@ -437,19 +544,36 @@ def _build_selection_audit(
 def _normalize_invocation_purpose(value: Any, *, candidate: dict[str, Any] | None) -> str:
     purpose = _compact_text(value).lower()
     if purpose in {"answer_delegate", "evidence_gathering", "action_execution"}:
+        if purpose == "answer_delegate" and candidate and candidate.get("kind") == "subgraph" and not _candidate_has_direct_final_response(candidate):
+            return "evidence_gathering"
         return purpose
     if candidate and candidate.get("kind") == "subgraph":
-        return "answer_delegate"
+        return "answer_delegate" if _candidate_has_direct_final_response(candidate) else "evidence_gathering"
     if candidate and candidate.get("kind") == "skill":
         return "evidence_gathering"
     return "evidence_gathering"
 
 
-def _normalize_final_response_strategy(value: Any, *, invocation_purpose: str) -> str:
+def _normalize_final_response_strategy(value: Any, *, invocation_purpose: str, candidate: dict[str, Any] | None) -> str:
     strategy = _compact_text(value).lower()
     if strategy in {"pass_through", "compose", "ask_user", "continue"}:
+        if strategy == "pass_through" and candidate and candidate.get("kind") == "subgraph" and not _candidate_has_direct_final_response(candidate):
+            return "compose"
         return strategy
-    return "pass_through" if invocation_purpose == "answer_delegate" else "compose"
+    if invocation_purpose == "answer_delegate":
+        if candidate and candidate.get("kind") == "subgraph":
+            return "pass_through" if _candidate_has_direct_final_response(candidate) else "compose"
+        return "pass_through"
+    return "compose"
+
+
+def _candidate_has_direct_final_response(candidate: dict[str, Any]) -> bool:
+    for item in candidate.get("output_contract") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("role") == "final_response" and item.get("pass_through") is True:
+            return True
+    return False
 
 
 def _normalize_rejected_candidates(

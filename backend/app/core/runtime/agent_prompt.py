@@ -9,6 +9,27 @@ from app.core.storage.local_input_sources import read_local_input_file_metadata,
 from app.core.storage.skill_artifact_store import read_skill_artifact_file_metadata, read_skill_artifact_text_for_prompt
 
 
+RESULT_PACKAGE_INPUT_PROMPT_CHAR_LIMIT = 1200
+RESULT_PACKAGE_OUTPUT_PROMPT_CHAR_LIMIT = 1600
+RESULT_PACKAGE_ARTIFACT_TEXT_CHAR_LIMIT = 1600
+RESULT_PACKAGE_MAX_ARTIFACT_REFS = 20
+ARTIFACT_REF_KEYS = (
+    "title",
+    "artifact_kind",
+    "summary",
+    "path",
+    "local_path",
+    "url",
+    "file_name",
+    "source_key",
+    "node_id",
+    "format",
+    "content_type",
+    "size",
+    "char_count",
+)
+
+
 def build_effective_system_prompt(
     output_keys: list[str],
     input_values: dict[str, Any],
@@ -119,6 +140,117 @@ def collect_local_input_prompt_references(
     return references
 
 
+def build_context_assembly_report(
+    *,
+    node_id: str,
+    node_type: str,
+    input_values: dict[str, Any],
+    state_schema: dict[str, NodeSystemStateDefinition] | None = None,
+    skill_context: dict[str, Any] | None = None,
+    llm_phases: list[str] | None = None,
+) -> dict[str, Any]:
+    resolved_state_schema = state_schema or {}
+    state_reads: list[dict[str, Any]] = []
+    files: list[dict[str, Any]] = []
+    result_outputs: list[dict[str, Any]] = []
+    memories: list[dict[str, Any]] = []
+    knowledge_chunks: list[dict[str, Any]] = []
+    total_prompt_chars = 0
+    total_value_chars = 0
+
+    for state_key, value in input_values.items():
+        definition = resolved_state_schema.get(state_key)
+        prompt_chars = _count_prompt_chars(format_graph_state_input_prompt_lines(state_key, definition, value))
+        value_chars = _count_value_chars(value)
+        state_record = {
+            "state_key": state_key,
+            "name": _state_definition_name(state_key, definition),
+            "type": _state_definition_type(definition),
+            "category": _classify_context_state(state_key, definition),
+            "value_chars": value_chars,
+            "prompt_chars": prompt_chars,
+            "token_estimate": _estimate_tokens(prompt_chars),
+        }
+        state_reads.append(state_record)
+        total_prompt_chars += prompt_chars
+        total_value_chars += value_chars
+
+        state_files = _build_file_context_records(
+            state_key=state_key,
+            value=value,
+            definition=definition,
+        )
+        files.extend(state_files)
+        memories.extend(_memory_records_from_file_records(state_files))
+        if _is_result_package_prompt_state(definition):
+            output_records, output_file_records, output_knowledge_chunks = _build_result_package_context_records(
+                state_key=state_key,
+                package=value,
+            )
+            result_outputs.extend(output_records)
+            files.extend(output_file_records)
+            memories.extend(_memory_records_from_file_records(output_file_records))
+            knowledge_chunks.extend(output_knowledge_chunks)
+        knowledge_chunks.extend(
+            _build_knowledge_chunk_context_records(
+                state_key=state_key,
+                value=value,
+                source_kind="state",
+                source_key=state_key,
+                enabled=_is_knowledge_context_state(state_key, definition),
+            )
+        )
+        if _looks_like_memory_context(state_key, definition):
+            memories.append(
+                {
+                    "state_key": state_key,
+                    "name": _state_definition_name(state_key, definition),
+                    "source": "state",
+                    "char_count": value_chars,
+                    "token_estimate": _estimate_tokens(value_chars),
+                }
+            )
+
+    skill_results: list[dict[str, Any]] = []
+    for skill_key, result in dict(skill_context or {}).items():
+        value_chars = _count_value_chars(result)
+        prompt_chars = _count_prompt_chars([format_prompt_value(result)])
+        skill_results.append(
+            {
+                "skill_key": str(skill_key),
+                "value_chars": value_chars,
+                "prompt_chars": prompt_chars,
+                "token_estimate": _estimate_tokens(prompt_chars),
+            }
+        )
+        total_prompt_chars += prompt_chars
+        total_value_chars += value_chars
+
+    return {
+        "version": 1,
+        "node_id": node_id,
+        "node_type": node_type,
+        "llm_phases": list(llm_phases or []),
+        "totals": {
+            "state_count": len(state_reads),
+            "file_count": len(files),
+            "result_output_count": len(result_outputs),
+            "memory_count": len(memories),
+            "knowledge_chunk_count": len(knowledge_chunks),
+            "skill_result_count": len(skill_results),
+            "value_chars": total_value_chars,
+            "prompt_chars": total_prompt_chars,
+            "token_estimate": _estimate_tokens(total_prompt_chars),
+        },
+        "state_reads": state_reads,
+        "files": files,
+        "result_outputs": result_outputs,
+        "memories": memories,
+        "knowledge_chunks": knowledge_chunks,
+        "skill_results": skill_results,
+    }
+
+
 def sanitize_prompt_value(value: Any) -> Any:
     envelope = normalize_uploaded_file_envelope(value)
     if envelope is not None:
@@ -137,6 +269,7 @@ def format_file_state_prompt_lines(
     *,
     allow_text: bool = True,
     declared_state_type: NodeSystemStateType | None = None,
+    max_text_chars: int | None = None,
 ) -> list[str]:
     references = _collect_file_state_references(value)
     if not references:
@@ -189,8 +322,13 @@ def format_file_state_prompt_lines(
                 continue
             content = "[文件读取失败：文件不存在或无法读取。]"
         lines.append(f"  文件名：{file_name}")
-        lines.append("  原文：")
-        lines.append(content)
+        if max_text_chars is not None and len(content) > max_text_chars:
+            lines.append("  原文摘要：")
+            lines.append(_truncate_prompt_text(content, max_text_chars))
+            lines.append(f"  原文省略：truncated from {len(content)} chars to {max_text_chars} chars")
+        else:
+            lines.append("  原文：")
+            lines.append(content)
     return lines
 
 
@@ -209,11 +347,27 @@ def format_result_package_prompt_lines(
         if package_value not in (None, "", [], {}):
             lines.append(f"  {package_key}: {format_prompt_value(package_value)}")
     if value.get("inputs") not in (None, "", [], {}):
-        lines.append(f"  inputs: {format_prompt_value(value.get('inputs'))}")
+        inputs_display, inputs_truncated, inputs_original_chars = format_budgeted_prompt_value(
+            value.get("inputs"),
+            max_chars=RESULT_PACKAGE_INPUT_PROMPT_CHAR_LIMIT,
+        )
+        if inputs_truncated:
+            lines.append(f"  inputs_summary: {inputs_display}")
+            lines.append(
+                f"  inputs_omitted: truncated from {inputs_original_chars} chars to {RESULT_PACKAGE_INPUT_PROMPT_CHAR_LIMIT} chars"
+            )
+        else:
+            lines.append(f"  inputs: {inputs_display}")
 
     outputs = value.get("outputs")
     if not isinstance(outputs, dict) or not outputs:
         return lines
+
+    artifact_refs = collect_result_package_artifact_refs(value, outputs)
+    if artifact_refs:
+        lines.append("  artifact_refs:")
+        for ref in artifact_refs:
+            lines.append(f"    - {json.dumps(ref, ensure_ascii=False, sort_keys=True)}")
 
     lines.append("  outputs:")
     for output_key, raw_output in outputs.items():
@@ -222,7 +376,22 @@ def format_result_package_prompt_lines(
                 name=str(output_key),
                 type=NodeSystemStateType.JSON if isinstance(raw_output, (dict, list)) else NodeSystemStateType.TEXT,
             )
-            lines.extend(_indent_lines(format_state_prompt_lines(str(output_key), virtual_definition, value=format_prompt_value(raw_output)), 4))
+            output_display, output_truncated, output_original_chars = format_budgeted_prompt_value(
+                raw_output,
+                max_chars=RESULT_PACKAGE_OUTPUT_PROMPT_CHAR_LIMIT,
+            )
+            lines.extend(_indent_lines(format_state_prompt_lines(str(output_key), virtual_definition), 4))
+            lines.extend(
+                _indent_lines(
+                    format_budgeted_value_lines(
+                        output_display,
+                        output_truncated=output_truncated,
+                        original_chars=output_original_chars,
+                        max_chars=RESULT_PACKAGE_OUTPUT_PROMPT_CHAR_LIMIT,
+                    ),
+                    4,
+                )
+            )
             continue
 
         output_type = _coerce_result_package_output_type(raw_output.get("type"))
@@ -240,13 +409,438 @@ def format_result_package_prompt_lines(
                         output_value,
                         allow_text=output_type == NodeSystemStateType.FILE,
                         declared_state_type=output_type,
+                        max_text_chars=RESULT_PACKAGE_ARTIFACT_TEXT_CHAR_LIMIT,
                     ),
                     4,
                 )
             )
         else:
-            lines.extend(_indent_lines([f"  value: {format_prompt_value(output_value)}"], 4))
+            output_display, output_truncated, output_original_chars = format_budgeted_prompt_value(
+                output_value,
+                max_chars=RESULT_PACKAGE_OUTPUT_PROMPT_CHAR_LIMIT,
+            )
+            lines.extend(
+                _indent_lines(
+                    format_budgeted_value_lines(
+                        output_display,
+                        output_truncated=output_truncated,
+                        original_chars=output_original_chars,
+                        max_chars=RESULT_PACKAGE_OUTPUT_PROMPT_CHAR_LIMIT,
+                    ),
+                    4,
+                )
+            )
     return lines
+
+
+def format_budgeted_prompt_value(value: Any, *, max_chars: int) -> tuple[str, bool, int]:
+    display = format_prompt_value(value)
+    original_chars = len(display)
+    if original_chars <= max_chars:
+        return display, False, original_chars
+    return _truncate_prompt_text(display, max_chars), True, original_chars
+
+
+def format_budgeted_value_lines(
+    display: str,
+    *,
+    output_truncated: bool,
+    original_chars: int,
+    max_chars: int,
+) -> list[str]:
+    if not output_truncated:
+        return [f"  value: {display}"]
+    return [
+        f"  value_summary: {display}",
+        f"  value_omitted: truncated from {original_chars} chars to {max_chars} chars",
+    ]
+
+
+def collect_result_package_artifact_refs(package: dict[str, Any], outputs: dict[str, Any]) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for key in ("artifact_refs", "artifactRefs"):
+        append_compact_artifact_refs(package.get(key), refs)
+    for raw_output in outputs.values():
+        if not isinstance(raw_output, dict):
+            continue
+        append_artifact_refs_from_value(raw_output.get("value"), refs)
+        if len(refs) >= RESULT_PACKAGE_MAX_ARTIFACT_REFS:
+            break
+    return refs[:RESULT_PACKAGE_MAX_ARTIFACT_REFS]
+
+
+def append_artifact_refs_from_value(value: Any, refs: list[dict[str, Any]]) -> None:
+    if len(refs) >= RESULT_PACKAGE_MAX_ARTIFACT_REFS:
+        return
+    if isinstance(value, dict):
+        for key in ("artifact_refs", "artifactRefs"):
+            append_compact_artifact_refs(value.get(key), refs)
+            if len(refs) >= RESULT_PACKAGE_MAX_ARTIFACT_REFS:
+                return
+        for child in value.values():
+            append_artifact_refs_from_value(child, refs)
+            if len(refs) >= RESULT_PACKAGE_MAX_ARTIFACT_REFS:
+                return
+    elif isinstance(value, list):
+        for item in value:
+            append_artifact_refs_from_value(item, refs)
+            if len(refs) >= RESULT_PACKAGE_MAX_ARTIFACT_REFS:
+                return
+
+
+def append_compact_artifact_refs(value: Any, refs: list[dict[str, Any]]) -> None:
+    if not isinstance(value, list):
+        return
+    for item in value:
+        if len(refs) >= RESULT_PACKAGE_MAX_ARTIFACT_REFS:
+            return
+        if not isinstance(item, dict):
+            continue
+        compact = {}
+        for key in ARTIFACT_REF_KEYS:
+            compact_value = _compact_artifact_ref_value(item.get(key))
+            if compact_value not in (None, "", [], {}):
+                compact[key] = compact_value
+        if compact:
+            refs.append(compact)
+
+
+def _compact_artifact_ref_value(value: Any) -> Any:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value == value and value not in (float("inf"), float("-inf")):
+        return int(value) if value.is_integer() else value
+    normalized = str(value or "").strip()
+    return _truncate_prompt_text(normalized, 240) if normalized else None
+
+
+def _build_file_context_records(
+    *,
+    state_key: str,
+    value: Any,
+    definition: NodeSystemStateDefinition | None,
+    output_key: str | None = None,
+    output_type: NodeSystemStateType | None = None,
+) -> list[dict[str, Any]]:
+    declared_type = output_type or (definition.type if definition is not None else None)
+    if declared_type not in {
+        NodeSystemStateType.FILE,
+        NodeSystemStateType.IMAGE,
+        NodeSystemStateType.AUDIO,
+        NodeSystemStateType.VIDEO,
+    }:
+        return []
+
+    records: list[dict[str, Any]] = []
+    for reference in _collect_file_state_references(value):
+        reference_source = reference.get("source", "skill_artifact")
+        local_path = str(reference.get("local_path") or "")
+        requested_name = str(reference.get("name") or "")
+        requested_content_type = str(reference.get("content_type") or "")
+        file_name = requested_name or _filename_from_local_path(local_path)
+        content_type = requested_content_type or _content_type_for_file_reference(file_name, declared_type)
+        char_count = 0
+        size_bytes = 0
+        readable = True
+        text_injected = False
+        try:
+            if reference_source == "local_input":
+                metadata = read_local_input_file_metadata(
+                    str(reference.get("root") or ""),
+                    str(reference.get("relative_path") or ""),
+                )
+            else:
+                metadata = read_skill_artifact_file_metadata(local_path)
+            file_name = requested_name or str(metadata.get("name") or file_name)
+            content_type = requested_content_type or str(metadata.get("content_type") or content_type)
+            try:
+                size_bytes = max(0, int(metadata.get("size") or 0))
+            except (TypeError, ValueError):
+                size_bytes = 0
+            if declared_type == NodeSystemStateType.FILE and _is_text_like_artifact(file_name, content_type):
+                if reference_source == "local_input":
+                    artifact = read_local_input_text_for_prompt(
+                        str(reference.get("root") or ""),
+                        str(reference.get("relative_path") or ""),
+                    )
+                else:
+                    artifact = read_skill_artifact_text_for_prompt(local_path)
+                char_count = len(str(artifact.get("content") or ""))
+                text_injected = True
+        except Exception:
+            readable = False
+
+        record: dict[str, Any] = {
+            "state_key": state_key,
+            "source": str(reference_source),
+            "name": file_name,
+            "content_type": content_type,
+            "size_bytes": size_bytes,
+            "char_count": char_count,
+            "token_estimate": _estimate_tokens(char_count),
+            "text_injected": text_injected,
+            "readable": readable,
+            "role": "memory" if _looks_like_memory_file(file_name, state_key) else "file",
+        }
+        if output_key:
+            record["output_key"] = output_key
+        if reference_source == "local_input":
+            if reference.get("relative_path"):
+                record["relative_path"] = str(reference.get("relative_path") or "")
+        elif local_path:
+            record["local_path"] = local_path
+        records.append(record)
+    return records
+
+
+def _build_result_package_context_records(
+    *,
+    state_key: str,
+    package: Any,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    if not isinstance(package, dict) or package.get("kind") != "result_package":
+        return [], [], []
+    outputs = package.get("outputs")
+    if not isinstance(outputs, dict):
+        return [], [], []
+
+    output_records: list[dict[str, Any]] = []
+    file_records: list[dict[str, Any]] = []
+    knowledge_chunks: list[dict[str, Any]] = []
+    for output_key, raw_output in outputs.items():
+        output_value = raw_output.get("value") if isinstance(raw_output, dict) else raw_output
+        output_type = (
+            _coerce_result_package_output_type(raw_output.get("type"))
+            if isinstance(raw_output, dict)
+            else (NodeSystemStateType.JSON if isinstance(raw_output, (dict, list)) else NodeSystemStateType.TEXT)
+        )
+        value_chars = _count_value_chars(output_value)
+        prompt_limit = (
+            RESULT_PACKAGE_ARTIFACT_TEXT_CHAR_LIMIT
+            if output_type in {
+                NodeSystemStateType.FILE,
+                NodeSystemStateType.IMAGE,
+                NodeSystemStateType.AUDIO,
+                NodeSystemStateType.VIDEO,
+            }
+            else RESULT_PACKAGE_OUTPUT_PROMPT_CHAR_LIMIT
+        )
+        output_record = {
+            "state_key": state_key,
+            "source_type": str(package.get("sourceType") or ""),
+            "source_key": str(package.get("sourceKey") or ""),
+            "output_key": str(output_key),
+            "name": str(raw_output.get("name") or output_key) if isinstance(raw_output, dict) else str(output_key),
+            "type": output_type.value,
+            "value_chars": value_chars,
+            "prompt_chars": min(value_chars, prompt_limit),
+            "token_estimate": _estimate_tokens(min(value_chars, prompt_limit)),
+            "prompt_char_limit": prompt_limit,
+            "prompt_omitted": value_chars > prompt_limit,
+        }
+        output_records.append(output_record)
+        file_records.extend(
+            _build_file_context_records(
+                state_key=state_key,
+                value=output_value,
+                definition=None,
+                output_key=str(output_key),
+                output_type=output_type,
+            )
+        )
+        knowledge_chunks.extend(
+            _build_knowledge_chunk_context_records(
+                state_key=state_key,
+                value=output_value,
+                source_kind="result_output",
+                source_key=str(output_key),
+                enabled=_is_knowledge_output(str(output_key), raw_output),
+            )
+        )
+    return output_records, file_records, knowledge_chunks
+
+
+def _build_knowledge_chunk_context_records(
+    *,
+    state_key: str,
+    value: Any,
+    source_kind: str,
+    source_key: str,
+    enabled: bool,
+) -> list[dict[str, Any]]:
+    if not enabled:
+        return []
+    records: list[dict[str, Any]] = []
+    _append_knowledge_chunk_context_records(
+        value,
+        records,
+        state_key=state_key,
+        source_kind=source_kind,
+        source_key=source_key,
+    )
+    return records
+
+
+def _append_knowledge_chunk_context_records(
+    value: Any,
+    records: list[dict[str, Any]],
+    *,
+    state_key: str,
+    source_kind: str,
+    source_key: str,
+) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _append_knowledge_chunk_context_records(
+                item,
+                records,
+                state_key=state_key,
+                source_kind=source_kind,
+                source_key=source_key,
+            )
+        return
+    if not isinstance(value, dict):
+        return
+
+    chunk_text = _first_non_empty_string(
+        value,
+        ("content", "text", "excerpt", "summary"),
+    )
+    has_chunk_shape = any(key in value for key in ("title", "section", "source", "url", "score", "chunk_id", "chunkId"))
+    if chunk_text and has_chunk_shape:
+        char_count = len(chunk_text)
+        records.append(
+            {
+                "state_key": state_key,
+                "source_kind": source_kind,
+                "source_key": source_key,
+                "title": str(value.get("title") or ""),
+                "section": str(value.get("section") or ""),
+                "source": str(value.get("source") or value.get("url") or ""),
+                "char_count": char_count,
+                "token_estimate": _estimate_tokens(char_count),
+            }
+        )
+        return
+
+    for nested_key in ("results", "chunks", "items", "knowledge_chunks", "knowledgeChunks"):
+        nested_value = value.get(nested_key)
+        if nested_value is not None:
+            _append_knowledge_chunk_context_records(
+                nested_value,
+                records,
+                state_key=state_key,
+                source_kind=source_kind,
+                source_key=source_key,
+            )
+
+
+def _memory_records_from_file_records(file_records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "state_key": str(record.get("state_key") or ""),
+            "name": str(record.get("name") or ""),
+            "source": str(record.get("source") or ""),
+            "char_count": int(record.get("char_count") or 0),
+            "token_estimate": int(record.get("token_estimate") or 0),
+            **({"output_key": str(record.get("output_key") or "")} if record.get("output_key") else {}),
+        }
+        for record in file_records
+        if record.get("role") == "memory"
+    ]
+
+
+def _count_prompt_chars(lines: list[str]) -> int:
+    return len("\n".join(lines))
+
+
+def _count_value_chars(value: Any) -> int:
+    return len(format_prompt_value(value))
+
+
+def _estimate_tokens(char_count: int) -> int:
+    if char_count <= 0:
+        return 0
+    return max(1, (char_count + 3) // 4)
+
+
+def _state_definition_name(state_key: str, definition: NodeSystemStateDefinition | None) -> str:
+    if definition is None:
+        return state_key
+    return definition.name.strip() or state_key
+
+
+def _state_definition_type(definition: NodeSystemStateDefinition | None) -> str:
+    return definition.type.value if definition is not None else "unknown"
+
+
+def _classify_context_state(state_key: str, definition: NodeSystemStateDefinition | None) -> str:
+    if definition is not None:
+        if definition.type == NodeSystemStateType.RESULT_PACKAGE:
+            return "result_package"
+        if definition.type == NodeSystemStateType.KNOWLEDGE_BASE:
+            return "knowledge_base"
+        if definition.type in {
+            NodeSystemStateType.FILE,
+            NodeSystemStateType.IMAGE,
+            NodeSystemStateType.AUDIO,
+            NodeSystemStateType.VIDEO,
+        }:
+            return "file"
+    if _looks_like_memory_context(state_key, definition):
+        return "memory"
+    return "state"
+
+
+def _is_knowledge_context_state(state_key: str, definition: NodeSystemStateDefinition | None) -> bool:
+    if definition is not None and definition.type == NodeSystemStateType.KNOWLEDGE_BASE:
+        return True
+    searchable = " ".join(
+        [
+            state_key,
+            definition.name if definition is not None else "",
+            definition.description if definition is not None else "",
+        ]
+    ).lower()
+    return "knowledge" in searchable or "chunk" in searchable
+
+
+def _is_knowledge_output(output_key: str, raw_output: Any) -> bool:
+    if isinstance(raw_output, dict):
+        output_type = str(raw_output.get("type") or "").lower()
+        searchable = " ".join(
+            [
+                output_key,
+                str(raw_output.get("name") or ""),
+                str(raw_output.get("description") or ""),
+            ]
+        ).lower()
+        return output_type == "knowledge_base" or "knowledge" in searchable or "chunk" in searchable
+    return "knowledge" in output_key.lower() or "chunk" in output_key.lower()
+
+
+def _looks_like_memory_context(state_key: str, definition: NodeSystemStateDefinition | None) -> bool:
+    searchable = " ".join(
+        [
+            state_key,
+            definition.name if definition is not None else "",
+            definition.description if definition is not None else "",
+        ]
+    ).lower()
+    return "memory" in searchable or "memories" in searchable
+
+
+def _looks_like_memory_file(file_name: str, state_key: str) -> bool:
+    normalized = file_name.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    return normalized == "memory.md" or "memory" in state_key.lower()
+
+
+def _truncate_prompt_text(value: str, max_chars: int) -> str:
+    if len(value) <= max_chars:
+        return value
+    return f"{value[: max(0, max_chars - 1)]}…"
 
 
 def _coerce_result_package_output_type(value: Any) -> NodeSystemStateType:

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.core.runtime import agent_prompt
 from app.core.runtime.agent_prompt import build_auto_system_prompt
 from app.core.runtime.llm_output_parser import parse_llm_json_response
 from app.core.schemas.node_system import NodeSystemStateDefinition, NodeSystemStateType
@@ -288,6 +289,187 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
             self.assertNotIn(artifact["local_path"], prompt)
         finally:
             resolve_skill_artifact_path(artifact["local_path"]).unlink(missing_ok=True)
+
+    def test_auto_prompt_budgets_result_package_values_and_keeps_compact_artifact_refs(self) -> None:
+        long_reply = "FINAL-START " + ("answer " * 600) + "FINAL-END"
+        long_log = "LOG-START " + ("raw-event " * 700) + "LOG-END"
+
+        prompt = build_auto_system_prompt(
+            ["answer"],
+            {
+                "capability_result": {
+                    "kind": "result_package",
+                    "sourceType": "subgraph",
+                    "sourceKey": "advanced_web_research_loop",
+                    "sourceName": "Advanced Web Research",
+                    "status": "succeeded",
+                    "inputs": {
+                        "query": "鸣潮 最新资讯",
+                        "raw_page_snapshot": "SNAPSHOT-START " + ("node-state " * 500) + "SNAPSHOT-END",
+                    },
+                    "outputs": {
+                        "final_reply": {
+                            "name": "Final Reply",
+                            "description": "User-facing final answer.",
+                            "type": "markdown",
+                            "value": long_reply,
+                        },
+                        "operation_report": {
+                            "name": "Operation Report",
+                            "description": "Structured run evidence.",
+                            "type": "json",
+                            "value": {
+                                "summary": "Ran target template.",
+                                "raw_log": long_log,
+                                "artifact_refs": [
+                                    {
+                                        "title": "Final answer",
+                                        "artifact_kind": "saved_output",
+                                        "summary": "Concise evidence summary.",
+                                        "path": "runs/run_search/final.md",
+                                        "url": "https://example.test/source",
+                                        "source_key": "final_reply",
+                                        "content_type": "text/markdown",
+                                        "size": 2048,
+                                        "char_count": 9182,
+                                        "unexpected_large_value": "SHOULD_NOT_APPEAR",
+                                        "raw_html": "<main>SHOULD_NOT_APPEAR_HTML</main>",
+                                    }
+                                ],
+                            },
+                        },
+                    },
+                }
+            },
+            {},
+            state_schema={
+                "capability_result": NodeSystemStateDefinition.model_validate(
+                    {
+                        "name": "Capability Result",
+                        "description": "Dynamic capability result package.",
+                        "type": "result_package",
+                    }
+                ),
+                "answer": NodeSystemStateDefinition(type=NodeSystemStateType.MARKDOWN),
+            },
+        )
+
+        self.assertIn("sourceKey: advanced_web_research_loop", prompt)
+        self.assertIn("artifact_refs:", prompt)
+        self.assertIn("runs/run_search/final.md", prompt)
+        self.assertIn("Concise evidence summary.", prompt)
+        self.assertIn("https://example.test/source", prompt)
+        self.assertIn('"size": 2048', prompt)
+        self.assertIn('"char_count": 9182', prompt)
+        self.assertNotIn("SHOULD_NOT_APPEAR", prompt)
+        self.assertNotIn("SHOULD_NOT_APPEAR_HTML", prompt)
+        self.assertIn("inputs_summary:", prompt)
+        self.assertIn("inputs_omitted:", prompt)
+        self.assertNotIn("SNAPSHOT-END", prompt)
+        self.assertIn("value_summary:", prompt)
+        self.assertIn("value_omitted:", prompt)
+        self.assertIn("FINAL-START", prompt)
+        self.assertNotIn("FINAL-END", prompt)
+        self.assertIn("LOG-START", prompt)
+        self.assertNotIn("LOG-END", prompt)
+
+    def test_context_assembly_report_counts_states_files_result_outputs_memory_and_knowledge_chunks(self) -> None:
+        self.assertTrue(
+            hasattr(agent_prompt, "build_context_assembly_report"),
+            "agent_prompt.build_context_assembly_report should produce auditable LLM context metadata",
+        )
+        artifact = create_uploaded_skill_artifact(
+            file_name="search-source.md",
+            content_type="text/markdown",
+            payload=b"Downloaded source paragraph for the capability result.",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            folder = workspace / "buddy_home"
+            folder.mkdir()
+            (folder / "MEMORY.md").write_text("Durable memory line.", encoding="utf-8")
+            try:
+                with patch.dict(os.environ, {"TOOGRAPH_LOCAL_INPUT_READ_ROOTS": str(workspace)}):
+                    report = agent_prompt.build_context_assembly_report(
+                        node_id="buddy_final_reply",
+                        node_type="agent",
+                        input_values={
+                            "buddy_context": {
+                                "kind": "local_folder",
+                                "root": str(folder),
+                                "selected": ["MEMORY.md"],
+                            },
+                            "capability_result": {
+                                "kind": "result_package",
+                                "sourceType": "subgraph",
+                                "sourceKey": "advanced_web_research_loop",
+                                "sourceName": "Advanced Web Research",
+                                "status": "succeeded",
+                                "outputs": {
+                                    "final_reply": {
+                                        "name": "Final Reply",
+                                        "description": "User-facing answer.",
+                                        "type": "markdown",
+                                        "value": "Capability answer text.",
+                                    },
+                                    "source_document": {
+                                        "name": "Source Document",
+                                        "description": "Downloaded evidence.",
+                                        "type": "file",
+                                        "value": artifact["local_path"],
+                                    },
+                                },
+                            },
+                            "knowledge_context": {
+                                "knowledge_base": "toograph-official",
+                                "query": "context budget",
+                                "results": [
+                                    {
+                                        "title": "Context Budgeting",
+                                        "section": "Runtime",
+                                        "source": "docs/runtime.md",
+                                        "content": "Knowledge chunk body.",
+                                    }
+                                ],
+                            },
+                        },
+                        state_schema={
+                            "buddy_context": NodeSystemStateDefinition.model_validate(
+                                {"name": "Buddy context", "type": "file"}
+                            ),
+                            "capability_result": NodeSystemStateDefinition.model_validate(
+                                {"name": "Capability Result", "type": "result_package"}
+                            ),
+                            "knowledge_context": NodeSystemStateDefinition.model_validate(
+                                {"name": "Knowledge Context", "type": "knowledge_base"}
+                            ),
+                        },
+                        llm_phases=["agent_response"],
+                    )
+            finally:
+                resolve_skill_artifact_path(artifact["local_path"]).unlink(missing_ok=True)
+
+        self.assertEqual(report["node_id"], "buddy_final_reply")
+        self.assertEqual(report["llm_phases"], ["agent_response"])
+        self.assertGreater(report["totals"]["prompt_chars"], 0)
+        self.assertGreater(report["totals"]["token_estimate"], 0)
+        self.assertEqual([item["state_key"] for item in report["state_reads"]], [
+            "buddy_context",
+            "capability_result",
+            "knowledge_context",
+        ])
+        self.assertIn("final_reply", [item["output_key"] for item in report["result_outputs"]])
+        self.assertIn("source_document", [item["output_key"] for item in report["result_outputs"]])
+        self.assertIn("MEMORY.md", [item["name"] for item in report["files"]])
+        self.assertIn(Path(artifact["local_path"]).name, [item["name"] for item in report["files"]])
+        artifact_file_record = next(
+            item for item in report["files"] if item["name"] == Path(artifact["local_path"]).name
+        )
+        self.assertEqual(artifact_file_record["size_bytes"], len(b"Downloaded source paragraph for the capability result."))
+        self.assertEqual(artifact_file_record["content_type"], "text/markdown")
+        self.assertEqual(report["memories"][0]["name"], "MEMORY.md")
+        self.assertEqual(report["knowledge_chunks"][0]["title"], "Context Budgeting")
+        self.assertEqual(report["knowledge_chunks"][0]["char_count"], len("Knowledge chunk body."))
 
     def test_auto_prompt_does_not_read_media_paths_as_text_file_content(self) -> None:
         image_artifact = create_uploaded_skill_artifact(

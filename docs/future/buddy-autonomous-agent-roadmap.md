@@ -55,11 +55,11 @@
 
 待做：
 
-- 为目标模板公开 output 建立结果契约：哪些 output 可以直接透传，哪些只作为证据或中间 artifact。
-- 在能力选择阶段前置判断：如果用户问题本身由某个模板完整回答，应选择“运行后可透传”的能力路径；如果模板只是搜集资料，应走后续整理节点。
-- 为 `result_package` 增加预算化摘要和 artifact refs，避免把完整上下文、原始日志或大文本塞进外层 LLM。
-- 对触发的目标 run 读取终态、root outputs、errors、warnings、activity events 和 artifacts，生成结构化 validation report。
-- 失败后支持有限修复：重新绑定输入、重新运行、切换模板、请求用户补充，或明确结束并说明缺口。
+- 为目标模板公开 output 建立结果契约：能力选择目录已读取 `metadata.outputContract` 或从 root output 节点推导默认契约，并把 final_response/evidence/artifact/internal、direct pass-through、required 标志写入 capability/audit；`advanced_web_research_loop` 与 `toograph_page_operation_workflow` 已声明首批显式契约。
+- 在能力选择阶段前置判断：selector catalog 已把 output contract 注入 LLM 选择上下文，并在归一化时阻止 evidence-only 模板被登记为 `answer_delegate/pass_through`；只有声明 direct `final_response` 的模板才保留运行后可透传路径，其余走后续整理节点。
+- 为 `result_package` 增加预算化摘要和 artifact refs：result_package state 在下游 LLM prompt 中按输入/输出预算渲染为 `inputs_summary`、`value_summary`、`value_omitted` 与紧凑 `artifact_refs`，完整 state 仍保留在运行记录中，避免把原始日志、大页面快照或长正文直接塞进外层 LLM。
+- 对触发的目标 run 读取终态、root outputs、errors、warnings、activity events 和 artifacts，生成结构化 validation report；页面操作续跑报告已携带紧凑 target run validation，Buddy 可见子图适配器已把它写入 `capability_result.outputs.validation_report`，并用 output contract 判断 pass-through、missing required outputs、repair/user-reply 需求。
+- 失败后支持有限修复：Buddy 可见子图适配器已在 validation report 中输出 `repair_options`，限定为重新绑定输入、重新运行、切换模板、请求用户补充或明确结束并说明缺口；能力复核节点只从这些方向中选择下一步。
 
 ### 4. Buddy 运行 UX 稳定性
 
@@ -97,9 +97,9 @@
 
 待做：
 
-- 为每个 LLM 节点建立上下文装配报告：读取了哪些 state、文件、result outputs、记忆、知识库 chunk，各占多少字符/token。
+- 为每个 LLM 节点建立上下文装配报告：agent 节点运行记录已在 `node_executions[].artifacts.context_assembly_report` 中记录 LLM phase、读取的 state、文件、result outputs、记忆文件、知识库 chunk、Skill result 以及对应字符数/token 估算。
 - 为 `result_package` 定义默认渲染策略：公开 output 可摘要展示，原始值保存在 artifacts 或可按需展开的 state 中。
-- 大 artifact 只传路径、摘要、mime、大小、来源和关键引用；不把 base64、完整日志、大媒体或大量网页正文写进长期上下文。
+- 大 artifact 只传路径、摘要、mime、大小、来源和关键引用；`result_package` prompt 的紧凑 artifact refs 已白名单保留 summary/url/content_type/size/char_count 等元数据并丢弃 raw/html/任意大字段，context assembly report 的文件记录也包含 size_bytes；base64、完整日志、大媒体和大量网页正文不进入下游长期上下文。
 - 历史对话、Buddy Home、运行记录和子图结果都要按预算裁剪，并保留 omitted list。
 - 建立只读 fanout 的并行上下文装配：记忆召回、知识库检索、页面上下文压缩、能力候选读取可以并行，合并节点负责预算和冲突处理。
 

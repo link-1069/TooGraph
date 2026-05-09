@@ -864,6 +864,9 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("should_offer_build", missing_node["config"]["taskInstruction"])
         review_node = cycle_graph["nodes"]["review_capability_result"]
         self.assertIn({"state": "capability_trace", "mode": "append"}, review_node["writes"])
+        self.assertIn("capability_result.outputs.validation_report.value", review_node["config"]["taskInstruction"])
+        self.assertIn("capability_result.outputContract", review_node["config"]["taskInstruction"])
+        self.assertIn("validation_report.repair_options", review_node["config"]["taskInstruction"])
         self.assertEqual(cycle_graph["nodes"]["continue_capability_loop"]["config"]["loopLimit"], 3)
         self.assertEqual(
             cycle_graph["conditional_edges"][0],

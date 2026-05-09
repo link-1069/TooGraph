@@ -21,6 +21,7 @@ export type PageOperationResult = {
   triggered_run_result_summary: string | null;
   triggered_run_final_result: string | null;
   artifact_refs: PageOperationArtifactRef[];
+  target_run_validation: PageOperationTargetRunValidation | null;
   retry_chain: PageOperationRetryRecord[];
   input_text: string | null;
   graph_edit_summary: Record<string, unknown> | null;
@@ -43,6 +44,7 @@ export type PageOperationReport = {
   triggered_run_result_summary: string | null;
   triggered_run_final_result: string | null;
   artifact_refs: PageOperationArtifactRef[];
+  target_run_validation: PageOperationTargetRunValidation | null;
   retry_chain: PageOperationRetryRecord[];
   input_text: string | null;
   graph_edit_summary: Record<string, unknown> | null;
@@ -50,6 +52,38 @@ export type PageOperationReport = {
 };
 
 export type PageOperationArtifactKind = "saved_output" | "document" | "image" | "video" | "audio" | "file";
+
+export type PageOperationTargetRunValidation = {
+  run_id: string;
+  graph_id: string | null;
+  status: string;
+  final_result_preview: string | null;
+  root_outputs: PageOperationTargetRunOutput[];
+  errors: string[];
+  warnings: string[];
+  activity_events: PageOperationTargetRunActivityEvent[];
+  artifact_refs: PageOperationArtifactRef[];
+};
+
+export type PageOperationTargetRunOutput = {
+  node_id: string | null;
+  source_key: string;
+  label: string | null;
+  display_mode: string;
+  persist_enabled: boolean;
+  persist_format: string;
+  value_type: "empty" | "text" | "json";
+  value_preview: string | null;
+  has_value: boolean;
+};
+
+export type PageOperationTargetRunActivityEvent = {
+  kind: string;
+  summary: string;
+  status: string | null;
+  node_id: string | null;
+  error: string | null;
+};
 
 export type PageOperationArtifactRef = {
   title: string;
@@ -85,6 +119,10 @@ export type PageOperationFailureCategory =
 
 const MAX_PAGE_OPERATION_ARTIFACT_REFS = 20;
 const MAX_PAGE_OPERATION_RETRY_RECORDS = 50;
+const MAX_TARGET_RUN_OUTPUTS = 12;
+const MAX_TARGET_RUN_ACTIVITY_EVENTS = 12;
+const MAX_TARGET_RUN_TEXT_ITEMS = 20;
+const MAX_TARGET_RUN_PREVIEW_CHARS = 1200;
 
 export function buildPageOperationResult(input: {
   operationPlan: BuddyVirtualOperationPlan;
@@ -99,6 +137,7 @@ export function buildPageOperationResult(input: {
   triggeredRunStatus?: string | null;
   triggeredRunFinalResult?: string | null;
   artifactRefs?: PageOperationArtifactRef[] | null;
+  targetRunValidation?: PageOperationTargetRunValidation | null;
   retryChain?: PageOperationRetryRecord[] | null;
   graphEditSummary?: Record<string, unknown> | null;
   error?: string | null;
@@ -112,6 +151,7 @@ export function buildPageOperationResult(input: {
   const triggeredRunResultSummary = latestForegroundRunResultSummary(input.pageOperationContextAfter);
   const triggeredRunFinalResult = normalizeNullableText(input.triggeredRunFinalResult);
   const artifactRefs = normalizePageOperationArtifactRefs(input.artifactRefs);
+  const targetRunValidation = input.targetRunValidation ?? null;
   const retryChain = normalizePageOperationRetryChain(input.retryChain);
   const inputText = firstRunTemplateInputText(input.operationPlan);
   const graphEditSummary = input.graphEditSummary ?? defaultGraphEditSummary(input.operationPlan);
@@ -137,6 +177,7 @@ export function buildPageOperationResult(input: {
     triggered_run_result_summary: triggeredRunResultSummary,
     triggered_run_final_result: triggeredRunFinalResult,
     artifact_refs: artifactRefs,
+    target_run_validation: targetRunValidation,
     retry_chain: retryChain,
     input_text: inputText,
     graph_edit_summary: graphEditSummary,
@@ -159,11 +200,30 @@ export function buildPageOperationResult(input: {
     triggered_run_result_summary: triggeredRunResultSummary,
     triggered_run_final_result: triggeredRunFinalResult,
     artifact_refs: artifactRefs,
+    target_run_validation: targetRunValidation,
     retry_chain: retryChain,
     input_text: inputText,
     graph_edit_summary: graphEditSummary,
     operation_report: report,
     error,
+  };
+}
+
+export function buildPageOperationTargetRunValidation(run: RunDetail | null | undefined): PageOperationTargetRunValidation | null {
+  if (!run) {
+    return null;
+  }
+  const rootOutputs = normalizeTargetRunOutputs(listTargetRunOutputPreviews(run));
+  return {
+    run_id: run.run_id,
+    graph_id: normalizeNullableText(run.graph_id),
+    status: normalizeNullableText(run.status) ?? "",
+    final_result_preview: compactPreviewText(run.final_result),
+    root_outputs: rootOutputs,
+    errors: normalizeTextList(run.errors),
+    warnings: normalizeTextList(run.warnings),
+    activity_events: normalizeTargetRunActivityEvents(run.artifacts?.activity_events ?? []),
+    artifact_refs: buildPageOperationArtifactRefs(run),
   };
 }
 
@@ -273,6 +333,90 @@ function normalizePageOperationRetryChain(value: PageOperationRetryRecord[] | nu
     }
   }
   return records;
+}
+
+function listTargetRunOutputPreviews(run: RunDetail): RunDetail["output_previews"] {
+  const previews: RunDetail["output_previews"] = [];
+  const seen = new Set<string>();
+  for (const output of [...(run.output_previews ?? []), ...(run.artifacts?.output_previews ?? [])]) {
+    const key = `${normalizeNullableText(output.node_id) ?? ""}:${normalizeNullableText(output.source_key) ?? ""}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    previews.push(output);
+  }
+  return previews;
+}
+
+function normalizeTargetRunOutputs(value: RunDetail["output_previews"]): PageOperationTargetRunOutput[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.slice(0, MAX_TARGET_RUN_OUTPUTS).map((output) => {
+    const valueSummary = summarizeTargetRunOutputValue(output.value);
+    return {
+      node_id: normalizeNullableText(output.node_id),
+      source_key: normalizeNullableText(output.source_key) ?? "",
+      label: normalizeNullableText(output.label),
+      display_mode: normalizeNullableText(output.display_mode) ?? "text",
+      persist_enabled: output.persist_enabled === true,
+      persist_format: normalizeNullableText(output.persist_format) ?? "auto",
+      value_type: valueSummary.valueType,
+      value_preview: valueSummary.preview,
+      has_value: valueSummary.hasValue,
+    };
+  });
+}
+
+function normalizeTargetRunActivityEvents(value: RunDetail["artifacts"]["activity_events"]): PageOperationTargetRunActivityEvent[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.slice(0, MAX_TARGET_RUN_ACTIVITY_EVENTS).map((event) => ({
+    kind: normalizeNullableText(event.kind) ?? "",
+    summary: normalizeNullableText(event.summary) ?? "",
+    status: normalizeNullableText(event.status),
+    node_id: normalizeNullableText(event.node_id),
+    error: normalizeNullableText(event.error),
+  }));
+}
+
+function normalizeTextList(value: string[] | null | undefined): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => normalizeNullableText(item)).filter((item): item is string => Boolean(item)).slice(0, MAX_TARGET_RUN_TEXT_ITEMS);
+}
+
+function summarizeTargetRunOutputValue(value: unknown): {
+  valueType: PageOperationTargetRunOutput["value_type"];
+  preview: string | null;
+  hasValue: boolean;
+} {
+  if (value === null || value === undefined || value === "") {
+    return { valueType: "empty", preview: null, hasValue: false };
+  }
+  if (Array.isArray(value) && value.length === 0) {
+    return { valueType: "empty", preview: "[]", hasValue: false };
+  }
+  if (isPlainRecord(value) && Object.keys(value).length === 0) {
+    return { valueType: "empty", preview: "{}", hasValue: false };
+  }
+  if (typeof value === "string") {
+    return { valueType: "text", preview: compactPreviewText(value), hasValue: true };
+  }
+  return { valueType: "json", preview: compactPreviewText(JSON.stringify(value)), hasValue: true };
+}
+
+function compactPreviewText(value: unknown): string | null {
+  const normalized = normalizeNullableText(value);
+  if (!normalized) {
+    return null;
+  }
+  return normalized.length > MAX_TARGET_RUN_PREVIEW_CHARS
+    ? `${normalized.slice(0, MAX_TARGET_RUN_PREVIEW_CHARS - 1)}…`
+    : normalized;
 }
 
 function isPageOperationRetryKind(value: unknown): value is PageOperationRetryKind {

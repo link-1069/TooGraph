@@ -196,12 +196,22 @@ def _base_package(
 ) -> dict[str, Any]:
     source_key = selected["key"]
     source_name = selected.get("name") or source_key
+    output_contract = _normalize_output_contract(selected.get("output_contract"))
+    validation_report = _build_validation_report(
+        selected=selected,
+        status=status,
+        final_reply=final_reply,
+        operation_report=operation_report if isinstance(operation_report, dict) else {},
+        output_contract=output_contract,
+        error=error,
+    )
     return {
         "kind": "result_package",
         "sourceType": "subgraph",
         "sourceKey": source_key,
         "sourceName": source_name,
         "status": status or "succeeded",
+        "outputContract": output_contract,
         "inputs": {
             "user_goal": user_goal,
             "target_capability": selected,
@@ -219,6 +229,12 @@ def _base_package(
                 "description": operation_report_description,
                 "type": "json",
                 "value": operation_report,
+            },
+            "validation_report": {
+                "name": "目标运行校验报告",
+                "description": "根据目标模板终态、公开输出、warnings/errors、activity events 和 artifacts 生成的紧凑校验报告。",
+                "type": "json",
+                "value": validation_report,
             },
             "visible_operation_result": {
                 "name": visible_result_name,
@@ -302,7 +318,262 @@ def _normalize_selected_capability(value: Any) -> dict[str, Any]:
         "key": key,
         "name": _compact_text(value.get("name")) or key,
         "description": _compact_text(value.get("description")),
+        "output_contract": _normalize_output_contract(value.get("output_contract") or value.get("outputContract")),
     }
+
+
+def _normalize_output_contract(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    contract: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        key = _compact_text(item.get("key") or item.get("state") or item.get("stateKey"))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        role = _compact_text(item.get("role")).lower()
+        if role not in {"final_response", "evidence", "artifact", "internal"}:
+            role = "final_response" if key == "final_reply" else "evidence"
+        contract.append(
+            {
+                "key": key,
+                "name": _compact_text(item.get("name")) or key,
+                "description": _compact_text(item.get("description")),
+                "type": _compact_text(item.get("type") or item.get("valueType")) or ("markdown" if role == "final_response" else "json"),
+                "role": role,
+                "pass_through": _coerce_bool(item.get("pass_through", item.get("passThrough")), default=role == "final_response"),
+                "required": _coerce_bool(item.get("required"), default=False),
+            }
+        )
+    return contract
+
+
+def _build_validation_report(
+    *,
+    selected: dict[str, Any],
+    status: str,
+    final_reply: Any,
+    operation_report: dict[str, Any],
+    output_contract: list[dict[str, Any]],
+    error: str,
+) -> dict[str, Any]:
+    operation_detail = operation_report.get("operation_report") if isinstance(operation_report.get("operation_report"), dict) else operation_report
+    latest_run = operation_report.get("latest_foreground_run") if isinstance(operation_report.get("latest_foreground_run"), dict) else {}
+    raw_target_run_validation = operation_detail.get("target_run_validation")
+    target_run_validation_present = isinstance(raw_target_run_validation, dict)
+    target_run_validation = raw_target_run_validation if target_run_validation_present else {}
+    root_outputs = _normalize_root_outputs(
+        target_run_validation.get("root_outputs"),
+        final_reply=final_reply,
+        allow_final_reply_fallback=not target_run_validation_present,
+    )
+    artifact_refs = _normalize_list(target_run_validation.get("artifact_refs") or operation_detail.get("artifact_refs"))
+    warnings = _normalize_text_list(target_run_validation.get("warnings"))
+    errors = _normalize_text_list(target_run_validation.get("errors"))
+    if error:
+        errors.append(error)
+    missing_required_outputs = _missing_required_outputs(
+        output_contract,
+        root_outputs,
+        final_reply=final_reply,
+        allow_final_reply_fallback=not target_run_validation_present,
+    )
+    final_response_strategy = _resolve_final_response_strategy(
+        status=status,
+        error=error,
+        output_contract=output_contract,
+        root_outputs=root_outputs,
+        missing_required_outputs=missing_required_outputs,
+        final_reply=final_reply,
+    )
+    repair_options = _build_repair_options(
+        missing_required_outputs=missing_required_outputs,
+        errors=errors,
+        status=status,
+    )
+    return {
+        "capability": {
+            "kind": selected.get("kind"),
+            "key": selected.get("key"),
+            "name": selected.get("name"),
+        },
+        "status": "failed" if _is_failure_status(status) or error else status or "succeeded",
+        "target_run": {
+            "run_id": _compact_text(target_run_validation.get("run_id") or operation_detail.get("triggered_run_id") or latest_run.get("runId")),
+            "graph_id": _compact_text(target_run_validation.get("graph_id") or operation_detail.get("triggered_graph_id") or latest_run.get("graphId")),
+            "status": _compact_text(target_run_validation.get("status") or operation_detail.get("triggered_run_status") or latest_run.get("status")),
+            "final_result_preview": _compact_text(
+                target_run_validation.get("final_result_preview") or operation_detail.get("triggered_run_final_result") or latest_run.get("finalResult")
+            ),
+        },
+        "output_contract": output_contract,
+        "root_outputs": root_outputs,
+        "missing_required_outputs": missing_required_outputs,
+        "warnings": warnings,
+        "errors": errors,
+        "activity_events": _normalize_list(target_run_validation.get("activity_events")),
+        "artifact_refs": artifact_refs,
+        "final_response_strategy": final_response_strategy,
+        "needs_user_reply": final_response_strategy == "ask_user",
+        "needs_repair": bool(repair_options),
+        "repair_options": repair_options,
+    }
+
+
+def _normalize_root_outputs(
+    value: Any,
+    *,
+    final_reply: Any,
+    allow_final_reply_fallback: bool = True,
+) -> list[dict[str, Any]]:
+    outputs: list[dict[str, Any]] = []
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, dict):
+                source_key = _compact_text(item.get("source_key") or item.get("sourceKey"))
+                if not source_key:
+                    continue
+                outputs.append(
+                    {
+                        "node_id": _compact_text(item.get("node_id") or item.get("nodeId")),
+                        "source_key": source_key,
+                        "label": _compact_text(item.get("label")),
+                        "display_mode": _compact_text(item.get("display_mode") or item.get("displayMode")),
+                        "persist_enabled": item.get("persist_enabled", item.get("persistEnabled")) is True,
+                        "persist_format": _compact_text(item.get("persist_format") or item.get("persistFormat")),
+                        "value_type": _compact_text(item.get("value_type") or item.get("valueType")) or "text",
+                        "value_preview": _compact_text(item.get("value_preview") or item.get("valuePreview")),
+                        "has_value": item.get("has_value", item.get("hasValue")) is True,
+                    }
+                )
+    if allow_final_reply_fallback and not outputs and _has_value(final_reply):
+        outputs.append(
+            {
+                "node_id": "",
+                "source_key": "final_reply",
+                "label": "final_reply",
+                "display_mode": "markdown",
+                "persist_enabled": False,
+                "persist_format": "auto",
+                "value_type": "text",
+                "value_preview": _compact_text(final_reply),
+                "has_value": True,
+            }
+        )
+    return outputs
+
+
+def _missing_required_outputs(
+    output_contract: list[dict[str, Any]],
+    root_outputs: list[dict[str, Any]],
+    *,
+    final_reply: Any,
+    allow_final_reply_fallback: bool = True,
+) -> list[str]:
+    outputs_by_key = {str(output.get("source_key") or ""): output for output in root_outputs}
+    missing: list[str] = []
+    for item in output_contract:
+        if item.get("required") is not True:
+            continue
+        key = str(item.get("key") or "")
+        output = outputs_by_key.get(key)
+        if output and output.get("has_value") is True:
+            continue
+        if allow_final_reply_fallback and key == "final_reply" and _has_value(final_reply):
+            continue
+        missing.append(key)
+    return missing
+
+
+def _resolve_final_response_strategy(
+    *,
+    status: str,
+    error: str,
+    output_contract: list[dict[str, Any]],
+    root_outputs: list[dict[str, Any]],
+    missing_required_outputs: list[str],
+    final_reply: Any,
+) -> str:
+    if _is_failure_status(status) or error:
+        return "ask_user"
+    final_output_keys = {
+        str(item.get("key") or "")
+        for item in output_contract
+        if item.get("role") == "final_response" and item.get("pass_through") is True
+    }
+    root_output_keys = {str(item.get("source_key") or "") for item in root_outputs if item.get("has_value") is True}
+    final_response_available = bool(final_output_keys.intersection(root_output_keys)) or ("final_reply" in final_output_keys and _has_value(final_reply))
+    if final_response_available and not missing_required_outputs:
+        return "pass_through"
+    return "compose" if root_outputs else "ask_user"
+
+
+def _normalize_text_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [_compact_text(item) for item in value if _compact_text(item)]
+
+
+def _normalize_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, list) else []
+
+
+def _build_repair_options(
+    *,
+    missing_required_outputs: list[str],
+    errors: list[str],
+    status: str,
+) -> list[dict[str, Any]]:
+    if not missing_required_outputs and not errors and not _is_failure_status(status):
+        return []
+    reason = "; ".join([*(f"missing required output: {key}" for key in missing_required_outputs), *errors])
+    if not reason:
+        reason = f"target run status is {status or 'unknown'}"
+    return [
+        {
+            "action": "rebind_inputs",
+            "description": "重新检查并绑定目标模板输入后再运行。",
+            "requires_user_input": True,
+            "reason": reason,
+        },
+        {
+            "action": "rerun_template",
+            "description": "使用相同目标模板和已知输入重新运行一次。",
+            "requires_user_input": False,
+            "reason": reason,
+        },
+        {
+            "action": "switch_template",
+            "description": "改用另一个更匹配本轮目标的模板或能力。",
+            "requires_user_input": False,
+            "reason": reason,
+        },
+        {
+            "action": "ask_user",
+            "description": "向用户询问缺失输入或确认下一步修复方式。",
+            "requires_user_input": True,
+            "reason": reason,
+        },
+        {
+            "action": "end_with_gap",
+            "description": "结束本轮并明确说明已执行内容、失败原因和缺口。",
+            "requires_user_input": False,
+            "reason": reason,
+        },
+    ]
+
+
+def _has_value(value: Any) -> bool:
+    return value not in (None, "", [], {})
+
+
+def _coerce_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
 
 
 def _normalize_json_object(value: Any) -> dict[str, Any]:

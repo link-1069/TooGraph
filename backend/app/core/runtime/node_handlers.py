@@ -3,7 +3,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any, Callable
 
-from app.core.runtime.agent_prompt import collect_local_input_prompt_references
+from app.core.runtime.agent_prompt import build_context_assembly_report, collect_local_input_prompt_references
 from app.core.runtime.agent_streaming import build_agent_stream_delta_callback, finalize_agent_stream_delta
 from app.core.runtime.agent_runtime_config import resolve_agent_runtime_config
 from app.core.runtime.agent_response_generation import generate_agent_response
@@ -145,6 +145,17 @@ def execute_agent_node(
     response_payload: dict[str, Any] = {}
     response_reasoning = ""
     warnings: list[str] = []
+    llm_phases: list[str] = []
+
+    def context_assembly_report() -> dict[str, Any]:
+        return build_context_assembly_report(
+            node_id=node_name,
+            node_type="agent",
+            input_values=input_values,
+            state_schema=state_schema,
+            skill_context=skill_context,
+            llm_phases=llm_phases,
+        )
     runtime_config = resolve_agent_runtime_config_func(node)
     graph_metadata = graph_context.get("metadata") if isinstance(graph_context.get("metadata"), dict) else {}
     skill_runtime_context = graph_metadata.get("skill_runtime_context") if isinstance(graph_metadata, dict) else None
@@ -200,6 +211,7 @@ def execute_agent_node(
             runtime_config=runtime_config,
             state_schema=state_schema,
         )
+        llm_phases.append("skill_input_planning")
         warnings.extend(skill_input_warnings)
 
     mapped_skill_outputs: dict[str, Any] = {}
@@ -302,6 +314,8 @@ def execute_agent_node(
                         "capability_outputs": [],
                         "runtime_config": runtime_config,
                         "warnings": list(dict.fromkeys(warnings)),
+                        "llm_phases": list(llm_phases),
+                        "context_assembly_report": context_assembly_report(),
                         "final_result": "",
                     }
                 skill_invoke_kwargs: dict[str, Any] = {}
@@ -412,6 +426,7 @@ def execute_agent_node(
                 state_schema=state_schema,
             )
         )
+        llm_phases.append("subgraph_input_planning")
         warnings.extend(subgraph_input_warnings)
 
     for subgraph_definition in subgraph_definitions:
@@ -456,6 +471,8 @@ def execute_agent_node(
                 "capability_outputs": [],
                 "runtime_config": runtime_config,
                 "warnings": list(dict.fromkeys(warnings)),
+                "llm_phases": list(llm_phases),
+                "context_assembly_report": context_assembly_report(),
                 "final_result": "",
             }
         status = _compact_text(execution_result.get("status")) or "succeeded"
@@ -539,6 +556,8 @@ def execute_agent_node(
             "capability_outputs": capability_outputs,
             "runtime_config": runtime_config,
             "warnings": list(dict.fromkeys(warnings)),
+            "llm_phases": list(llm_phases),
+            "context_assembly_report": context_assembly_report(),
             "final_result": "" if final_result_value in (None, "", [], {}) else str(final_result_value),
         }
 
@@ -571,6 +590,7 @@ def execute_agent_node(
         runtime_config,
         **generate_kwargs,
     )
+    llm_phases.append("agent_response")
     warnings.extend(response_warnings)
 
     output_values = dict(mapped_capability_and_skill_outputs)
@@ -602,6 +622,8 @@ def execute_agent_node(
         "capability_outputs": capability_outputs,
         "runtime_config": runtime_config,
         "warnings": list(dict.fromkeys(warnings)),
+        "llm_phases": list(llm_phases),
+        "context_assembly_report": context_assembly_report(),
         "final_result": str(first_truthy_func(output_values.values()) or response_payload.get("summary") or ""),
     }
 

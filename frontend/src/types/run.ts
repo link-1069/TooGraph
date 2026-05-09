@@ -36,6 +36,20 @@ export type NodeStateWriteRecord = {
   changed?: boolean;
 };
 
+export type ContextAssemblyReport = {
+  version: number;
+  node_id: string;
+  node_type: string;
+  llm_phases: string[];
+  totals: Record<string, number>;
+  state_reads: Array<Record<string, unknown>>;
+  files: Array<Record<string, unknown>>;
+  result_outputs: Array<Record<string, unknown>>;
+  memories: Array<Record<string, unknown>>;
+  knowledge_chunks: Array<Record<string, unknown>>;
+  skill_results: Array<Record<string, unknown>>;
+};
+
 export type SubgraphExecutionArtifact = {
   graph_id?: string | null;
   name?: string | null;
@@ -59,6 +73,7 @@ export type NodeExecutionArtifacts = {
   runtime_config?: Record<string, unknown> | null;
   selected_capabilities?: Array<Record<string, unknown>>;
   capability_outputs?: Array<Record<string, unknown>>;
+  context_assembly_report?: ContextAssemblyReport | null;
   state_reads: NodeStateReadRecord[];
   state_writes: NodeStateWriteRecord[];
 };

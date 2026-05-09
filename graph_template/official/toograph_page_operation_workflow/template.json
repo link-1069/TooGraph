@@ -1161,6 +1161,26 @@
     "graphProtocol": "node_system",
     "role": "page_operation_workflow",
     "pageOperationTemplate": true,
+    "outputContract": [
+      {
+        "key": "final_reply",
+        "name": "最终回复",
+        "description": "页面操作目标完成或终态失败后的用户可见回复。",
+        "type": "markdown",
+        "role": "final_response",
+        "passThrough": true,
+        "required": true
+      },
+      {
+        "key": "operation_report",
+        "name": "操作报告",
+        "description": "页面操作、触发 run、失败分类、retry chain 和 artifacts 的结构化证据。",
+        "type": "json",
+        "role": "evidence",
+        "passThrough": false,
+        "required": false
+      }
+    ],
     "targetFlows": [
       {
         "id": "open_runs_page",

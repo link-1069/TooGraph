@@ -21,5 +21,5 @@ LLM output:
 State output:
 
 - `ok`: whether wrapping succeeded.
-- `result_package`: result package for the original target subgraph, with `final_reply`, `operation_report`, and `visible_operation_result` outputs.
+- `result_package`: result package for the original target subgraph, with `final_reply`, `operation_report`, `validation_report`, and `visible_operation_result` outputs. `validation_report` is the budgeted target-run evidence and finite repair-option contract for downstream Buddy review nodes.
 - `error`: structured failure detail.

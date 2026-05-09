@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   buildPageOperationArtifactRefs,
   buildPageOperationResult,
+  buildPageOperationTargetRunValidation,
   buildPageOperationResumePayload,
   canAutoResumePageOperationRun,
 } from "./pageOperationResume.ts";
@@ -89,6 +90,7 @@ test("buildPageOperationResult captures route, snapshots, commands, and target i
     triggered_run_result_summary: null,
     triggered_run_final_result: null,
     artifact_refs: [],
+    target_run_validation: null,
     retry_chain: [],
     input_text: null,
     graph_edit_summary: null,
@@ -107,6 +109,7 @@ test("buildPageOperationResult captures route, snapshots, commands, and target i
       triggered_run_result_summary: null,
       triggered_run_final_result: null,
       artifact_refs: [],
+      target_run_validation: null,
       retry_chain: [],
       input_text: null,
       graph_edit_summary: null,
@@ -114,6 +117,169 @@ test("buildPageOperationResult captures route, snapshots, commands, and target i
     },
     error: null,
   });
+});
+
+test("buildPageOperationTargetRunValidation summarizes terminal run outputs, warnings, events, and artifacts", () => {
+  const validation = buildPageOperationTargetRunValidation({
+    run_id: "run_search",
+    graph_id: "advanced_web_research_loop",
+    status: "completed",
+    final_result: "# Final answer\n\nThis is the long answer body.",
+    warnings: ["Some source failed"],
+    errors: [],
+    output_previews: [
+      {
+        node_id: "output_final",
+        label: "Final Reply",
+        source_kind: "state",
+        source_key: "final_reply",
+        display_mode: "markdown",
+        persist_enabled: false,
+        persist_format: "md",
+        value: "# Final answer\n\nThis is the long answer body.",
+      },
+      {
+        node_id: "output_evidence",
+        label: "Evidence",
+        source_kind: "state",
+        source_key: "evidence_cards",
+        display_mode: "json",
+        persist_enabled: true,
+        persist_format: "json",
+        value: [{ title: "Source A", url: "https://example.test/a" }],
+      },
+    ],
+    artifacts: {
+      exported_outputs: [
+        {
+          node_id: "output_final",
+          label: "Final Reply",
+          source_kind: "state",
+          source_key: "final_reply",
+          display_mode: "markdown",
+          persist_enabled: true,
+          persist_format: "md",
+          value: "# Final answer\n\nThis is the long answer body.",
+          saved_file: {
+            node_id: "output_final",
+            source_key: "final_reply",
+            path: "runs/run_search/final.md",
+            format: "md",
+            file_name: "final.md",
+          },
+        },
+      ],
+      activity_events: [
+        {
+          sequence: 1,
+          kind: "subgraph_invocation",
+          summary: "Collected evidence.",
+          status: "succeeded",
+          created_at: "2026-05-18T00:00:00Z",
+        },
+        {
+          sequence: 2,
+          kind: "model_call",
+          summary: "Large raw prompt omitted from validation.",
+          status: "succeeded",
+          detail: { raw_prompt: "x".repeat(2000) },
+          created_at: "2026-05-18T00:00:01Z",
+        },
+      ],
+    },
+  } as RunDetail);
+
+  assert.deepEqual(validation, {
+    run_id: "run_search",
+    graph_id: "advanced_web_research_loop",
+    status: "completed",
+    final_result_preview: "# Final answer\n\nThis is the long answer body.",
+    root_outputs: [
+      {
+        node_id: "output_final",
+        source_key: "final_reply",
+        label: "Final Reply",
+        display_mode: "markdown",
+        persist_enabled: false,
+        persist_format: "md",
+        value_type: "text",
+        value_preview: "# Final answer\n\nThis is the long answer body.",
+        has_value: true,
+      },
+      {
+        node_id: "output_evidence",
+        source_key: "evidence_cards",
+        label: "Evidence",
+        display_mode: "json",
+        persist_enabled: true,
+        persist_format: "json",
+        value_type: "json",
+        value_preview: "[{\"title\":\"Source A\",\"url\":\"https://example.test/a\"}]",
+        has_value: true,
+      },
+    ],
+    errors: [],
+    warnings: ["Some source failed"],
+    activity_events: [
+      {
+        kind: "subgraph_invocation",
+        summary: "Collected evidence.",
+        status: "succeeded",
+        node_id: null,
+        error: null,
+      },
+      {
+        kind: "model_call",
+        summary: "Large raw prompt omitted from validation.",
+        status: "succeeded",
+        node_id: null,
+        error: null,
+      },
+    ],
+    artifact_refs: [
+      {
+        title: "Final Reply",
+        artifact_kind: "saved_output",
+        path: "runs/run_search/final.md",
+        local_path: null,
+        file_name: "final.md",
+        source_key: "final_reply",
+        node_id: "output_final",
+        format: "md",
+        content_type: null,
+      },
+    ],
+  });
+});
+
+test("buildPageOperationTargetRunValidation falls back to artifact output previews when top-level previews are empty", () => {
+  const validation = buildPageOperationTargetRunValidation({
+    run_id: "run_artifact_outputs",
+    graph_id: "advanced_web_research_loop",
+    status: "completed",
+    final_result: "Artifact output answer.",
+    warnings: [],
+    errors: [],
+    output_previews: [],
+    artifacts: {
+      output_previews: [
+        {
+          node_id: "output_final",
+          label: "Final Reply",
+          source_kind: "state",
+          source_key: "final_reply",
+          display_mode: "markdown",
+          persist_enabled: false,
+          persist_format: "md",
+          value: "Artifact output answer.",
+        },
+      ],
+    },
+  } as RunDetail);
+
+  assert.equal(validation?.root_outputs.length, 1);
+  assert.equal(validation?.root_outputs[0]?.source_key, "final_reply");
+  assert.equal(validation?.root_outputs[0]?.value_preview, "Artifact output answer.");
 });
 
 test("buildPageOperationArtifactRefs extracts saved files and nested local artifact references", () => {
@@ -330,6 +496,29 @@ test("buildPageOperationResult records compact triggered run outputs in the repo
     triggeredRunStatus: "completed",
     triggeredRunFinalResult: "# 《鸣潮》最新资讯汇总\n\n完整结果正文。",
     artifactRefs,
+    targetRunValidation: {
+      run_id: "run_search",
+      graph_id: "advanced_web_research_loop",
+      status: "completed",
+      final_result_preview: "# 《鸣潮》最新资讯汇总\n\n完整结果正文。",
+      root_outputs: [
+        {
+          node_id: "output_final",
+          source_key: "final_reply",
+          label: "最终回复",
+          display_mode: "markdown",
+          persist_enabled: false,
+          persist_format: "md",
+          value_type: "text",
+          value_preview: "# 《鸣潮》最新资讯汇总\n\n完整结果正文。",
+          has_value: true,
+        },
+      ],
+      errors: [],
+      warnings: [],
+      activity_events: [],
+      artifact_refs: artifactRefs,
+    },
   });
 
   assert.equal(result.triggered_run_result_summary, "已拿到《鸣潮》最新资讯摘要。");
@@ -338,6 +527,7 @@ test("buildPageOperationResult records compact triggered run outputs in the repo
   assert.equal(result.operation_report.triggered_run_result_summary, "已拿到《鸣潮》最新资讯摘要。");
   assert.equal(result.operation_report.triggered_run_final_result, "# 《鸣潮》最新资讯汇总\n\n完整结果正文。");
   assert.deepEqual(result.operation_report.artifact_refs, artifactRefs);
+  assert.equal(result.operation_report.target_run_validation?.root_outputs[0]?.source_key, "final_reply");
   assert.equal("page_snapshot_after" in result.operation_report, false);
 });
 

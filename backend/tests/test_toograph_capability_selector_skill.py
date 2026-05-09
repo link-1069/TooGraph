@@ -43,8 +43,11 @@ def _write_template(
     source: str = "official",
     status: str = "active",
     capability_discoverable: bool = True,
+    output_contract: list[dict[str, object]] | None = None,
 ) -> None:
     metadata: dict[str, object] = {"tags": ["research", "web"]}
+    if output_contract is not None:
+        metadata["outputContract"] = output_contract
     _write_json(
         repo_root / "graph_template" / source / template_id / "template.json",
         {
@@ -58,9 +61,30 @@ def _write_template(
                     "description": "User request.",
                     "type": "text",
                     "value": "",
+                },
+                "final_reply": {
+                    "name": "Final Reply",
+                    "description": "User-facing final answer.",
+                    "type": "markdown",
+                    "value": "",
                 }
             },
-            "nodes": {},
+            "nodes": {
+                "output_final": {
+                    "kind": "output",
+                    "name": "Final Reply",
+                    "description": "Shows the user-facing final answer.",
+                    "ui": {"position": {"x": 0, "y": 0}, "collapsed": False},
+                    "reads": [{"state": "final_reply", "required": True}],
+                    "writes": [],
+                    "config": {
+                        "displayMode": "markdown",
+                        "persistEnabled": False,
+                        "persistFormat": "auto",
+                        "fileNameTemplate": "",
+                    },
+                }
+            },
             "edges": [],
             "conditional_edges": [],
             "metadata": metadata,
@@ -168,6 +192,15 @@ class TooGraphCapabilitySelectorSkillTests(unittest.TestCase):
                 template_id="advanced_web_research_loop",
                 label="Advanced Web Research",
                 description="Multi-round web research with evidence review.",
+                output_contract=[
+                    {
+                        "key": "final_reply",
+                        "name": "Final Reply",
+                        "role": "final_response",
+                        "passThrough": True,
+                        "required": True,
+                    }
+                ],
             )
             _write_skill(
                 repo_root,
@@ -192,10 +225,31 @@ class TooGraphCapabilitySelectorSkillTests(unittest.TestCase):
         self.assertIn("kind: subgraph", context)
         self.assertIn("key: advanced_web_research_loop", context)
         self.assertIn("name: Advanced Web Research", context)
+        self.assertIn("outputContract: final_reply final_response direct required", context)
         self.assertIn("kind: skill", context)
         self.assertIn("key: web_search", context)
         self.assertNotIn("requiresApproval", context)
         self.assertNotIn("blocked_skill", context)
+
+    def test_before_llm_derives_template_output_contract_from_root_output_nodes(self) -> None:
+        selector = _load_selector_module(
+            SELECTOR_BEFORE_LLM_PATH,
+            "toograph_capability_selector_before_output_contract_test",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            _write_template(
+                repo_root,
+                template_id="summary_template",
+                label="Summary Template",
+                description="Summarizes a document.",
+            )
+            with patch.dict("os.environ", {"TOOGRAPH_REPO_ROOT": str(repo_root)}, clear=True):
+                result = selector.toograph_capability_selector_before_llm(runtime_context={})
+
+        context = result["context"]
+        self.assertIn("key: summary_template", context)
+        self.assertIn("outputContract: final_reply final_response direct required", context)
 
     def test_before_llm_exposes_page_operation_template_target_flows(self) -> None:
         selector = _load_selector_module(
@@ -253,6 +307,22 @@ class TooGraphCapabilitySelectorSkillTests(unittest.TestCase):
                 template_id="advanced_web_research_loop",
                 label="Advanced Web Research",
                 description="Multi-round web research with evidence review.",
+                output_contract=[
+                    {
+                        "key": "final_reply",
+                        "name": "Final Reply",
+                        "role": "final_response",
+                        "passThrough": True,
+                        "required": True,
+                    },
+                    {
+                        "key": "evidence_notes",
+                        "name": "Evidence Notes",
+                        "role": "evidence",
+                        "passThrough": False,
+                        "required": False,
+                    },
+                ],
             )
             _write_skill(
                 repo_root,
@@ -278,6 +348,30 @@ class TooGraphCapabilitySelectorSkillTests(unittest.TestCase):
 
         self.assertEqual(set(result), {"capability", "found", "audit", "activity_events"})
         self.assertTrue(result["found"])
+        self.assertEqual(
+            result["capability"]["output_contract"],
+            [
+                {
+                    "key": "final_reply",
+                    "name": "Final Reply",
+                    "description": "User-facing final answer.",
+                    "type": "markdown",
+                    "role": "final_response",
+                    "pass_through": True,
+                    "required": True,
+                },
+                {
+                    "key": "evidence_notes",
+                    "name": "Evidence Notes",
+                    "description": "",
+                    "type": "json",
+                    "role": "evidence",
+                    "pass_through": False,
+                    "required": False,
+                },
+            ],
+        )
+        self.assertEqual(result["audit"]["selected"]["output_contract"][0]["key"], "final_reply")
         self.assertEqual(result["capability"]["kind"], "subgraph")
         self.assertEqual(result["capability"]["key"], "advanced_web_research_loop")
         self.assertEqual(result["capability"]["name"], "Advanced Web Research")
@@ -291,6 +385,26 @@ class TooGraphCapabilitySelectorSkillTests(unittest.TestCase):
                     "kind": "subgraph",
                     "key": "advanced_web_research_loop",
                     "name": "Advanced Web Research",
+                    "output_contract": [
+                        {
+                            "key": "final_reply",
+                            "name": "Final Reply",
+                            "description": "User-facing final answer.",
+                            "type": "markdown",
+                            "role": "final_response",
+                            "pass_through": True,
+                            "required": True,
+                        },
+                        {
+                            "key": "evidence_notes",
+                            "name": "Evidence Notes",
+                            "description": "",
+                            "type": "json",
+                            "role": "evidence",
+                            "pass_through": False,
+                            "required": False,
+                        },
+                    ],
                 },
                 "selection_reason": "Research is better handled by a multi-step graph template.",
                 "invocation_purpose": "answer_delegate",
@@ -312,6 +426,41 @@ class TooGraphCapabilitySelectorSkillTests(unittest.TestCase):
         self.assertEqual(result["activity_events"][0]["kind"], "capability_selection")
         self.assertIn("Selected Advanced Web Research from 2 candidates", result["activity_events"][0]["summary"])
         self.assertEqual(result["activity_events"][0]["detail"], result["audit"])
+
+    def test_selector_downgrades_pass_through_for_evidence_only_template(self) -> None:
+        selector = _load_selector_module(
+            SELECTOR_AFTER_LLM_PATH,
+            "toograph_capability_selector_after_evidence_only_template_test",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir)
+            _write_template(
+                repo_root,
+                template_id="evidence_collector",
+                label="Evidence Collector",
+                description="Collects source material for later synthesis.",
+                output_contract=[
+                    {
+                        "key": "evidence_notes",
+                        "name": "Evidence Notes",
+                        "role": "evidence",
+                        "passThrough": False,
+                        "required": True,
+                    }
+                ],
+            )
+            with patch.dict("os.environ", {"TOOGRAPH_REPO_ROOT": str(repo_root)}, clear=True):
+                result = selector.toograph_capability_selector(
+                    requirement="Need sources before writing.",
+                    capability={"kind": "subgraph", "key": "evidence_collector"},
+                    selection_reason="Need sources before writing.",
+                    invocation_purpose="answer_delegate",
+                    expected_final_response_strategy="pass_through",
+                )
+
+        self.assertTrue(result["found"])
+        self.assertEqual(result["audit"]["invocation_purpose"], "evidence_gathering")
+        self.assertEqual(result["audit"]["expected_final_response_strategy"], "compose")
 
     def test_selector_normalizes_llm_selected_skill_capability(self) -> None:
         selector = _load_selector_module(SELECTOR_AFTER_LLM_PATH, "toograph_capability_selector_after_test_skill")

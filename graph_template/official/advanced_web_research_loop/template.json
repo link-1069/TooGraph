@@ -530,6 +530,17 @@
     "category": "research",
     "templateVersion": "2026-05-07",
     "maxSearchRounds": 5,
-    "graphProtocol": "node_system"
+    "graphProtocol": "node_system",
+    "outputContract": [
+      {
+        "key": "final_reply",
+        "name": "最终回复",
+        "description": "可直接透传给用户的研究结论 Markdown。",
+        "type": "markdown",
+        "role": "final_response",
+        "passThrough": true,
+        "required": true
+      }
+    ]
   }
 }

@@ -159,6 +159,68 @@ class LangGraphRuntimeProgressEventTests(unittest.TestCase):
         self.assertEqual(state_event["value"], "Hello, Abyss!")
         self.assertEqual(state_event["sequence"], 1)
 
+    def test_langgraph_runtime_attaches_context_assembly_report_to_agent_execution(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph_context_report",
+                "name": "Context Report Graph",
+                "state_schema": {
+                    "question": {"name": "Question", "type": "text", "value": "What is TooGraph?"},
+                    "answer": {"name": "Answer", "type": "text"},
+                },
+                "nodes": {
+                    "input_question": {
+                        "kind": "input",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "writes": [{"state": "question"}],
+                    },
+                    "agent_answer": {
+                        "kind": "agent",
+                        "ui": {"position": {"x": 240, "y": 0}},
+                        "reads": [{"state": "question"}],
+                        "writes": [{"state": "answer"}],
+                        "config": {"taskInstruction": "Answer briefly.", "skillKey": ""},
+                    },
+                    "output_answer": {
+                        "kind": "output",
+                        "ui": {"position": {"x": 480, "y": 0}},
+                        "reads": [{"state": "answer"}],
+                    },
+                },
+                "edges": [
+                    {"source": "input_question", "target": "agent_answer"},
+                    {"source": "agent_answer", "target": "output_answer"},
+                ],
+                "conditional_edges": [],
+            }
+        )
+
+        with patch("app.core.runtime.node_system_executor.chat_with_model_ref_with_meta") as chat, patch(
+            "app.core.runtime.node_system_executor._chat_with_local_model_with_meta"
+        ) as local_chat, patch("app.core.langgraph.runtime.save_run"):
+            chat.return_value = ('{"answer":"TooGraph is a graph workflow tool."}', {"warnings": [], "model": "test"})
+            local_chat.return_value = ('{"answer":"TooGraph is a graph workflow tool."}', {"warnings": [], "model": "test"})
+            result = execute_node_system_graph_langgraph(
+                graph,
+                {"run_id": "run_context_report", "status": "running"},
+                persist_progress=False,
+            )
+
+        agent_execution = next(
+            execution
+            for execution in result["node_executions"]
+            if execution["node_id"] == "agent_answer"
+        )
+        report = agent_execution["artifacts"].get("context_assembly_report")
+        self.assertIsInstance(report, dict)
+        self.assertEqual(report["node_id"], "agent_answer")
+        self.assertEqual(report["node_type"], "agent")
+        self.assertIn("agent_response", report["llm_phases"])
+        self.assertEqual(report["state_reads"][0]["state_key"], "question")
+        self.assertEqual(report["state_reads"][0]["type"], "text")
+        self.assertGreater(report["state_reads"][0]["prompt_chars"], 0)
+        self.assertGreater(report["totals"]["token_estimate"], 0)
+
     def test_langgraph_runtime_publishes_condition_duration(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(
             {
