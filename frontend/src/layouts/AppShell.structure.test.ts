@@ -74,6 +74,13 @@ test("AppShell exposes graph and template management as a primary sidebar destin
   assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Collection \/><\/ElIcon>/);
 });
 
+test("AppShell exposes eval suite management as a primary sidebar destination", () => {
+  assert.match(componentSource, /import \{[\s\S]*DataAnalysis[\s\S]*\} from "@element-plus\/icons-vue";/);
+  assert.match(componentSource, /to="\/evals"[\s\S]*activeNavigationSection === 'evals'[\s\S]*t\("nav\.evals"\)/);
+  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.evals"/);
+  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DataAnalysis \/><\/ElIcon>/);
+});
+
 test("AppShell exposes the global language switcher in the sidebar", () => {
   assert.match(componentSource, /import LanguageSwitcher from "\.\/LanguageSwitcher\.vue";/);
   assert.match(componentSource, /<LanguageSwitcher[\s\S]*:collapsed="isSidebarCollapsed"/);

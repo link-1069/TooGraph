@@ -15,7 +15,12 @@ class EvalGraphRunNotReady(ValueError):
     pass
 
 
-def collect_eval_case_result_payload(case: dict[str, Any], case_result: dict[str, Any]) -> dict[str, Any]:
+def collect_eval_case_result_payload(
+    case: dict[str, Any],
+    case_result: dict[str, Any],
+    *,
+    judge_runner: Any | None = None,
+) -> dict[str, Any]:
     graph_run_id = str(case_result.get("graph_run_id") or "").strip()
     if not graph_run_id:
         raise KeyError("graph_run_id")
@@ -30,7 +35,12 @@ def collect_eval_case_result_payload(case: dict[str, Any], case_result: dict[str
     node_failures = extract_node_failures(graph_run)
     errors = [str(error) for error in graph_run.get("errors", []) if str(error or "").strip()]
     if run_status == "completed" and not node_failures and not errors:
-        check_results = evaluate_case_checks(case, final_output=final_output, artifacts=artifacts)
+        check_results = evaluate_case_checks(
+            case,
+            final_output=final_output,
+            artifacts=artifacts,
+            judge_runner=judge_runner,
+        )
         status = summarize_check_status(check_results)
         error = ""
     else:

@@ -139,6 +139,21 @@ def create_eval_run(suite_id: str, *, requested_by: str = "", metadata: dict[str
     return load_eval_run(eval_run_id)
 
 
+def list_eval_runs(suite_id: str) -> list[dict[str, Any]]:
+    normalized_suite_id = load_eval_suite(suite_id)["suite_id"]
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT eval_run_id
+            FROM eval_runs
+            WHERE suite_id = ?
+            ORDER BY created_at DESC, rowid DESC
+            """,
+            (normalized_suite_id,),
+        ).fetchall()
+    return [load_eval_run(str(row["eval_run_id"])) for row in rows]
+
+
 def record_eval_case_result(eval_run_id: str, case_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     eval_run = load_eval_run(eval_run_id)
     normalized_case_id = _normalize_identifier(case_id)

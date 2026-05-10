@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from app.evaluator import store
 from app.evaluator.checks import evaluate_case_checks, summarize_check_status
 from app.evaluator import collector
+from app.evaluator.llm_judge import create_llm_judge_runner
 from app.evaluator import runner
 
 
@@ -59,6 +60,14 @@ def create_eval_run(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Eval suite '{suite_id}' does not exist.") from exc
 
 
+@router.get("/suites/{suite_id}/runs")
+def list_eval_runs(suite_id: str) -> list[dict[str, Any]]:
+    try:
+        return store.list_eval_runs(suite_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Eval suite '{suite_id}' does not exist.") from exc
+
+
 @router.get("/runs/{eval_run_id}")
 def get_eval_run(eval_run_id: str) -> dict[str, Any]:
     try:
@@ -75,6 +84,71 @@ def record_eval_case_result(eval_run_id: str, case_id: str, payload: dict[str, A
         raise HTTPException(status_code=404, detail=f"Eval case result '{case_id}' does not exist.") from exc
 
 
+@router.post("/runs/{eval_run_id}/cases/run")
+def run_eval_run_cases(
+    eval_run_id: str,
+    background_tasks: BackgroundTasks,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
+    try:
+        eval_run = store.load_eval_run(eval_run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Eval run '{eval_run_id}' does not exist.") from exc
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for case_result in eval_run["case_results"]:
+        try:
+            results.append(
+                _start_eval_case_result(
+                    eval_run,
+                    case_result,
+                    background_tasks=background_tasks,
+                    requested_by=str(request_payload.get("requested_by") or ""),
+                )
+            )
+        except Exception as exc:  # Keep batch progress inspectable when one case cannot start.
+            errors.append({"case_id": str(case_result.get("case_id") or ""), "message": str(exc)})
+    return {
+        "eval_run_id": eval_run_id,
+        "results": results,
+        "started_count": len(results),
+        "skipped_count": len(errors),
+        "errors": errors,
+    }
+
+
+@router.post("/runs/{eval_run_id}/cases/collect")
+def collect_eval_run_cases(eval_run_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    request_payload = payload or {}
+    try:
+        eval_run = store.load_eval_run(eval_run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Eval run '{eval_run_id}' does not exist.") from exc
+    judge_runner = _judge_runner_from_payload(request_payload)
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    skipped_count = 0
+    for case_result in eval_run["case_results"]:
+        if not case_result.get("graph_run_id"):
+            skipped_count += 1
+            continue
+        try:
+            results.append(_collect_eval_case_result(eval_run_id, case_result, judge_runner=judge_runner))
+        except collector.EvalGraphRunNotReady as exc:
+            skipped_count += 1
+            errors.append({"case_id": str(case_result.get("case_id") or ""), "message": str(exc)})
+        except Exception as exc:  # Keep other cases collectable when one case has stale references.
+            errors.append({"case_id": str(case_result.get("case_id") or ""), "message": str(exc)})
+    return {
+        "eval_run_id": eval_run_id,
+        "results": results,
+        "collected_count": len(results),
+        "skipped_count": skipped_count,
+        "errors": errors,
+    }
+
+
 @router.post("/runs/{eval_run_id}/cases/{case_id}/run")
 def run_eval_case_result(
     eval_run_id: str,
@@ -86,44 +160,31 @@ def run_eval_case_result(
     try:
         eval_run = store.load_eval_run(eval_run_id)
         case_result = _find_case_result(eval_run, case_id)
-        suite = store.load_eval_suite(case_result["suite_id"])
-        case = store.load_eval_case(case_result["suite_id"], case_result["case_id"])
-        run_state = runner.start_eval_case_graph_run(
-            {
-                **eval_run,
-                "target_graph_id": suite["target_graph_id"],
-                "target_template_id": suite["target_template_id"],
-            },
+        return _start_eval_case_result(
+            eval_run,
             case_result,
-            case,
             background_tasks=background_tasks,
             requested_by=str(request_payload.get("requested_by") or ""),
-        )
-        return store.record_eval_case_result(
-            eval_run_id,
-            case_result["case_id"],
-            {
-                "graph_run_id": run_state["run_id"],
-                "status": "running",
-                "final_output": {},
-                "artifacts": {},
-                "node_failures": [],
-                "human_review": {},
-                "check_results": [],
-            },
         )
     except (KeyError, StopIteration, FileNotFoundError) as exc:
         raise HTTPException(status_code=404, detail=f"Eval case result '{case_id}' does not exist.") from exc
 
 
 @router.post("/runs/{eval_run_id}/cases/{case_id}/collect")
-def collect_eval_case_result(eval_run_id: str, case_id: str) -> dict[str, Any]:
+def collect_eval_case_result(
+    eval_run_id: str,
+    case_id: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    request_payload = payload or {}
     try:
         eval_run = store.load_eval_run(eval_run_id)
         case_result = _find_case_result(eval_run, case_id)
-        case = store.load_eval_case(case_result["suite_id"], case_result["case_id"])
-        payload = collector.collect_eval_case_result_payload(case, case_result)
-        return store.record_eval_case_result(eval_run_id, case_result["case_id"], payload)
+        return _collect_eval_case_result(
+            eval_run_id,
+            case_result,
+            judge_runner=_judge_runner_from_payload(request_payload),
+        )
     except collector.EvalGraphRunNotReady as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (KeyError, StopIteration, FileNotFoundError) as exc:
@@ -138,7 +199,12 @@ def evaluate_eval_case_result(eval_run_id: str, case_id: str, payload: dict[str,
         case = store.load_eval_case(case_result["suite_id"], case_result["case_id"])
         final_output = dict(payload.get("final_output") or {}) if isinstance(payload.get("final_output"), dict) else {}
         artifacts = dict(payload.get("artifacts") or {}) if isinstance(payload.get("artifacts"), dict) else {}
-        check_results = evaluate_case_checks(case, final_output=final_output, artifacts=artifacts)
+        check_results = evaluate_case_checks(
+            case,
+            final_output=final_output,
+            artifacts=artifacts,
+            judge_runner=_judge_runner_from_payload(payload),
+        )
         return store.record_eval_case_result(
             eval_run_id,
             case_result["case_id"],
@@ -161,6 +227,68 @@ def _find_case_result(eval_run: dict[str, Any], case_id: str) -> dict[str, Any]:
     return next(
         result for result in eval_run["case_results"] if result["case_id"] == normalized_case_id
     )
+
+
+def _start_eval_case_result(
+    eval_run: dict[str, Any],
+    case_result: dict[str, Any],
+    *,
+    background_tasks: BackgroundTasks,
+    requested_by: str,
+) -> dict[str, Any]:
+    suite = store.load_eval_suite(case_result["suite_id"])
+    case = store.load_eval_case(case_result["suite_id"], case_result["case_id"])
+    run_state = runner.start_eval_case_graph_run(
+        {
+            **eval_run,
+            "target_graph_id": suite["target_graph_id"],
+            "target_template_id": suite["target_template_id"],
+        },
+        case_result,
+        case,
+        background_tasks=background_tasks,
+        requested_by=requested_by,
+    )
+    return store.record_eval_case_result(
+        eval_run["eval_run_id"],
+        case_result["case_id"],
+        {
+            "graph_run_id": run_state["run_id"],
+            "status": "running",
+            "final_output": {},
+            "artifacts": {},
+            "node_failures": [],
+            "human_review": {},
+            "check_results": [],
+        },
+    )
+
+
+def _collect_eval_case_result(
+    eval_run_id: str,
+    case_result: dict[str, Any],
+    *,
+    judge_runner: Any | None = None,
+) -> dict[str, Any]:
+    case = store.load_eval_case(case_result["suite_id"], case_result["case_id"])
+    if judge_runner is None:
+        payload = collector.collect_eval_case_result_payload(case, case_result)
+    else:
+        payload = collector.collect_eval_case_result_payload(case, case_result, judge_runner=judge_runner)
+    return store.record_eval_case_result(eval_run_id, case_result["case_id"], payload)
+
+
+def _judge_runner_from_payload(payload: dict[str, Any]) -> Any | None:
+    if not _truthy(payload.get("run_llm_judge")):
+        return None
+    return create_llm_judge_runner()
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    return normalized in {"1", "true", "yes", "on"}
 
 
 def _normalize_identifier(value: Any) -> str:

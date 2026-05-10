@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.storage import database
 from app.evaluator.checks import evaluate_case_checks
+from app.evaluator.llm_judge import run_llm_judge
 from app.evaluator import store
 from app.main import app
 
@@ -271,6 +272,61 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(collected["artifacts"]["final.md"]["path"], "backend/data/outputs/run_completed/final.md")
         self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed"])
 
+    def test_eval_route_collect_can_opt_into_llm_judge_checks(self) -> None:
+        def fake_create_judge_runner():
+            return lambda **_kwargs: {
+                "status": "passed",
+                "score": 0.9,
+                "message": "Useful and grounded.",
+                "actual": {"verdict": "pass"},
+                "details": {"model_ref": "test/judge-model"},
+            }
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.load_run", return_value=_completed_eval_graph_run()),
+                patch("app.api.routes_evals.create_llm_judge_runner", side_effect=fake_create_judge_runner) as create_runner,
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "collect_judge_eval",
+                        "name": "Collect judge eval",
+                        "target_graph_id": "graph_collect",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/collect_judge_eval/cases",
+                    json={
+                        "case_id": "case_one",
+                        "checks": [
+                            {
+                                "kind": "llm_judge",
+                                "name": "Rubric judge",
+                                "rubric": "The answer must be useful and grounded.",
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "collect_judge_eval"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_completed", "status": "running"},
+                )
+
+                collect_response = client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/collect",
+                    json={"run_llm_judge": True},
+                )
+
+        self.assertEqual(collect_response.status_code, 200)
+        self.assertEqual(collect_response.json()["status"], "passed")
+        self.assertEqual(collect_response.json()["check_results"][0]["reviewer"], "llm_judge")
+        self.assertEqual(collect_response.json()["check_results"][0]["score"], 0.9)
+        self.assertEqual(create_runner.call_count, 1)
+
     def test_eval_route_collect_rejects_non_terminal_graph_run(self) -> None:
         with isolated_eval_database():
             with (
@@ -359,6 +415,129 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual([result["status"] for result in results], ["failed", "failed"])
         self.assertIn("Missing artifact", results[0]["message"])
         self.assertEqual(results[1]["actual"]["forbidden_found"], ["保证通过"])
+
+    def test_eval_check_executor_skips_llm_judge_without_runner(self) -> None:
+        case = {
+            "case_id": "policy_answer",
+            "checks": [
+                {
+                    "kind": "llm_judge",
+                    "name": "Policy usefulness judge",
+                    "rubric": "The answer should cite the policy and identify risks.",
+                    "min_score": 0.7,
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={"final_reply": "Policy answer with [1]."},
+            artifacts={},
+        )
+
+        self.assertEqual(results[0]["status"], "skipped")
+        self.assertEqual(results[0]["reviewer"], "llm_judge")
+        self.assertIn("not enabled", results[0]["message"])
+
+    def test_eval_check_executor_records_llm_judge_result_from_runner(self) -> None:
+        seen: dict[str, object] = {}
+
+        def fake_judge_runner(**kwargs):
+            seen.update(kwargs)
+            return {
+                "status": "failed",
+                "score": 0.4,
+                "message": "The answer cites a source but does not explain operational risk.",
+                "actual": {"verdict": "fail", "reason": "Missing risk explanation."},
+                "details": {"model_ref": "test/judge-model", "latency_ms": 12},
+            }
+
+        case = {
+            "case_id": "policy_answer",
+            "expected": {"must_include": ["risk"]},
+            "checks": [
+                {
+                    "kind": "llm_judge",
+                    "name": "Risk-aware answer judge",
+                    "target": "final_reply",
+                    "rubric": "Score whether the answer explains concrete operational risk.",
+                    "min_score": 0.75,
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={"final_reply": "Policy answer with [1]."},
+            artifacts={"final.md": {"path": "backend/data/outputs/run/final.md"}},
+            judge_runner=fake_judge_runner,
+        )
+
+        self.assertEqual(seen["case"]["case_id"], "policy_answer")
+        self.assertEqual(seen["check"]["name"], "Risk-aware answer judge")
+        self.assertEqual(seen["final_output"], {"final_reply": "Policy answer with [1]."})
+        self.assertEqual(results[0]["kind"], "llm_judge")
+        self.assertEqual(results[0]["status"], "failed")
+        self.assertEqual(results[0]["score"], 0.4)
+        self.assertEqual(results[0]["reviewer"], "llm_judge")
+        self.assertEqual(results[0]["expected"]["min_score"], 0.75)
+        self.assertEqual(results[0]["actual"]["verdict"], "fail")
+        self.assertEqual(results[0]["details"]["model_ref"], "test/judge-model")
+
+    def test_llm_judge_runner_skips_when_no_model_is_configured(self) -> None:
+        def fail_chat(**_kwargs):
+            raise AssertionError("chat should not be called without a model ref")
+
+        result = run_llm_judge(
+            case={"case_id": "policy_answer"},
+            check={"kind": "llm_judge", "name": "Policy judge"},
+            final_output={"final_reply": "Answer."},
+            artifacts={},
+            get_default_text_model_ref_func=lambda **_kwargs: "",
+            chat_with_model_ref_with_meta_func=fail_chat,
+        )
+
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["details"]["reason"], "missing_model_ref")
+
+    def test_llm_judge_runner_invokes_model_and_parses_structured_judgment(self) -> None:
+        seen: dict[str, object] = {}
+
+        def fake_chat(**kwargs):
+            seen.update(kwargs)
+            return (
+                '{"status":"passed","score":0.88,"message":"Useful and grounded.",'
+                '"verdict":"pass","reason":"Cites a policy source."}',
+                {"provider_id": "test", "model": "judge-model", "request_raw": {"secret": True}},
+            )
+
+        result = run_llm_judge(
+            case={
+                "case_id": "policy_answer",
+                "input_values": {"question": "What changed?"},
+                "expected": {"must_include": ["risk"]},
+            },
+            check={
+                "kind": "llm_judge",
+                "name": "Policy judge",
+                "model_ref": "test/judge-model",
+                "rubric": "The answer must be grounded and useful.",
+            },
+            final_output={"final_reply": "Answer with [1]."},
+            artifacts={},
+            get_default_text_model_ref_func=lambda **_kwargs: "",
+            chat_with_model_ref_with_meta_func=fake_chat,
+        )
+
+        self.assertEqual(seen["model_ref"], "test/judge-model")
+        self.assertIn("structured_output_schema", seen)
+        self.assertIn('"case_id": "policy_answer"', seen["user_prompt"])
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["score"], 0.88)
+        self.assertEqual(result["actual"]["verdict"], "pass")
+        self.assertEqual(result["details"]["model_ref"], "test/judge-model")
+        self.assertEqual(result["details"]["model_meta"]["provider_id"], "test")
+        self.assertNotIn("request_raw", result["details"]["model_meta"])
 
     def test_eval_store_records_suite_cases_runs_results_and_checks(self) -> None:
         with isolated_eval_database():
@@ -482,6 +661,116 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(run_detail_response.json()["case_results"][0]["graph_run_id"], "run_policy_1")
         self.assertEqual(run_detail_response.json()["case_results"][0]["check_results"][0]["kind"], "citation")
 
+    def test_eval_routes_list_suite_runs_with_case_results(self) -> None:
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "listable_suite",
+                        "name": "Listable suite",
+                        "target_template_id": "policy_navigator_agent",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/listable_suite/cases",
+                    json={"case_id": "case_one", "name": "Case one"},
+                )
+                first_run = client.post("/api/evals/runs", json={"suite_id": "listable_suite"}).json()
+                second_run = client.post("/api/evals/runs", json={"suite_id": "listable_suite"}).json()
+                client.post(
+                    f"/api/evals/runs/{second_run['eval_run_id']}/cases/case_one/result",
+                    json={"graph_run_id": "run_case_one", "status": "passed"},
+                )
+
+                runs_response = client.get("/api/evals/suites/listable_suite/runs")
+
+        self.assertEqual(runs_response.status_code, 200)
+        runs = runs_response.json()
+        self.assertEqual([run["eval_run_id"] for run in runs], [second_run["eval_run_id"], first_run["eval_run_id"]])
+        self.assertEqual(runs[0]["status"], "passed")
+        self.assertEqual(runs[0]["case_results"][0]["graph_run_id"], "run_case_one")
+
+    def test_eval_route_runs_all_cases_for_eval_run(self) -> None:
+        def fake_start(_eval_run, case_result, _case, **_kwargs):
+            return {"run_id": f"run_{case_result['case_id']}"}
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.runner.start_eval_case_graph_run", side_effect=fake_start),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "batch_run_suite",
+                        "name": "Batch run suite",
+                        "target_graph_id": "graph_batch",
+                    },
+                )
+                client.post("/api/evals/suites/batch_run_suite/cases", json={"case_id": "case_one"})
+                client.post("/api/evals/suites/batch_run_suite/cases", json={"case_id": "case_two"})
+                run_response = client.post("/api/evals/runs", json={"suite_id": "batch_run_suite"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                batch_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/run")
+                run_detail_response = client.get(f"/api/evals/runs/{eval_run_id}")
+
+        self.assertEqual(batch_response.status_code, 200)
+        batch = batch_response.json()
+        self.assertEqual(batch["started_count"], 2)
+        self.assertEqual(batch["skipped_count"], 0)
+        self.assertEqual(batch["errors"], [])
+        self.assertEqual(
+            {result["case_id"]: result["graph_run_id"] for result in batch["results"]},
+            {"case_one": "run_case_one", "case_two": "run_case_two"},
+        )
+        self.assertEqual(run_detail_response.json()["status"], "running")
+        self.assertEqual([result["status"] for result in run_detail_response.json()["case_results"]], ["running", "running"])
+
+    def test_eval_route_collects_all_available_case_results(self) -> None:
+        def fake_collect(_case, case_result):
+            return {
+                "graph_run_id": case_result["graph_run_id"],
+                "status": "passed",
+                "final_output": {"final_reply": case_result["case_id"]},
+                "artifacts": {},
+                "node_failures": [],
+                "check_results": [],
+            }
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.collect_eval_case_result_payload", side_effect=fake_collect),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "batch_collect_suite",
+                        "name": "Batch collect suite",
+                        "target_graph_id": "graph_batch",
+                    },
+                )
+                client.post("/api/evals/suites/batch_collect_suite/cases", json={"case_id": "case_one"})
+                client.post("/api/evals/suites/batch_collect_suite/cases", json={"case_id": "case_two"})
+                run_response = client.post("/api/evals/runs", json={"suite_id": "batch_collect_suite"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_case_one", "status": "running"},
+                )
+
+                batch_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/collect")
+
+        self.assertEqual(batch_response.status_code, 200)
+        batch = batch_response.json()
+        self.assertEqual(batch["collected_count"], 1)
+        self.assertEqual(batch["skipped_count"], 1)
+        self.assertEqual(batch["errors"], [])
+        self.assertEqual(batch["results"][0]["case_id"], "case_one")
+        self.assertEqual(batch["results"][0]["status"], "passed")
+
     def test_eval_route_evaluates_and_records_case_checks(self) -> None:
         with isolated_eval_database():
             with TestClient(app) as client:
@@ -534,6 +823,64 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         )
         self.assertEqual(run_detail_response.json()["status"], "passed")
         self.assertEqual(run_detail_response.json()["case_results"][0]["graph_run_id"], "run_policy_eval")
+
+    def test_eval_route_runs_llm_judge_only_with_explicit_opt_in(self) -> None:
+        def fake_create_judge_runner():
+            return lambda **_kwargs: {
+                "status": "passed",
+                "score": 0.91,
+                "message": "The response satisfies the rubric.",
+                "actual": {"verdict": "pass"},
+                "details": {"model_ref": "test/judge-model"},
+            }
+
+        with isolated_eval_database():
+            with (
+                patch("app.api.routes_evals.create_llm_judge_runner", side_effect=fake_create_judge_runner) as create_runner,
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "judge_quality",
+                        "name": "Judge quality",
+                        "target_template_id": "policy_navigator_agent",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/judge_quality/cases",
+                    json={
+                        "case_id": "judge_answer",
+                        "name": "Judge answer",
+                        "checks": [
+                            {
+                                "kind": "llm_judge",
+                                "name": "Rubric judge",
+                                "rubric": "The answer must be grounded and useful.",
+                                "min_score": 0.8,
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "judge_quality"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                skipped_response = client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/judge_answer/evaluate",
+                    json={"final_output": {"final_reply": "Grounded answer [1]."}},
+                )
+                judged_response = client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/judge_answer/evaluate",
+                    json={"run_llm_judge": True, "final_output": {"final_reply": "Grounded answer [1]."}},
+                )
+
+        self.assertEqual(skipped_response.status_code, 200)
+        self.assertEqual(skipped_response.json()["status"], "skipped")
+        self.assertEqual(skipped_response.json()["check_results"][0]["status"], "skipped")
+        self.assertEqual(judged_response.status_code, 200)
+        self.assertEqual(judged_response.json()["status"], "passed")
+        self.assertEqual(judged_response.json()["check_results"][0]["score"], 0.91)
+        self.assertEqual(create_runner.call_count, 1)
 
 
 if __name__ == "__main__":

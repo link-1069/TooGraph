@@ -90,6 +90,21 @@
           <span class="app-shell__link-label">{{ t("nav.graphLibrary") }}</span>
         </RouterLink>
         <RouterLink
+          to="/evals"
+          class="app-shell__link"
+          data-virtual-affordance-id="app.nav.evals"
+          data-virtual-affordance-label="评测"
+          data-virtual-affordance-role="navigation-link"
+          data-virtual-affordance-zone="app-shell"
+          data-virtual-affordance-actions="click"
+          data-virtual-affordance-path-after-click="/evals"
+          :class="{ 'app-shell__link--active': activeNavigationSection === 'evals' }"
+          :title="t('nav.evals')"
+        >
+          <ElIcon class="app-shell__link-icon"><DataAnalysis /></ElIcon>
+          <span class="app-shell__link-label">{{ t("nav.evals") }}</span>
+        </RouterLink>
+        <RouterLink
           to="/buddy"
           class="app-shell__link"
           data-virtual-affordance-id="app.nav.buddy"
@@ -199,6 +214,7 @@ import {
   Clock,
   Collection,
   CollectionTag,
+  DataAnalysis,
   DataLine,
   Opportunity,
   Setting,

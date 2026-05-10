@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Any
+
+
+JudgeRunner = Callable[..., dict[str, Any]]
 
 
 def evaluate_case_checks(
@@ -9,6 +13,7 @@ def evaluate_case_checks(
     *,
     final_output: dict[str, Any] | None = None,
     artifacts: dict[str, Any] | None = None,
+    judge_runner: JudgeRunner | None = None,
 ) -> list[dict[str, Any]]:
     output = final_output or {}
     artifact_map = artifacts or {}
@@ -25,6 +30,17 @@ def evaluate_case_checks(
             results.append(_evaluate_rule_check(check_record, expected, output, artifact_map))
         elif kind == "citation":
             results.append(_evaluate_citation_check(check_record, expected, output, artifact_map))
+        elif kind in {"llm_judge", "judge"}:
+            results.append(
+                _evaluate_llm_judge_check(
+                    case,
+                    check_record,
+                    expected,
+                    output,
+                    artifact_map,
+                    judge_runner=judge_runner,
+                )
+            )
         else:
             results.append(
                 _result(
@@ -165,6 +181,114 @@ def _evaluate_citation_check(
     )
 
 
+def _evaluate_llm_judge_check(
+    case: dict[str, Any],
+    check: dict[str, Any],
+    expected: dict[str, Any],
+    final_output: dict[str, Any],
+    artifacts: dict[str, Any],
+    *,
+    judge_runner: JudgeRunner | None,
+) -> dict[str, Any]:
+    expected_payload = _llm_judge_expected_payload(check, expected)
+    if judge_runner is None:
+        return _mark_llm_judge(
+            _result(
+                check,
+                status="skipped",
+                score=None,
+                message="LLM judge check is not enabled for this evaluation request.",
+                expected=expected_payload,
+                actual={},
+            )
+        )
+
+    try:
+        judgment = judge_runner(case=case, check=check, final_output=final_output, artifacts=artifacts)
+    except Exception as exc:
+        return _mark_llm_judge(
+            _result(
+                check,
+                status="error",
+                score=None,
+                message=f"LLM judge execution failed: {exc}",
+                expected=expected_payload,
+                actual={"error": str(exc)},
+            )
+        )
+    return _normalize_llm_judge_result(check, expected_payload, judgment)
+
+
+def _llm_judge_expected_payload(check: dict[str, Any], expected: dict[str, Any]) -> dict[str, Any]:
+    rubric = _text(check.get("rubric")) or _text(expected.get("rubric"))
+    min_score = _optional_float(check.get("min_score"))
+    if min_score is None:
+        min_score = _optional_float(check.get("threshold"))
+    if min_score is None:
+        min_score = _optional_float(expected.get("min_score"))
+    if min_score is None:
+        min_score = _optional_float(expected.get("threshold"))
+    return {
+        "target": _text(check.get("target")) or "final_output",
+        "rubric": rubric,
+        "criteria": _string_list(check.get("criteria")) or _string_list(expected.get("criteria")),
+        "min_score": min_score,
+    }
+
+
+def _normalize_llm_judge_result(
+    check: dict[str, Any],
+    expected_payload: dict[str, Any],
+    judgment: dict[str, Any],
+) -> dict[str, Any]:
+    record = _as_dict(judgment)
+    score = _optional_float(record.get("score"))
+    status = _normalize_status(record.get("status"))
+    if not status:
+        status = _normalize_status(record.get("verdict"))
+    if not status and score is not None:
+        min_score = _optional_float(expected_payload.get("min_score"))
+        status = "passed" if min_score is None or score >= min_score else "failed"
+    if not status:
+        status = "error"
+    actual = _as_dict(record.get("actual"))
+    if not actual:
+        actual = {
+            key: record.get(key)
+            for key in ("verdict", "reason", "strengths", "issues")
+            if record.get(key) not in (None, "", [], {})
+        }
+    message = _text(record.get("message")) or _text(record.get("reason")) or "LLM judge completed."
+    result = _result(
+        check,
+        status=status,
+        score=score,
+        message=message,
+        expected=expected_payload,
+        actual=actual,
+    )
+    result["details"] = {**_as_dict(check.get("details")), **_as_dict(record.get("details"))}
+    return _mark_llm_judge(result)
+
+
+def _mark_llm_judge(result: dict[str, Any]) -> dict[str, Any]:
+    result["reviewer"] = "llm_judge"
+    return result
+
+
+def _normalize_status(value: Any) -> str:
+    normalized = _text(value).lower()
+    if normalized in {"passed", "pass", "success", "succeeded", "ok"}:
+        return "passed"
+    if normalized in {"failed", "fail", "failure", "no"}:
+        return "failed"
+    if normalized in {"error", "errored"}:
+        return "error"
+    if normalized in {"skipped", "skip"}:
+        return "skipped"
+    return ""
+
+
 def _collect_citations(final_output: dict[str, Any], artifacts: dict[str, Any]) -> list[str]:
     explicit: list[str] = []
     for source in (final_output, artifacts):
@@ -269,6 +393,15 @@ def _int_value(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _text(value: Any) -> str:
