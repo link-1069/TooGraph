@@ -19,8 +19,10 @@ class RunGraphSnapshotTests(unittest.TestCase):
             _official_template_ids(),
             [
                 "advanced_web_research_loop",
+                "ai_news_digest_to_wechat_article",
                 "buddy_autonomous_loop",
                 "buddy_capability_loop",
+                "policy_navigator_agent",
                 "toograph_graph_template_creation_workflow",
                 "toograph_page_operation_workflow",
                 "toograph_skill_creation_workflow",

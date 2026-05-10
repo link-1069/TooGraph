@@ -1,0 +1,37 @@
+{
+  "suite": "policy_navigator_agent_lightweight",
+  "cases": [
+    {
+      "case_id": "policy-navigator-mock-housing-subsidy",
+      "name": "青年人才住房补贴 mock 政策解读",
+      "inputs": {
+        "policy_sources": "示例市人力资源和社会保障局官网，2026-05-01 发布，《青年人才住房补贴申报指南》",
+        "raw_policy_text_path": "mock_data/sample_policy_notice.md",
+        "policy_knowledge_base": "",
+        "user_profile": "26 岁，应届硕士，2026 年 7 月拟入职示例市民营科技企业，已在示例市缴纳 1 个月社保，未享受过人才住房补贴，暂未取得本市户籍。"
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "key": "artifact_contract_complete",
+          "description": "必须输出 final_policy_package、policy_cards、citation_map、eligibility_report、action_checklist 和 uncertainty_report。"
+        },
+        {
+          "kind": "citation",
+          "key": "citation_ids_required",
+          "description": "关键资格、材料、时间和办理入口必须带 citation_id。"
+        },
+        {
+          "kind": "rule",
+          "key": "eligibility_status_conservative",
+          "description": "用户社保未满三个月时不得输出确定符合。"
+        },
+        {
+          "kind": "rule",
+          "key": "missing_user_info_not_overpromised",
+          "description": "户籍、无房证明或社保不足时必须标为信息不足或需要人工核验。"
+        }
+      ]
+    }
+  ]
+}

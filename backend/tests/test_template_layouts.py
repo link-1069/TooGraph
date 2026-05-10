@@ -105,8 +105,10 @@ class TemplateLayoutTests(unittest.TestCase):
             [record["template_id"] for record in records],
             [
                 "advanced_web_research_loop",
+                "ai_news_digest_to_wechat_article",
                 "buddy_autonomous_loop",
                 "buddy_capability_loop",
+                "policy_navigator_agent",
                 "toograph_graph_template_creation_workflow",
                 "toograph_page_operation_workflow",
                 "toograph_skill_creation_workflow",
@@ -151,6 +153,20 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(graph_template["label"], "创建图模板")
         self.assertEqual(graph_template["default_graph_name"], "创建图模板")
         self.assertIn("图模板", graph_template["description"])
+
+        policy_template = templates["policy_navigator_agent"]
+        self.assertEqual(policy_template["source"], "official")
+        self.assertEqual(policy_template["label"], "政策导航助手")
+        self.assertEqual(policy_template["default_graph_name"], "政策导航助手")
+        self.assertIn("政策正文", policy_template["description"])
+        self.assertIs(policy_template["capabilityDiscoverable"], True)
+
+        news_template = templates["ai_news_digest_to_wechat_article"]
+        self.assertEqual(news_template["source"], "official")
+        self.assertEqual(news_template["label"], "AI 新闻公众号助手")
+        self.assertEqual(news_template["default_graph_name"], "AI 新闻公众号助手")
+        self.assertIn("公众号文章", news_template["description"])
+        self.assertIs(news_template["capabilityDiscoverable"], True)
 
     def test_official_templates_do_not_embed_breakpoint_metadata(self) -> None:
         for template in _official_template_records():
@@ -310,6 +326,282 @@ class TemplateLayoutTests(unittest.TestCase):
         cycle_tracker = build_langgraph_cycle_tracker(graph, build_execution_edges(graph))
         self.assertTrue(cycle_tracker["has_cycle"])
         self.assertEqual(cycle_tracker["loop_limits_by_source"], {"should_continue_search": 5})
+
+    def test_policy_navigator_agent_contract(self) -> None:
+        template = next(record for record in _official_template_records() if record["template_id"] == "policy_navigator_agent")
+        states = template["state_schema"]
+        nodes = template["nodes"]
+        metadata = template["metadata"]
+
+        self.assertEqual(metadata["graphProtocol"], "node_system")
+        self.assertEqual(metadata["category"], "business")
+        self.assertEqual(metadata["requiredSkills"], ["memory_recall"])
+        self.assertEqual(metadata["requiredPermissions"], ["memory_read"])
+        self.assertEqual(metadata["knowledgeRequirements"]["state"], "policy_knowledge_base")
+        self.assertEqual(metadata["knowledgeRequirements"]["citationOutput"], "citation_map")
+        self.assertIn("citation_id", metadata["knowledgeRequirements"]["retrievalFields"])
+        self.assertEqual(metadata["gallery"]["mockRun"], "mock_data/sample_policy_notice.md")
+        self.assertEqual(
+            [item["key"] for item in metadata["inputSchema"]],
+            ["policy_sources", "raw_policy_text", "policy_knowledge_base", "user_profile"],
+        )
+        self.assertEqual(metadata["inputSchema"][2]["type"], "knowledge_base")
+        self.assertEqual(
+            [item["key"] for item in metadata["outputContract"]],
+            ["final_policy_package", "citation_map", "policy_cards", "uncertainty_report"],
+        )
+        self.assertTrue(metadata["outputContract"][0]["passThrough"])
+        self.assertEqual(metadata["outputContract"][0]["role"], "final_response")
+        self.assertEqual(
+            {item["path"]: item["state"] for item in metadata["artifactContract"]},
+            {
+                "policy_plain_summary.md": "plain_language_summary",
+                "policy_cards.json": "policy_cards",
+                "eligibility_report.md": "eligibility_report",
+                "action_checklist.json": "action_checklist",
+                "citation_map.json": "citation_map",
+                "uncertainty_report.md": "uncertainty_report",
+                "final_policy_package.md": "final_policy_package",
+            },
+        )
+        self.assertEqual(metadata["evalCases"][0]["caseId"], "policy-navigator-mock-housing-subsidy")
+
+        self.assertEqual(states["policy_sources"]["type"], "text")
+        self.assertEqual(states["raw_policy_text"]["type"], "markdown")
+        self.assertEqual(states["policy_knowledge_base"]["type"], "knowledge_base")
+        self.assertEqual(states["memory_context"]["type"], "json")
+        self.assertEqual(states["policy_source_review"]["type"], "json")
+        self.assertEqual(states["policy_metadata"]["type"], "json")
+        self.assertEqual(states["policy_sections"]["type"], "json")
+        self.assertEqual(states["policy_cards"]["type"], "json")
+        self.assertEqual(states["eligibility_report"]["type"], "markdown")
+        self.assertEqual(states["action_checklist"]["type"], "json")
+        self.assertEqual(states["citation_map"]["type"], "json")
+        self.assertEqual(states["uncertainty_report"]["type"], "markdown")
+        self.assertEqual(states["final_policy_package"]["type"], "markdown")
+        self.assertFalse(any("promptVisible" in definition for definition in states.values()))
+
+        self.assertEqual(nodes["input_policy_knowledge_base"]["config"]["boundaryType"], "knowledge_base")
+        recall_node = nodes["recall_policy_memory"]
+        self.assertEqual(recall_node["kind"], "agent")
+        self.assertEqual(recall_node["config"]["skillKey"], "memory_recall")
+        self.assertEqual(
+            recall_node["config"]["skillBindings"],
+            [
+                {
+                    "skillKey": "memory_recall",
+                    "outputMapping": {
+                        "success": "memory_recall_success",
+                        "memory_context": "memory_context",
+                        "recalled_memories": "recalled_memories",
+                        "omitted_memories": "omitted_memories",
+                        "result": "memory_recall_result",
+                    },
+                }
+            ],
+        )
+        self.assertEqual(
+            {binding["state"]: binding["mode"] for binding in recall_node["writes"]},
+            {
+                "memory_recall_success": "replace",
+                "memory_context": "replace",
+                "recalled_memories": "replace",
+                "omitted_memories": "replace",
+                "memory_recall_result": "replace",
+            },
+        )
+        self.assertIn("不得编造检索结果", nodes["policy_source_validator"]["config"]["taskInstruction"])
+        self.assertIn("可能符合、可能不符合、信息不足", nodes["eligibility_matcher"]["config"]["taskInstruction"])
+        self.assertIn("不得承诺", nodes["uncertainty_and_risk_checker"]["config"]["taskInstruction"])
+        self.assertEqual(
+            [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
+            ["output_final_policy_package"],
+        )
+        self.assertEqual(
+            _read_contracts(nodes["output_final_policy_package"]["reads"]),
+            [{"state": "final_policy_package", "required": True}],
+        )
+        self.assertEqual(nodes["output_final_policy_package"]["config"]["persistEnabled"], True)
+        self.assertEqual(nodes["output_final_policy_package"]["config"]["fileNameTemplate"], "final_policy_package.md")
+
+        template_dir = Path(__file__).resolve().parents[2] / "graph_template" / "official" / "policy_navigator_agent"
+        self.assertTrue((template_dir / "README.md").is_file())
+        self.assertTrue((template_dir / "examples" / "mock_policy_input.json").is_file())
+        self.assertTrue((template_dir / "mock_data" / "sample_policy_notice.md").is_file())
+        self.assertTrue((template_dir / "artifacts" / "sample_final_policy_package.md").is_file())
+        self.assertTrue((template_dir / "eval_cases.json").is_file())
+
+    def test_policy_navigator_agent_is_runtime_compatible(self) -> None:
+        template = next(record for record in _official_template_records() if record["template_id"] == "policy_navigator_agent")
+        payload = {
+            key: value
+            for key, value in template.items()
+            if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+        }
+        graph = NodeSystemGraphPayload.model_validate(
+            {
+                **payload,
+                "graph_id": "test_policy_navigator_agent",
+                "name": template["default_graph_name"],
+            }
+        )
+
+        validation = validate_graph(graph)
+        self.assertEqual([issue.model_dump() for issue in validation.issues], [])
+        self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
+
+    def test_ai_news_digest_to_wechat_article_contract(self) -> None:
+        template = next(
+            record
+            for record in _official_template_records()
+            if record["template_id"] == "ai_news_digest_to_wechat_article"
+        )
+        states = template["state_schema"]
+        nodes = template["nodes"]
+        metadata = template["metadata"]
+
+        self.assertEqual(metadata["graphProtocol"], "node_system")
+        self.assertEqual(metadata["category"], "business")
+        self.assertEqual(metadata["requiredSkills"], ["memory_recall", "web_search"])
+        self.assertEqual(metadata["requiredPermissions"], ["memory_read", "network", "secret_read", "browser_automation"])
+        self.assertEqual(metadata["mockMode"]["input"], "examples/mock_news_input.json")
+        self.assertIs(metadata["mockMode"]["supported"], True)
+        self.assertEqual(
+            [item["key"] for item in metadata["inputSchema"]],
+            ["topic", "date_range", "raw_news_items", "use_web_search", "target_platforms", "style_brief"],
+        )
+        self.assertEqual(metadata["inputSchema"][3]["type"], "boolean")
+        self.assertEqual(
+            [item["key"] for item in metadata["outputContract"]],
+            ["final_content_package", "top_news_cards", "fact_check_report", "citation_map"],
+        )
+        self.assertTrue(metadata["outputContract"][0]["passThrough"])
+        self.assertEqual(metadata["outputContract"][0]["role"], "final_response")
+        self.assertEqual(
+            {item["path"]: item["state"] for item in metadata["artifactContract"]},
+            {
+                "top_news_cards.json": "top_news_cards",
+                "ai_news_digest.md": "article_outline",
+                "wechat_article.md": "wechat_article",
+                "fact_check_report.json": "fact_check_report",
+                "title_candidates.json": "title_candidates",
+                "distribution_pack.json": "distribution_pack",
+                "final_content_package.md": "final_content_package",
+            },
+        )
+        self.assertEqual(metadata["evalCases"][0]["caseId"], "ai-news-mock-model-launch-digest")
+
+        self.assertEqual(states["use_web_search"]["type"], "boolean")
+        self.assertEqual(states["artifact_paths"]["type"], "file")
+        self.assertEqual(states["clean_news_items"]["type"], "json")
+        self.assertEqual(states["clustered_topics"]["type"], "json")
+        self.assertEqual(states["top_news_cards"]["type"], "json")
+        self.assertEqual(states["wechat_article"]["type"], "markdown")
+        self.assertEqual(states["fact_check_report"]["type"], "json")
+        self.assertEqual(states["distribution_pack"]["type"], "json")
+        self.assertEqual(states["final_content_package"]["type"], "markdown")
+        self.assertFalse(any("promptVisible" in definition for definition in states.values()))
+
+        self.assertEqual(nodes["input_use_web_search"]["config"]["boundaryType"], "boolean")
+        recall_node = nodes["recall_content_memory"]
+        self.assertEqual(recall_node["kind"], "agent")
+        self.assertEqual(recall_node["config"]["skillKey"], "memory_recall")
+        self.assertEqual(
+            recall_node["config"]["skillBindings"][0]["outputMapping"],
+            {
+                "success": "memory_recall_success",
+                "memory_context": "memory_context",
+                "recalled_memories": "recalled_memories",
+                "omitted_memories": "omitted_memories",
+                "result": "memory_recall_result",
+            },
+        )
+
+        search_node = nodes["run_web_search"]
+        self.assertEqual(search_node["kind"], "agent")
+        self.assertEqual(search_node["config"]["skillKey"], "web_search")
+        self.assertEqual(
+            search_node["config"]["skillBindings"][0]["outputMapping"],
+            {
+                "query": "executed_queries",
+                "source_urls": "source_urls",
+                "artifact_paths": "artifact_paths",
+                "errors": "search_errors",
+            },
+        )
+        self.assertEqual(
+            {binding["state"]: binding["mode"] for binding in search_node["writes"]},
+            {
+                "executed_queries": "append",
+                "source_urls": "append",
+                "artifact_paths": "append",
+                "search_errors": "append",
+            },
+        )
+
+        condition_node = nodes["should_fetch_news"]
+        self.assertEqual(condition_node["kind"], "condition")
+        self.assertEqual(condition_node["config"]["loopLimit"], 1)
+        self.assertEqual(
+            condition_node["config"]["rule"],
+            {"source": "$state.use_web_search", "operator": "==", "value": True},
+        )
+        self.assertEqual(
+            template["conditional_edges"],
+            [
+                {
+                    "source": "should_fetch_news",
+                    "branches": {
+                        "true": "run_web_search",
+                        "false": "normalize_news_items",
+                        "exhausted": "normalize_news_items",
+                    },
+                }
+            ],
+        )
+        self.assertIn("去重", nodes["normalize_news_items"]["config"]["taskInstruction"])
+        self.assertIn("没有来源的事实", nodes["fact_check_article"]["config"]["taskInstruction"])
+        self.assertIn("多平台", nodes["build_distribution_pack"]["config"]["taskInstruction"])
+        self.assertEqual(
+            [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
+            ["output_final_content_package"],
+        )
+        self.assertEqual(
+            _read_contracts(nodes["output_final_content_package"]["reads"]),
+            [{"state": "final_content_package", "required": True}],
+        )
+        self.assertEqual(nodes["output_final_content_package"]["config"]["persistEnabled"], True)
+        self.assertEqual(nodes["output_final_content_package"]["config"]["fileNameTemplate"], "final_content_package.md")
+
+        template_dir = Path(__file__).resolve().parents[2] / "graph_template" / "official" / "ai_news_digest_to_wechat_article"
+        self.assertTrue((template_dir / "README.md").is_file())
+        self.assertTrue((template_dir / "examples" / "mock_news_input.json").is_file())
+        self.assertTrue((template_dir / "mock_data" / "sample_ai_news_items.md").is_file())
+        self.assertTrue((template_dir / "artifacts" / "sample_final_content_package.md").is_file())
+        self.assertTrue((template_dir / "eval_cases.json").is_file())
+
+    def test_ai_news_digest_to_wechat_article_is_runtime_compatible(self) -> None:
+        template = next(
+            record
+            for record in _official_template_records()
+            if record["template_id"] == "ai_news_digest_to_wechat_article"
+        )
+        payload = {
+            key: value
+            for key, value in template.items()
+            if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+        }
+        graph = NodeSystemGraphPayload.model_validate(
+            {
+                **payload,
+                "graph_id": "test_ai_news_digest_to_wechat_article",
+                "name": template["default_graph_name"],
+            }
+        )
+
+        validation = validate_graph(graph)
+        self.assertEqual([issue.model_dump() for issue in validation.issues], [])
+        self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
 
     def test_toograph_skill_creation_workflow_contract(self) -> None:
         template = next(

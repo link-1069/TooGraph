@@ -1044,6 +1044,7 @@ onMounted(loadCatalog);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   min-width: 0;
 }
@@ -1078,12 +1079,17 @@ onMounted(loadCatalog);
 }
 
 .graph-library-page__meta {
+  display: grid;
+  flex: 1 1 160px;
+  grid-template-columns: 1fr;
+  min-width: 0;
   font-family: var(--toograph-font-mono);
   font-size: 0.82rem;
 }
 
 .graph-library-page__open-hint {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  margin-left: auto;
   border-radius: 999px;
   padding: 6px 10px;
   background: rgba(154, 52, 18, 0.08);

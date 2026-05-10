@@ -1,0 +1,8 @@
+{
+  "topic": "AI 产品与模型发布",
+  "date_range": "最近 7 天",
+  "raw_news_items_path": "mock_data/sample_ai_news_items.md",
+  "use_web_search": false,
+  "target_platforms": "微信公众号、小红书、知乎、B站、X",
+  "style_brief": "面向 AI 产品经理和技术创业者，语气克制，少用口号，多写产品影响和可验证事实。"
+}

@@ -158,6 +158,90 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_memory_events_memory_id
             ON memory_events (memory_id, created_at);
+
+        CREATE TABLE IF NOT EXISTS eval_suites (
+            suite_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            target_graph_id TEXT NOT NULL DEFAULT '',
+            target_template_id TEXT NOT NULL DEFAULT '',
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS eval_cases (
+            suite_id TEXT NOT NULL,
+            case_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            input_values_json TEXT NOT NULL DEFAULT '{}',
+            expected_json TEXT NOT NULL DEFAULT '{}',
+            checks_json TEXT NOT NULL DEFAULT '[]',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (suite_id, case_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS eval_runs (
+            eval_run_id TEXT PRIMARY KEY,
+            suite_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            requested_by TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            started_at TEXT NOT NULL DEFAULT '',
+            completed_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS eval_case_results (
+            result_id TEXT PRIMARY KEY,
+            eval_run_id TEXT NOT NULL,
+            suite_id TEXT NOT NULL,
+            case_id TEXT NOT NULL,
+            graph_run_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            final_output_json TEXT NOT NULL DEFAULT '{}',
+            error TEXT NOT NULL DEFAULT '',
+            artifacts_json TEXT NOT NULL DEFAULT '{}',
+            node_failures_json TEXT NOT NULL DEFAULT '[]',
+            human_review_json TEXT NOT NULL DEFAULT '{}',
+            started_at TEXT NOT NULL DEFAULT '',
+            completed_at TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (eval_run_id, case_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS eval_check_results (
+            check_result_id TEXT PRIMARY KEY,
+            result_id TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT '',
+            name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            score REAL,
+            message TEXT NOT NULL DEFAULT '',
+            expected_json TEXT NOT NULL DEFAULT '{}',
+            actual_json TEXT NOT NULL DEFAULT '{}',
+            details_json TEXT NOT NULL DEFAULT '{}',
+            reviewer TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_eval_cases_suite_id
+            ON eval_cases (suite_id);
+
+        CREATE INDEX IF NOT EXISTS idx_eval_runs_suite_id
+            ON eval_runs (suite_id, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_eval_case_results_run_id
+            ON eval_case_results (eval_run_id);
+
+        CREATE INDEX IF NOT EXISTS idx_eval_check_results_result_id
+            ON eval_check_results (result_id);
         """
     )
     _ensure_column(connection, "knowledge_bases", "embedding_provider", "TEXT NOT NULL DEFAULT ''")

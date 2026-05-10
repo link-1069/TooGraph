@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.api.routes_buddy import router as buddy_router
+from app.api.routes_evals import router as evals_router
 from app.api.routes_graphs import router as graphs_router
 from app.api.routes_knowledge import router as knowledge_router
 from app.api.routes_local_input_sources import router as local_input_sources_router
@@ -91,6 +92,7 @@ app.add_middleware(
 )
 
 app.include_router(buddy_router)
+app.include_router(evals_router)
 app.include_router(graphs_router)
 app.include_router(knowledge_router)
 app.include_router(local_input_sources_router)

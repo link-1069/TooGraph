@@ -1,0 +1,1353 @@
+{
+  "template_id": "ai_news_digest_to_wechat_article",
+  "label": "AI 新闻公众号助手",
+  "description": "整理 AI 新闻，完成清洗去重、主题聚类、重要性排序、公众号文章、事实检查和多平台分发稿。",
+  "default_graph_name": "AI 新闻公众号助手",
+  "state_schema": {
+    "topic": {
+      "name": "关注主题",
+      "description": "新闻关注领域、关键词或受众关心的问题。",
+      "type": "text",
+      "value": "AI 产品与模型发布",
+      "color": "#2563eb",
+      "binding": null
+    },
+    "date_range": {
+      "name": "时间范围",
+      "description": "需要覆盖的新闻时间范围。",
+      "type": "text",
+      "value": "最近 7 天",
+      "color": "#0f766e",
+      "binding": null
+    },
+    "raw_news_items": {
+      "name": "原始新闻材料",
+      "description": "用户粘贴的新闻链接、摘要、原文片段或 mock 新闻材料。",
+      "type": "markdown",
+      "value": "",
+      "color": "#d97706",
+      "binding": null
+    },
+    "use_web_search": {
+      "name": "是否联网补充",
+      "description": "true 时运行 web_search；false 时只使用用户粘贴或 mock 材料。",
+      "type": "boolean",
+      "value": false,
+      "color": "#dc2626",
+      "binding": null
+    },
+    "target_platforms": {
+      "name": "目标平台",
+      "description": "除公众号外需要输出的分发平台。",
+      "type": "text",
+      "value": "微信公众号、小红书、知乎、B站、X",
+      "color": "#7c3aed",
+      "binding": null
+    },
+    "style_brief": {
+      "name": "文章风格",
+      "description": "标题、语气、篇幅、受众和禁用表达等风格要求。",
+      "type": "markdown",
+      "value": "面向 AI 产品经理和技术创业者，语气克制，不夸大，不写营销腔。",
+      "color": "#4f46e5",
+      "binding": null
+    },
+    "memory_request": {
+      "name": "内容偏好记忆请求",
+      "description": "面向 memory_recall Skill 的只读召回请求。",
+      "type": "json",
+      "value": {},
+      "color": "#9333ea",
+      "binding": null
+    },
+    "memory_recall_success": {
+      "name": "记忆召回成功",
+      "description": "memory_recall 是否成功。",
+      "type": "boolean",
+      "value": false,
+      "color": "#16a34a",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_content_memory",
+        "fieldKey": "success",
+        "managed": true
+      }
+    },
+    "memory_context": {
+      "name": "内容偏好记忆",
+      "description": "预算化召回结果，用于风格和受众偏好参考。",
+      "type": "json",
+      "value": {},
+      "color": "#7c3aed",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_content_memory",
+        "fieldKey": "memory_context",
+        "managed": true
+      }
+    },
+    "recalled_memories": {
+      "name": "纳入记忆",
+      "description": "本轮纳入上下文的记忆记录。",
+      "type": "json",
+      "value": [],
+      "color": "#8b5cf6",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_content_memory",
+        "fieldKey": "recalled_memories",
+        "managed": true
+      }
+    },
+    "omitted_memories": {
+      "name": "省略记忆",
+      "description": "因预算或过滤未纳入的记忆摘要。",
+      "type": "json",
+      "value": [],
+      "color": "#a855f7",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_content_memory",
+        "fieldKey": "omitted_memories",
+        "managed": true
+      }
+    },
+    "memory_recall_result": {
+      "name": "记忆召回摘要",
+      "description": "memory_recall 返回的召回摘要。",
+      "type": "markdown",
+      "value": "",
+      "color": "#6d28d9",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_content_memory",
+        "fieldKey": "result",
+        "managed": true
+      }
+    },
+    "news_fetch_plan": {
+      "name": "新闻获取计划",
+      "description": "粘贴材料处理方式、联网补充条件和证据充分标准。",
+      "type": "markdown",
+      "value": "",
+      "color": "#0e7490",
+      "binding": null
+    },
+    "current_query": {
+      "name": "当前搜索词",
+      "description": "联网补充时交给 web_search 的查询词。",
+      "type": "text",
+      "value": "",
+      "color": "#0891b2",
+      "binding": null
+    },
+    "executed_queries": {
+      "name": "联网搜索 Query",
+      "description": "web_search 实际执行过的查询词。",
+      "type": "json",
+      "value": [],
+      "color": "#7c3aed",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "web_search",
+        "nodeId": "run_web_search",
+        "fieldKey": "query",
+        "managed": true
+      }
+    },
+    "source_urls": {
+      "name": "联网搜索来源",
+      "description": "web_search 成功落地原文的来源 URL。",
+      "type": "json",
+      "value": [],
+      "color": "#9333ea",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "web_search",
+        "nodeId": "run_web_search",
+        "fieldKey": "source_urls",
+        "managed": true
+      }
+    },
+    "artifact_paths": {
+      "name": "联网原文 artifacts",
+      "description": "web_search 下载到本地的网页正文文档。",
+      "type": "file",
+      "value": [],
+      "color": "#10b981",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "web_search",
+        "nodeId": "run_web_search",
+        "fieldKey": "artifact_paths",
+        "managed": true
+      }
+    },
+    "search_errors": {
+      "name": "联网搜索错误",
+      "description": "搜索或正文下载错误。",
+      "type": "json",
+      "value": [],
+      "color": "#dc2626",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "web_search",
+        "nodeId": "run_web_search",
+        "fieldKey": "errors",
+        "managed": true
+      }
+    },
+    "clean_news_items": {
+      "name": "清洗新闻条目",
+      "description": "去重后的新闻事实卡片，每条保留来源和 citation_id。",
+      "type": "json",
+      "value": [],
+      "color": "#15803d",
+      "binding": null
+    },
+    "citation_map": {
+      "name": "新闻引用映射",
+      "description": "citation_id 到链接、标题、来源和证据片段的映射。",
+      "type": "json",
+      "value": [],
+      "color": "#db2777",
+      "binding": null
+    },
+    "clustered_topics": {
+      "name": "主题聚类",
+      "description": "新闻主题聚类、重复项和合并依据。",
+      "type": "json",
+      "value": [],
+      "color": "#0f766e",
+      "binding": null
+    },
+    "top_news_cards": {
+      "name": "Top 新闻卡片",
+      "description": "按重要性排序的 Top 新闻卡片。",
+      "type": "json",
+      "value": [],
+      "color": "#16a34a",
+      "binding": null
+    },
+    "importance_ranking": {
+      "name": "重要性排序",
+      "description": "排序分数、影响维度和取舍理由。",
+      "type": "json",
+      "value": [],
+      "color": "#65a30d",
+      "binding": null
+    },
+    "article_outline": {
+      "name": "公众号大纲",
+      "description": "公众号文章结构、标题方向和段落安排。",
+      "type": "markdown",
+      "value": "",
+      "color": "#b45309",
+      "binding": null
+    },
+    "wechat_article": {
+      "name": "公众号正文",
+      "description": "带引用、可编辑的公众号正文。",
+      "type": "markdown",
+      "value": "",
+      "color": "#ca8a04",
+      "binding": null
+    },
+    "fact_check_report": {
+      "name": "事实一致性检查",
+      "description": "事实、观点、缺口、冲突和需要人工确认项。",
+      "type": "json",
+      "value": {},
+      "color": "#dc2626",
+      "binding": null
+    },
+    "title_candidates": {
+      "name": "标题候选",
+      "description": "不同角度的公众号标题候选。",
+      "type": "json",
+      "value": [],
+      "color": "#ea580c",
+      "binding": null
+    },
+    "distribution_pack": {
+      "name": "多平台分发包",
+      "description": "小红书、知乎、B站、X 等平台分发稿。",
+      "type": "json",
+      "value": {},
+      "color": "#0891b2",
+      "binding": null
+    },
+    "final_content_package": {
+      "name": "最终内容包",
+      "description": "面向用户展示和导出的完整内容包。",
+      "type": "markdown",
+      "value": "",
+      "color": "#b45309",
+      "binding": null
+    }
+  },
+  "nodes": {
+    "input_topic": {
+      "kind": "input",
+      "name": "输入关注主题",
+      "description": "填写 AI 新闻关注主题。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 40
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "topic",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "AI 产品与模型发布",
+        "boundaryType": "text"
+      }
+    },
+    "input_date_range": {
+      "kind": "input",
+      "name": "输入时间范围",
+      "description": "填写新闻时间范围。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 280
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "date_range",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "最近 7 天",
+        "boundaryType": "text"
+      }
+    },
+    "input_raw_news": {
+      "kind": "input",
+      "name": "输入新闻材料",
+      "description": "粘贴链接、摘要、原文片段或 mock 新闻材料。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 520
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "raw_news_items",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_use_web_search": {
+      "kind": "input",
+      "name": "选择是否联网",
+      "description": "控制是否运行 web_search 补充资料。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 760
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "use_web_search",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": false,
+        "boundaryType": "boolean"
+      }
+    },
+    "input_platforms": {
+      "kind": "input",
+      "name": "输入目标平台",
+      "description": "填写需要生成的分发平台。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 1000
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "target_platforms",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "微信公众号、小红书、知乎、B站、X",
+        "boundaryType": "text"
+      }
+    },
+    "input_style_brief": {
+      "kind": "input",
+      "name": "输入写作风格",
+      "description": "填写文章语气、受众和禁用表达。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 1240
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "style_brief",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "面向 AI 产品经理和技术创业者，语气克制，不夸大，不写营销腔。",
+        "boundaryType": "text"
+      }
+    },
+    "prepare_content_memory": {
+      "kind": "agent",
+      "name": "准备内容偏好召回",
+      "description": "把主题和风格要求转成只读记忆召回请求。",
+      "ui": {
+        "position": {
+          "x": 520,
+          "y": 320
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 280
+        }
+      },
+      "reads": [
+        {
+          "state": "topic",
+          "required": true
+        },
+        {
+          "state": "date_range",
+          "required": true
+        },
+        {
+          "state": "target_platforms",
+          "required": true
+        },
+        {
+          "state": "style_brief",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "memory_request",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "生成 memory_request JSON，只用于只读召回用户的内容偏好、常用平台风格、禁用表达和历史选题。字段包含 query、scope、layer、memory_type、status、top_k、max_chars。scope 默认 user，layer 可用 procedural 或 semantic，status 默认 active，top_k 不超过 8，max_chars 不超过 3000。不要写新闻总结。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "recall_content_memory": {
+      "kind": "agent",
+      "name": "召回内容偏好",
+      "description": "运行 memory_recall Skill，只透传召回结果。",
+      "ui": {
+        "position": {
+          "x": 1060,
+          "y": 320
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "memory_request",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "memory_recall_success",
+          "mode": "replace"
+        },
+        {
+          "state": "memory_context",
+          "mode": "replace"
+        },
+        {
+          "state": "recalled_memories",
+          "mode": "replace"
+        },
+        {
+          "state": "omitted_memories",
+          "mode": "replace"
+        },
+        {
+          "state": "memory_recall_result",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "memory_recall",
+        "skillBindings": [
+          {
+            "skillKey": "memory_recall",
+            "outputMapping": {
+              "success": "memory_recall_success",
+              "memory_context": "memory_context",
+              "recalled_memories": "recalled_memories",
+              "omitted_memories": "omitted_memories",
+              "result": "memory_recall_result"
+            }
+          }
+        ],
+        "skillInstructionBlocks": {
+          "memory_recall": {
+            "skillKey": "memory_recall",
+            "title": "记忆召回 skill instruction",
+            "content": "你已绑定记忆召回技能。根据 memory_request 生成只读召回参数；不要总结新闻、不要改写记忆、不要写入记忆。技能结果会写入 memory_context、recalled_memories、omitted_memories 和 result。",
+            "source": "node.override"
+          }
+        },
+        "taskInstruction": "本节点只负责运行 memory_recall。缺失字段时使用 scope=user、status=active、top_k=8、max_chars=3000。不要输出内容稿件。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "prepare_news_fetch": {
+      "kind": "agent",
+      "name": "准备新闻获取",
+      "description": "整理粘贴材料和可选联网补充计划。",
+      "ui": {
+        "position": {
+          "x": 1600,
+          "y": 320
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "topic",
+          "required": true
+        },
+        {
+          "state": "date_range",
+          "required": true
+        },
+        {
+          "state": "raw_news_items",
+          "required": false
+        },
+        {
+          "state": "use_web_search",
+          "required": true
+        },
+        {
+          "state": "memory_context",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "news_fetch_plan",
+          "mode": "replace"
+        },
+        {
+          "state": "current_query",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "news_fetch_plan 写成 Markdown，说明将如何使用 raw_news_items、是否需要联网补充、新闻去重标准、来源充足标准和事实检查重点。current_query 写一条适合公开网页检索的搜索词；即使 use_web_search 为 false，也要给出可审计的候选查询词供用户后续启用。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "should_fetch_news": {
+      "kind": "condition",
+      "name": "是否联网补充",
+      "description": "use_web_search 为 true 时运行 web_search，否则直接处理粘贴或 mock 材料。",
+      "ui": {
+        "position": {
+          "x": 2140,
+          "y": 330
+        },
+        "collapsed": false,
+        "size": {
+          "width": 560,
+          "height": 260
+        }
+      },
+      "reads": [
+        {
+          "state": "use_web_search",
+          "required": true
+        }
+      ],
+      "writes": [],
+      "config": {
+        "branches": [
+          "true",
+          "false",
+          "exhausted"
+        ],
+        "loopLimit": 1,
+        "branchMapping": {
+          "true": "true",
+          "false": "false"
+        },
+        "rule": {
+          "source": "$state.use_web_search",
+          "operator": "==",
+          "value": true
+        }
+      }
+    },
+    "run_web_search": {
+      "kind": "agent",
+      "name": "运行联网搜索",
+      "description": "根据搜索词运行 web_search，只透传技能输出。",
+      "ui": {
+        "position": {
+          "x": 2820,
+          "y": 140
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "topic",
+          "required": true
+        },
+        {
+          "state": "date_range",
+          "required": true
+        },
+        {
+          "state": "news_fetch_plan",
+          "required": true
+        },
+        {
+          "state": "current_query",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "executed_queries",
+          "mode": "append"
+        },
+        {
+          "state": "source_urls",
+          "mode": "append"
+        },
+        {
+          "state": "artifact_paths",
+          "mode": "append"
+        },
+        {
+          "state": "search_errors",
+          "mode": "append"
+        }
+      ],
+      "config": {
+        "skillKey": "web_search",
+        "skillBindings": [
+          {
+            "skillKey": "web_search",
+            "outputMapping": {
+              "query": "executed_queries",
+              "source_urls": "source_urls",
+              "artifact_paths": "artifact_paths",
+              "errors": "search_errors"
+            }
+          }
+        ],
+        "skillInstructionBlocks": {
+          "web_search": {
+            "skillKey": "web_search",
+            "title": "联网搜索 skill instruction",
+            "content": "你已绑定联网搜索技能，因此本节点只负责生成 query 并交给技能执行；不要总结、改写或评价搜索结果。技能会输出来源 URL、本地原文 artifact 和错误列表。",
+            "source": "node.override"
+          }
+        },
+        "taskInstruction": "本节点只负责运行 web_search。优先使用 current_query 原文；不要生成公众号文章，不要做事实判断。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "normalize_news_items": {
+      "kind": "agent",
+      "name": "清洗去重新闻",
+      "description": "整合用户粘贴材料和可选联网原文，生成带引用的去重新闻条目。",
+      "ui": {
+        "position": {
+          "x": 2820,
+          "y": 560
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "topic",
+          "required": true
+        },
+        {
+          "state": "date_range",
+          "required": true
+        },
+        {
+          "state": "raw_news_items",
+          "required": false
+        },
+        {
+          "state": "artifact_paths",
+          "required": false
+        },
+        {
+          "state": "source_urls",
+          "required": false
+        },
+        {
+          "state": "search_errors",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "clean_news_items",
+          "mode": "replace"
+        },
+        {
+          "state": "citation_map",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "clean_news_items 写成 JSON 数组，每条包含 item_id、title、source_name、source_url、published_at、fact_summary、why_it_matters、duplicate_of、citation_ids、confidence。citation_map 写成数组，每项包含 citation_id、source_url、title、publisher、published_at、quote_summary、local_artifact_path。去重时合并同一事件的多条报道；没有来源的断言必须降低 confidence 或进入缺口。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "cluster_news_topics": {
+      "kind": "agent",
+      "name": "主题聚类",
+      "description": "把清洗后的新闻聚成主题簇。",
+      "ui": {
+        "position": {
+          "x": 3360,
+          "y": 360
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "clean_news_items",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "clustered_topics",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "clustered_topics 写成 JSON 数组，每个簇包含 cluster_id、theme、item_ids、merged_facts、conflicting_facts、citation_ids、audience_relevance。不要把重复报道当作多个新闻。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "rank_top_news": {
+      "kind": "agent",
+      "name": "排序 Top 新闻",
+      "description": "按影响力、确定性、受众相关性和新鲜度排序。",
+      "ui": {
+        "position": {
+          "x": 3900,
+          "y": 360
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "clustered_topics",
+          "required": true
+        },
+        {
+          "state": "topic",
+          "required": true
+        },
+        {
+          "state": "memory_context",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "top_news_cards",
+          "mode": "replace"
+        },
+        {
+          "state": "importance_ranking",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "importance_ranking 写成 JSON 数组，包含 cluster_id、score、impact、novelty、certainty、audience_fit、reason。top_news_cards 写成 JSON 数组，包含 card_id、headline、one_sentence_summary、impact_for_readers、source_citations、what_to_watch_next、risk_or_uncertainty。必须保留 citation_ids。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "draft_wechat_article": {
+      "kind": "agent",
+      "name": "生成公众号文章",
+      "description": "生成文章大纲、正文和标题候选。",
+      "ui": {
+        "position": {
+          "x": 4440,
+          "y": 220
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "top_news_cards",
+          "required": true
+        },
+        {
+          "state": "importance_ranking",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        },
+        {
+          "state": "style_brief",
+          "required": false
+        },
+        {
+          "state": "memory_context",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "article_outline",
+          "mode": "replace"
+        },
+        {
+          "state": "wechat_article",
+          "mode": "replace"
+        },
+        {
+          "state": "title_candidates",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "article_outline 写成 Markdown，包含主线、段落结构和引用安排。wechat_article 写成公众号正文，区分事实、影响和观点，关键事实后标 citation_id，不编造未验证细节。title_candidates 写成 JSON 数组，每项包含 title、angle、risk、why_it_works。避免夸大、标题党和无来源判断。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "fact_check_article": {
+      "kind": "agent",
+      "name": "事实一致性检查",
+      "description": "检查正文是否保留来源、避免编造并标记缺口。",
+      "ui": {
+        "position": {
+          "x": 4980,
+          "y": 220
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "wechat_article",
+          "required": true
+        },
+        {
+          "state": "top_news_cards",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        },
+        {
+          "state": "search_errors",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "fact_check_report",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "fact_check_report 写成 JSON，包含 unsupported_claims、missing_citations、source_conflicts、opinion_marking_issues、stale_or_uncertain_items、required_edits、overall_status。没有来源的事实必须列入 unsupported_claims；如果材料不足，overall_status 不能是 pass。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "build_distribution_pack": {
+      "kind": "agent",
+      "name": "生成分发内容包",
+      "description": "生成多平台分发稿和最终内容包。",
+      "ui": {
+        "position": {
+          "x": 5520,
+          "y": 220
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "wechat_article",
+          "required": true
+        },
+        {
+          "state": "fact_check_report",
+          "required": true
+        },
+        {
+          "state": "title_candidates",
+          "required": true
+        },
+        {
+          "state": "top_news_cards",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        },
+        {
+          "state": "target_platforms",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "distribution_pack",
+          "mode": "replace"
+        },
+        {
+          "state": "final_content_package",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "distribution_pack 写成 JSON，对每个目标平台输出 platform、draft、style_notes、citation_policy、risk_notes。final_content_package 写成 Markdown，包含 Top 新闻卡片、公众号文章、事实检查摘要、标题候选、多平台稿、引用表和需要人工确认的缺口。若 fact_check_report 不是 pass，最终内容包必须显式列出需要修改或确认的地方。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "output_final_content_package": {
+      "kind": "output",
+      "name": "导出内容包",
+      "description": "展示并持久化最终内容包 Markdown。",
+      "ui": {
+        "position": {
+          "x": 6060,
+          "y": 220
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 260
+        }
+      },
+      "reads": [
+        {
+          "state": "final_content_package",
+          "required": true
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "markdown",
+        "persistEnabled": true,
+        "persistFormat": "md",
+        "fileNameTemplate": "final_content_package.md"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "input_topic",
+      "target": "prepare_content_memory"
+    },
+    {
+      "source": "input_date_range",
+      "target": "prepare_content_memory"
+    },
+    {
+      "source": "input_raw_news",
+      "target": "prepare_content_memory"
+    },
+    {
+      "source": "input_use_web_search",
+      "target": "prepare_content_memory"
+    },
+    {
+      "source": "input_platforms",
+      "target": "prepare_content_memory"
+    },
+    {
+      "source": "input_style_brief",
+      "target": "prepare_content_memory"
+    },
+    {
+      "source": "prepare_content_memory",
+      "target": "recall_content_memory"
+    },
+    {
+      "source": "recall_content_memory",
+      "target": "prepare_news_fetch"
+    },
+    {
+      "source": "prepare_news_fetch",
+      "target": "should_fetch_news"
+    },
+    {
+      "source": "run_web_search",
+      "target": "normalize_news_items"
+    },
+    {
+      "source": "normalize_news_items",
+      "target": "cluster_news_topics"
+    },
+    {
+      "source": "cluster_news_topics",
+      "target": "rank_top_news"
+    },
+    {
+      "source": "rank_top_news",
+      "target": "draft_wechat_article"
+    },
+    {
+      "source": "draft_wechat_article",
+      "target": "fact_check_article"
+    },
+    {
+      "source": "fact_check_article",
+      "target": "build_distribution_pack"
+    },
+    {
+      "source": "build_distribution_pack",
+      "target": "output_final_content_package"
+    }
+  ],
+  "conditional_edges": [
+    {
+      "source": "should_fetch_news",
+      "branches": {
+        "true": "run_web_search",
+        "false": "normalize_news_items",
+        "exhausted": "normalize_news_items"
+      }
+    }
+  ],
+  "metadata": {
+    "category": "business",
+    "templateVersion": "2026-05-18",
+    "graphProtocol": "node_system",
+    "capabilityDiscoverableDefault": true,
+    "gallery": {
+      "targetUsers": [
+        "AI 博主",
+        "公众号作者",
+        "技术社群运营",
+        "行业研究员",
+        "内容运营"
+      ],
+      "valueProposition": "把多条 AI 新闻整理成可追溯、可分发、可事实检查的内容包。",
+      "mockRun": "mock_data/sample_ai_news_items.md"
+    },
+    "inputSchema": [
+      {
+        "key": "topic",
+        "type": "text",
+        "required": true,
+        "description": "新闻关注主题。"
+      },
+      {
+        "key": "date_range",
+        "type": "text",
+        "required": true,
+        "description": "新闻时间范围。"
+      },
+      {
+        "key": "raw_news_items",
+        "type": "markdown",
+        "required": false,
+        "description": "用户粘贴的新闻材料或 mock 新闻。"
+      },
+      {
+        "key": "use_web_search",
+        "type": "boolean",
+        "required": true,
+        "description": "是否运行 web_search 联网补充。"
+      },
+      {
+        "key": "target_platforms",
+        "type": "text",
+        "required": true,
+        "description": "需要生成的分发平台。"
+      },
+      {
+        "key": "style_brief",
+        "type": "markdown",
+        "required": false,
+        "description": "写作风格和受众约束。"
+      }
+    ],
+    "requiredSkills": [
+      "memory_recall",
+      "web_search"
+    ],
+    "requiredPermissions": [
+      "memory_read",
+      "network",
+      "secret_read",
+      "browser_automation"
+    ],
+    "mockMode": {
+      "supported": true,
+      "useWebSearchDefault": false,
+      "input": "examples/mock_news_input.json"
+    },
+    "artifactContract": [
+      {
+        "path": "top_news_cards.json",
+        "state": "top_news_cards",
+        "type": "json"
+      },
+      {
+        "path": "ai_news_digest.md",
+        "state": "article_outline",
+        "type": "markdown"
+      },
+      {
+        "path": "wechat_article.md",
+        "state": "wechat_article",
+        "type": "markdown"
+      },
+      {
+        "path": "fact_check_report.json",
+        "state": "fact_check_report",
+        "type": "json"
+      },
+      {
+        "path": "title_candidates.json",
+        "state": "title_candidates",
+        "type": "json"
+      },
+      {
+        "path": "distribution_pack.json",
+        "state": "distribution_pack",
+        "type": "json"
+      },
+      {
+        "path": "final_content_package.md",
+        "state": "final_content_package",
+        "type": "markdown"
+      }
+    ],
+    "outputContract": [
+      {
+        "key": "final_content_package",
+        "name": "最终内容包",
+        "description": "可直接展示给用户的 Markdown 内容包。",
+        "type": "markdown",
+        "role": "final_response",
+        "passThrough": true,
+        "required": true
+      },
+      {
+        "key": "top_news_cards",
+        "name": "Top 新闻卡片",
+        "description": "可导出的结构化新闻卡片。",
+        "type": "json",
+        "role": "artifact",
+        "passThrough": false,
+        "required": true
+      },
+      {
+        "key": "fact_check_report",
+        "name": "事实检查报告",
+        "description": " unsupported claims、缺失引用、冲突和人工确认事项。",
+        "type": "json",
+        "role": "evidence",
+        "passThrough": false,
+        "required": true
+      },
+      {
+        "key": "citation_map",
+        "name": "引用映射",
+        "description": "citation_id 到新闻来源和证据片段的映射。",
+        "type": "json",
+        "role": "evidence",
+        "passThrough": false,
+        "required": true
+      }
+    ],
+    "evalCases": [
+      {
+        "caseId": "ai-news-mock-model-launch-digest",
+        "input": "examples/mock_news_input.json",
+        "checks": [
+          "top_news_cards_present",
+          "deduplicates_same_event",
+          "source_citations_required",
+          "facts_and_opinions_separated",
+          "platform_distribution_complete"
+        ]
+      }
+    ],
+    "safetyNotes": [
+      "事实和观点必须分开表达。",
+      "没有来源的新闻事实必须进入 fact_check_report。",
+      "轻量 mock 模式默认不联网；联网补充需要显式开启 use_web_search。"
+    ]
+  }
+}

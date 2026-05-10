@@ -1,0 +1,44 @@
+{
+  "suite": "ai_news_digest_to_wechat_article_lightweight",
+  "cases": [
+    {
+      "case_id": "ai-news-mock-model-launch-digest",
+      "name": "AI 新闻 mock 聚合与公众号文章",
+      "inputs": {
+        "topic": "AI 产品与模型发布",
+        "date_range": "最近 7 天",
+        "raw_news_items_path": "mock_data/sample_ai_news_items.md",
+        "use_web_search": false,
+        "target_platforms": "微信公众号、小红书、知乎、B站、X",
+        "style_brief": "面向 AI 产品经理和技术创业者，语气克制，少用口号，多写产品影响和可验证事实。"
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "key": "top_news_cards_present",
+          "description": "必须输出 Top 新闻卡片、公众号文章、事实检查报告和分发包。"
+        },
+        {
+          "kind": "rule",
+          "key": "deduplicates_same_event",
+          "description": "Alpha-3 官方发布和媒体报道应合并为同一新闻事件。"
+        },
+        {
+          "kind": "citation",
+          "key": "source_citations_required",
+          "description": "关键事实必须带 citation_id。"
+        },
+        {
+          "kind": "rule",
+          "key": "facts_and_opinions_separated",
+          "description": "文章必须区分事实、影响解读和观点判断。"
+        },
+        {
+          "kind": "artifact",
+          "key": "platform_distribution_complete",
+          "description": "目标平台对应分发稿必须完整生成。"
+        }
+      ]
+    }
+  ]
+}

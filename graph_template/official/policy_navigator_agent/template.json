@@ -1,0 +1,1068 @@
+{
+  "template_id": "policy_navigator_agent",
+  "label": "政策导航助手",
+  "description": "把政策正文、来源信息和用户画像整理成带引用的白话摘要、权益卡片、资格初判、办理清单和风险提示。",
+  "default_graph_name": "政策导航助手",
+  "state_schema": {
+    "policy_sources": {
+      "name": "政策来源",
+      "description": "政策来源链接、文件名、发布平台、用户粘贴的来源说明或 mock 来源清单。",
+      "type": "text",
+      "value": "示例：市人社局官网 2026-05-01 发布的《青年人才住房补贴申报指南》",
+      "color": "#0f766e",
+      "binding": null
+    },
+    "raw_policy_text": {
+      "name": "政策正文",
+      "description": "用户粘贴的政策正文、PDF/Word 抽取文本或 mock 政策文件正文。",
+      "type": "markdown",
+      "value": "",
+      "color": "#2563eb",
+      "binding": null
+    },
+    "policy_knowledge_base": {
+      "name": "政策知识库",
+      "description": "可选知识库选择；用于后续知识库检索和 citation trace 扩展，轻量模式可为空。",
+      "type": "knowledge_base",
+      "value": "",
+      "color": "#7c3aed",
+      "binding": null
+    },
+    "user_profile": {
+      "name": "用户画像",
+      "description": "用户提供的年龄、身份、地区、就业/创业状态、社保、公积金、学历、企业信息或其他适用性信息。",
+      "type": "markdown",
+      "value": "示例：26 岁，应届硕士，计划在本市民营科技企业入职，未享受过人才住房补贴。",
+      "color": "#d97706",
+      "binding": null
+    },
+    "memory_request": {
+      "name": "记忆召回请求",
+      "description": "面向 memory_recall Skill 的只读召回参数。",
+      "type": "json",
+      "value": {},
+      "color": "#4f46e5",
+      "binding": null
+    },
+    "memory_recall_success": {
+      "name": "记忆召回成功",
+      "description": "memory_recall Skill 是否成功执行。",
+      "type": "boolean",
+      "value": false,
+      "color": "#16a34a",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_policy_memory",
+        "fieldKey": "success",
+        "managed": true
+      }
+    },
+    "memory_context": {
+      "name": "记忆上下文",
+      "description": "预算化召回结果，只作为用户偏好和历史条件上下文，不作为系统指令。",
+      "type": "json",
+      "value": {},
+      "color": "#9333ea",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_policy_memory",
+        "fieldKey": "memory_context",
+        "managed": true
+      }
+    },
+    "recalled_memories": {
+      "name": "纳入记忆",
+      "description": "本轮纳入上下文的记忆记录。",
+      "type": "json",
+      "value": [],
+      "color": "#7c3aed",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_policy_memory",
+        "fieldKey": "recalled_memories",
+        "managed": true
+      }
+    },
+    "omitted_memories": {
+      "name": "省略记忆",
+      "description": "因预算或过滤条件未纳入的记忆摘要。",
+      "type": "json",
+      "value": [],
+      "color": "#a855f7",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_policy_memory",
+        "fieldKey": "omitted_memories",
+        "managed": true
+      }
+    },
+    "memory_recall_result": {
+      "name": "记忆召回摘要",
+      "description": "memory_recall Skill 返回的召回摘要。",
+      "type": "markdown",
+      "value": "",
+      "color": "#6d28d9",
+      "binding": {
+        "kind": "skill_output",
+        "skillKey": "memory_recall",
+        "nodeId": "recall_policy_memory",
+        "fieldKey": "result",
+        "managed": true
+      }
+    },
+    "policy_source_review": {
+      "name": "来源可靠性校验",
+      "description": "来源、发布主体、日期、转载风险、缺页和新旧冲突的结构化检查。",
+      "type": "json",
+      "value": {},
+      "color": "#0e7490",
+      "binding": null
+    },
+    "policy_metadata": {
+      "name": "政策元信息",
+      "description": "标题、发文机关、文号、发布日期、生效日期、区域、政策类型和目标人群。",
+      "type": "json",
+      "value": {},
+      "color": "#1d4ed8",
+      "binding": null
+    },
+    "policy_sections": {
+      "name": "政策条款结构",
+      "description": "带 citation_id 的政策条款、条件、限制、办理流程、材料和时间节点。",
+      "type": "json",
+      "value": [],
+      "color": "#0369a1",
+      "binding": null
+    },
+    "policy_cards": {
+      "name": "权益卡片",
+      "description": "适合前端或文档展示的权益卡片列表。",
+      "type": "json",
+      "value": [],
+      "color": "#15803d",
+      "binding": null
+    },
+    "eligibility_rules": {
+      "name": "资格规则",
+      "description": "从原文提取的适用对象、限制条件、材料、期限和排除项。",
+      "type": "json",
+      "value": [],
+      "color": "#65a30d",
+      "binding": null
+    },
+    "plain_language_summary": {
+      "name": "白话摘要",
+      "description": "面向普通用户的政策摘要，必须引用 citation_id。",
+      "type": "markdown",
+      "value": "",
+      "color": "#b45309",
+      "binding": null
+    },
+    "matched_benefits": {
+      "name": "匹配权益",
+      "description": "结合用户画像后的可能符合、可能不符合和信息不足权益清单。",
+      "type": "json",
+      "value": [],
+      "color": "#16a34a",
+      "binding": null
+    },
+    "eligibility_report": {
+      "name": "资格初判报告",
+      "description": "保守资格初判，只能输出可能符合、可能不符合或信息不足。",
+      "type": "markdown",
+      "value": "",
+      "color": "#ca8a04",
+      "binding": null
+    },
+    "action_checklist": {
+      "name": "行动清单",
+      "description": "用户可执行的材料、办理入口、时间节点、核验事项和人工确认项。",
+      "type": "json",
+      "value": [],
+      "color": "#0891b2",
+      "binding": null
+    },
+    "citation_map": {
+      "name": "引用映射",
+      "description": "citation_id 到原文位置、来源 URL、条款摘要和置信度的映射。",
+      "type": "json",
+      "value": [],
+      "color": "#db2777",
+      "binding": null
+    },
+    "uncertainty_report": {
+      "name": "不确定与风险提示",
+      "description": "原文未明确、需要官方确认、存在冲突或用户信息不足的事项。",
+      "type": "markdown",
+      "value": "",
+      "color": "#dc2626",
+      "binding": null
+    },
+    "final_policy_package": {
+      "name": "政策解读包",
+      "description": "面向用户展示和导出的完整政策解读包。",
+      "type": "markdown",
+      "value": "",
+      "color": "#b45309",
+      "binding": null
+    }
+  },
+  "nodes": {
+    "input_policy_sources": {
+      "kind": "input",
+      "name": "输入政策来源",
+      "description": "填写政策来源、链接或文件来源说明。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 40
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "policy_sources",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "示例：市人社局官网 2026-05-01 发布的《青年人才住房补贴申报指南》",
+        "boundaryType": "text"
+      }
+    },
+    "input_policy_text": {
+      "kind": "input",
+      "name": "输入政策正文",
+      "description": "粘贴政策正文、PDF/Word 抽取文本或 mock 政策文件。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 280
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "raw_policy_text",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_policy_knowledge_base": {
+      "kind": "input",
+      "name": "选择政策知识库",
+      "description": "可选，选择已导入的政策或项目知识库。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 520
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "policy_knowledge_base",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "knowledge_base"
+      }
+    },
+    "input_user_profile": {
+      "kind": "input",
+      "name": "输入用户画像",
+      "description": "补充与资格初判相关的用户情况。",
+      "ui": {
+        "position": {
+          "x": 40,
+          "y": 760
+        },
+        "collapsed": false,
+        "size": {
+          "width": 340,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "user_profile",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "示例：26 岁，应届硕士，计划在本市民营科技企业入职，未享受过人才住房补贴。",
+        "boundaryType": "text"
+      }
+    },
+    "prepare_memory_request": {
+      "kind": "agent",
+      "name": "准备画像记忆召回",
+      "description": "把政策主题和用户画像转成只读记忆召回请求。",
+      "ui": {
+        "position": {
+          "x": 520,
+          "y": 360
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 280
+        }
+      },
+      "reads": [
+        {
+          "state": "policy_sources",
+          "required": true
+        },
+        {
+          "state": "raw_policy_text",
+          "required": true
+        },
+        {
+          "state": "policy_knowledge_base",
+          "required": false
+        },
+        {
+          "state": "user_profile",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "memory_request",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "生成 memory_request JSON，只用于只读召回用户偏好、历史资格信息和曾经补充过的政策办理条件。字段包含 query、scope、layer、memory_type、status、top_k、max_chars。query 应结合政策主题、地区、用户画像和关键身份词；scope 默认 user，status 默认 active，top_k 不超过 8，max_chars 不超过 3000。不要生成政策结论。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "recall_policy_memory": {
+      "kind": "agent",
+      "name": "召回用户相关记忆",
+      "description": "运行 memory_recall Skill，只透传召回结果。",
+      "ui": {
+        "position": {
+          "x": 1060,
+          "y": 360
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "memory_request",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "memory_recall_success",
+          "mode": "replace"
+        },
+        {
+          "state": "memory_context",
+          "mode": "replace"
+        },
+        {
+          "state": "recalled_memories",
+          "mode": "replace"
+        },
+        {
+          "state": "omitted_memories",
+          "mode": "replace"
+        },
+        {
+          "state": "memory_recall_result",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "memory_recall",
+        "skillBindings": [
+          {
+            "skillKey": "memory_recall",
+            "outputMapping": {
+              "success": "memory_recall_success",
+              "memory_context": "memory_context",
+              "recalled_memories": "recalled_memories",
+              "omitted_memories": "omitted_memories",
+              "result": "memory_recall_result"
+            }
+          }
+        ],
+        "skillInstructionBlocks": {
+          "memory_recall": {
+            "skillKey": "memory_recall",
+            "title": "记忆召回 skill instruction",
+            "content": "你已绑定记忆召回技能。根据 memory_request 生成只读召回参数，不要总结政策、不要改写记忆、不要写入任何记忆。技能结果会写入 memory_context、recalled_memories、omitted_memories 和 result。",
+            "source": "node.override"
+          }
+        },
+        "taskInstruction": "本节点只负责运行 memory_recall。优先按 memory_request 原样生成召回参数；缺失字段时使用 scope=user、status=active、top_k=8、max_chars=3000。不要输出政策解释。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "policy_source_validator": {
+      "kind": "agent",
+      "name": "校验政策来源",
+      "description": "检查来源可靠性、发布日期、发布主体、转载风险和缺页冲突。",
+      "ui": {
+        "position": {
+          "x": 1600,
+          "y": 80
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "policy_sources",
+          "required": true
+        },
+        {
+          "state": "raw_policy_text",
+          "required": true
+        },
+        {
+          "state": "policy_knowledge_base",
+          "required": false
+        },
+        {
+          "state": "memory_context",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "policy_source_review",
+          "mode": "replace"
+        },
+        {
+          "state": "citation_map",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "校验政策材料来源。policy_source_review 必须是 JSON，包含 source_type、publisher、published_at、effective_at、officiality、is_reprint、missing_pages、version_conflicts、confidence、warnings。citation_map 必须是数组，每项包含 citation_id、source、title_or_clause、location、quote_summary、confidence。只能根据 policy_sources、raw_policy_text 和已显式给出的知识库片段建立引用；policy_knowledge_base 若只是知识库名称，不得编造检索结果。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "policy_metadata_extractor": {
+      "kind": "agent",
+      "name": "抽取政策元信息",
+      "description": "抽取标题、发文机关、文号、时间、区域、政策类型和目标人群。",
+      "ui": {
+        "position": {
+          "x": 2140,
+          "y": 80
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "policy_source_review",
+          "required": true
+        },
+        {
+          "state": "raw_policy_text",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "policy_metadata",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "policy_metadata 写成 JSON，字段至少包含 title、issuer、document_number、published_at、effective_at、expires_at、region、policy_type、target_groups、application_window、official_source、citation_ids、unknown_fields。无法从原文确认的字段写入 unknown_fields，不要猜。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "policy_clause_structurer": {
+      "kind": "agent",
+      "name": "结构化政策条款",
+      "description": "把政策拆成可引用的条款、资格规则、材料和流程。",
+      "ui": {
+        "position": {
+          "x": 2680,
+          "y": 80
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "policy_metadata",
+          "required": true
+        },
+        {
+          "state": "raw_policy_text",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "policy_sections",
+          "mode": "replace"
+        },
+        {
+          "state": "eligibility_rules",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "policy_sections 写成数组，每项包含 section_id、title、plain_explanation、requirements、benefits、materials、deadline、process_steps、citation_ids、missing_information。eligibility_rules 写成数组，每项包含 rule_id、applies_to、must_have、must_not_have、evidence_needed、deadline、citation_ids、certainty。所有规则必须可追溯到 citation_ids；没有依据时写 missing_information。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "policy_card_builder": {
+      "kind": "agent",
+      "name": "生成权益卡片",
+      "description": "生成白话摘要和可复用权益卡片。",
+      "ui": {
+        "position": {
+          "x": 3220,
+          "y": 80
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "policy_metadata",
+          "required": true
+        },
+        {
+          "state": "policy_sections",
+          "required": true
+        },
+        {
+          "state": "eligibility_rules",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "policy_cards",
+          "mode": "replace"
+        },
+        {
+          "state": "plain_language_summary",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "policy_cards 写成 JSON 数组，每张卡包含 card_id、benefit_name、who_can_apply、what_you_get、key_conditions、materials、deadline、how_to_apply、citation_ids、risk_notes。plain_language_summary 写成 Markdown，用短句解释政策覆盖谁、能拿到什么、怎么申请、什么时候截止和需要注意什么；每个关键事实后标 citation_id。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "eligibility_matcher": {
+      "kind": "agent",
+      "name": "匹配用户资格",
+      "description": "结合用户画像、记忆和规则进行保守资格初判。",
+      "ui": {
+        "position": {
+          "x": 3760,
+          "y": 340
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "user_profile",
+          "required": false
+        },
+        {
+          "state": "memory_context",
+          "required": false
+        },
+        {
+          "state": "policy_cards",
+          "required": true
+        },
+        {
+          "state": "eligibility_rules",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "matched_benefits",
+          "mode": "replace"
+        },
+        {
+          "state": "eligibility_report",
+          "mode": "replace"
+        },
+        {
+          "state": "action_checklist",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "matched_benefits 写成 JSON 数组，每项 status 只能是 可能符合、可能不符合、信息不足 三者之一，必须包含 reasons、missing_user_info、next_evidence_needed、citation_ids。eligibility_report 写成 Markdown，先说明这不是行政审批结论，再逐项给出保守判断。action_checklist 写成数组，包含 action、owner、deadline、required_materials、where_to_verify、citation_ids、risk_level。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "uncertainty_and_risk_checker": {
+      "kind": "agent",
+      "name": "检查不确定项",
+      "description": "列出原文未明确、冲突、过期、材料缺失和需人工确认事项。",
+      "ui": {
+        "position": {
+          "x": 4300,
+          "y": 340
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "policy_source_review",
+          "required": true
+        },
+        {
+          "state": "policy_metadata",
+          "required": true
+        },
+        {
+          "state": "eligibility_report",
+          "required": true
+        },
+        {
+          "state": "action_checklist",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "uncertainty_report",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "uncertainty_report 写成 Markdown，必须列出：原文未明确事项、来源或版本风险、用户信息不足事项、需要咨询官方窗口的事项、不得承诺的事项。若资料足够，也要保留至少一个人工核验建议。不要输出确定性审批承诺、法律意见或财务建议。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "build_final_policy_package": {
+      "kind": "agent",
+      "name": "组装政策解读包",
+      "description": "合并摘要、权益卡片、资格报告、行动清单、引用和风险提示。",
+      "ui": {
+        "position": {
+          "x": 4840,
+          "y": 340
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "plain_language_summary",
+          "required": true
+        },
+        {
+          "state": "policy_cards",
+          "required": true
+        },
+        {
+          "state": "eligibility_report",
+          "required": true
+        },
+        {
+          "state": "action_checklist",
+          "required": true
+        },
+        {
+          "state": "citation_map",
+          "required": true
+        },
+        {
+          "state": "uncertainty_report",
+          "required": true
+        },
+        {
+          "state": "memory_recall_result",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "final_policy_package",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "skillKey": "",
+        "skillBindings": [],
+        "skillInstructionBlocks": {},
+        "taskInstruction": "final_policy_package 写成 Markdown，结构固定为：一页摘要、政策元信息、权益卡片、资格初判、行动清单、引用表、不确定与风险提示、人工确认建议。关键事实必须保留 citation_id；资格判断只能沿用 可能符合/可能不符合/信息不足；最后说明需以官方窗口或原文为准。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.2
+      }
+    },
+    "output_final_policy_package": {
+      "kind": "output",
+      "name": "导出政策解读包",
+      "description": "展示并持久化最终政策解读 Markdown。",
+      "ui": {
+        "position": {
+          "x": 5380,
+          "y": 340
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 260
+        }
+      },
+      "reads": [
+        {
+          "state": "final_policy_package",
+          "required": true
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "markdown",
+        "persistEnabled": true,
+        "persistFormat": "md",
+        "fileNameTemplate": "final_policy_package.md"
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "input_policy_sources",
+      "target": "prepare_memory_request"
+    },
+    {
+      "source": "input_policy_text",
+      "target": "prepare_memory_request"
+    },
+    {
+      "source": "input_policy_knowledge_base",
+      "target": "prepare_memory_request"
+    },
+    {
+      "source": "input_user_profile",
+      "target": "prepare_memory_request"
+    },
+    {
+      "source": "prepare_memory_request",
+      "target": "recall_policy_memory"
+    },
+    {
+      "source": "recall_policy_memory",
+      "target": "policy_source_validator"
+    },
+    {
+      "source": "policy_source_validator",
+      "target": "policy_metadata_extractor"
+    },
+    {
+      "source": "policy_metadata_extractor",
+      "target": "policy_clause_structurer"
+    },
+    {
+      "source": "policy_clause_structurer",
+      "target": "policy_card_builder"
+    },
+    {
+      "source": "policy_card_builder",
+      "target": "eligibility_matcher"
+    },
+    {
+      "source": "eligibility_matcher",
+      "target": "uncertainty_and_risk_checker"
+    },
+    {
+      "source": "uncertainty_and_risk_checker",
+      "target": "build_final_policy_package"
+    },
+    {
+      "source": "build_final_policy_package",
+      "target": "output_final_policy_package"
+    }
+  ],
+  "conditional_edges": [],
+  "metadata": {
+    "category": "business",
+    "templateVersion": "2026-05-18",
+    "graphProtocol": "node_system",
+    "capabilityDiscoverableDefault": true,
+    "gallery": {
+      "targetUsers": [
+        "政策服务运营",
+        "园区服务团队",
+        "高校就业指导",
+        "创业者",
+        "需要理解政策的个人用户"
+      ],
+      "valueProposition": "把政策材料变成可追溯、可复核、保守表达的行动包。",
+      "mockRun": "mock_data/sample_policy_notice.md"
+    },
+    "inputSchema": [
+      {
+        "key": "policy_sources",
+        "type": "text",
+        "required": true,
+        "description": "政策来源、链接或文件来源说明。"
+      },
+      {
+        "key": "raw_policy_text",
+        "type": "markdown",
+        "required": true,
+        "description": "政策正文、PDF/Word 抽取文本或 mock 政策正文。"
+      },
+      {
+        "key": "policy_knowledge_base",
+        "type": "knowledge_base",
+        "required": false,
+        "description": "可选知识库，用于后续 RAG citation 扩展。"
+      },
+      {
+        "key": "user_profile",
+        "type": "markdown",
+        "required": false,
+        "description": "用户画像，用于资格初判。"
+      }
+    ],
+    "requiredSkills": [
+      "memory_recall"
+    ],
+    "requiredPermissions": [
+      "memory_read"
+    ],
+    "knowledgeRequirements": {
+      "state": "policy_knowledge_base",
+      "retrievalFields": [
+        "citation_id",
+        "chunk_id",
+        "title",
+        "section",
+        "source",
+        "url",
+        "summary",
+        "score"
+      ],
+      "citationOutput": "citation_map"
+    },
+    "artifactContract": [
+      {
+        "path": "policy_plain_summary.md",
+        "state": "plain_language_summary",
+        "type": "markdown"
+      },
+      {
+        "path": "policy_cards.json",
+        "state": "policy_cards",
+        "type": "json"
+      },
+      {
+        "path": "eligibility_report.md",
+        "state": "eligibility_report",
+        "type": "markdown"
+      },
+      {
+        "path": "action_checklist.json",
+        "state": "action_checklist",
+        "type": "json"
+      },
+      {
+        "path": "citation_map.json",
+        "state": "citation_map",
+        "type": "json"
+      },
+      {
+        "path": "uncertainty_report.md",
+        "state": "uncertainty_report",
+        "type": "markdown"
+      },
+      {
+        "path": "final_policy_package.md",
+        "state": "final_policy_package",
+        "type": "markdown"
+      }
+    ],
+    "outputContract": [
+      {
+        "key": "final_policy_package",
+        "name": "政策解读包",
+        "description": "可直接展示给用户的 Markdown 政策解读包。",
+        "type": "markdown",
+        "role": "final_response",
+        "passThrough": true,
+        "required": true
+      },
+      {
+        "key": "citation_map",
+        "name": "引用映射",
+        "description": "引用 ID 到来源和原文位置的结构化映射。",
+        "type": "json",
+        "role": "evidence",
+        "passThrough": false,
+        "required": true
+      },
+      {
+        "key": "policy_cards",
+        "name": "权益卡片",
+        "description": "结构化权益卡片，可导出为 JSON artifact。",
+        "type": "json",
+        "role": "artifact",
+        "passThrough": false,
+        "required": true
+      },
+      {
+        "key": "uncertainty_report",
+        "name": "不确定与风险提示",
+        "description": "原文缺口、版本风险、人工确认事项和保守边界。",
+        "type": "markdown",
+        "role": "evidence",
+        "passThrough": false,
+        "required": true
+      }
+    ],
+    "evalCases": [
+      {
+        "caseId": "policy-navigator-mock-housing-subsidy",
+        "input": "examples/mock_policy_input.json",
+        "checks": [
+          "issuer_and_date_present",
+          "eligibility_status_conservative",
+          "citation_ids_required",
+          "missing_user_info_not_overpromised",
+          "artifact_contract_complete"
+        ]
+      }
+    ],
+    "safetyNotes": [
+      "资格初判只能输出可能符合、可能不符合或信息不足。",
+      "不得承诺行政审批结果、法律意见或财务收益。",
+      "来源、引用和人工确认事项必须保留在最终输出。"
+    ]
+  }
+}
