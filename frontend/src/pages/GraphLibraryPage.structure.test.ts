@@ -49,6 +49,19 @@ test("GraphLibraryPage makes each management card openable while keeping managem
   assert.match(componentSource, /function openTemplateDraft\(template: TemplateRecord\)/);
 });
 
+test("GraphLibraryPage shows gallery template signals on catalog cards", () => {
+  assert.match(componentSource, /fetchEvalSuites/);
+  assert.match(componentSource, /fetchEvalRuns/);
+  assert.match(componentSource, /buildGraphLibraryTemplateEvalSummaries/);
+  assert.match(componentSource, /class="graph-library-page__template-brief"/);
+  assert.match(componentSource, /class="graph-library-page__template-facts"/);
+  assert.match(componentSource, /graphLibrary\.mockEntry/);
+  assert.match(componentSource, /graphLibrary\.sampleOutput/);
+  assert.match(componentSource, /graphLibrary\.permissionNeeds/);
+  assert.match(componentSource, /graphLibrary\.recentEval/);
+  assert.match(componentSource, /graphLibrary\.useTemplate/);
+});
+
 test("GraphLibraryPage exposes a separate capability discovery switch for templates", () => {
   assert.match(componentSource, /item\.kind === ['"]template['"]/);
   assert.match(componentSource, /graphLibrary\.capabilityDiscoverable/);

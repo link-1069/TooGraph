@@ -217,6 +217,68 @@ class TemplateLayoutTests(unittest.TestCase):
                     metadata = graph.get("metadata") if isinstance(graph.get("metadata"), dict) else {}
                     self.assertEqual(sorted(FORBIDDEN_TEMPLATE_BREAKPOINT_KEYS.intersection(metadata)), [])
 
+    def test_evidence_heavy_business_templates_declare_knowledge_requirements(self) -> None:
+        expected_requirements = {
+            "policy_navigator_agent": {
+                "state": "policy_knowledge_base",
+                "sourceStates": ["policy_sources", "raw_policy_text", "policy_knowledge_base"],
+                "citationOutput": "citation_map",
+            },
+            "ai_news_digest_to_wechat_article": {
+                "state": "raw_news_items",
+                "sourceStates": ["raw_news_items", "source_urls"],
+                "citationOutput": "citation_map",
+            },
+            "product_competitor_research_agent": {
+                "state": "existing_knowledge_notes",
+                "sourceStates": [
+                    "competitor_sources",
+                    "user_reviews",
+                    "interview_notes",
+                    "existing_knowledge_notes",
+                ],
+                "citationOutput": "source_evidence_map",
+            },
+            "ecommerce_review_mining_agent": {
+                "state": "raw_reviews",
+                "sourceStates": [
+                    "product_context",
+                    "raw_reviews",
+                    "competitor_reviews",
+                    "store_feedback",
+                    "compliance_notes",
+                ],
+                "citationOutput": "review_source_map",
+            },
+        }
+        required_retrieval_fields = {
+            "citation_id",
+            "chunk_id",
+            "title",
+            "section",
+            "source",
+            "url",
+            "summary",
+            "score",
+        }
+        templates = {record["template_id"]: record for record in _official_template_records()}
+
+        for template_id, expected in expected_requirements.items():
+            with self.subTest(template_id=template_id):
+                template = templates[template_id]
+                states = template["state_schema"]
+                metadata = template["metadata"]
+                requirements = metadata.get("knowledgeRequirements") or {}
+
+                self.assertEqual(requirements.get("state"), expected["state"])
+                self.assertEqual(requirements.get("sourceStates"), expected["sourceStates"])
+                self.assertEqual(requirements.get("citationOutput"), expected["citationOutput"])
+                self.assertIn(expected["state"], states)
+                self.assertIn(expected["citationOutput"], states)
+                for state_name in expected["sourceStates"]:
+                    self.assertIn(state_name, states)
+                self.assertTrue(required_retrieval_fields.issubset(set(requirements.get("retrievalFields") or [])))
+
     def test_official_template_graphs_have_connected_spaced_nodes(self) -> None:
         for template in _official_template_records():
             for graph_path, graph in _iter_graphs(template):

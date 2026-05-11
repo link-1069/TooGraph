@@ -807,6 +807,26 @@
     ],
     "requiredSkills": ["memory_recall", "memory_candidate_writer"],
     "requiredPermissions": ["memory_read", "memory_candidate_write"],
+    "knowledgeRequirements": {
+      "state": "existing_knowledge_notes",
+      "sourceStates": [
+        "competitor_sources",
+        "user_reviews",
+        "interview_notes",
+        "existing_knowledge_notes"
+      ],
+      "retrievalFields": [
+        "citation_id",
+        "chunk_id",
+        "title",
+        "section",
+        "source",
+        "url",
+        "summary",
+        "score"
+      ],
+      "citationOutput": "source_evidence_map"
+    },
     "artifactContract": [
       { "path": "competitor_profiles.json", "state": "competitor_profiles", "type": "json", "description": "竞品画像。" },
       { "path": "feature_matrix.csv", "state": "feature_matrix", "type": "csv", "description": "带证据的功能矩阵。" },

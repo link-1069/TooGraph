@@ -166,6 +166,36 @@
                       </div>
                     </div>
 
+                    <div v-if="item.kind === 'template' && hasTemplateSignals(item)" class="graph-library-page__template-brief">
+                      <p v-if="item.galleryValue">{{ item.galleryValue }}</p>
+                      <div class="graph-library-page__template-facts">
+                        <span v-if="item.targetUsersPreview">
+                          <strong>{{ t("graphLibrary.targetUsers") }}</strong>
+                          {{ item.targetUsersPreview }}
+                        </span>
+                        <span v-if="item.requiredSkillsPreview">
+                          <strong>{{ t("graphLibrary.requiredSkills") }}</strong>
+                          {{ item.requiredSkillsPreview }}
+                        </span>
+                        <span v-if="item.permissionsPreview">
+                          <strong>{{ t("graphLibrary.permissionNeeds") }}</strong>
+                          {{ item.permissionsPreview }}
+                        </span>
+                        <span v-if="item.mockEntry">
+                          <strong>{{ t("graphLibrary.mockEntry") }}</strong>
+                          {{ item.mockEntry }}
+                        </span>
+                        <span v-if="item.sampleOutput">
+                          <strong>{{ t("graphLibrary.sampleOutput") }}</strong>
+                          {{ item.sampleOutput }}
+                        </span>
+                        <span v-if="templateEvalLabel(item)">
+                          <strong>{{ t("graphLibrary.recentEval") }}</strong>
+                          {{ templateEvalLabel(item) }}
+                        </span>
+                      </div>
+                    </div>
+
                     <div class="graph-library-page__card-bottom">
                       <div class="graph-library-page__meta">
                         <span>{{ t("graphLibrary.nodes", { count: item.nodeCount }) }}</span>
@@ -334,6 +364,7 @@ import {
   updateTemplateCapabilityDiscoverable,
   updateTemplateStatus,
 } from "@/api/graphs";
+import { fetchEvalRuns, fetchEvalSuites } from "@/api/evals";
 import { isTooGraphPythonExportSource } from "@/editor/workspace/pythonImportModel";
 import AppShell from "@/layouts/AppShell.vue";
 import { cloneGraphDocument, createDraftFromTemplate } from "@/lib/graph-document";
@@ -348,16 +379,19 @@ import type { GraphCatalogStatus, GraphDocument, GraphPayload, GraphRevisionReco
 import {
   buildGraphRevisionHistoryRows,
   buildGraphLibraryItems,
+  buildGraphLibraryTemplateEvalSummaries,
   buildGraphLibraryOverview,
   filterGraphLibraryItems,
   splitGraphLibraryItems,
   type GraphRevisionHistoryRow,
   type GraphLibraryItem,
   type GraphLibraryStatusFilter,
+  type GraphLibraryTemplateEvalSummaries,
 } from "./graphLibraryPageModel.ts";
 
 const graphs = ref<GraphDocument[]>([]);
 const templates = ref<TemplateRecord[]>([]);
+const templateEvalSummaries = ref<GraphLibraryTemplateEvalSummaries>({});
 const loading = ref(true);
 const error = ref<string | null>(null);
 const actionError = ref<string | null>(null);
@@ -377,7 +411,7 @@ const statusFilter = ref<GraphLibraryStatusFilter>("all");
 const { t, locale } = useI18n();
 const router = useRouter();
 
-const items = computed(() => buildGraphLibraryItems(graphs.value, templates.value));
+const items = computed(() => buildGraphLibraryItems(graphs.value, templates.value, templateEvalSummaries.value));
 const overview = computed(() => buildGraphLibraryOverview(items.value));
 const filteredItems = computed(() =>
   filterGraphLibraryItems(items.value, { query: query.value, kind: "all", status: statusFilter.value }),
@@ -413,18 +447,38 @@ const statusOptions = computed(() =>
 async function loadCatalog() {
   loading.value = true;
   try {
-    const [nextGraphs, nextTemplates] = await Promise.all([
+    const [nextGraphs, nextTemplates, nextTemplateEvalSummaries] = await Promise.all([
       fetchGraphs({ includeDisabled: true }),
       fetchTemplates({ includeDisabled: true }),
+      loadTemplateEvalSummaries(),
     ]);
     graphs.value = nextGraphs;
     templates.value = nextTemplates;
+    templateEvalSummaries.value = nextTemplateEvalSummaries;
     error.value = null;
     actionError.value = null;
   } catch (fetchError) {
     error.value = fetchError instanceof Error ? fetchError.message : t("common.loading");
   } finally {
     loading.value = false;
+  }
+}
+
+async function loadTemplateEvalSummaries(): Promise<GraphLibraryTemplateEvalSummaries> {
+  try {
+    const suites = (await fetchEvalSuites()).filter((suite) => suite.target_template_id);
+    const runEntries = await Promise.all(
+      suites.map(async (suite) => {
+        try {
+          return [suite.suite_id, await fetchEvalRuns(suite.suite_id)] as const;
+        } catch {
+          return [suite.suite_id, []] as const;
+        }
+      }),
+    );
+    return buildGraphLibraryTemplateEvalSummaries(suites, Object.fromEntries(runEntries));
+  } catch {
+    return {};
   }
 }
 
@@ -482,6 +536,44 @@ function openItemLabel(item: GraphLibraryItem): string {
 
 function openItemHint(item: GraphLibraryItem): string {
   return item.kind === "graph" ? t("graphLibrary.openGraph") : t("graphLibrary.useTemplate");
+}
+
+function hasTemplateSignals(item: GraphLibraryItem): boolean {
+  return Boolean(
+    item.galleryValue
+      || item.targetUsersPreview
+      || item.requiredSkillsPreview
+      || item.permissionsPreview
+      || item.mockEntry
+      || item.sampleOutput
+      || item.evalCaseCount
+      || item.latestEvalStatus,
+  );
+}
+
+function templateEvalLabel(item: GraphLibraryItem): string {
+  if (!item.evalCaseCount && !item.latestEvalStatus) {
+    return "";
+  }
+  const caseLabel = t("graphLibrary.evalCases", { count: item.evalCaseCount });
+  if (!item.latestEvalStatus) {
+    return caseLabel;
+  }
+  return `${evalStatusLabel(item.latestEvalStatus)} · ${caseLabel}`;
+}
+
+function evalStatusLabel(status: string): string {
+  const statusKey = status.trim().toLowerCase();
+  const labels: Record<string, string> = {
+    passed: t("graphLibrary.evalStatusPassed"),
+    failed: t("graphLibrary.evalStatusFailed"),
+    error: t("graphLibrary.evalStatusError"),
+    running: t("graphLibrary.evalStatusRunning"),
+    pending: t("graphLibrary.evalStatusPending"),
+    skipped: t("graphLibrary.evalStatusSkipped"),
+    ready: t("graphLibrary.evalStatusReady"),
+  };
+  return labels[statusKey] ?? status;
 }
 
 function openPythonGraphImportDialog() {
@@ -1042,6 +1134,46 @@ onMounted(loadCatalog);
   color: var(--toograph-text-strong);
 }
 
+.graph-library-page__template-brief {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.graph-library-page__template-brief p {
+  margin: 0;
+  color: rgba(60, 41, 20, 0.78);
+  line-height: 1.5;
+}
+
+.graph-library-page__template-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.graph-library-page__template-facts span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid rgba(154, 52, 18, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255, 252, 247, 0.72);
+  color: rgba(60, 41, 20, 0.78);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.graph-library-page__template-facts strong {
+  color: rgba(60, 41, 20, 0.58);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .graph-library-page__card-bottom {
   display: flex;
   align-items: center;
@@ -1242,6 +1374,10 @@ onMounted(loadCatalog);
   }
 
   .graph-library-page__overview {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-library-page__template-facts {
     grid-template-columns: 1fr;
   }
 

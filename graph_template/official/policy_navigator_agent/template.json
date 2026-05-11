@@ -959,6 +959,11 @@
     ],
     "knowledgeRequirements": {
       "state": "policy_knowledge_base",
+      "sourceStates": [
+        "policy_sources",
+        "raw_policy_text",
+        "policy_knowledge_base"
+      ],
       "retrievalFields": [
         "citation_id",
         "chunk_id",

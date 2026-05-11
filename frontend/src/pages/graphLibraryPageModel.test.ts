@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import type { GraphDocument, GraphRevisionRecord, TemplateRecord } from "../types/node-system.ts";
 import {
+  buildGraphLibraryTemplateEvalSummaries,
   buildGraphRevisionHistoryRows,
   buildGraphLibraryItems,
   buildGraphLibraryOverview,
@@ -63,7 +64,21 @@ const templates: TemplateRecord[] = [
     nodes: {},
     edges: [],
     conditional_edges: [],
-    metadata: {},
+    metadata: {
+      gallery: {
+        targetUsers: ["Operators", "Researchers"],
+        valueProposition: "Turns source material into an auditable workflow package.",
+        mockRun: "mock_data/sample.md",
+      },
+      requiredSkills: ["memory_recall", "web_search"],
+      requiredPermissions: ["memory_read", "network"],
+      mockMode: { input: "examples/mock_input.json" },
+      artifactContract: [
+        { path: "final_package.md", state: "final_package", type: "markdown" },
+        { path: "evidence.json", state: "evidence", type: "json" },
+      ],
+      evalCases: [{ caseId: "official-loop-mock", input: "examples/mock_input.json" }],
+    },
   },
   {
     template_id: "paused_loop",
@@ -128,11 +143,67 @@ test("buildGraphLibraryItems blocks capability discovery controls for breakpoint
   assert.equal(paused?.canToggleCapabilityDiscoverable, false);
 });
 
+test("buildGraphLibraryItems exposes gallery metadata for template cards", () => {
+  const items = buildGraphLibraryItems(graphs, templates, {
+    official_loop: {
+      suiteCount: 1,
+      caseCount: 3,
+      latestStatus: "failed",
+      latestRunId: "evalrun_1",
+    },
+  });
+  const official = items.find((item) => item.id === "official_loop");
+
+  assert.equal(official?.galleryValue, "Turns source material into an auditable workflow package.");
+  assert.equal(official?.targetUsersPreview, "Operators, Researchers");
+  assert.equal(official?.requiredSkillsPreview, "memory_recall, web_search");
+  assert.equal(official?.permissionsPreview, "memory_read, network");
+  assert.equal(official?.mockEntry, "examples/mock_input.json");
+  assert.equal(official?.sampleOutput, "final_package.md +1");
+  assert.equal(official?.evalCaseCount, 3);
+  assert.equal(official?.latestEvalStatus, "failed");
+  assert.equal(official?.latestEvalRunId, "evalrun_1");
+});
+
+test("buildGraphLibraryTemplateEvalSummaries groups suite cases and latest run status by target template", () => {
+  const summaries = buildGraphLibraryTemplateEvalSummaries(
+    [
+      {
+        suite_id: "suite_a",
+        target_template_id: "official_loop",
+        case_count: 2,
+      },
+      {
+        suite_id: "suite_b",
+        target_template_id: "official_loop",
+        case_count: 1,
+      },
+      {
+        suite_id: "graph_suite",
+        target_graph_id: "graph_research",
+        case_count: 9,
+      },
+    ],
+    {
+      suite_a: [{ eval_run_id: "evalrun_a", status: "passed" }],
+      suite_b: [{ eval_run_id: "evalrun_b", status: "failed" }],
+    },
+  );
+
+  assert.deepEqual(summaries.official_loop, {
+    suiteCount: 2,
+    caseCount: 3,
+    latestStatus: "failed",
+    latestRunId: "evalrun_b",
+  });
+  assert.equal(summaries.graph_research, undefined);
+});
+
 test("filterGraphLibraryItems filters by kind, status, and search text", () => {
   const items = buildGraphLibraryItems(graphs, templates);
 
   assert.deepEqual(
-    filterGraphLibraryItems(items, { query: "research", kind: "all", status: "all" }).map((item) => item.id),
+    filterGraphLibraryItems(items, { query: "daily", kind: "all", status: "all" }).map((item) => item.id),
     ["graph_research"],
   );
   assert.deepEqual(

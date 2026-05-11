@@ -1251,6 +1251,24 @@
       "secret_read",
       "browser_automation"
     ],
+    "knowledgeRequirements": {
+      "state": "raw_news_items",
+      "sourceStates": [
+        "raw_news_items",
+        "source_urls"
+      ],
+      "retrievalFields": [
+        "citation_id",
+        "chunk_id",
+        "title",
+        "section",
+        "source",
+        "url",
+        "summary",
+        "score"
+      ],
+      "citationOutput": "citation_map"
+    },
     "mockMode": {
       "supported": true,
       "useWebSearchDefault": false,

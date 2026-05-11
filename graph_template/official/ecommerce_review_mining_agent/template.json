@@ -737,6 +737,27 @@
     ],
     "requiredSkills": ["memory_recall", "memory_candidate_writer"],
     "requiredPermissions": ["memory_read", "memory_candidate_write"],
+    "knowledgeRequirements": {
+      "state": "raw_reviews",
+      "sourceStates": [
+        "product_context",
+        "raw_reviews",
+        "competitor_reviews",
+        "store_feedback",
+        "compliance_notes"
+      ],
+      "retrievalFields": [
+        "citation_id",
+        "chunk_id",
+        "title",
+        "section",
+        "source",
+        "url",
+        "summary",
+        "score"
+      ],
+      "citationOutput": "review_source_map"
+    },
     "artifactContract": [
       { "path": "positive_review_clusters.json", "state": "positive_review_clusters", "type": "json", "description": "好评点聚类。" },
       { "path": "negative_review_clusters.json", "state": "negative_review_clusters", "type": "json", "description": "差评点聚类。" },
