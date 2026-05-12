@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDirectory = dirname(currentFilePath);
-const componentSource = readFileSync(resolve(currentDirectory, "GraphLibraryPage.vue"), "utf8");
+const componentSource = readFileSync(resolve(currentDirectory, "GraphLibraryPage.vue"), "utf8").replace(/\r\n/g, "\n");
 
 test("GraphLibraryPage renders templates and graphs as separate side-by-side columns", () => {
   const templateColumnIndex = componentSource.indexOf('graph-library-page__column--templates');
@@ -21,7 +21,14 @@ test("GraphLibraryPage renders templates and graphs as separate side-by-side col
 });
 
 test("GraphLibraryPage lays out responsive management cards without clipping", () => {
-  assert.match(componentSource, /\.graph-library-page__column-list \{[\s\S]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(min\(100%,\s*320px\),\s*1fr\)\);/);
+  const desktopColumnListRuleStart = componentSource.indexOf(
+    ".graph-library-page__column-list {\n  grid-template-columns",
+  );
+  const desktopColumnListRule = componentSource.slice(
+    desktopColumnListRuleStart,
+    componentSource.indexOf(".graph-library-page__empty,", desktopColumnListRuleStart),
+  );
+  assert.match(desktopColumnListRule, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
   assert.match(componentSource, /@media \(max-width:\s*980px\) \{[\s\S]*\.graph-library-page__column-list \{[\s\S]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
   assert.match(componentSource, /@media \(max-width:\s*700px\) \{[\s\S]*\.graph-library-page__column-list \{[\s\S]*grid-template-columns:\s*1fr;/);
 });

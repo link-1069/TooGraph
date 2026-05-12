@@ -1078,7 +1078,7 @@ onMounted(loadCatalog);
 }
 
 .graph-library-page__column-list {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
