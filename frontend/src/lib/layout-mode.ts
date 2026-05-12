@@ -3,6 +3,7 @@ export type PrimaryNavigationSection =
   | "home"
   | "editor"
   | "graphLibrary"
+  | "knowledge"
   | "evals"
   | "buddy"
   | "presets"
@@ -34,6 +35,9 @@ export function resolvePrimaryNavigationSection(pathname: string): PrimaryNaviga
   }
   if (pathname === "/library" || pathname.startsWith("/library/")) {
     return "graphLibrary";
+  }
+  if (pathname === "/knowledge" || pathname.startsWith("/knowledge/")) {
+    return "knowledge";
   }
   if (pathname === "/evals" || pathname.startsWith("/evals/")) {
     return "evals";

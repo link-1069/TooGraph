@@ -1,5 +1,5 @@
 import { spawn, execFile } from "node:child_process";
-import { createWriteStream, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +13,10 @@ const frontendDistDir = resolve(frontendDir, "dist");
 
 const isWindows = process.platform === "win32";
 const appPort = String(process.env.PORT || process.env.TOOGRAPH_PORT || "3477");
+const appBindHost = String(process.env.TOOGRAPH_HOST || process.env.HOST || "127.0.0.1").trim() || "127.0.0.1";
+const appPublicHost = String(
+  process.env.TOOGRAPH_PUBLIC_HOST || (appBindHost === "0.0.0.0" || appBindHost === "::" ? "127.0.0.1" : appBindHost),
+).trim() || "127.0.0.1";
 const legacyBackendPort = String(process.env.TOOGRAPH_LEGACY_BACKEND_PORT || "8765");
 const serverLogPath = resolve(rootDir, ".toograph_server.log");
 const pidPath = resolve(rootDir, ".toograph_pids.json");
@@ -22,6 +26,14 @@ const legacyFrontendLogPath = resolve(rootDir, ".dev_frontend.log");
 
 let serverProcess;
 let stopping = false;
+
+function formatHostForUrl(host) {
+  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+}
+
+function appBaseUrl() {
+  return `http://${formatHostForUrl(appPublicHost)}:${appPort}`;
+}
 
 function sleep(ms) {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
@@ -217,8 +229,17 @@ async function listUnixProcessInfos() {
       pid: match[1],
       parentPid: match[2],
       name: match[3],
+      cwd: readUnixProcessCwd(match[1]),
       commandLine: match[4],
     }));
+}
+
+function readUnixProcessCwd(pid) {
+  try {
+    return readlinkSync(`/proc/${pid}/cwd`);
+  } catch {
+    return "";
+  }
 }
 
 async function listProcessInfos() {
@@ -519,10 +540,6 @@ async function stopServices() {
 }
 
 async function buildFrontend() {
-  if (!existsSync(resolve(frontendDir, "node_modules"))) {
-    console.warn("Warning: frontend/node_modules was not found. Run `npm --prefix frontend install` first if startup fails.");
-  }
-
   const buildPlan = resolveFrontendBuildPlan({
     frontendDir,
     distDir: frontendDistDir,
@@ -531,6 +548,10 @@ async function buildFrontend() {
   if (!buildPlan.shouldBuild) {
     console.log("Frontend build is up to date; skipping.");
     return;
+  }
+
+  if (!existsSync(resolve(frontendDir, "node_modules"))) {
+    console.warn("Warning: frontend/node_modules was not found. Run `npm --prefix frontend install` first if startup fails.");
   }
 
   const build = npmCommand(["run", "build"]);
@@ -561,7 +582,8 @@ async function buildFrontend() {
 
 async function main() {
   console.log("Starting TooGraph...");
-  console.log(`  URL : http://127.0.0.1:${appPort}`);
+  console.log(`  URL : ${appBaseUrl()}`);
+  console.log(`  Host: ${appBindHost}`);
   console.log(`  Port: ${appPort}`);
   console.log(`  Log : ${serverLogPath}`);
   console.log("");
@@ -583,7 +605,7 @@ async function main() {
       "uvicorn",
       "app.main:app",
       "--host",
-      "127.0.0.1",
+      appBindHost,
       "--port",
       appPort,
     ],
@@ -600,7 +622,7 @@ async function main() {
 
   writePidState();
 
-  const serverReady = await waitForHttp(`http://127.0.0.1:${appPort}/health`, 30, 500);
+  const serverReady = await waitForHttp(`${appBaseUrl()}/health`, 30, 500);
   if (!serverReady) {
     console.error(`TooGraph failed to start. Check ${serverLogPath}`);
     await printLogTail(serverLogPath);
@@ -610,8 +632,8 @@ async function main() {
 
   console.log("");
   console.log("TooGraph started.");
-  console.log(`  Open: http://127.0.0.1:${appPort}`);
-  console.log(`  Health: http://127.0.0.1:${appPort}/health`);
+  console.log(`  Open: ${appBaseUrl()}`);
+  console.log(`  Health: ${appBaseUrl()}/health`);
   console.log("");
   console.log("Press Ctrl+C to stop.");
   console.log("");

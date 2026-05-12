@@ -12,6 +12,10 @@
   - 结构化输出和 function/tool calling 适配层的剩余工作。
   - 只作为模型 Provider 与 LLM 输出约束的待办清单，不作为 TooGraph 产品主协议。
 
+- [deployment.md](deployment.md)
+  - 源码运行、Docker 镜像、数据卷、端口绑定、健康检查和更新流程。
+  - 启动命令仍统一为 `npm start` / `node scripts/start.mjs`。
+
 - [../skill/SKILL_AUTHORING_GUIDE.md](../skill/SKILL_AUTHORING_GUIDE.md)
   - Skill 包结构、生命周期入口、权限边界和输出契约。
   - 手工创建 Skill 与图模板生成 Skill 都应遵守该协议。

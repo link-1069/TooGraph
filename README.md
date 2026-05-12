@@ -22,6 +22,7 @@
   · <a href="#核心能力">核心能力</a>
   · <a href="#模型-provider">模型 Provider</a>
   · <a href="#skills-与知识库">Skills</a>
+  · <a href="docs/deployment.md">部署</a>
   · <a href="#图模板">图模板</a>
   · <a href="#未来方向">Roadmap</a>
 </p>
@@ -196,6 +197,8 @@ npm.cmd start
 ./scripts/start.sh
 ```
 
+Docker、单机部署、数据卷和更新流程见 [docs/deployment.md](docs/deployment.md)。
+
 ## 第一次运行一个 graph
 
 1. 打开 http://127.0.0.1:3477。
@@ -337,6 +340,7 @@ TooGraph/
 ## 文档与知识库
 
 - `README.md`：项目入口、启动方式、项目结构和使用说明。
+- `docs/deployment.md`：源码运行、Docker、数据卷、端口和更新流程。
 - `skill/SKILL_AUTHORING_GUIDE.md`：官方 Skill 根目录下的 Skill 包结构、生命周期入口、权限边界和新建 Skill 注意事项。
 - `docs/future/buddy-autonomous-agent-roadmap.md`：Buddy 和平台能力的剩余路线图，只记录待做内容。
 - `docs/structured-output-and-function-calling.md`：结构化输出与 function calling 适配层待办。
@@ -350,9 +354,8 @@ TooGraph/
 - 扩展页面操作书覆盖范围，让 Buddy 能跨技能页、运行历史、编辑器、模型日志等页面先导航再操作目标内容。
 - 继续完善上下文预算、`result_package` 摘要、大 artifact 按需展开和只读 fanout 并行。
 - 将内部 `agent` kind 的用户心智迁移为 LLM 节点，同时保持 `node_system` 协议唯一。
-- 完善知识库更新、删除、重建索引、检索质量评估和引用展示。
 - 增加端到端 UI 测试，覆盖编辑器、运行记录、断点暂停、Buddy 虚拟操作和多语言切换。
-- 梳理桌面端、Docker 或单机部署流程，降低非开发环境的启动成本。
+- 继续打磨桌面端或一键安装包，进一步降低非开发环境启动成本。
 
 ### 伙伴 Agent 与自动编排图
 

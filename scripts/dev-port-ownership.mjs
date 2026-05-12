@@ -13,7 +13,7 @@ function textIncludesPath(text, path) {
 }
 
 function processText(info) {
-  return normalizeText([info?.name, info?.executablePath, info?.commandLine].filter(Boolean).join(" "));
+  return normalizeText([info?.name, info?.executablePath, info?.cwd, info?.commandLine].filter(Boolean).join(" "));
 }
 
 export function isTooGraphProcessInfo(info, context) {
@@ -40,6 +40,7 @@ function normalizeProcessInfo(info) {
     parentPid: normalizePid(info?.parentPid ?? info?.ParentProcessId),
     name: info?.name ?? info?.Name ?? "",
     executablePath: info?.executablePath ?? info?.ExecutablePath ?? "",
+    cwd: info?.cwd ?? info?.Cwd ?? "",
     commandLine: info?.commandLine ?? info?.CommandLine ?? "",
   };
 }
@@ -62,6 +63,24 @@ function descendantsOf(pid, processInfos) {
   }
 
   return descendants;
+}
+
+function ancestorsOf(info, processByPid) {
+  const ancestors = [];
+  const seen = new Set([info?.pid].filter(Boolean));
+  let parentPid = info?.parentPid;
+
+  while (parentPid && !seen.has(parentPid)) {
+    seen.add(parentPid);
+    const parent = processByPid.get(parentPid);
+    if (!parent) {
+      break;
+    }
+    ancestors.push(parent);
+    parentPid = parent.parentPid;
+  }
+
+  return ancestors;
 }
 
 export function formatProcessInfo(info) {
@@ -101,13 +120,17 @@ export function createPortReleasePlan({ portPids, processInfos, context }) {
 
     const ownerInfo = processByPid.get(pid);
     const descendants = descendantsOf(pid, normalizedProcessInfos);
+    const ancestors = ownerInfo ? ancestorsOf(ownerInfo, processByPid) : [];
     const knownOwner = context.knownTooGraphPids.has(pid);
     const ownerLooksLikeTooGraph = isTooGraphProcessInfo(ownerInfo, context);
+    const ownerHasTooGraphAncestor = ancestors.some(
+      (info) => context.knownTooGraphPids.has(info.pid) || isTooGraphProcessInfo(info, context),
+    );
     const ownedDescendants = descendants.filter(
       (info) => context.knownTooGraphPids.has(info.pid) || isTooGraphProcessInfo(info, context),
     );
 
-    if (knownOwner || ownerLooksLikeTooGraph || ownedDescendants.length > 0) {
+    if (knownOwner || ownerLooksLikeTooGraph || ownerHasTooGraphAncestor || ownedDescendants.length > 0) {
       if (ownerInfo) {
         pushUnique(killPids, pid);
       }

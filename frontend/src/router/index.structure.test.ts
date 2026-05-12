@@ -14,6 +14,7 @@ test("router resets page scroll on route navigation while preserving browser bac
 test("router exposes first-class management pages for presets and skills", () => {
   assert.doesNotMatch(routerSource, /import \w+Page from "@\/pages\//);
   assert.match(routerSource, /const GraphLibraryPage = \(\) => import\("@\/pages\/GraphLibraryPage\.vue"\);/);
+  assert.match(routerSource, /const KnowledgePage = \(\) => import\("@\/pages\/KnowledgePage\.vue"\);/);
   assert.match(routerSource, /const EvalsPage = \(\) => import\("@\/pages\/EvalsPage\.vue"\);/);
   assert.match(routerSource, /const PresetsPage = \(\) => import\("@\/pages\/PresetsPage\.vue"\);/);
   assert.match(routerSource, /const SkillsPage = \(\) => import\("@\/pages\/SkillsPage\.vue"\);/);
@@ -21,6 +22,7 @@ test("router exposes first-class management pages for presets and skills", () =>
   assert.match(routerSource, /const ModelLogsPage = \(\) => import\("@\/pages\/ModelLogsPage\.vue"\);/);
   assert.match(routerSource, /const BuddyPage = \(\) => import\("@\/pages\/BuddyPage\.vue"\);/);
   assert.match(routerSource, /\{ path: "\/library", component: GraphLibraryPage \}/);
+  assert.match(routerSource, /\{ path: "\/knowledge", component: KnowledgePage \}/);
   assert.match(routerSource, /\{ path: "\/evals", component: EvalsPage \}/);
   assert.match(routerSource, /\{ path: "\/buddy", component: BuddyPage \}/);
   assert.match(routerSource, /\{ path: "\/presets", component: PresetsPage \}/);
@@ -34,6 +36,7 @@ test("router lazy-loads page components to keep the production entry chunk small
     "EditorPage",
     "EvalsPage",
     "GraphLibraryPage",
+    "KnowledgePage",
     "HomePage",
     "BuddyPage",
     "ModelLogsPage",

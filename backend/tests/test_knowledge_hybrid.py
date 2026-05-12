@@ -118,6 +118,39 @@ class KnowledgeHybridTests(unittest.TestCase):
             self.assertEqual(payload["model"], "hashing-v1")
             self.assertEqual(payload["dimension"], 32)
 
+    def test_import_official_endpoint_returns_import_report(self) -> None:
+        with self.isolated_knowledge_store():
+            with patch(
+                "app.api.routes_knowledge.import_official_knowledge_bases",
+                return_value=[
+                    {
+                        "name": "toograph-official",
+                        "kb_id": "toograph-official",
+                        "label": "TooGraph Project Docs",
+                        "documentCount": 2,
+                        "chunkCount": 4,
+                    }
+                ],
+            ):
+                with TestClient(app) as client:
+                    response = client.post("/api/knowledge/bases/import-official")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "imported": [
+                        {
+                            "name": "toograph-official",
+                            "kb_id": "toograph-official",
+                            "label": "TooGraph Project Docs",
+                            "documentCount": 2,
+                            "chunkCount": 4,
+                        }
+                    ]
+                },
+            )
+
     def test_search_endpoint_returns_empty_list_without_imported_knowledge_bases(self) -> None:
         with self.isolated_knowledge_store():
             with TestClient(app) as client:
@@ -125,6 +158,43 @@ class KnowledgeHybridTests(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), [])
+
+    def test_delete_endpoint_removes_base_chunks_embeddings_and_manifest(self) -> None:
+        with self.isolated_knowledge_store():
+            imported = self.seed_knowledge_base()
+            rebuild_knowledge_base_embeddings("hybrid-test", dimension=32)
+            kb_dir = loader.KNOWLEDGE_ROOT / "hybrid-test"
+            self.assertTrue((kb_dir / "manifest.json").exists())
+
+            with TestClient(app) as client:
+                response = client.delete("/api/knowledge/bases/hybrid-test")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json(),
+                {
+                    "kb_id": "hybrid-test",
+                    "deleted": True,
+                    "documentCount": imported["documentCount"],
+                    "chunkCount": imported["chunkCount"],
+                    "embeddingCount": imported["chunkCount"],
+                },
+            )
+            self.assertEqual(list_knowledge_bases(), [])
+            self.assertFalse(kb_dir.exists())
+            with database.get_connection() as connection:
+                counts = {
+                    "bases": connection.execute("SELECT COUNT(*) FROM knowledge_bases WHERE kb_id = ?", ("hybrid-test",)).fetchone()[0],
+                    "documents": connection.execute("SELECT COUNT(*) FROM knowledge_documents WHERE kb_id = ?", ("hybrid-test",)).fetchone()[0],
+                    "chunks": connection.execute("SELECT COUNT(*) FROM knowledge_chunks WHERE kb_id = ?", ("hybrid-test",)).fetchone()[0],
+                    "fts": connection.execute("SELECT COUNT(*) FROM knowledge_chunks_fts WHERE kb_id = ?", ("hybrid-test",)).fetchone()[0],
+                    "embeddings": connection.execute("SELECT COUNT(*) FROM knowledge_chunk_embeddings WHERE kb_id = ?", ("hybrid-test",)).fetchone()[0],
+                }
+            self.assertEqual(counts, {"bases": 0, "documents": 0, "chunks": 0, "fts": 0, "embeddings": 0})
+
+            with TestClient(app) as client:
+                missing_response = client.delete("/api/knowledge/bases/hybrid-test")
+            self.assertEqual(missing_response.status_code, 404)
 
     def seed_knowledge_base(self) -> dict[str, object]:
         record = KnowledgeBaseRecord(

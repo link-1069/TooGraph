@@ -30,6 +30,65 @@ test("kills descendants when a known TooGraph port owner process has already exi
   assert.deepEqual(plan.killPids, ["32620"]);
 });
 
+test("kills a port owner when its launcher ancestor belongs to this checkout", () => {
+  const plan = createPortReleasePlan({
+    port: "3477",
+    portPids: ["525747"],
+    processInfos: [
+      {
+        pid: "525627",
+        parentPid: "1",
+        name: "node",
+        commandLine: "node /home/abyss/TooGraph/scripts/start.mjs",
+      },
+      {
+        pid: "525747",
+        parentPid: "525627",
+        name: "python",
+        commandLine: "/home/abyss/miniconda3/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 3477",
+      },
+    ],
+    context: {
+      knownTooGraphPids: new Set(),
+      rootDir: "/home/abyss/TooGraph",
+      backendDir: "/home/abyss/TooGraph/backend",
+      frontendDir: "/home/abyss/TooGraph/frontend",
+      backendPort: "3477",
+      frontendPort: "3477",
+    },
+  });
+
+  assert.deepEqual(plan.blockedOwners, []);
+  assert.deepEqual(plan.killPids, ["525747"]);
+});
+
+test("kills a port owner when its working directory belongs to this checkout", () => {
+  const plan = createPortReleasePlan({
+    port: "3477",
+    portPids: ["525747"],
+    processInfos: [
+      {
+        pid: "525747",
+        parentPid: "525627",
+        name: "python",
+        cwd: "/home/abyss/TooGraph/backend",
+        commandLine: "/home/abyss/miniconda3/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 3477",
+      },
+    ],
+    context: {
+      knownTooGraphPids: new Set(),
+      rootDir: "/home/abyss/TooGraph",
+      backendDir: "/home/abyss/TooGraph/backend",
+      frontendDir: "/home/abyss/TooGraph/frontend",
+      backendPort: "3477",
+      frontendPort: "3477",
+    },
+  });
+
+  assert.deepEqual(plan.blockedOwners, []);
+  assert.deepEqual(plan.killPids, ["525747"]);
+});
+
 test("blocks unknown port owners and includes process details for the user", () => {
   const plan = createPortReleasePlan({
     port: "8765",

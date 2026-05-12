@@ -29,6 +29,8 @@ export type EvalCaseCard = {
   error: string;
   checks: EvalCaseResult["check_results"];
   checkComparisons: EvalCheckComparison[];
+  primaryFailure: string;
+  failureDiagnostics: EvalFailureDiagnostic[];
 };
 
 export type EvalCheckComparison = {
@@ -38,6 +40,15 @@ export type EvalCheckComparison = {
   message: string;
   expectedPreview: string;
   actualPreview: string;
+};
+
+export type EvalFailureDiagnostic = {
+  key: string;
+  kind: "case_error" | "node_failure" | "check_failure";
+  label: string;
+  status: string;
+  message: string;
+  detailPreview: string;
 };
 
 export function chooseInitialEvalSuiteId(suites: EvalSuite[], currentSuiteId: string): string {
@@ -90,6 +101,7 @@ export function buildEvalCaseCards(cases: EvalCase[], run: EvalRun | null): Eval
     const result = resultsByCaseId.get(evalCase.case_id);
     const artifacts = result?.artifacts && typeof result.artifacts === "object" ? result.artifacts : {};
     const checkResults = result?.check_results ?? [];
+    const failureDiagnostics = buildFailureDiagnostics(evalCase.case_id, result);
     return {
       caseId: evalCase.case_id,
       title: evalCase.name || result?.case_name || evalCase.case_id,
@@ -105,6 +117,8 @@ export function buildEvalCaseCards(cases: EvalCase[], run: EvalRun | null): Eval
       error: result?.error || "",
       checks: checkResults,
       checkComparisons: buildCheckComparisons(evalCase.case_id, checkResults),
+      primaryFailure: failureDiagnostics[0]?.message || "",
+      failureDiagnostics,
     };
   });
 }
@@ -145,4 +159,56 @@ function buildCheckComparisons(caseId: string, checks: EvalCaseResult["check_res
       };
     })
     .filter((comparison) => comparison.expectedPreview || comparison.actualPreview || comparison.message);
+}
+
+function buildFailureDiagnostics(caseId: string, result: EvalCaseResult | undefined): EvalFailureDiagnostic[] {
+  if (!result || !["failed", "error"].includes(result.status)) {
+    return [];
+  }
+
+  const diagnostics: EvalFailureDiagnostic[] = [];
+  const caseError = textValue(result.error);
+  if (caseError) {
+    diagnostics.push({
+      key: `${caseId}-case-error`,
+      kind: "case_error",
+      label: translate("evals.caseError"),
+      status: result.status || "failed",
+      message: caseError,
+      detailPreview: "",
+    });
+  }
+
+  (result.node_failures ?? []).forEach((failure, index) => {
+    const label = textValue(failure.node_id) || textValue(failure.node) || translate("evals.nodeFailure");
+    const message = textValue(failure.error) || textValue(failure.message) || formatPreview(failure);
+    diagnostics.push({
+      key: `${caseId}-node-${index}`,
+      kind: "node_failure",
+      label,
+      status: textValue(failure.status) || "failed",
+      message,
+      detailPreview: "",
+    });
+  });
+
+  (result.check_results ?? [])
+    .filter((check) => check.status === "failed" || check.status === "error")
+    .forEach((check, index) => {
+      const message = check.message || formatPreview(check.actual) || formatPreview(check.details);
+      diagnostics.push({
+        key: `${caseId}-check-${index}`,
+        kind: "check_failure",
+        label: check.name || check.kind || translate("evals.checkFailure"),
+        status: check.status || "failed",
+        message,
+        detailPreview: formatPreview(check.details) || formatPreview(check.actual),
+      });
+    });
+
+  return diagnostics;
+}
+
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }

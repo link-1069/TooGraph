@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import sqlite3
 import tempfile
 import time
@@ -303,6 +304,46 @@ def rebuild_knowledge_base_embeddings(
         "chunkCount": len(rows),
         "embeddingCount": len(rows),
         "embeddingUpdatedAt": updated_at,
+    }
+
+
+def delete_knowledge_base(knowledge_base: str) -> dict[str, object]:
+    kb_id = _resolve_knowledge_base_id(knowledge_base)
+    with get_connection() as connection:
+        kb_row = connection.execute(
+            """
+            SELECT document_count, chunk_count
+            FROM knowledge_bases
+            WHERE kb_id = ?
+            """,
+            (kb_id,),
+        ).fetchone()
+        if kb_row is None:
+            raise ValueError(f"Unknown knowledge base '{kb_id}'.")
+
+        embedding_count = connection.execute(
+            "SELECT COUNT(*) FROM knowledge_chunk_embeddings WHERE kb_id = ?",
+            (kb_id,),
+        ).fetchone()[0]
+        connection.execute("DELETE FROM knowledge_chunks_fts WHERE kb_id = ?", (kb_id,))
+        connection.execute("DELETE FROM knowledge_chunk_embeddings WHERE kb_id = ?", (kb_id,))
+        connection.execute("DELETE FROM knowledge_chunks WHERE kb_id = ?", (kb_id,))
+        connection.execute("DELETE FROM knowledge_documents WHERE kb_id = ?", (kb_id,))
+        connection.execute("DELETE FROM knowledge_bases WHERE kb_id = ?", (kb_id,))
+        connection.commit()
+
+    kb_dir = KNOWLEDGE_ROOT / kb_id
+    if kb_dir.is_dir():
+        shutil.rmtree(kb_dir)
+    elif kb_dir.exists():
+        kb_dir.unlink()
+
+    return {
+        "kb_id": kb_id,
+        "deleted": True,
+        "documentCount": int(kb_row["document_count"] or 0),
+        "chunkCount": int(kb_row["chunk_count"] or 0),
+        "embeddingCount": int(embedding_count or 0),
     }
 
 

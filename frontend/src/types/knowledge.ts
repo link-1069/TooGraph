@@ -15,3 +15,38 @@ export type KnowledgeBaseRecord = {
   embeddingCount: number;
   embeddingUpdatedAt: string;
 };
+
+export type KnowledgeSearchResult = {
+  citation_id: string;
+  chunk_id: string;
+  title: string;
+  section: string;
+  summary: string;
+  source: string;
+  url: string;
+  score: number;
+  metadata: Record<string, unknown>;
+  retrieval: Record<string, unknown>;
+};
+
+export type KnowledgeRebuildReport = {
+  kb_id: string;
+  provider?: string;
+  model?: string;
+  dimension?: number;
+  documentCount?: number;
+  chunkCount?: number;
+  embeddingCount?: number;
+};
+
+export type KnowledgeDeleteReport = {
+  kb_id: string;
+  deleted: boolean;
+  documentCount?: number;
+  chunkCount?: number;
+  embeddingCount?: number;
+};
+
+export type KnowledgeImportReport = {
+  imported: KnowledgeBaseRecord[];
+};

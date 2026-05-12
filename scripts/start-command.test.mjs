@@ -22,3 +22,13 @@ test("frontend package does not expose a separate vite dev launcher", () => {
 
   assert.equal(Object.hasOwn(frontendPackage.scripts, "dev"), false);
 });
+
+test("start launcher supports an explicit bind host for container deployment", () => {
+  const startSource = readFileSync(resolve(rootDir, "scripts", "start.mjs"), "utf8");
+
+  assert.match(startSource, /process\.env\.TOOGRAPH_HOST/);
+  assert.match(startSource, /process\.env\.HOST/);
+  assert.match(startSource, /const appBindHost =/);
+  assert.match(startSource, /"--host",\s*appBindHost/);
+  assert.match(startSource, /appPublicHost/);
+});

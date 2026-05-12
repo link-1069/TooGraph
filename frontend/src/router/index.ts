@@ -5,6 +5,7 @@ const EditorPage = () => import("@/pages/EditorPage.vue");
 const EvalsPage = () => import("@/pages/EvalsPage.vue");
 const GraphLibraryPage = () => import("@/pages/GraphLibraryPage.vue");
 const HomePage = () => import("@/pages/HomePage.vue");
+const KnowledgePage = () => import("@/pages/KnowledgePage.vue");
 const ModelLogsPage = () => import("@/pages/ModelLogsPage.vue");
 const ModelProvidersPage = () => import("@/pages/ModelProvidersPage.vue");
 const PresetsPage = () => import("@/pages/PresetsPage.vue");
@@ -22,6 +23,7 @@ export const router = createRouter({
     { path: "/editor/new", component: EditorPage },
     { path: "/editor/:graphId", component: EditorPage },
     { path: "/library", component: GraphLibraryPage },
+    { path: "/knowledge", component: KnowledgePage },
     { path: "/evals", component: EvalsPage },
     { path: "/buddy", component: BuddyPage },
     { path: "/presets", component: PresetsPage },

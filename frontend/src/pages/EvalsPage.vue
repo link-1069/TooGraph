@@ -188,13 +188,34 @@
                   <span>{{ t("evals.failedCheckCount", { count: card.failedCheckCount }) }}</span>
                   <span>{{ t("evals.artifactCount", { count: card.artifactCount }) }}</span>
                 </div>
-                <p v-if="card.error" class="evals-page__error">{{ card.error }}</p>
+                <p v-if="card.error && card.failureDiagnostics.length === 0" class="evals-page__error">{{ card.error }}</p>
                 <pre v-if="card.finalOutputPreview" class="evals-page__preview">{{ card.finalOutputPreview }}</pre>
                 <div v-if="card.checks.length > 0" class="evals-page__check-list">
                   <span v-for="(check, index) in card.checks" :key="`${card.caseId}-${index}`" :class="statusBadgeClass(check.status)">
                     {{ check.kind || check.name || t("evals.check") }} · {{ check.status }}
                   </span>
                 </div>
+                <section v-if="card.failureDiagnostics.length > 0" class="evals-page__failure-diagnostics">
+                  <div class="evals-page__failure-summary">
+                    <span>{{ t("evals.failureDiagnostics") }}</span>
+                    <strong>{{ card.primaryFailure }}</strong>
+                  </div>
+                  <div class="evals-page__failure-list">
+                    <div
+                      v-for="diagnostic in card.failureDiagnostics"
+                      :key="diagnostic.key"
+                      class="evals-page__failure-row"
+                      :class="`evals-page__failure-row--${diagnostic.kind}`"
+                    >
+                      <div class="evals-page__failure-row-heading">
+                        <strong>{{ diagnostic.label }}</strong>
+                        <span :class="statusBadgeClass(diagnostic.status)">{{ diagnostic.status }}</span>
+                      </div>
+                      <p>{{ diagnostic.message }}</p>
+                      <pre v-if="diagnostic.detailPreview">{{ diagnostic.detailPreview }}</pre>
+                    </div>
+                  </div>
+                </section>
                 <details
                   v-if="card.expectedPreview || card.actualPreview || card.checkComparisons.length > 0"
                   class="evals-page__comparison"
@@ -797,6 +818,87 @@ onMounted(() => {
   border-radius: 8px;
   background: rgba(15, 23, 42, 0.05);
   color: var(--toograph-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.evals-page__failure-diagnostics {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 10px;
+  background: rgba(254, 242, 242, 0.72);
+}
+
+.evals-page__failure-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.evals-page__failure-summary span {
+  color: #991b1b;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.evals-page__failure-summary strong {
+  color: var(--toograph-text-strong);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.evals-page__failure-list {
+  display: grid;
+  gap: 8px;
+}
+
+.evals-page__failure-row {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border-top: 1px solid rgba(239, 68, 68, 0.12);
+  padding-top: 8px;
+}
+
+.evals-page__failure-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.evals-page__failure-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.evals-page__failure-row-heading strong {
+  min-width: 0;
+  color: var(--toograph-text-strong);
+  overflow-wrap: anywhere;
+}
+
+.evals-page__failure-row p {
+  margin: 0;
+  color: #991b1b;
+  font-weight: 700;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.evals-page__failure-row pre {
+  max-height: 96px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--toograph-text);
+  font-size: 0.76rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

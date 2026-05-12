@@ -149,3 +149,70 @@ test("eval page model builds compact expected and actual comparison previews", (
     },
   ]);
 });
+
+test("eval page model builds failed case diagnostics from errors, nodes, and checks", () => {
+  const cards = buildEvalCaseCards(
+    [
+      {
+        case_id: "case_one",
+        name: "Case One",
+        checks: [{ kind: "rule" }],
+      },
+    ] as never,
+    run({
+      case_results: [
+        {
+          case_id: "case_one",
+          case_name: "Case One",
+          status: "failed",
+          error: "Graph run ended with failed checks.",
+          node_failures: [
+            {
+              node_id: "citation_check",
+              status: "failed",
+              error: "No citation ids found.",
+            },
+          ],
+          check_results: [
+            {
+              status: "failed",
+              kind: "rule",
+              name: "Citation rule",
+              message: "Missing citation.",
+              details: { missing: ["[1]"] },
+              actual: { found: [] },
+            },
+          ],
+        },
+      ] as EvalRun["case_results"],
+    }),
+  );
+
+  assert.equal(cards[0].primaryFailure, "Graph run ended with failed checks.");
+  assert.deepEqual(cards[0].failureDiagnostics, [
+    {
+      key: "case_one-case-error",
+      kind: "case_error",
+      label: "用例错误",
+      status: "failed",
+      message: "Graph run ended with failed checks.",
+      detailPreview: "",
+    },
+    {
+      key: "case_one-node-0",
+      kind: "node_failure",
+      label: "citation_check",
+      status: "failed",
+      message: "No citation ids found.",
+      detailPreview: "",
+    },
+    {
+      key: "case_one-check-0",
+      kind: "check_failure",
+      label: "Citation rule",
+      status: "failed",
+      message: "Missing citation.",
+      detailPreview: '{"missing":["[1]"]}',
+    },
+  ]);
+});

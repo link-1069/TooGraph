@@ -45,6 +45,16 @@ test("EvalsPage renders compact case expected and actual comparison details", ()
   assert.match(componentSource, /class="evals-page__check-comparison"/);
 });
 
+test("EvalsPage renders failed case diagnostics before comparison details", () => {
+  assert.match(componentSource, /class="evals-page__failure-diagnostics"/);
+  assert.match(componentSource, /v-if="card\.failureDiagnostics\.length > 0"/);
+  assert.match(componentSource, /{{ t\("evals\.failureDiagnostics"\) }}/);
+  assert.match(componentSource, /{{ card\.primaryFailure }}/);
+  assert.match(componentSource, /v-for="diagnostic in card\.failureDiagnostics"/);
+  assert.match(componentSource, /class="evals-page__failure-row"/);
+  assert.match(componentSource, /{{ diagnostic\.message }}/);
+});
+
 test("EvalsPage uses a dense dashboard layout without nested cards", () => {
   assert.match(componentSource, /class="evals-page__suite-list"/);
   assert.match(componentSource, /class="evals-page__case-grid"/);

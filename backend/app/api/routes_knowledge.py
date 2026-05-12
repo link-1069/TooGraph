@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from app.knowledge.loader import delete_knowledge_base
+from app.knowledge.loader import import_official_knowledge_bases
 from app.knowledge.loader import list_knowledge_bases as load_knowledge_bases
 from app.knowledge.loader import rebuild_knowledge_base_embeddings
 from app.knowledge.loader import search_knowledge
@@ -45,6 +47,19 @@ def list_knowledge_endpoint(
 @router.get("/bases")
 def list_knowledge_bases() -> list[dict[str, object]]:
     return load_knowledge_bases()
+
+
+@router.post("/bases/import-official")
+def import_official_knowledge_bases_endpoint() -> dict[str, list[dict[str, object]]]:
+    return {"imported": import_official_knowledge_bases()}
+
+
+@router.delete("/bases/{knowledge_base}")
+def delete_knowledge_base_endpoint(knowledge_base: str) -> dict[str, object]:
+    try:
+        return delete_knowledge_base(knowledge_base)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/bases/{knowledge_base}/rebuild")

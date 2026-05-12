@@ -105,6 +105,21 @@
           <span class="app-shell__link-label">{{ t("nav.evals") }}</span>
         </RouterLink>
         <RouterLink
+          to="/knowledge"
+          class="app-shell__link"
+          data-virtual-affordance-id="app.nav.knowledge"
+          data-virtual-affordance-label="知识库"
+          data-virtual-affordance-role="navigation-link"
+          data-virtual-affordance-zone="app-shell"
+          data-virtual-affordance-actions="click"
+          data-virtual-affordance-path-after-click="/knowledge"
+          :class="{ 'app-shell__link--active': activeNavigationSection === 'knowledge' }"
+          :title="t('nav.knowledge')"
+        >
+          <ElIcon class="app-shell__link-icon"><Reading /></ElIcon>
+          <span class="app-shell__link-label">{{ t("nav.knowledge") }}</span>
+        </RouterLink>
+        <RouterLink
           to="/buddy"
           class="app-shell__link"
           data-virtual-affordance-id="app.nav.buddy"
@@ -217,6 +232,7 @@ import {
   DataAnalysis,
   DataLine,
   Opportunity,
+  Reading,
   Setting,
   Tickets,
 } from "@element-plus/icons-vue";
