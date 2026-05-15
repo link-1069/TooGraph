@@ -509,6 +509,7 @@ import {
   deleteBuddyChatSession,
   fetchBuddyChatMessages,
   fetchBuddyChatSessions,
+  fetchBuddyMemoryReviewTemplateBinding,
   fetchBuddyRunTemplateBinding,
 } from "../api/buddy.ts";
 import { fetchTemplate, fetchTemplates, restoreGraphRevision, runGraph } from "../api/graphs.ts";
@@ -582,7 +583,6 @@ import {
   shouldHoldBuddyQueueDrain,
 } from "./buddyPauseQueuePolicy.ts";
 import {
-  BUDDY_REVIEW_TEMPLATE_ID,
   BUDDY_MODE_OPTIONS,
   DEFAULT_BUDDY_MODE,
   buildBuddyChatGraph,
@@ -827,6 +827,7 @@ const buddyModelLoadError = ref("");
 const messages = ref<BuddyMessage[]>([]);
 const chatSessions = ref<BuddyChatSession[]>([]);
 const activeSessionId = ref<string | null>(null);
+const currentSessionId = computed(() => activeSessionId.value ?? "");
 const isSessionPanelOpen = ref(false);
 const isSessionLoading = ref(false);
 const activeSessionDeleteId = ref<string | null>(null);
@@ -4611,9 +4612,12 @@ async function startBuddyAutonomousReviewRun(mainRun: RunDetail) {
     return;
   }
   try {
-    const template = await fetchTemplate(BUDDY_REVIEW_TEMPLATE_ID);
+    const binding = await fetchBuddyMemoryReviewTemplateBinding();
+    const template = await fetchTemplate(binding.template_id);
     const graph = buildBuddyReviewGraph(template, {
       mainRun,
+      binding,
+      currentSessionId: currentSessionId.value,
       buddyModel: buddyModelRef.value,
     });
     const reviewRun = await runGraph(graph);

@@ -1,9 +1,13 @@
 import type { GraphNode, GraphPayload, InputNode, TemplateRecord } from "../types/node-system.ts";
 import type { RunDetail } from "../types/run.ts";
-import type { BuddyRunInputSource, BuddyRunTemplateBinding } from "../types/buddy.ts";
+import type { BuddyMemoryReviewInputSource, BuddyMemoryReviewTemplateBinding, BuddyRunInputSource, BuddyRunTemplateBinding } from "../types/buddy.ts";
 import { GLOBAL_RUNTIME_MODEL_OPTION_VALUE } from "../lib/runtimeModelCatalog.ts";
 import { routeStreamingJsonStateText } from "../lib/streamingJsonStateRouter.ts";
-import { buildBuddyHomeContextValue, validateBuddyRunTemplateBinding } from "./buddyTemplateBindingModel.ts";
+import {
+  buildBuddyHomeContextValue,
+  validateBuddyMemoryReviewTemplateBinding,
+  validateBuddyRunTemplateBinding,
+} from "./buddyTemplateBindingModel.ts";
 
 export const BUDDY_REVIEW_TEMPLATE_ID = "buddy_autonomous_review";
 export const BUDDY_REPLY_STATE_KEY = "state_4";
@@ -81,6 +85,8 @@ export type BuddySkillRuntimeContext = {
 
 export type BuildBuddyReviewGraphInput = {
   mainRun: RunDetail;
+  binding: BuddyMemoryReviewTemplateBinding;
+  currentSessionId: string;
   buddyModel?: unknown;
 };
 
@@ -207,28 +213,27 @@ export function buildBuddyReviewGraph(template: TemplateRecord, input: BuildBudd
   };
   applyBuddyModelOverride(graph, input.buddyModel);
 
-  const stateValues: Record<string, unknown> = {
-    source_run_id: input.mainRun.run_id,
-    user_message: resolveRunStateValueByName(input.mainRun, "user_message", ""),
-    conversation_history: resolveRunStateValueByName(input.mainRun, "conversation_history", ""),
-    page_context: resolveRunStateValueByName(input.mainRun, "page_context", ""),
-    buddy_context: resolveRunStateValueByName(input.mainRun, "buddy_context", ""),
-    request_understanding: resolveRunStateValueByName(input.mainRun, "request_understanding", {}),
-    capability_result: resolveRunStateValueByName(input.mainRun, "capability_result", {}),
-    capability_review: resolveRunStateValueByName(input.mainRun, "capability_review", {}),
-    final_reply: resolveRunStateValueByName(input.mainRun, "final_reply", resolveBuddyReplyText(input.mainRun)),
+  const validation = validateBuddyMemoryReviewTemplateBinding(template, input.binding);
+  if (!validation.valid) {
+    throw new Error(`Buddy memory review template binding is invalid: ${validation.issues.join(" ")}`);
+  }
+  applyBuddyRunTemplateBinding(graph, input.binding, buildBuddyMemoryReviewRuntimeSourceValues(input));
+
+  const outputDefaults: Record<string, unknown> = {
     autonomous_review: {},
     improvement_candidates: [],
+    memory_candidates: [],
+    memory_filter_report: { accepted: [], rejected: [] },
     memory_update_plan: { has_updates: false, commands: [] },
+    memory_review_result: "",
     memory_write_success: false,
     applied_memory_commands: [],
     skipped_memory_commands: [],
     memory_write_result: "",
   };
 
-  for (const [stateName, value] of Object.entries(stateValues)) {
+  for (const [stateName, value] of Object.entries(outputDefaults)) {
     setStateValueByName(graph, stateName, value);
-    syncInputNodeValueByName(graph, stateName, value);
   }
 
   return graph;
@@ -428,9 +433,9 @@ export function resolveBuddyRunActivityFromRunEvent(
   };
 }
 
-type BuddyRuntimeSourceValues = Record<BuddyRunInputSource, unknown>;
+type BuddyRuntimeSourceValues<TSource extends string> = Record<TSource, unknown>;
 
-function buildBuddyRuntimeSourceValues(input: BuildBuddyChatGraphInput): BuddyRuntimeSourceValues {
+function buildBuddyRuntimeSourceValues(input: BuildBuddyChatGraphInput): BuddyRuntimeSourceValues<BuddyRunInputSource> {
   return {
     current_message: input.userMessage,
     conversation_history: formatBuddyHistory(input.history),
@@ -439,10 +444,27 @@ function buildBuddyRuntimeSourceValues(input: BuildBuddyChatGraphInput): BuddyRu
   };
 }
 
+function buildBuddyMemoryReviewRuntimeSourceValues(
+  input: BuildBuddyReviewGraphInput,
+): BuddyRuntimeSourceValues<BuddyMemoryReviewInputSource> {
+  return {
+    source_run_id: input.mainRun.run_id,
+    current_session_id: input.currentSessionId,
+    user_message: resolveRunStateValueByName(input.mainRun, "user_message", ""),
+    conversation_history: resolveRunStateValueByName(input.mainRun, "conversation_history", ""),
+    page_context: resolveRunStateValueByName(input.mainRun, "page_context", ""),
+    buddy_home_context: buildBuddyHomeContextValue(),
+    request_understanding: resolveRunStateValueByName(input.mainRun, "request_understanding", {}),
+    capability_result: resolveRunStateValueByName(input.mainRun, "capability_result", {}),
+    capability_review: resolveRunStateValueByName(input.mainRun, "capability_review", {}),
+    final_reply: resolveRunStateValueByName(input.mainRun, "final_reply", resolveBuddyReplyText(input.mainRun)),
+  };
+}
+
 function applyBuddyRunTemplateBinding(
   graph: GraphPayload,
-  binding: BuddyRunTemplateBinding,
-  sourceValues: BuddyRuntimeSourceValues,
+  binding: Pick<BuddyRunTemplateBinding, "input_bindings"> | Pick<BuddyMemoryReviewTemplateBinding, "input_bindings">,
+  sourceValues: Record<string, unknown>,
 ) {
   for (const [nodeId, source] of Object.entries(binding.input_bindings ?? {})) {
     const node = graph.nodes[nodeId];
@@ -678,6 +700,11 @@ const BUDDY_ACTIVITY_PHASE_BY_NODE_ID: Record<string, string> = {
   buddy_final_reply: "draftingReply",
   draft_final_reply: "draftingReply",
   decide_autonomous_review: "reviewingMemory",
+  prepare_session_recall_request: "reviewingMemory",
+  recall_related_sessions: "reviewingMemory",
+  extract_memory_candidates: "reviewingMemory",
+  filter_memory_candidates: "reviewingMemory",
+  merge_memory_document: "reviewingMemory",
   has_memory_updates: "reviewingMemory",
   write_memory_updates: "reviewingMemory",
 };

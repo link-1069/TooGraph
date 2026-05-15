@@ -141,6 +141,11 @@ def get_run_template_binding_endpoint() -> dict[str, Any]:
     return store.load_run_template_binding()
 
 
+@router.get("/memory-review-template-binding")
+def get_memory_review_template_binding_endpoint() -> dict[str, Any]:
+    return store.load_memory_review_template_binding()
+
+
 @router.get("/sessions")
 def list_chat_sessions_endpoint(include_deleted: bool = Query(default=False)) -> list[dict[str, Any]]:
     return store.list_chat_sessions(include_deleted=include_deleted)

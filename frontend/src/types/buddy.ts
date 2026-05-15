@@ -32,6 +32,25 @@ export type BuddyRunTemplateBinding = {
   updated_at?: string;
 };
 
+export type BuddyMemoryReviewInputSource =
+  | "source_run_id"
+  | "current_session_id"
+  | "user_message"
+  | "conversation_history"
+  | "page_context"
+  | "buddy_home_context"
+  | "request_understanding"
+  | "capability_result"
+  | "capability_review"
+  | "final_reply";
+
+export type BuddyMemoryReviewTemplateBinding = {
+  version?: number;
+  template_id: string;
+  input_bindings: Record<string, BuddyMemoryReviewInputSource>;
+  updated_at?: string;
+};
+
 export type BuddyRunTemplateBindingValidation = {
   valid: boolean;
   issues: string[];

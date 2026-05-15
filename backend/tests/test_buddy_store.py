@@ -623,6 +623,68 @@ class BuddyStoreTests(unittest.TestCase):
                         change_reason="测试拒绝断点模板绑定",
                     )
 
+    def test_memory_review_template_binding_defaults_and_revision_restore(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_memory_review_template_can_be_bound", lambda _template_id: None
+            ):
+                default_binding = store.load_memory_review_template_binding()
+                updated = store.save_memory_review_template_binding(
+                    {
+                        "template_id": "custom_memory_review",
+                        "input_bindings": {
+                            "input_source_run_id": "source_run_id",
+                            "input_current_session_id": "current_session_id",
+                            "input_user_message": "user_message",
+                            "input_final_reply": "final_reply",
+                            "input_buddy_context": "buddy_home_context",
+                        },
+                    },
+                    changed_by="user",
+                    change_reason="测试更新记忆复盘绑定",
+                )
+                revisions = store.list_revisions(
+                    target_type="memory_review_template_binding",
+                    target_id="memory_review_template_binding",
+                )
+                restored = store.restore_revision(
+                    revisions[-1]["revision_id"],
+                    changed_by="user",
+                    change_reason="测试恢复记忆复盘绑定",
+                )
+                loaded = store.load_memory_review_template_binding()
+
+        self.assertEqual(default_binding["template_id"], "buddy_autonomous_review")
+        self.assertEqual(default_binding["input_bindings"]["input_current_session_id"], "current_session_id")
+        self.assertEqual(updated["template_id"], "custom_memory_review")
+        self.assertEqual(len(revisions), 1)
+        self.assertEqual(revisions[0]["previous_value"]["template_id"], "buddy_autonomous_review")
+        self.assertEqual(restored["target_type"], "memory_review_template_binding")
+        self.assertEqual(restored["target_id"], "memory_review_template_binding")
+        self.assertEqual(loaded["template_id"], "buddy_autonomous_review")
+
+    def test_memory_review_template_binding_rejects_internal_state_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_memory_review_template_can_be_bound", lambda _template_id: None
+            ):
+                with self.assertRaisesRegex(ValueError, "Unsupported Buddy memory review input source"):
+                    store.save_memory_review_template_binding(
+                        {
+                            "template_id": "buddy_autonomous_review",
+                            "input_bindings": {
+                                "input_source_run_id": "source_run_id",
+                                "input_current_session_id": "current_session_id",
+                                "input_user_message": "user_message",
+                                "input_final_reply": "final_reply",
+                                "input_buddy_context": "buddy_home_context",
+                                "input_memory_update_plan": "memory_update_plan",
+                            },
+                        },
+                        changed_by="user",
+                        change_reason="测试拒绝内部状态绑定",
+                    )
+
     def test_report_create_writes_markdown_file_and_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             buddy_home = Path(temp_dir) / "buddy_home"

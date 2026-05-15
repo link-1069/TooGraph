@@ -3,6 +3,7 @@ import type {
   BuddyChatSession,
   BuddyCommandRecord,
   BuddyCommandResponse,
+  BuddyMemoryReviewTemplateBinding,
   BuddyMemoryDocument,
   BuddyPolicy,
   BuddyProfile,
@@ -65,6 +66,14 @@ export function fetchBuddyRunTemplateBinding() {
 
 export function updateBuddyRunTemplateBinding(payload: BuddyRunTemplateBinding, changeReason: string) {
   return executeBuddyCommand<BuddyRunTemplateBinding>("run_template_binding.update", payload, changeReason);
+}
+
+export function fetchBuddyMemoryReviewTemplateBinding() {
+  return apiGet<BuddyMemoryReviewTemplateBinding>("/api/buddy/memory-review-template-binding");
+}
+
+export function updateBuddyMemoryReviewTemplateBinding(payload: BuddyMemoryReviewTemplateBinding, changeReason: string) {
+  return executeBuddyCommand<BuddyMemoryReviewTemplateBinding>("memory_review_template_binding.update", payload, changeReason);
 }
 
 export function fetchBuddyChatSessions(includeDeleted = false) {

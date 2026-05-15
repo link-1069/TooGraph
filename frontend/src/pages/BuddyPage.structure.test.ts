@@ -16,9 +16,11 @@ test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () 
   assert.match(source, /fetchBuddySessionSummary/);
   assert.match(source, /fetchBuddyRevisions/);
   assert.match(source, /fetchBuddyRunTemplateBinding/);
+  assert.match(source, /fetchBuddyMemoryReviewTemplateBinding/);
   assert.match(source, /fetchBuddyCommands/);
   assert.match(source, /restoreBuddyRevision/);
   assert.match(source, /updateBuddyRunTemplateBinding/);
+  assert.match(source, /updateBuddyMemoryReviewTemplateBinding/);
   assert.match(source, /fetchTemplates/);
   assert.match(source, /fetchTemplate/);
   assert.match(source, /<ElTabs/);
@@ -32,6 +34,8 @@ test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () 
   assert.match(source, /name="mascot-debug"/);
   assert.match(source, /buildBuddyRunTemplateInputRows/);
   assert.match(source, /validateBuddyRunTemplateBinding/);
+  assert.match(source, /buildBuddyMemoryReviewTemplateInputRows/);
+  assert.match(source, /validateBuddyMemoryReviewTemplateBinding/);
   assert.match(source, /memoryDocumentDraft/);
   assert.match(source, /saveMemoryDocument/);
   assert.doesNotMatch(source, /fetchPlatformMemories/);
@@ -62,7 +66,7 @@ test("BuddyPage opens template binding first and renders it as Buddy input rows"
   );
   const bindingSelectBlocks =
     source.match(/<ElSelect[\s\S]*?class="buddy-page__(?:template-select|binding-select) toograph-select"[\s\S]*?>/g) ?? [];
-  assert.equal(bindingSelectBlocks.length, 2);
+  assert.equal(bindingSelectBlocks.length, 4);
   for (const block of bindingSelectBlocks) {
     assert.match(block, /:teleported="true"/);
     assert.match(block, /placement="bottom-start"/);
@@ -79,6 +83,14 @@ test("BuddyPage opens template binding first and renders it as Buddy input rows"
   assert.match(source, /bindingTemplateSelectRef/);
   assert.match(source, /setBindingInputSelectRef/);
   assert.match(source, /closeBindingSelect\(source\);/);
+  assert.match(source, /v-for="row in memoryReviewBindingSourceRows"/);
+  assert.match(source, /buildBuddyMemoryReviewInputNodeOptions/);
+  assert.match(source, /setBuddyMemoryReviewTemplateSourceBinding/);
+  assert.match(source, /@change="setMemoryReviewBindingInputNode\(row\.source, \$event\)"/);
+  assert.match(source, /fetchBuddyMemoryReviewTemplateBinding\(\)/);
+  assert.match(source, /updateBuddyMemoryReviewTemplateBinding/);
+  assert.match(source, /memoryReviewTemplateRoleBlocked/);
+  assert.match(source, /saveMemoryReviewBinding/);
   assert.doesNotMatch(source, /:model-value="bindingDraft\.input_bindings\[row\.nodeId\]/);
   assert.doesNotMatch(source, /function setBindingSource\(nodeId: string, value: unknown\)/);
   assert.doesNotMatch(source, /<ElTable :data="bindingSourceRows"/);

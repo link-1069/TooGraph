@@ -6,6 +6,7 @@ import {
   createBuddyChatSession,
   deleteBuddyChatSession,
   fetchBuddyMemoryDocument,
+  fetchBuddyMemoryReviewTemplateBinding,
   fetchBuddyRunTemplateBinding,
   fetchBuddyCommands,
   fetchBuddyChatMessages,
@@ -14,6 +15,7 @@ import {
   restoreBuddyRevision,
   updateBuddyChatSession,
   updateBuddyMemoryDocument,
+  updateBuddyMemoryReviewTemplateBinding,
   updateBuddyProfile,
   updateBuddyRunTemplateBinding,
 } from "./buddy.ts";
@@ -110,6 +112,35 @@ test("buddy API manages run template binding through command flow", async () => 
     action: "run_template_binding.update",
     payload: { template_id: "custom_loop", input_bindings: { input_prompt: "current_message" } },
     change_reason: "用户更新伙伴运行模板绑定。",
+  });
+  globalThis.fetch = originalFetch;
+});
+
+test("buddy API manages memory review template binding through command flow", async () => {
+  const requests: Array<{ url: string; body: unknown }> = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    requests.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null });
+    const payload = init?.method === "POST"
+      ? { result: { template_id: "custom_memory_review", input_bindings: { input_source_run_id: "source_run_id" } } }
+      : { template_id: "custom_memory_review", input_bindings: { input_source_run_id: "source_run_id" } };
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await fetchBuddyMemoryReviewTemplateBinding();
+  await updateBuddyMemoryReviewTemplateBinding(
+    { template_id: "custom_memory_review", input_bindings: { input_source_run_id: "source_run_id" } },
+    "用户更新伙伴记忆复盘模板绑定。",
+  );
+
+  assert.equal(requests[0].url, "/api/buddy/memory-review-template-binding");
+  assert.equal(requests[1].url, "/api/buddy/commands");
+  assert.deepEqual(requests[1].body, {
+    action: "memory_review_template_binding.update",
+    payload: { template_id: "custom_memory_review", input_bindings: { input_source_run_id: "source_run_id" } },
+    change_reason: "用户更新伙伴记忆复盘模板绑定。",
   });
   globalThis.fetch = originalFetch;
 });

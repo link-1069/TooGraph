@@ -40,6 +40,10 @@ RUN_TEMPLATE_BINDING_KEY = "run_template_binding"
 RUN_TEMPLATE_BINDING_TARGET_TYPE = "run_template_binding"
 RUN_TEMPLATE_BINDING_TARGET_ID = "run_template_binding"
 RUN_TEMPLATE_BINDING_VERSION = 1
+MEMORY_REVIEW_TEMPLATE_BINDING_KEY = "memory_review_template_binding"
+MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_TYPE = "memory_review_template_binding"
+MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_ID = "memory_review_template_binding"
+MEMORY_REVIEW_TEMPLATE_BINDING_VERSION = 1
 CAPABILITY_USAGE_STATS_TARGET_TYPE = "capability_usage_stats"
 CAPABILITY_USAGE_STATS_TARGET_ID = "capability_usage_stats"
 MAX_CAPABILITY_USAGE_RECENT_RUNS = 5
@@ -47,6 +51,25 @@ ALLOWED_RUN_TEMPLATE_INPUT_SOURCES = {
     "current_message",
     "conversation_history",
     "page_context",
+    "buddy_home_context",
+}
+ALLOWED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES = {
+    "source_run_id",
+    "current_session_id",
+    "user_message",
+    "conversation_history",
+    "page_context",
+    "buddy_home_context",
+    "request_understanding",
+    "capability_result",
+    "capability_review",
+    "final_reply",
+}
+REQUIRED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES = {
+    "source_run_id",
+    "current_session_id",
+    "user_message",
+    "final_reply",
     "buddy_home_context",
 }
 DEFAULT_RUN_TEMPLATE_BINDING = {
@@ -57,6 +80,22 @@ DEFAULT_RUN_TEMPLATE_BINDING = {
         "input_conversation_history": "conversation_history",
         "input_page_context": "page_context",
         "input_buddy_context": "buddy_home_context",
+    },
+}
+DEFAULT_MEMORY_REVIEW_TEMPLATE_BINDING = {
+    "version": MEMORY_REVIEW_TEMPLATE_BINDING_VERSION,
+    "template_id": "buddy_autonomous_review",
+    "input_bindings": {
+        "input_source_run_id": "source_run_id",
+        "input_current_session_id": "current_session_id",
+        "input_user_message": "user_message",
+        "input_conversation_history": "conversation_history",
+        "input_page_context": "page_context",
+        "input_buddy_context": "buddy_home_context",
+        "input_request_understanding": "request_understanding",
+        "input_capability_result": "capability_result",
+        "input_capability_review": "capability_review",
+        "input_final_reply": "final_reply",
     },
 }
 
@@ -251,6 +290,44 @@ def save_run_template_binding(payload: dict[str, Any], *, changed_by: str, chang
         )
         connection.commit()
     return load_run_template_binding()
+
+
+def load_memory_review_template_binding() -> dict[str, Any]:
+    with _connection() as connection:
+        row = connection.execute(
+            "SELECT value_json FROM buddy_kv WHERE key = ?",
+            (MEMORY_REVIEW_TEMPLATE_BINDING_KEY,),
+        ).fetchone()
+    if not row:
+        return _normalize_memory_review_template_binding(DEFAULT_MEMORY_REVIEW_TEMPLATE_BINDING)
+    try:
+        value = json.loads(str(row["value_json"] or "{}"))
+    except Exception:
+        value = {}
+    if not isinstance(value, dict):
+        value = {}
+    return _normalize_memory_review_template_binding(value)
+
+
+def save_memory_review_template_binding(
+    payload: dict[str, Any],
+    *,
+    changed_by: str,
+    change_reason: str,
+) -> dict[str, Any]:
+    next_value = _normalize_memory_review_template_binding(payload)
+    previous = load_memory_review_template_binding()
+    _write_with_revision(
+        MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_TYPE,
+        MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_ID,
+        "update",
+        previous,
+        next_value,
+        changed_by,
+        change_reason,
+    )
+    _write_kv(MEMORY_REVIEW_TEMPLATE_BINDING_KEY, next_value, next_value["updated_at"])
+    return load_memory_review_template_binding()
 
 
 def list_chat_sessions(*, include_deleted: bool = False) -> list[dict[str, Any]]:
@@ -1235,6 +1312,19 @@ def restore_revision(revision_id: str, *, changed_by: str, change_reason: str) -
                 (RUN_TEMPLATE_BINDING_KEY, _json_dumps(restored), utc_now_iso()),
             )
             connection.commit()
+    elif target_type == MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_TYPE:
+        current = load_memory_review_template_binding()
+        restored = _normalize_memory_review_template_binding(restored)
+        _write_with_revision(
+            MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_TYPE,
+            MEMORY_REVIEW_TEMPLATE_BINDING_TARGET_ID,
+            "restore",
+            current,
+            restored,
+            changed_by,
+            change_reason,
+        )
+        _write_kv(MEMORY_REVIEW_TEMPLATE_BINDING_KEY, restored, utc_now_iso())
     else:
         raise ValueError(f"Unsupported revision target type: {target_type}")
     return {"target_type": target_type, "target_id": target_id, "current_value": restored}
@@ -1366,12 +1456,55 @@ def _normalize_run_template_binding(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _normalize_memory_review_template_binding(payload: dict[str, Any]) -> dict[str, Any]:
+    template_id = str(payload.get("template_id") or "").strip()
+    if not template_id:
+        raise ValueError("template_id is required.")
+    _ensure_memory_review_template_can_be_bound(template_id)
+    raw_bindings = payload.get("input_bindings")
+    if not isinstance(raw_bindings, dict):
+        raise ValueError("input_bindings must be an object.")
+    input_bindings: dict[str, str] = {}
+    for node_id, source in raw_bindings.items():
+        normalized_node_id = str(node_id or "").strip()
+        normalized_source = str(source or "").strip()
+        if not normalized_node_id or not normalized_source:
+            continue
+        if normalized_source not in ALLOWED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES:
+            raise ValueError(f"Unsupported Buddy memory review input source: {normalized_source}")
+        if normalized_source in input_bindings.values():
+            raise ValueError(f"Buddy memory review input source is already bound: {normalized_source}")
+        input_bindings[normalized_node_id] = normalized_source
+    missing_sources = sorted(REQUIRED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES - set(input_bindings.values()))
+    if missing_sources:
+        raise ValueError(f"Missing required Buddy memory review input source(s): {', '.join(missing_sources)}")
+    return {
+        "version": MEMORY_REVIEW_TEMPLATE_BINDING_VERSION,
+        "template_id": template_id,
+        "input_bindings": input_bindings,
+        "updated_at": str(payload.get("updated_at") or utc_now_iso()),
+    }
+
+
 def _ensure_run_template_can_be_bound(template_id: str) -> None:
     from app.templates.loader import load_template_record, template_has_breakpoint_metadata
 
     template = load_template_record(template_id)
     if template_has_breakpoint_metadata(template):
         raise ValueError("Buddy run template binding cannot target a template with breakpoint metadata.")
+
+
+def _ensure_memory_review_template_can_be_bound(template_id: str) -> None:
+    from app.templates.loader import load_template_record, template_has_breakpoint_metadata
+
+    template = load_template_record(template_id)
+    if template_has_breakpoint_metadata(template):
+        raise ValueError("Buddy memory review template binding cannot target a template with breakpoint metadata.")
+    metadata = template.get("metadata") if isinstance(template.get("metadata"), dict) else {}
+    role = str(metadata.get("role") or "").strip()
+    if role == "buddy_autonomous_review" or metadata.get("buddy_memory_review") is True or metadata.get("buddyMemoryReview") is True:
+        return
+    raise ValueError("Buddy memory review template binding must target a Buddy memory review template.")
 
 
 def _write_json(file_name: str, payload: Any) -> None:

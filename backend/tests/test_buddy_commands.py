@@ -154,6 +154,52 @@ class BuddyCommandRouteTests(unittest.TestCase):
         self.assertEqual(revisions_response.status_code, 200)
         self.assertEqual(revisions_response.json()[-1]["previous_value"]["template_id"], "buddy_autonomous_loop")
 
+    def test_memory_review_template_binding_update_command_records_command_and_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_memory_review_template_can_be_bound", lambda _template_id: None
+            ):
+                with TestClient(app) as client:
+                    default_response = client.get("/api/buddy/memory-review-template-binding")
+                    response = client.post(
+                        "/api/buddy/commands",
+                        json={
+                            "action": "memory_review_template_binding.update",
+                            "payload": {
+                                "template_id": "custom_memory_review",
+                                "input_bindings": {
+                                    "input_source_run_id": "source_run_id",
+                                    "input_current_session_id": "current_session_id",
+                                    "input_user_message": "user_message",
+                                    "input_final_reply": "final_reply",
+                                    "input_buddy_context": "buddy_home_context",
+                                },
+                            },
+                            "run_id": "run_memory_review_binding_1",
+                            "change_reason": "Manual memory review binding update.",
+                        },
+                    )
+                    revisions_response = client.get(
+                        "/api/buddy/revisions",
+                        params={
+                            "target_type": "memory_review_template_binding",
+                            "target_id": "memory_review_template_binding",
+                        },
+                    )
+
+        self.assertEqual(default_response.status_code, 200)
+        self.assertEqual(default_response.json()["template_id"], "buddy_autonomous_review")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["result"]["template_id"], "custom_memory_review")
+        self.assertEqual(body["command"]["action"], "memory_review_template_binding.update")
+        self.assertEqual(body["command"]["target_type"], "memory_review_template_binding")
+        self.assertEqual(body["command"]["target_id"], "memory_review_template_binding")
+        self.assertEqual(body["command"]["run_id"], "run_memory_review_binding_1")
+        self.assertTrue(body["command"]["revision_id"].startswith("rev_"))
+        self.assertEqual(revisions_response.status_code, 200)
+        self.assertEqual(revisions_response.json()[-1]["previous_value"]["template_id"], "buddy_autonomous_review")
+
     def test_report_create_command_records_file_report_and_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             buddy_home = Path(temp_dir) / "buddy_home"

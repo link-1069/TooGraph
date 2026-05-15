@@ -889,12 +889,15 @@ test("BuddyWidget starts visible runs from the saved template binding", () => {
 });
 
 test("BuddyWidget starts autonomous review as a separate background run after the visible reply", () => {
-  assert.match(componentSource, /BUDDY_REVIEW_TEMPLATE_ID/);
   assert.match(componentSource, /buildBuddyReviewGraph/);
+  assert.match(componentSource, /fetchBuddyMemoryReviewTemplateBinding/);
   assert.match(componentSource, /void startBuddyAutonomousReviewRun\(runDetail\);/);
   assert.match(componentSource, /async function startBuddyAutonomousReviewRun\(mainRun: RunDetail\)/);
-  assert.match(componentSource, /fetchTemplate\(BUDDY_REVIEW_TEMPLATE_ID\)/);
+  assert.match(componentSource, /const binding = await fetchBuddyMemoryReviewTemplateBinding\(\);/);
+  assert.match(componentSource, /fetchTemplate\(binding\.template_id\)/);
   assert.match(componentSource, /const graph = buildBuddyReviewGraph\(template,\s*\{[\s\S]*mainRun,[\s\S]*buddyModel: buddyModelRef\.value,[\s\S]*\}\);/);
+  assert.match(componentSource, /binding,/);
+  assert.match(componentSource, /currentSessionId: currentSessionId\.value/);
   assert.match(componentSource, /const reviewRun = await runGraph\(graph\);/);
   assert.match(componentSource, /void pollBuddyAutonomousReviewRun\(reviewRun\.run_id\);/);
   assert.match(componentSource, /const backgroundReviewAbortControllers = new Set<AbortController>\(\);/);

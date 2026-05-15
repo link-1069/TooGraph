@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import type { RunDetail } from "../types/run.ts";
 import type { AgentNode, InputNode, TemplateRecord } from "../types/node-system.ts";
-import type { BuddyRunTemplateBinding } from "../types/buddy.ts";
+import type { BuddyMemoryReviewTemplateBinding, BuddyRunTemplateBinding } from "../types/buddy.ts";
 
 import {
   BUDDY_REVIEW_TEMPLATE_ID,
@@ -246,6 +246,7 @@ function createReviewTemplate(): TemplateRecord {
     status: "active",
     state_schema: {
       source_run_id: { name: "source_run_id", description: "", type: "text", value: "", color: "#475569" },
+      current_session_id: { name: "current_session_id", description: "", type: "text", value: "", color: "#475569" },
       user_message: { name: "user_message", description: "", type: "text", value: "", color: "#d97706" },
       conversation_history: { name: "conversation_history", description: "", type: "markdown", value: "", color: "#64748b" },
       page_context: { name: "page_context", description: "", type: "markdown", value: "", color: "#0891b2" },
@@ -272,6 +273,15 @@ function createReviewTemplate(): TemplateRecord {
         writes: [{ state: "source_run_id", mode: "replace" }],
         config: { value: "" },
       },
+      input_current_session_id: {
+        kind: "input",
+        name: "当前会话 ID",
+        description: "",
+        ui: { position: { x: 80, y: 0 }, collapsed: false },
+        reads: [],
+        writes: [{ state: "current_session_id", mode: "replace" }],
+        config: { value: "" },
+      },
       input_user_message: {
         kind: "input",
         name: "用户消息",
@@ -288,6 +298,15 @@ function createReviewTemplate(): TemplateRecord {
         ui: { position: { x: 80, y: 280 }, collapsed: false },
         reads: [],
         writes: [{ state: "final_reply", mode: "replace" }],
+        config: { value: "" },
+      },
+      input_buddy_context: {
+        kind: "input",
+        name: "伙伴 Home",
+        description: "",
+        ui: { position: { x: 80, y: 360 }, collapsed: false },
+        reads: [],
+        writes: [{ state: "buddy_context", mode: "replace" }],
         config: { value: "" },
       },
       decide_autonomous_review: {
@@ -355,7 +374,20 @@ function createReviewTemplate(): TemplateRecord {
       { source: "input_final_reply", target: "decide_autonomous_review" },
     ],
     conditional_edges: [],
-    metadata: { internal: true },
+    metadata: { internal: true, role: "buddy_autonomous_review" },
+  };
+}
+
+function createMemoryReviewBinding(): BuddyMemoryReviewTemplateBinding {
+  return {
+    template_id: "buddy_autonomous_review",
+    input_bindings: {
+      input_source_run_id: "source_run_id",
+      input_current_session_id: "current_session_id",
+      input_user_message: "user_message",
+      input_final_reply: "final_reply",
+      input_buddy_context: "buddy_home_context",
+    },
   };
 }
 
@@ -608,6 +640,8 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
         },
       },
     } as RunDetail,
+    binding: createMemoryReviewBinding(),
+    currentSessionId: "session_live_1",
     buddyModel: "openai/gpt-4.1",
   });
 
@@ -617,8 +651,14 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
   assert.equal(graph.metadata.buddy_parent_run_id, "run_visible_1");
   assert.equal(graph.metadata.internal, true);
   assert.equal(graph.state_schema.source_run_id.value, "run_visible_1");
+  assert.equal(graph.state_schema.current_session_id.value, "session_live_1");
   assert.equal(graph.state_schema.user_message.value, "你好");
   assert.equal(graph.state_schema.final_reply.value, "你好，我在。");
+  assert.deepEqual(graph.state_schema.buddy_context.value, {
+    kind: "local_folder",
+    root: "buddy_home",
+    selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
+  });
   assert.deepEqual(graph.state_schema.autonomous_review.value, {});
   assert.deepEqual(graph.state_schema.improvement_candidates.value, []);
   assert.deepEqual(graph.state_schema.memory_update_plan.value, { has_updates: false, commands: [] });
@@ -628,9 +668,11 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
   assert.equal(graph.state_schema.memory_write_result.value, "");
   assert.equal(graph.state_schema.writeback_commands, undefined);
   assertInputNode(graph.nodes.input_source_run_id);
+  assertInputNode(graph.nodes.input_current_session_id);
   assertInputNode(graph.nodes.input_user_message);
   assertInputNode(graph.nodes.input_final_reply);
   assert.equal(graph.nodes.input_source_run_id.config.value, "run_visible_1");
+  assert.equal(graph.nodes.input_current_session_id.config.value, "session_live_1");
   assert.equal(graph.nodes.input_user_message.config.value, "你好");
   assert.equal(graph.nodes.input_final_reply.config.value, "你好，我在。");
   assertAgentNode(graph.nodes.decide_autonomous_review);
