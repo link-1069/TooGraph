@@ -1,4 +1,5 @@
 import type { GraphNode } from "../../types/node-system.ts";
+import { resolveManagedToolInputSlotKey } from "../../lib/managed-state-slots.ts";
 import {
   shouldExposeVirtualAnyInput,
   shouldExposeVirtualAnyOutput,
@@ -36,7 +37,7 @@ export function buildAnchorModel(nodeId: string, node: GraphNode): NodeAnchorMod
         },
       ]
     : node.reads.map((binding, index) => ({
-        id: `state-in:${binding.state}`,
+        id: `state-in:${resolveManagedToolInputSlotKey(binding) ?? binding.state}`,
         side: "left" as const,
         lane: "body" as const,
         row: index,

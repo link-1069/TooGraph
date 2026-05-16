@@ -5,6 +5,7 @@ import { buildNodeCardViewModel } from "./nodeCardViewModel.ts";
 import { VIRTUAL_ANY_INPUT_STATE_KEY, VIRTUAL_ANY_OUTPUT_STATE_KEY } from "../../lib/virtual-any-input.ts";
 import type { GraphNode, StateDefinition } from "../../types/node-system.ts";
 import type { ActionDefinition } from "../../types/actions.ts";
+import type { ToolDefinition } from "../../types/tools.ts";
 
 const stateSchema: Record<string, StateDefinition> = {
   question: {
@@ -395,6 +396,132 @@ test("buildNodeCardViewModel marks action-managed input ports", () => {
   });
 });
 
+test("buildNodeCardViewModel labels connected managed tool input ports by the bound state", () => {
+  const videoSegmenterTool: ToolDefinition = {
+    toolKey: "video_segmenter",
+    name: "视频分段",
+    description: "Split video clips.",
+    schemaVersion: "toograph.tool/v1",
+    version: "1",
+    permissions: [],
+    runtime: { type: "python", entrypoint: "run.py" },
+    inputSchema: [{ key: "video", name: "Video", valueType: "video", description: "Source video." }],
+    outputSchema: [{ key: "segments", name: "Segments", valueType: "json", description: "Video segments." }],
+    sourceScope: "installed",
+    sourcePath: "/tool/official/video_segmenter/tool.json",
+    runtimeReady: true,
+    runtimeRegistered: true,
+    status: "active",
+    canManage: false,
+  };
+  const node: GraphNode = {
+    kind: "tool",
+    name: "Tool",
+    description: "Run deterministic processing.",
+    ui: { position: { x: 520, y: 220 } },
+    reads: [
+      {
+        state: "uploaded_video",
+        required: true,
+        binding: {
+          kind: "tool_input",
+          toolKey: "video_segmenter",
+          fieldKey: "video",
+          managed: true,
+        },
+      },
+    ],
+    writes: [],
+    config: { toolKey: "video_segmenter" },
+  };
+
+  const model = buildNodeCardViewModel(
+    "segmenter",
+    node,
+    {
+      ...stateSchema,
+      uploaded_video: {
+        name: "3_9__2_11__1__1_.mp4",
+        description: "Uploaded video.",
+        type: "video",
+        value: "",
+        color: "#0891b2",
+      },
+    },
+    { toolDefinitions: [videoSegmenterTool] },
+  );
+
+  assert.equal(model.inputs[0]?.key, "uploaded_video");
+  assert.equal(model.inputs[0]?.anchorKey, "tool_input_video_segmenter_video");
+  assert.equal(model.inputs[0]?.label, "3_9__2_11__1__1_.mp4");
+  assert.equal(model.inputs[0]?.managedSlot, false);
+  assert.deepEqual(model.inputs[0]?.managedByTool, {
+    role: "input",
+    toolKey: "video_segmenter",
+    fieldKey: "video",
+  });
+});
+
+test("buildNodeCardViewModel marks unconnected managed tool input placeholders as slots", () => {
+  const videoSegmenterTool: ToolDefinition = {
+    toolKey: "video_segmenter",
+    name: "视频分段",
+    description: "Split video clips.",
+    schemaVersion: "toograph.tool/v1",
+    version: "1",
+    permissions: [],
+    runtime: { type: "python", entrypoint: "run.py" },
+    inputSchema: [{ key: "video", name: "Video", valueType: "video", description: "Source video." }],
+    outputSchema: [{ key: "segments", name: "Segments", valueType: "json", description: "Video segments." }],
+    sourceScope: "installed",
+    sourcePath: "/tool/official/video_segmenter/tool.json",
+    runtimeReady: true,
+    runtimeRegistered: true,
+    status: "active",
+    canManage: false,
+  };
+  const node: GraphNode = {
+    kind: "tool",
+    name: "Tool",
+    description: "Run deterministic processing.",
+    ui: { position: { x: 520, y: 220 } },
+    reads: [
+      {
+        state: "tool_video_slot",
+        required: true,
+        binding: {
+          kind: "tool_input",
+          toolKey: "video_segmenter",
+          fieldKey: "video",
+          managed: true,
+        },
+      },
+    ],
+    writes: [],
+    config: { toolKey: "video_segmenter" },
+  };
+
+  const model = buildNodeCardViewModel(
+    "segmenter",
+    node,
+    {
+      ...stateSchema,
+      tool_video_slot: {
+        name: "Video",
+        description: "视频分段 input: video",
+        type: "video",
+        value: "",
+        color: "#0891b2",
+      },
+    },
+    { toolDefinitions: [videoSegmenterTool] },
+  );
+
+  assert.equal(model.inputs[0]?.label, "Video");
+  assert.equal(model.inputs[0]?.anchorKey, "tool_input_video_segmenter_video");
+  assert.equal(model.inputs[0]?.managedSlot, true);
+});
+
 test("buildNodeCardViewModel marks dynamic capability input and result package output ports as managed", () => {
   const node: GraphNode = {
     kind: "agent",
@@ -751,6 +878,46 @@ test("buildNodeCardViewModel auto-displays file output state arrays as documents
       description: "Local fetched documents.",
       type: "file",
       value: ["run_1/searcher/web_search/invocation_001/doc_001.md"],
+      color: "#1d4ed8",
+    },
+  });
+
+  assert.equal(model.body.kind, "output");
+  assert.equal(model.body.displayMode, "documents");
+  assert.equal(model.body.displayModeLabel, "DOCS");
+});
+
+test("buildNodeCardViewModel auto-displays json video segment arrays as documents", () => {
+  const node: GraphNode = {
+    kind: "output",
+    name: "output_segments",
+    description: "Preview generated video segments.",
+    ui: { position: { x: 980, y: 420 } },
+    reads: [{ state: "segments", required: false }],
+    writes: [],
+    config: {
+      displayMode: "auto",
+      persistEnabled: false,
+      persistFormat: "auto",
+      fileNameTemplate: "",
+    },
+  };
+
+  const model = buildNodeCardViewModel("output_segments", node, {
+    ...stateSchema,
+    segments: {
+      name: "Segments",
+      description: "Video segment files.",
+      type: "json",
+      value: [
+        {
+          index: 0,
+          start_sec: 0,
+          end_sec: 30,
+          local_path: "run_1/video_segmenter/segment_000.mp4",
+          mime_type: "video/mp4",
+        },
+      ],
       color: "#1d4ed8",
     },
   });

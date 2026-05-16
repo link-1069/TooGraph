@@ -422,11 +422,7 @@ export function isCanvasStateTargetAnchorAllowedForConnection(
     return anchor.kind === "state-in" && typeof anchor.stateKey === "string";
   }
 
-  return (
-    anchor.stateKey === CREATE_AGENT_INPUT_STATE_KEY ||
-    anchor.stateKey === VIRTUAL_ANY_INPUT_STATE_KEY ||
-    anchor.stateKey === connection.sourceStateKey
-  );
+  return anchor.kind === "state-in" && typeof anchor.stateKey === "string";
 }
 
 export function canCompleteCanvasAnchorConnection(input: {

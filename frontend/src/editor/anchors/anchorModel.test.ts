@@ -36,6 +36,46 @@ test("buildAnchorModel creates flow and state anchors for LLM nodes", () => {
   assert.equal(model.stateOutputs[0]?.stateKey, "answer");
 });
 
+test("buildAnchorModel keeps managed tool input anchor ids stable when the bound state changes", () => {
+  const slotNode: GraphNode = {
+    kind: "tool",
+    name: "segmenter",
+    description: "Split videos.",
+    ui: { position: { x: 520, y: 220 } },
+    reads: [
+      {
+        state: "tool_video_slot",
+        required: true,
+        binding: {
+          kind: "tool_input",
+          toolKey: "video_segmenter",
+          fieldKey: "video",
+          managed: true,
+        },
+      },
+    ],
+    writes: [],
+    config: { toolKey: "video_segmenter" },
+  };
+  const connectedNode: GraphNode = {
+    ...slotNode,
+    reads: [
+      {
+        ...slotNode.reads[0],
+        state: "uploaded_video",
+      },
+    ],
+  };
+
+  const slotAnchor = buildAnchorModel("segmenter", slotNode).stateInputs[0];
+  const connectedAnchor = buildAnchorModel("segmenter", connectedNode).stateInputs[0];
+
+  assert.equal(slotAnchor?.id, "state-in:tool_input_video_segmenter_video");
+  assert.equal(connectedAnchor?.id, slotAnchor?.id);
+  assert.equal(slotAnchor?.stateKey, "tool_video_slot");
+  assert.equal(connectedAnchor?.stateKey, "uploaded_video");
+});
+
 test("buildAnchorModel creates route outputs for condition nodes", () => {
   const node: GraphNode = {
     kind: "condition",

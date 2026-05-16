@@ -5,6 +5,7 @@ import {
   connectConditionRouteInDocument,
   connectFlowNodesInDocument,
   connectStateBindingInDocument,
+  disconnectManagedToolInputStateInDocument,
   reconnectConditionRouteInDocument,
   reconnectFlowEdgeInDocument,
   removeConditionBranchFromDocument,
@@ -146,10 +147,17 @@ export function useWorkspaceGraphMutationActions(input: WorkspaceGraphMutationAc
   function disconnectDataEdgeForTab(tabId: string, sourceNodeId: string, targetNodeId: string, stateKey: string, mode: "state" | "flow") {
     commitDocumentMutationForTab(
       tabId,
-      (document) =>
-        mode === "flow"
-          ? removeFlowEdgeFromDocument(document, sourceNodeId, targetNodeId)
-          : removeStateBindingFromDocument(document, stateKey, targetNodeId, "read"),
+      (document) => {
+        if (mode === "flow") {
+          return removeFlowEdgeFromDocument(document, sourceNodeId, targetNodeId);
+        }
+        const restoredToolSlotDocument = disconnectManagedToolInputStateInDocument(document, sourceNodeId, targetNodeId, stateKey, {
+          toolDefinitions: input.toolDefinitions.value,
+        });
+        return restoredToolSlotDocument === document
+          ? removeStateBindingFromDocument(document, stateKey, targetNodeId, "read")
+          : restoredToolSlotDocument;
+      },
       {
         focusNodeId: targetNodeId,
       },

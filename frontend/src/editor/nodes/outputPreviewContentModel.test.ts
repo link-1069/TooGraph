@@ -211,6 +211,53 @@ test("resolveOutputPreviewContent extracts media artifact references from downlo
   ]);
 });
 
+test("resolveOutputPreviewContent auto-paginates video segment artifact arrays", () => {
+  const preview = resolveOutputPreviewContent(
+    JSON.stringify([
+      {
+        index: 0,
+        start_sec: 0,
+        end_sec: 30,
+        local_path: "run_1/video_segmenter/segment_000.mp4",
+        mime_type: "video/mp4",
+      },
+      {
+        index: 1,
+        start_sec: 30,
+        end_sec: 52.25,
+        local_path: "run_1/video_segmenter/segment_001.mp4",
+        mime_type: "video/mp4",
+      },
+    ]),
+    "auto",
+  );
+
+  assert.equal(preview.kind, "documents");
+  assert.match(preview.text, /2 local artifacts/);
+  assert.deepEqual(preview.documentRefs, [
+    {
+      title: "Segment 1 (0s-30s)",
+      url: "",
+      localPath: "run_1/video_segmenter/segment_000.mp4",
+      contentType: "video/mp4",
+      charCount: null,
+      artifactKind: "video",
+      size: null,
+      filename: "segment_000.mp4",
+    },
+    {
+      title: "Segment 2 (30s-52.25s)",
+      url: "",
+      localPath: "run_1/video_segmenter/segment_001.mp4",
+      contentType: "video/mp4",
+      charCount: null,
+      artifactKind: "video",
+      size: null,
+      filename: "segment_001.mp4",
+    },
+  ]);
+});
+
 test("resolveOutputPreviewContent treats string arrays as local document paths", () => {
   const preview = resolveOutputPreviewContent(JSON.stringify(["run_1/search/doc_001.md"]), "documents");
 

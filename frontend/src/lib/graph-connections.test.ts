@@ -274,6 +274,84 @@ test("canCompleteGraphConnection allows state-out sources to target a concrete s
   );
 });
 
+test("canCompleteGraphConnection rejects incompatible source types for managed tool input slots", () => {
+  const graphWithToolSlot: GraphPayload = {
+    ...document,
+    state_schema: {
+      uploaded_video: { name: "Uploaded Video", description: "", type: "video", value: "", color: "#0891b2" },
+      uploaded_image: { name: "Uploaded Image", description: "", type: "image", value: "", color: "#2563eb" },
+      tool_video_slot: { name: "Video", description: "", type: "video", value: "", color: "#0891b2" },
+    },
+    nodes: {
+      video_input: {
+        kind: "input",
+        name: "video_input",
+        description: "",
+        ui: { position: { x: 0, y: 0 } },
+        reads: [],
+        writes: [{ state: "uploaded_video", mode: "replace" }],
+        config: { value: "" },
+      },
+      image_input: {
+        kind: "input",
+        name: "image_input",
+        description: "",
+        ui: { position: { x: 0, y: 120 } },
+        reads: [],
+        writes: [{ state: "uploaded_image", mode: "replace" }],
+        config: { value: "" },
+      },
+      segmenter: {
+        kind: "tool",
+        name: "Tool",
+        description: "",
+        ui: { position: { x: 260, y: 0 } },
+        reads: [
+          {
+            state: "tool_video_slot",
+            required: true,
+            binding: {
+              kind: "tool_input",
+              toolKey: "video_segmenter",
+              fieldKey: "video",
+              managed: true,
+            },
+          },
+        ],
+        writes: [],
+        config: { toolKey: "video_segmenter" },
+      },
+    },
+    edges: [],
+    conditional_edges: [],
+  };
+
+  assert.equal(
+    canCompleteGraphConnection(graphWithToolSlot, {
+      sourceNodeId: "video_input",
+      sourceKind: "state-out",
+      sourceStateKey: "uploaded_video",
+    }, {
+      nodeId: "segmenter",
+      kind: "state-in",
+      stateKey: "tool_video_slot",
+    }),
+    true,
+  );
+  assert.equal(
+    canCompleteGraphConnection(graphWithToolSlot, {
+      sourceNodeId: "image_input",
+      sourceKind: "state-out",
+      sourceStateKey: "uploaded_image",
+    }, {
+      nodeId: "segmenter",
+      kind: "state-in",
+      stateKey: "tool_video_slot",
+    }),
+    false,
+  );
+});
+
 test("canCompleteGraphConnection allows an existing state binding to restore a missing ordering edge", () => {
   const pending: PendingGraphConnection = {
     sourceNodeId: "input_question",

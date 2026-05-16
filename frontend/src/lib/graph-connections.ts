@@ -115,7 +115,12 @@ export function canConnectStateBinding(
       : targetNode.reads.length === 0;
   }
 
-  if (!targetNode.reads.some((binding) => binding.state === targetStateKey)) {
+  const targetReadBinding = targetNode.reads.find((binding) => binding.state === targetStateKey);
+  if (!targetReadBinding) {
+    return false;
+  }
+
+  if (isManagedToolInputReadBinding(targetReadBinding) && !areConcreteStateTypesCompatible(document, sourceStateKey, targetStateKey)) {
     return false;
   }
 
@@ -169,6 +174,26 @@ function canResolveStateConnectionWriter(
 
 function isConcreteStateInputKey(stateKey: string) {
   return !isCreateAgentInputStateKey(stateKey) && !isVirtualAnyInputStateKey(stateKey) && !isVirtualAnyOutputStateKey(stateKey);
+}
+
+function isManagedToolInputReadBinding(binding: GraphPayload["nodes"][string]["reads"][number]) {
+  return binding.binding?.kind === "tool_input" && binding.binding.managed !== false;
+}
+
+function areConcreteStateTypesCompatible(
+  document: GraphPayload | GraphDocument,
+  sourceStateKey: string,
+  targetStateKey: string,
+) {
+  if (sourceStateKey === targetStateKey) {
+    return true;
+  }
+  const sourceType = document.state_schema[sourceStateKey]?.type?.trim();
+  const targetType = document.state_schema[targetStateKey]?.type?.trim();
+  if (!sourceType || !targetType) {
+    return true;
+  }
+  return sourceType === targetType;
 }
 
 function nodeWritesState(document: GraphPayload | GraphDocument, nodeId: string, stateKey: string) {

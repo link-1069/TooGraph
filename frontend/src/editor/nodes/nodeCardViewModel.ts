@@ -9,6 +9,7 @@ import {
   shouldExposeVirtualAnyOutput,
 } from "../../lib/virtual-any-input.ts";
 import { normalizeInputBoundaryConfigType } from "../../lib/input-boundary.ts";
+import { resolveManagedToolInputSlotKey } from "../../lib/managed-state-slots.ts";
 import type { GraphNode, StateDefinition } from "../../types/node-system.ts";
 import type { ActionDefinition } from "../../types/actions.ts";
 import type { ToolDefinition } from "../../types/tools.ts";
@@ -17,12 +18,14 @@ import { resolveNodeDisplayDescription, resolveNodeDisplayTitle } from "./nodeDe
 
 export type NodePortViewModel = {
   key: string;
+  anchorKey?: string;
   label: string;
   required?: boolean;
   typeLabel: string;
   stateColor: string;
   virtual?: boolean;
   batchMode?: "shared" | "batch";
+  managedSlot?: boolean;
   managedByAction?: {
     role: "input" | "output";
     actionKey: string;
@@ -188,17 +191,31 @@ export function buildNodeCardViewModel(
 ): NodeCardViewModel {
   const inputs = shouldExposeVirtualAnyInput(node)
     ? [buildVirtualAnyInputPort()]
-    : node.reads.map((binding) => ({
-        key: binding.state,
-        label: getStateLabel(binding.state, stateSchema),
-        required: binding.required,
-        typeLabel: getStateTypeLabel(binding.state, stateSchema),
-        stateColor: stateSchema[binding.state]?.color ?? "#d97706",
-        batchMode: node.kind === "batch" ? resolveBatchInputMode(node, binding.state) : undefined,
-        managedByAction: resolveManagedActionInputPort(binding),
-        managedByTool: resolveManagedToolInputPort(binding),
-        managedByCapability: resolveManagedCapabilityInputPort(node, binding.state, stateSchema),
-      }));
+    : node.reads.map((binding) => {
+        const managedByAction = resolveManagedActionInputPort(binding);
+        const managedByTool = resolveManagedToolInputPort(binding);
+        return {
+          key: binding.state,
+          anchorKey: resolveManagedToolInputSlotKey(binding) ?? undefined,
+          label: resolveReadBindingPortLabel(binding, stateSchema, {
+            managedByAction,
+            managedByTool,
+            actionDefinitions: options.actionDefinitions,
+            toolDefinitions: options.toolDefinitions,
+          }),
+          required: binding.required,
+          typeLabel: getStateTypeLabel(binding.state, stateSchema),
+          stateColor: stateSchema[binding.state]?.color ?? "#d97706",
+          batchMode: node.kind === "batch" ? resolveBatchInputMode(node, binding.state) : undefined,
+          managedSlot: resolveManagedInputSlot(binding, stateSchema, {
+            managedByTool,
+            toolDefinitions: options.toolDefinitions,
+          }),
+          managedByAction,
+          managedByTool,
+          managedByCapability: resolveManagedCapabilityInputPort(node, binding.state, stateSchema),
+        };
+      });
 
   const outputs = shouldExposeVirtualAnyOutput(node)
     ? [buildVirtualAnyOutputPort()]
@@ -612,6 +629,57 @@ function getStateLabel(stateKey: string, stateSchema: Record<string, StateDefini
 function getStateTypeLabel(stateKey: string, stateSchema: Record<string, StateDefinition>) {
   const stateType = stateSchema[stateKey]?.type?.trim() || "text";
   return stateType.replace(/_/g, " ");
+}
+
+function resolveReadBindingPortLabel(
+  binding: GraphNode["reads"][number],
+  stateSchema: Record<string, StateDefinition>,
+  context: {
+    managedByAction?: NodePortViewModel["managedByAction"];
+    managedByTool?: NodePortViewModel["managedByTool"];
+    actionDefinitions?: ActionDefinition[];
+    toolDefinitions?: ToolDefinition[];
+  },
+) {
+  if (context.managedByTool?.role === "input") {
+    return getStateLabel(binding.state, stateSchema);
+  }
+
+  if (context.managedByAction?.role === "input") {
+    const definition = context.actionDefinitions?.find((action) => action.actionKey === context.managedByAction?.actionKey);
+    const field = definition?.stateInputSchema?.find((candidate) => candidate.key === context.managedByAction?.fieldKey);
+    return field?.name?.trim() || field?.key || context.managedByAction.fieldKey;
+  }
+
+  return getStateLabel(binding.state, stateSchema);
+}
+
+function resolveManagedInputSlot(
+  binding: GraphNode["reads"][number],
+  stateSchema: Record<string, StateDefinition>,
+  context: {
+    managedByTool?: NodePortViewModel["managedByTool"];
+    toolDefinitions?: ToolDefinition[];
+  },
+) {
+  const managedByTool = context.managedByTool;
+  if (managedByTool?.role !== "input") {
+    return false;
+  }
+
+  const definition = context.toolDefinitions?.find((tool) => tool.toolKey === managedByTool.toolKey);
+  const field = definition?.inputSchema.find((candidate) => candidate.key === managedByTool.fieldKey);
+  if (!definition || !field) {
+    return false;
+  }
+
+  const stateDefinition = stateSchema[binding.state];
+  const stateName = stateDefinition?.name?.trim() || binding.state;
+  const fieldName = field.name.trim() || field.key;
+  const stateDescription = stateDefinition?.description?.trim() || "";
+  const fieldDescription = field.description.trim();
+  const generatedDescription = `${definition.name.trim() || definition.toolKey} input: ${field.key}`;
+  return stateName === fieldName && (!stateDescription || stateDescription === fieldDescription || stateDescription === generatedDescription);
 }
 
 function resolveManagedActionOutputPort(

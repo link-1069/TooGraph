@@ -1338,6 +1338,20 @@ function hasSharedStateBinding(sourceNode: GraphNode, targetNode: GraphNode) {
   return sourceNode.writes.some((binding) => targetReadStates.has(binding.state));
 }
 
+function pruneDisconnectedIncomingFlowEdges(document: GraphPayload | GraphDocument, nodeId: string) {
+  document.edges = document.edges.filter((edge) => {
+    if (edge.target !== nodeId) {
+      return true;
+    }
+    const sourceNode = document.nodes[edge.source];
+    const targetNode = document.nodes[edge.target];
+    if (!sourceNode || !targetNode) {
+      return false;
+    }
+    return hasSharedStateBinding(sourceNode, targetNode);
+  });
+}
+
 function isManagedActionOutputStateForNode(
   document: GraphPayload | GraphDocument,
   nodeId: string,
@@ -1900,6 +1914,49 @@ export function connectStateBindingInDocument<T extends GraphPayload | GraphDocu
     nextStateKey: resolvedSourceStateKey,
   });
   addImplicitFlowEdgeForStateConnection(nextDocument, sourceNodeId, targetNodeId);
+  return nextDocument;
+}
+
+export function disconnectManagedToolInputStateInDocument<T extends GraphPayload | GraphDocument>(
+  document: T,
+  sourceNodeId: string,
+  targetNodeId: string,
+  stateKey: string,
+  options: { toolDefinitions?: ToolDefinition[] } = {},
+): T {
+  const sourceNode = document.nodes[sourceNodeId];
+  const targetNode = document.nodes[targetNodeId];
+  if (!sourceNode || !targetNode || targetNode.kind !== "tool") {
+    return document;
+  }
+  if (!sourceNode.writes.some((binding) => binding.state === stateKey)) {
+    return document;
+  }
+
+  const targetBindingIndex = targetNode.reads.findIndex(
+    (binding) => binding.state === stateKey && binding.binding?.kind === "tool_input" && binding.binding.managed !== false,
+  );
+  const readBinding = targetNode.reads[targetBindingIndex];
+  const bindingMetadata = readBinding?.binding;
+  if (targetBindingIndex === -1 || bindingMetadata?.kind !== "tool_input") {
+    return document;
+  }
+
+  const toolDefinition = (options.toolDefinitions ?? []).find((definition) => definition.toolKey === bindingMetadata.toolKey);
+  const field = toolDefinition?.inputSchema.find((candidate) => candidate.key === bindingMetadata.fieldKey);
+  if (!toolDefinition || !field) {
+    return document;
+  }
+
+  const nextDocument = cloneGraphDocument(document);
+  const nextTargetNode = nextDocument.nodes[targetNodeId];
+  if (nextTargetNode.kind !== "tool") {
+    return document;
+  }
+
+  const restoredStateKey = createManagedToolInputState(nextDocument, toolDefinition, field);
+  nextTargetNode.reads[targetBindingIndex] = buildManagedToolInputReadBinding(restoredStateKey, bindingMetadata.toolKey, field);
+  pruneDisconnectedIncomingFlowEdges(nextDocument, targetNodeId);
   return nextDocument;
 }
 

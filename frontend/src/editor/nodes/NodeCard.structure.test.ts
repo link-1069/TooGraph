@@ -117,6 +117,8 @@ test("ToolNodeBody renders deterministic tool selection with managed ports", () 
   assert.match(toolNodeBodySource, /<ToographSelect[\s\S]*class="tool-node-body__tool-select"[\s\S]*:model-value="selectedToolKey"[\s\S]*filterable[\s\S]*popper-class="tool-node-body__tool-popper"[\s\S]*@update:model-value="emit\('select-tool', String\(\$event \?\? ''\)\)"/);
   assert.match(toolNodeBodySource, /<StatePortList[\s\S]*side="input"[\s\S]*:ports="orderedInputPorts"/);
   assert.match(toolNodeBodySource, /<StatePortList[\s\S]*side="output"[\s\S]*:ports="orderedOutputPorts"/);
+  assert.match(toolNodeBodySource, /\.node-card__port-grid \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(toolNodeBodySource, /\.node-card__port-column--right \{[\s\S]*justify-items: end;/);
   assert.doesNotMatch(toolNodeBodySource, /<AgentRuntimeControls/);
   assert.doesNotMatch(toolNodeBodySource, /<AgentActionPicker/);
   assert.doesNotMatch(toolNodeBodySource, /<ElSelect/);
@@ -962,8 +964,8 @@ test("NodeCard reveals state pills on hover and opens state editing only after a
   assert.match(componentSource, /emit\("locked-edit-attempt"\);/);
   assert.match(componentSource, /@pointer-enter="handleStateEditorPillPointerEnter"/);
   assert.match(componentSource, /@pointer-leave="handleStateEditorPillPointerLeave"/);
-  assert.match(statePortListSource, /@pointerenter="emit\('pointer-enter', anchorId\(port\.key\)\)"/);
-  assert.match(statePortListSource, /@pointerleave="emit\('pointer-leave', anchorId\(port\.key\)\)"/);
+  assert.match(statePortListSource, /@pointerenter="emit\('pointer-enter', anchorId\(portAnchorKey\(port\)\)\)"/);
+  assert.match(statePortListSource, /@pointerleave="emit\('pointer-leave', anchorId\(portAnchorKey\(port\)\)\)"/);
   assert.match(componentSource, /if \(guardLockedStateEditAttempt\(\)\) \{[\s\S]*return;[\s\S]*\}/);
   assert.match(componentSource, /if \(activeStateEditorConfirmAnchorId\.value === anchorId\) \{[\s\S]*openStateEditor\(anchorId, stateKey\);[\s\S]*return;/);
   assert.match(componentSource, /startStateEditorConfirmWindow\(anchorId\);/);
@@ -1065,7 +1067,7 @@ test("NodeCard adds mirrored remove-binding buttons to non-output state pills", 
   assert.match(statePortListSource, /class="node-card__port-pill-remove node-card__port-pill-remove--trailing"/);
   assert.match(statePortListSource, /class="node-card__port-pill-remove node-card__port-pill-remove--leading"/);
   assert.match(componentSource, /@remove-click="handleRemovePortStateClick"/);
-  assert.match(statePortListSource, /@click\.stop="emit\('remove-click', anchorId\(port\.key\), side, port\.key\)"/);
+  assert.match(statePortListSource, /@click\.stop="emit\('remove-click', anchorId\(portAnchorKey\(port\)\), side, port\.key\)"/);
   assert.match(componentSource, /@remove-source-click="handleRemovePortStateClick"/);
   assert.match(conditionNodeBodySource, /@click\.stop="emit\('remove-source-click', conditionInputAnchorId, 'input', body\.primaryInput\.key\)"/);
   assert.match(portListSurfaceSource, /t\("nodeCard\.removeStateQuestion"\)/);

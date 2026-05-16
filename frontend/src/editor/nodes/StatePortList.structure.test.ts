@@ -19,10 +19,12 @@ test("StatePortList owns agent real state port rows and emits parent side effect
   assert.match(componentSource, /createDraft: StateFieldDraft \| null;/);
   assert.match(componentSource, /<TransitionGroup[\s\S]*name="node-card-port-reorder"/);
   assert.match(componentSource, /v-for="port in ports"/);
+  assert.match(componentSource, /:key="portAnchorKey\(port\)"/);
+  assert.match(componentSource, /function portAnchorKey\(port: NodePortViewModel\)/);
   assert.match(componentSource, /:data-port-reorder-node-id="canReorderPort\(port\) \? nodeId : undefined"/);
   assert.match(componentSource, /@pointerdown\.stop="handlePortPointerDown\(port, \$event\)"/);
   assert.match(componentSource, /@click\.stop="handlePortClick\(port\)"/);
-  assert.match(componentSource, /@click\.stop="emit\('remove-click', anchorId\(port\.key\), side, port\.key\)"/);
+  assert.match(componentSource, /@click\.stop="emit\('remove-click', anchorId\(portAnchorKey\(port\)\), side, port\.key\)"/);
   assert.match(componentSource, /import ToographCapsuleSwitch from "@\/components\/ToographCapsuleSwitch\.vue";/);
   assert.match(componentSource, /<ToographCapsuleSwitch[\s\S]*class="node-card__port-pill-batch-switch"[\s\S]*v-if="shouldShowBatchModeSwitch\(port\)"[\s\S]*variant="blue"/);
   assert.match(componentSource, /@update:model-value="emit\('update-batch-mode', port\.key, \$event \? 'batch' : 'shared'\)"/);
@@ -36,6 +38,7 @@ test("StatePortList owns agent real state port rows and emits parent side effect
   assert.match(componentSource, /v-if="side === 'output' && canRemovePort\(port\)"/);
   assert.match(componentSource, /function canEditPort\(port: NodePortViewModel\)/);
   assert.match(componentSource, /function isManagedPort\(port: NodePortViewModel\)/);
+  assert.match(componentSource, /function isManagedInputSlot\(port: NodePortViewModel\)[\s\S]*return props\.side === "input" && Boolean\(port\.managedSlot\);/);
   assert.match(componentSource, /function canReorderPort\(port: NodePortViewModel\)/);
   assert.match(componentSource, /<StateEditorPopover/);
   assert.match(componentSource, /import StatePortCreatePopover from "\.\/StatePortCreatePopover\.vue";/);
@@ -57,6 +60,7 @@ test("StatePortList owns agent real state port rows and emits parent side effect
   assert.match(componentSource, /\.node-card__port-pill \{/);
   assert.match(componentSource, /\.node-card__port-pill-source-icon \{/);
   assert.match(componentSource, /\.node-card__port-pill--action-managed \{/);
+  assert.match(componentSource, /\.node-card__port-pill--managed-slot \{[\s\S]*background: color-mix\(in srgb, var\(--node-card-port-accent\) 9%, transparent\);/);
   assert.match(componentSource, /\.node-card__port-pill-remove \{/);
   assert.match(componentSource, /\.node-card__port-pill-batch-switch \{/);
   assert.match(componentSource, /\.node-card__port-pill-row--create \{/);

@@ -24,6 +24,7 @@ const {
   connectStateBindingInDocument,
   updateBatchNodeDefaultWorkerInDocument,
   updateBatchNodeSubgraphWorkerInDocument,
+  disconnectManagedToolInputStateInDocument,
   updateToolNodeConfigInDocument,
   updateSubgraphNodeGraphInDocument,
 } = graphDocument;
@@ -2523,6 +2524,78 @@ test("connectStateBindingInDocument replaces the previous source edge for a conc
   ]);
 });
 
+test("connectStateBindingInDocument rewires a managed tool input slot without appending another read", () => {
+  const document: GraphPayload = {
+    graph_id: null,
+    name: "Tool slot connect graph",
+    state_schema: {
+      uploaded_video: { name: "clip.mp4", description: "", type: "video", value: "", color: "#0891b2" },
+      tool_video_slot: { name: "Video", description: "需要切分的本地视频文件。", type: "video", value: "", color: "#0891b2" },
+    },
+    nodes: {
+      input_video: {
+        kind: "input",
+        name: "Input",
+        description: "",
+        ui: { position: { x: 0, y: 0 } },
+        reads: [],
+        writes: [{ state: "uploaded_video", mode: "replace" }],
+        config: { value: "" },
+      },
+      tool_node: {
+        kind: "tool",
+        name: "Tool",
+        description: "",
+        ui: { position: { x: 320, y: 0 } },
+        reads: [
+          {
+            state: "tool_video_slot",
+            required: true,
+            binding: {
+              kind: "tool_input",
+              toolKey: "video_segmenter",
+              fieldKey: "video",
+              managed: true,
+            },
+          },
+        ],
+        writes: [],
+        config: { toolKey: "video_segmenter" },
+      },
+    },
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  const nextDocument = graphDocument.connectStateBindingInDocument(
+    document,
+    "input_video",
+    "uploaded_video",
+    "tool_node",
+    "tool_video_slot",
+  );
+  const node = nextDocument.nodes.tool_node;
+
+  assert.equal(node.kind, "tool");
+  if (node.kind === "tool") {
+    assert.deepEqual(node.reads, [
+      {
+        state: "uploaded_video",
+        required: true,
+        binding: {
+          kind: "tool_input",
+          toolKey: "video_segmenter",
+          fieldKey: "video",
+          managed: true,
+        },
+      },
+    ]);
+  }
+  assert.deepEqual(Object.keys(nextDocument.state_schema).sort(), ["tool_video_slot", "uploaded_video"]);
+  assert.deepEqual(nextDocument.edges, [{ source: "input_video", target: "tool_node" }]);
+});
+
 test("connectStateBindingInDocument preserves existing same-state writer source edges", () => {
   const document: GraphPayload = {
     graph_id: null,
@@ -4221,5 +4294,84 @@ test("updateToolNodeConfigInDocument syncs managed tool input and output state b
         managed: true,
       },
     ]);
+  }
+});
+
+test("disconnectManagedToolInputStateInDocument restores a bound tool input to a managed slot", () => {
+  assert.equal(typeof disconnectManagedToolInputStateInDocument, "function");
+
+  const document: GraphPayload = {
+    graph_id: null,
+    name: "Tool Disconnect Graph",
+    state_schema: {
+      uploaded_video: {
+        name: "clip.mp4",
+        description: "Uploaded video.",
+        type: "video",
+        value: "",
+        color: "#0891b2",
+      },
+    },
+    nodes: {
+      input_video: {
+        kind: "input",
+        name: "Input",
+        description: "",
+        ui: { position: { x: 0, y: 0 } },
+        reads: [],
+        writes: [{ state: "uploaded_video", mode: "replace" }],
+        config: { value: "" },
+      },
+      tool_node: {
+        kind: "tool",
+        name: "Tool",
+        description: "",
+        ui: { position: { x: 320, y: 0 } },
+        reads: [
+          {
+            state: "uploaded_video",
+            required: true,
+            binding: {
+              kind: "tool_input",
+              toolKey: "json_passthrough",
+              fieldKey: "value",
+              managed: true,
+            },
+          },
+        ],
+        writes: [],
+        config: { toolKey: "json_passthrough" },
+      },
+    },
+    edges: [{ source: "input_video", target: "tool_node" }],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  const nextDocument = disconnectManagedToolInputStateInDocument(
+    document,
+    "input_video",
+    "tool_node",
+    "uploaded_video",
+    { toolDefinitions: [jsonPassthroughTool] },
+  );
+  const node = nextDocument.nodes.tool_node;
+
+  assert.notEqual(nextDocument, document);
+  assert.equal(nextDocument.state_schema.uploaded_video?.name, "clip.mp4");
+  assert.deepEqual(nextDocument.edges, []);
+  assert.equal(node.kind, "tool");
+  if (node.kind === "tool") {
+    assert.equal(node.reads.length, 1);
+    assert.notEqual(node.reads[0]?.state, "uploaded_video");
+    assert.deepEqual(node.reads[0]?.binding, {
+      kind: "tool_input",
+      toolKey: "json_passthrough",
+      fieldKey: "value",
+      managed: true,
+    });
+    const slotState = nextDocument.state_schema[node.reads[0]?.state ?? ""];
+    assert.equal(slotState?.name, "Value");
+    assert.equal(slotState?.type, "json");
   }
 });

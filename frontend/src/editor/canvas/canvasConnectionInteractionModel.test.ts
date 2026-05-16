@@ -498,6 +498,7 @@ test("canvas connection interaction model resolves anchor pointer-down actions",
 test("canvas connection interaction model resolves canvas anchor completion eligibility", () => {
   const flowTarget = flowAnchor("target", 440, 180);
   const concreteInput = stateAnchor("target:answer", "target", "state-in", "answer", 206, 160);
+  const concreteSlotInput = stateAnchor("target:video", "target", "state-in", "video", 206, 204);
   const invalidFlowForVirtualState = flowAnchor("target", 240, 200);
   const virtualOutputConnection: PendingGraphConnection = {
     sourceNodeId: "writer",
@@ -531,6 +532,23 @@ test("canvas connection interaction model resolves canvas anchor completion elig
     false,
   );
   assert.equal(graphCompletionCalls, 1);
+
+  assert.equal(
+    canCompleteCanvasAnchorConnection({
+      connection: {
+        sourceNodeId: "writer",
+        sourceKind: "state-out",
+        sourceStateKey: "uploaded_video",
+      },
+      anchor: concreteSlotInput,
+      canCompleteGraphConnection: () => {
+        graphCompletionCalls += 1;
+        return true;
+      },
+    }),
+    true,
+  );
+  assert.equal(graphCompletionCalls, 2);
 
   assert.equal(
     canCompleteCanvasAnchorConnection({

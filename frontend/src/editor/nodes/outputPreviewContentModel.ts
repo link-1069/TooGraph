@@ -1,3 +1,5 @@
+import { collectLocalArtifactReferences, type LocalArtifactReference } from "../../lib/localArtifactReferences.ts";
+
 export type OutputPreviewContentKind = "plain" | "markdown" | "html" | "json" | "documents" | "package";
 export type OutputPreviewRenderedContentKind = Exclude<OutputPreviewContentKind, "package">;
 
@@ -12,17 +14,7 @@ export type OutputLinkedTextSegment =
       href: string;
     };
 
-export type OutputPreviewDocumentReference = {
-  title: string;
-  url: string;
-  localPath: string;
-  contentType: string;
-  charCount: number | null;
-  artifactKind: "document" | "image" | "video" | "audio" | "file";
-  size: number | null;
-  filename: string;
-  error?: string;
-};
+export type OutputPreviewDocumentReference = LocalArtifactReference;
 
 export type OutputPreviewPackagePage = {
   key: string;
@@ -179,6 +171,9 @@ function resolveBasicOutputPreviewDisplayMode(text: string, displayMode: string)
   if (displayMode === "plain") {
     return "plain";
   }
+  if (hasDocumentPreviewRecords(text)) {
+    return "documents";
+  }
   if (canParseJson(text)) {
     return "json";
   }
@@ -287,6 +282,9 @@ function resolveResultPackageOutputDisplayMode(
   if (normalizedType === "html") {
     return "html";
   }
+  if (normalizedType === "json" && hasDocumentPreviewRecords(text)) {
+    return "documents";
+  }
   if (normalizedType === "json" || normalizedType === "capability" || normalizedType === "result_package") {
     return "json";
   }
@@ -388,108 +386,28 @@ function parseDocumentPreviewRecords(text: string): OutputPreviewDocumentReferen
   }
   try {
     const parsed = JSON.parse(trimmed);
-    const documents: OutputPreviewDocumentReference[] = [];
-    collectDocumentPreviewRecords(parsed, documents, false);
-    return documents;
+    return collectLocalArtifactReferences(parsed);
   } catch {
-    const documents: OutputPreviewDocumentReference[] = [];
-    collectDocumentPreviewRecords(trimmed, documents, true);
+    const documents = collectLocalArtifactReferences(trimmed, { allowStringRoot: true });
     return documents.length > 0 ? documents : null;
   }
 }
 
-function collectDocumentPreviewRecords(value: unknown, documents: OutputPreviewDocumentReference[], allowStringPath: boolean) {
-  if (typeof value === "string") {
-    if (allowStringPath) {
-      appendDocumentPreviewRecord({ local_path: value }, documents);
-    }
-    return;
+function hasDocumentPreviewRecords(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
   }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectDocumentPreviewRecords(item, documents, true);
-    }
-    return;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return collectLocalArtifactReferences(parsed).length > 0;
+  } catch {
+    return false;
   }
-
-  if (!value || typeof value !== "object") {
-    return;
-  }
-
-  const record = value as Record<string, unknown>;
-  if (record.local_path !== undefined) {
-    appendDocumentPreviewRecord(record, documents);
-    return;
-  }
-
-  for (const nestedValue of Object.values(record)) {
-    collectDocumentPreviewRecords(nestedValue, documents, false);
-  }
-}
-
-function appendDocumentPreviewRecord(record: Record<string, unknown>, documents: OutputPreviewDocumentReference[]) {
-  const localPath = normalizePreviewLocalPath(record.local_path);
-  if (!localPath) {
-    return;
-  }
-  const error = normalizePreviewText(record.error);
-  documents.push({
-    title: normalizePreviewText(record.title) || normalizePreviewText(record.filename) || `Document ${documents.length + 1}`,
-    url: normalizePreviewText(record.url),
-    localPath,
-    contentType: normalizePreviewText(record.content_type ?? record.contentType) || "text/markdown",
-    charCount: normalizePreviewNumber(record.char_count ?? record.charCount),
-    artifactKind: resolveArtifactKind(normalizePreviewText(record.content_type ?? record.contentType), localPath),
-    size: normalizePreviewNumber(record.size),
-    filename: normalizePreviewText(record.filename) || localPath.split("/").at(-1) || "",
-    ...(error ? { error } : {}),
-  });
-}
-
-function resolveArtifactKind(contentType: string, localPath: string): OutputPreviewDocumentReference["artifactKind"] {
-  const normalizedType = contentType.toLowerCase();
-  if (normalizedType.startsWith("image/")) {
-    return "image";
-  }
-  if (normalizedType.startsWith("video/")) {
-    return "video";
-  }
-  if (normalizedType.startsWith("audio/")) {
-    return "audio";
-  }
-  if (normalizedType.startsWith("text/") || normalizedType === "application/json" || normalizedType === "text/markdown") {
-    return "document";
-  }
-  if (/\.(md|markdown|txt|json|jsonl|csv|log)$/i.test(localPath)) {
-    return "document";
-  }
-  if (/\.(avif|bmp|gif|heic|ico|jpe?g|png|svg|tiff?|webp)$/i.test(localPath)) {
-    return "image";
-  }
-  if (/\.(3gp|avi|flv|m4v|mkv|mov|mp4|mpeg|mpg|ogv|webm)$/i.test(localPath)) {
-    return "video";
-  }
-  if (/\.(aac|flac|m4a|mp3|oga|ogg|opus|wav)$/i.test(localPath)) {
-    return "audio";
-  }
-  return "file";
 }
 
 function normalizePreviewText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizePreviewLocalPath(value: unknown) {
-  const path = normalizePreviewText(value).replaceAll("\\", "/");
-  if (!path || path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === "..")) {
-    return "";
-  }
-  return path;
-}
-
-function normalizePreviewNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function looksLikeMarkdown(text: string) {

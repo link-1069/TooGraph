@@ -751,6 +751,30 @@ test("normalizeArtifactDocumentReferences accepts arrays and structured objects 
       },
     ],
   );
+
+  assert.deepEqual(
+    normalizeArtifactDocumentReferences([
+      {
+        index: 0,
+        start_sec: 0,
+        end_sec: 30,
+        local_path: "run_1/video_segmenter/segment_000.mp4",
+        mime_type: "video/mp4",
+      },
+    ]),
+    [
+      {
+        title: "Segment 1 (0s-30s)",
+        url: "",
+        localPath: "run_1/video_segmenter/segment_000.mp4",
+        contentType: "video/mp4",
+        charCount: null,
+        artifactKind: "video",
+        size: null,
+        filename: "segment_000.mp4",
+      },
+    ],
+  );
 });
 
 test("buildRunStatusFacts keeps the primary run facts compact and status-first", () => {

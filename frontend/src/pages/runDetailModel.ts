@@ -1,5 +1,6 @@
 import type { ActivityEvent, NodeExecutionDetail, RunDetail } from "../types/run.ts";
 
+import { collectLocalArtifactReferences, type LocalArtifactReference } from "../lib/localArtifactReferences.ts";
 import { formatRunDuration } from "../lib/run-display-name.ts";
 import { summarizeVirtualOperationActivity } from "../lib/virtual-operation-activity.ts";
 import { translate } from "../i18n/index.ts";
@@ -14,16 +15,7 @@ export type RunOutputArtifactCard = {
   documentRefs: ArtifactDocumentReference[];
 };
 
-export type ArtifactDocumentReference = {
-  title: string;
-  url: string;
-  localPath: string;
-  contentType: string;
-  charCount: number | null;
-  artifactKind: "document" | "image" | "video" | "audio" | "file";
-  size: number | null;
-  filename: string;
-};
+export type ArtifactDocumentReference = LocalArtifactReference;
 
 export type RunStatusFact = {
   key: string;
@@ -105,100 +97,7 @@ export function listRunOutputArtifacts(run: RunDetail): RunOutputArtifactCard[] 
 }
 
 export function normalizeArtifactDocumentReferences(value: unknown): ArtifactDocumentReference[] {
-  const references: ArtifactDocumentReference[] = [];
-  collectArtifactDocumentReferences(value, references, false);
-  return references;
-}
-
-function collectArtifactDocumentReferences(value: unknown, references: ArtifactDocumentReference[], allowStringPath: boolean) {
-  if (typeof value === "string") {
-    if (allowStringPath) {
-      appendArtifactDocumentReference(
-        {
-          title: "",
-          url: "",
-          local_path: value,
-        },
-        references,
-      );
-    }
-    return;
-  }
-
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      collectArtifactDocumentReferences(item, references, true);
-    }
-    return;
-  }
-
-  if (!value || typeof value !== "object") {
-    return;
-  }
-
-  const record = value as Record<string, unknown>;
-  if (record.local_path !== undefined) {
-    appendArtifactDocumentReference(record, references);
-    return;
-  }
-
-  for (const nestedValue of Object.values(record)) {
-    collectArtifactDocumentReferences(nestedValue, references, false);
-  }
-}
-
-function appendArtifactDocumentReference(record: Record<string, unknown>, references: ArtifactDocumentReference[]) {
-  const localPath = normalizeLocalArtifactPath(record.local_path);
-  if (!localPath) {
-    return;
-  }
-  references.push({
-    title: normalizeText(record.title) || normalizeText(record.filename) || `Document ${references.length + 1}`,
-    url: normalizeText(record.url),
-    localPath,
-    contentType: normalizeText(record.content_type ?? record.contentType) || "text/markdown",
-    charCount: normalizeNumber(record.char_count ?? record.charCount),
-    artifactKind: resolveArtifactKind(normalizeText(record.content_type ?? record.contentType), localPath),
-    size: normalizeNumber(record.size),
-    filename: normalizeText(record.filename) || localPath.split("/").at(-1) || "",
-  });
-}
-
-function resolveArtifactKind(contentType: string, localPath: string): ArtifactDocumentReference["artifactKind"] {
-  const normalizedType = contentType.toLowerCase();
-  if (normalizedType.startsWith("image/")) {
-    return "image";
-  }
-  if (normalizedType.startsWith("video/")) {
-    return "video";
-  }
-  if (normalizedType.startsWith("audio/")) {
-    return "audio";
-  }
-  if (normalizedType.startsWith("text/") || normalizedType === "application/json" || normalizedType === "text/markdown") {
-    return "document";
-  }
-  if (/\.(md|markdown|txt|json|jsonl|csv|log)$/i.test(localPath)) {
-    return "document";
-  }
-  if (/\.(avif|bmp|gif|heic|ico|jpe?g|png|svg|tiff?|webp)$/i.test(localPath)) {
-    return "image";
-  }
-  if (/\.(3gp|avi|flv|m4v|mkv|mov|mp4|mpeg|mpg|ogv|webm)$/i.test(localPath)) {
-    return "video";
-  }
-  if (/\.(aac|flac|m4a|mp3|oga|ogg|opus|wav)$/i.test(localPath)) {
-    return "audio";
-  }
-  return "file";
-}
-
-function normalizeLocalArtifactPath(value: unknown) {
-  const path = normalizeText(value).replaceAll("\\", "/");
-  if (!path || path.startsWith("/") || path.split("/").some((part) => !part || part === "." || part === "..")) {
-    return "";
-  }
-  return path;
+  return collectLocalArtifactReferences(value);
 }
 
 function normalizeText(value: unknown) {

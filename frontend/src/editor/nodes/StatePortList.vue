@@ -7,19 +7,19 @@
   >
     <div
       v-for="port in ports"
-      :key="port.key"
+      :key="portAnchorKey(port)"
       class="node-card__port-pill-row"
       :class="{ 'node-card__port-pill-row--right': side === 'output' }"
     >
       <ElPopover
         :visible="
           canEditPort(port) &&
-          (isStateEditorOpen(anchorId(port.key)) ||
-            isStateEditorConfirmOpen(anchorId(port.key)) ||
-            isRemovePortStateConfirmOpen(anchorId(port.key)))
+          (isStateEditorOpen(anchorId(portAnchorKey(port))) ||
+            isStateEditorConfirmOpen(anchorId(portAnchorKey(port))) ||
+            isRemovePortStateConfirmOpen(anchorId(portAnchorKey(port))))
         "
-        :placement="isStateEditorOpen(anchorId(port.key)) ? editorPlacement : confirmPlacement"
-        :width="isStateEditorOpen(anchorId(port.key)) ? 320 : undefined"
+        :placement="isStateEditorOpen(anchorId(portAnchorKey(port))) ? editorPlacement : confirmPlacement"
+        :width="isStateEditorOpen(anchorId(portAnchorKey(port))) ? 320 : undefined"
         :show-arrow="false"
         :popper-style="popoverStyle"
         popper-class="node-card__state-editor-popper"
@@ -34,8 +34,9 @@
               {
                 'node-card__port-pill--removable': canRemovePort(port),
                 'node-card__port-pill--action-managed': isManagedPort(port),
-                'node-card__port-pill--revealed': isStateEditorPillRevealed(anchorId(port.key)),
-                'node-card__port-pill--confirm': isStateEditorConfirmOpen(anchorId(port.key)),
+                'node-card__port-pill--managed-slot': isManagedInputSlot(port),
+                'node-card__port-pill--revealed': isStateEditorPillRevealed(anchorId(portAnchorKey(port))),
+                'node-card__port-pill--confirm': isStateEditorConfirmOpen(anchorId(portAnchorKey(port))),
                 'node-card__port-pill--reordering': canReorderPort(port) && isPortReordering(side, port.key),
                 'node-card__port-pill--reorder-placeholder': canReorderPort(port) && isPortReorderPlaceholder(side, port.key),
               },
@@ -51,22 +52,22 @@
             data-virtual-affordance-role="button"
             data-virtual-affordance-zone="editor-canvas.port"
             data-virtual-affordance-actions="click"
-            @pointerenter="emit('pointer-enter', anchorId(port.key))"
-            @pointerleave="emit('pointer-leave', anchorId(port.key))"
+            @pointerenter="emit('pointer-enter', anchorId(portAnchorKey(port)))"
+            @pointerleave="emit('pointer-leave', anchorId(portAnchorKey(port)))"
             @pointerdown.stop="handlePortPointerDown(port, $event)"
             @click.stop="handlePortClick(port)"
           >
             <span
               v-if="side === 'input'"
               class="node-card__port-pill-anchor-slot node-card__port-pill-anchor-slot--leading"
-              :data-anchor-slot-id="anchorSlotId(port.key)"
+              :data-anchor-slot-id="anchorSlotId(portAnchorKey(port))"
               aria-hidden="true"
             />
             <button
               v-if="side === 'output' && canRemovePort(port)"
               type="button"
               class="node-card__port-pill-remove node-card__port-pill-remove--leading"
-              :class="{ 'node-card__port-pill-remove--confirm': isRemovePortStateConfirmOpen(anchorId(port.key)) }"
+              :class="{ 'node-card__port-pill-remove--confirm': isRemovePortStateConfirmOpen(anchorId(portAnchorKey(port))) }"
               :aria-label="t('nodeCard.removeStateBinding')"
               :data-virtual-affordance-id="removePortVirtualAffordanceId(port)"
               :data-virtual-affordance-label="removePortVirtualAffordanceLabel(port)"
@@ -75,9 +76,9 @@
               data-virtual-affordance-actions="click"
               data-virtual-affordance-requires-confirmation="true"
               @pointerdown.stop
-              @click.stop="emit('remove-click', anchorId(port.key), side, port.key)"
+              @click.stop="emit('remove-click', anchorId(portAnchorKey(port)), side, port.key)"
             >
-              <ElIcon v-if="isRemovePortStateConfirmOpen(anchorId(port.key))"><Check /></ElIcon>
+              <ElIcon v-if="isRemovePortStateConfirmOpen(anchorId(portAnchorKey(port)))"><Check /></ElIcon>
               <ElIcon v-else><Delete /></ElIcon>
             </button>
             <ElIcon
@@ -89,7 +90,7 @@
             </ElIcon>
             <span
               class="node-card__port-pill-label"
-              :class="{ 'node-card__port-pill-label--confirm': isStateEditorConfirmOpen(anchorId(port.key)) }"
+              :class="{ 'node-card__port-pill-label--confirm': isStateEditorConfirmOpen(anchorId(portAnchorKey(port))) }"
             >
               <span class="node-card__port-pill-label-text">{{ port.label }}</span>
               <ElIcon class="node-card__port-pill-confirm-icon"><Check /></ElIcon>
@@ -116,7 +117,7 @@
               v-if="side === 'input' && canRemovePort(port)"
               type="button"
               class="node-card__port-pill-remove node-card__port-pill-remove--trailing"
-              :class="{ 'node-card__port-pill-remove--confirm': isRemovePortStateConfirmOpen(anchorId(port.key)) }"
+              :class="{ 'node-card__port-pill-remove--confirm': isRemovePortStateConfirmOpen(anchorId(portAnchorKey(port))) }"
               :aria-label="t('nodeCard.removeStateBinding')"
               :data-virtual-affordance-id="removePortVirtualAffordanceId(port)"
               :data-virtual-affordance-label="removePortVirtualAffordanceLabel(port)"
@@ -125,27 +126,27 @@
               data-virtual-affordance-actions="click"
               data-virtual-affordance-requires-confirmation="true"
               @pointerdown.stop
-              @click.stop="emit('remove-click', anchorId(port.key), side, port.key)"
+              @click.stop="emit('remove-click', anchorId(portAnchorKey(port)), side, port.key)"
             >
-              <ElIcon v-if="isRemovePortStateConfirmOpen(anchorId(port.key))"><Check /></ElIcon>
+              <ElIcon v-if="isRemovePortStateConfirmOpen(anchorId(portAnchorKey(port)))"><Check /></ElIcon>
               <ElIcon v-else><Delete /></ElIcon>
             </button>
             <span
               v-if="side === 'output'"
               class="node-card__port-pill-anchor-slot"
-              :data-anchor-slot-id="anchorSlotId(port.key)"
+              :data-anchor-slot-id="anchorSlotId(portAnchorKey(port))"
               aria-hidden="true"
             />
           </span>
         </template>
         <div
-          v-if="isRemovePortStateConfirmOpen(anchorId(port.key))"
+          v-if="isRemovePortStateConfirmOpen(anchorId(portAnchorKey(port)))"
           class="node-card__confirm-hint node-card__confirm-hint--remove"
         >
           {{ t("nodeCard.removeStateQuestion") }}
         </div>
         <div
-          v-else-if="isStateEditorConfirmOpen(anchorId(port.key))"
+          v-else-if="isStateEditorConfirmOpen(anchorId(portAnchorKey(port)))"
           class="node-card__confirm-hint node-card__confirm-hint--state"
         >
           {{ t("nodeCard.editStateQuestion") }}
@@ -327,6 +328,10 @@ function anchorSlotId(stateKey: string) {
   return `${props.nodeId}:${anchorSlotKind.value}:${stateKey}`;
 }
 
+function portAnchorKey(port: NodePortViewModel) {
+  return port.anchorKey ?? port.key;
+}
+
 function portVirtualAffordanceId(port: NodePortViewModel) {
   return `editor.canvas.node.${props.nodeId}.port.${props.side}.${port.key}`;
 }
@@ -357,6 +362,10 @@ function canReorderPort(port: NodePortViewModel) {
 
 function isManagedPort(port: NodePortViewModel) {
   return Boolean(port.managedByAction || port.managedByTool || port.managedByCapability);
+}
+
+function isManagedInputSlot(port: NodePortViewModel) {
+  return props.side === "input" && Boolean(port.managedSlot);
 }
 
 function isRemovalLockedManagedPort(port: NodePortViewModel) {
@@ -402,7 +411,7 @@ function handlePortClick(port: NodePortViewModel) {
   if (!canEditPort(port)) {
     return;
   }
-  emit("port-click", anchorId(port.key), port.key);
+  emit("port-click", anchorId(portAnchorKey(port)), port.key);
 }
 </script>
 
@@ -512,10 +521,23 @@ function handlePortClick(port: NodePortViewModel) {
   cursor: default;
 }
 
+.node-card__port-pill--managed-slot {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--node-card-port-accent) 38%, transparent);
+  background: color-mix(in srgb, var(--node-card-port-accent) 9%, transparent);
+  color: color-mix(in srgb, var(--node-card-port-accent) 72%, #1f2937);
+}
+
 .node-card__port-pill--action-managed:focus-visible,
 .node-card__port-pill--action-managed.node-card__port-pill--revealed {
   border-color: color-mix(in srgb, var(--node-card-port-accent) 22%, transparent);
   background: color-mix(in srgb, var(--node-card-port-accent) 8%, #fff);
+}
+
+.node-card__port-pill--managed-slot:focus-visible,
+.node-card__port-pill--managed-slot.node-card__port-pill--revealed {
+  border-color: color-mix(in srgb, var(--node-card-port-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--node-card-port-accent) 13%, #fff);
 }
 
 .node-card__port-pill-source-icon {
