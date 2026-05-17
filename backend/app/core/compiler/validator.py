@@ -52,6 +52,7 @@ def validate_graph(graph: NodeSystemGraphDocument) -> GraphValidationResponse:
     edge_counts = Counter((edge.source, edge.target) for edge in graph.edges)
 
     issues.extend(_validate_graph_metadata(graph, "metadata"))
+    issues.extend(_validate_capability_state_values(state_schema))
 
     for edge_key, count in edge_counts.items():
         if count <= 1:
@@ -106,6 +107,43 @@ def validate_graph(graph: NodeSystemGraphDocument) -> GraphValidationResponse:
         )
 
     return GraphValidationResponse(valid=len(issues) == 0, issues=issues)
+
+
+def _validate_capability_state_values(state_schema: dict[str, object]) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    allowed_kinds = {"action", "subgraph", "tool", "none"}
+    for state_key, definition in state_schema.items():
+        if getattr(definition, "type", None) != NodeSystemStateType.CAPABILITY:
+            continue
+        value = getattr(definition, "value", None)
+        if not isinstance(value, dict):
+            continue
+        kind = str(value.get("kind") or "").strip().lower()
+        if not kind:
+            continue
+        if kind == "skill":
+            issues.append(
+                ValidationIssue(
+                    code="legacy_skill_capability_kind",
+                    message=(
+                        f"Capability state '{state_key}' uses legacy kind 'skill'. "
+                        "Use kind 'action', 'subgraph', 'tool', or 'none'."
+                    ),
+                    path=f"state_schema.{state_key}.value.kind",
+                )
+            )
+        elif kind not in allowed_kinds:
+            issues.append(
+                ValidationIssue(
+                    code="capability_kind_invalid",
+                    message=(
+                        f"Capability state '{state_key}' uses unsupported kind '{kind}'. "
+                        "Use kind 'action', 'subgraph', 'tool', or 'none'."
+                    ),
+                    path=f"state_schema.{state_key}.value.kind",
+                )
+            )
+    return issues
 
 
 def _validate_node_shape(node_name: str, node: object) -> list[ValidationIssue]:

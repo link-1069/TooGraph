@@ -83,7 +83,7 @@ test("RunDetailPage renders action artifact document lists with a paged reader",
 test("RunDetailPage renders the aggregated parent and subgraph timeline", () => {
   assert.match(
     componentSource,
-    /import \{ buildRunAggregatedTimeline, buildRunStatusFacts, listRunOutputArtifacts \} from "\.\/runDetailModel\.ts";/,
+    /import \{[\s\S]*buildRunAggregatedTimeline,[\s\S]*buildRunStatusFacts,[\s\S]*listRunOutputArtifacts,[\s\S]*\} from "\.\/runDetailModel\.ts";/,
   );
   assert.match(componentSource, /const aggregatedTimeline = computed\(\(\) => \(viewedRun\.value \? buildRunAggregatedTimeline\(viewedRun\.value\) : \[\]\)\);/);
   assert.doesNotMatch(componentSource, /buildRunMemoryContextCards/);
@@ -93,6 +93,23 @@ test("RunDetailPage renders the aggregated parent and subgraph timeline", () => 
   assert.match(componentSource, /item\.subgraphPath\.join\(" \/ "\)/);
   assert.match(componentSource, /item\.durationMs !== null/);
   assert.match(componentSource, /v-for="label in item\.artifactLabels"/);
+});
+
+test("RunDetailPage renders the persisted child run tree with collapsed batch groups", () => {
+  assert.match(componentSource, /import \{ fetchRun, fetchRunTree \} from "@\/api\/runs";/);
+  assert.match(
+    componentSource,
+    /import \{[\s\S]*buildRunTreeDisplayItems,[\s\S]*countRunTreeNodes,[\s\S]*\} from "\.\/runDetailModel\.ts";/,
+  );
+  assert.match(componentSource, /const runTree = ref<RunTreeNode \| null>\(null\);/);
+  assert.match(componentSource, /const runTreeDisplayItems = computed\(\(\) => buildRunTreeDisplayItems\(runTree\.value\)\);/);
+  assert.match(componentSource, /const runTreeVisible = computed/);
+  assert.match(componentSource, /fetchRunTree\(normalizedRunId, \{ signal: controller\.signal \}\)/);
+  assert.match(componentSource, /class="run-detail__panel run-detail__panel--run-tree"/);
+  assert.match(componentSource, /v-for="item in runTreeDisplayItems"/);
+  assert.match(componentSource, /class="run-detail__run-tree-batch"/);
+  assert.match(componentSource, /<summary class="run-detail__run-tree-batch-summary"/);
+  assert.match(componentSource, /v-for="row in item\.rows"/);
 });
 
 test("RunDetailPage exposes operation journal entries from the dedicated journal API", () => {

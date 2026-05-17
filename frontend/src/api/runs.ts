@@ -1,4 +1,4 @@
-import type { RunDetail, RunSummary } from "@/types/run";
+import type { RunDetail, RunSummary, RunTreeNode } from "@/types/run";
 
 import { apiGet, apiPost } from "./http.ts";
 
@@ -16,6 +16,10 @@ export async function fetchRuns(params?: { graphName?: string; status?: string }
 
 export async function fetchRun(runId: string, init?: Pick<RequestInit, "signal">): Promise<RunDetail> {
   return apiGet<RunDetail>(`/api/runs/${runId}`, init);
+}
+
+export async function fetchRunTree(runId: string, init?: Pick<RequestInit, "signal">): Promise<RunTreeNode> {
+  return apiGet<RunTreeNode>(`/api/runs/${runId}/tree`, init);
 }
 
 export async function resumeRun(

@@ -854,6 +854,7 @@ def execute_agent_node(
                 "status": status,
                 "error": error,
                 "error_type": error_type,
+                "child_run_id": _compact_text(execution_result.get("child_run_id")),
                 "subgraph": execution_result.get("subgraph"),
             }
         )
@@ -869,6 +870,8 @@ def execute_agent_node(
                 "capability_name": subgraph_definition.name or subgraph_key,
                 "input_keys": sorted(subgraph_inputs.keys()),
                 "output_keys": sorted(dict(execution_result.get("outputs") or {}).keys()),
+                **({"child_run_id": _compact_text(execution_result.get("child_run_id"))} if _compact_text(execution_result.get("child_run_id")) else {}),
+                **({"triggered_run_id": _compact_text(execution_result.get("child_run_id"))} if _compact_text(execution_result.get("child_run_id")) else {}),
                 **({"error_type": error_type} if error_type else {}),
             },
             error=error,
@@ -1225,7 +1228,8 @@ def build_dynamic_subgraph_result_package(
             }
 
     source_name = _compact_text(execution_result.get("source_name")) or subgraph_definition.name or subgraph_key
-    return {
+    child_run_id = _compact_text(execution_result.get("child_run_id"))
+    package = {
         "kind": "result_package",
         "sourceType": "subgraph",
         "sourceKey": subgraph_key,
@@ -1237,6 +1241,11 @@ def build_dynamic_subgraph_result_package(
         "error": error,
         "errorType": error_type,
     }
+    if child_run_id:
+        package["childRunId"] = child_run_id
+        package["child_run_id"] = child_run_id
+        package["triggered_run_id"] = child_run_id
+    return package
 
 
 def missing_action_llm_output_fields(action_inputs: dict[str, Any], input_schema: list[Any] | None) -> list[str]:

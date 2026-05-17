@@ -235,33 +235,30 @@ def _page_branch(
 
 
 def _capabilities_branch(*, query: str, origin: str, budget_chars: int) -> dict[str, Any]:
-    templates = [
-        {
-            "kind": "subgraph",
-            "key": "toograph_page_operation_workflow",
-            "name": "操作 TooGraph 页面",
-            "description": "固定 TooGraph 页面操作入口。",
-            "permissions": [],
-            "output_contract": [],
-            "score": 0,
-        }
-    ]
-    actions: list[dict[str, Any]] = []
+    repo_root = _repo_root()
+    errors: list[dict[str, str]] = []
+    templates = _discover_template_candidates(repo_root, errors=errors)
+    actions = _discover_action_candidates(repo_root, errors=errors)
+    tools = _discover_tool_candidates(repo_root, errors=errors)
     value = {
         "kind": "capability_candidates",
         "origin": origin or "buddy",
         "query": query,
         "templates": templates,
         "actions": actions,
+        "tools": tools,
         "counts": {
             "templates": len(templates),
-            "actions": 0,
-            "errors": 0,
+            "actions": len(actions),
+            "tools": len(tools),
+            "errors": len(errors),
         },
-        "errors": [],
+        "errors": errors,
     }
     summary_lines = [
         *[f"- template:{item['key']} {item.get('name', '')}" for item in value["templates"][:5]],
+        *[f"- action:{item['key']} {item.get('name', '')}" for item in value["actions"][:5]],
+        *[f"- tool:{item['key']} {item.get('name', '')}" for item in value["tools"][:5]],
     ]
     return _branch_result(
         "capabilities",
@@ -269,8 +266,105 @@ def _capabilities_branch(*, query: str, origin: str, budget_chars: int) -> dict[
         summary="\n".join(summary_lines),
         budget_chars=budget_chars,
         omitted=[],
-        source_count=len(value["templates"]) + len(value["actions"]),
+        source_count=len(value["templates"]) + len(value["actions"]) + len(value["tools"]),
     )
+
+
+def _discover_template_candidates(repo_root: Path, *, errors: list[dict[str, str]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    template_root = repo_root / "graph_template"
+    for template_path in sorted(template_root.glob("*/*/template.json")):
+        try:
+            payload = json.loads(template_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            errors.append({"source": str(template_path), "error": str(exc)})
+            continue
+        metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        if metadata.get("capabilityDiscoverableDefault") is not True:
+            continue
+        key = _text(payload.get("template_id")) or template_path.parent.name
+        candidates.append(
+            {
+                "kind": "subgraph",
+                "key": key,
+                "name": _text(payload.get("label") or payload.get("default_graph_name") or key),
+                "description": _text(payload.get("description")),
+                "permissions": list(metadata.get("permissions") or []),
+                "output_contract": list(metadata.get("outputContract") or []),
+                "score": _capability_text_score(key, _text(payload.get("label")), _text(payload.get("description"))),
+            }
+        )
+    candidates.sort(key=lambda item: (-int(item.get("score") or 0), str(item.get("key") or "")))
+    return candidates
+
+
+def _discover_action_candidates(repo_root: Path, *, errors: list[dict[str, str]]) -> list[dict[str, Any]]:
+    enabled = _settings_enabled_entries(repo_root / "action" / "settings.json")
+    candidates: list[dict[str, Any]] = []
+    for action_path in sorted((repo_root / "action").glob("*/*/action.json")):
+        try:
+            payload = json.loads(action_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            errors.append({"source": str(action_path), "error": str(exc)})
+            continue
+        key = _text(payload.get("actionKey") or payload.get("action_key") or action_path.parent.name)
+        if enabled and enabled.get(key) is False:
+            continue
+        candidates.append(
+            {
+                "kind": "action",
+                "key": key,
+                "name": _text(payload.get("name") or key),
+                "description": _text(payload.get("description")),
+                "permissions": list(payload.get("permissions") or []),
+                "score": _capability_text_score(key, _text(payload.get("name")), _text(payload.get("description"))),
+            }
+        )
+    candidates.sort(key=lambda item: (-int(item.get("score") or 0), str(item.get("key") or "")))
+    return candidates
+
+
+def _discover_tool_candidates(repo_root: Path, *, errors: list[dict[str, str]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for tool_path in sorted((repo_root / "tool").glob("*/*/tool.json")):
+        try:
+            payload = json.loads(tool_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            errors.append({"source": str(tool_path), "error": str(exc)})
+            continue
+        key = _text(payload.get("toolKey") or payload.get("tool_key") or tool_path.parent.name)
+        candidates.append(
+            {
+                "kind": "tool",
+                "key": key,
+                "name": _text(payload.get("name") or key),
+                "description": _text(payload.get("description")),
+                "permissions": list(payload.get("permissions") or []),
+                "score": _capability_text_score(key, _text(payload.get("name")), _text(payload.get("description"))),
+            }
+        )
+    candidates.sort(key=lambda item: (-int(item.get("score") or 0), str(item.get("key") or "")))
+    return candidates
+
+
+def _settings_enabled_entries(path: Path) -> dict[str, bool]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    entries = payload.get("entries") if isinstance(payload, dict) else {}
+    if not isinstance(entries, dict):
+        return {}
+    result: dict[str, bool] = {}
+    for key, value in entries.items():
+        if isinstance(value, dict):
+            result[str(key)] = value.get("enabled") is not False
+    return result
+
+
+def _capability_text_score(*parts: str) -> int:
+    text = " ".join(part.lower() for part in parts if part)
+    return sum(1 for token in text.replace("_", " ").replace("-", " ").split() if token)
 
 
 def _merge_context_brief(
@@ -467,7 +561,8 @@ def _empty_capability_candidates() -> dict[str, Any]:
         "query": "",
         "templates": [],
         "actions": [],
-        "counts": {"templates": 0, "actions": 0, "errors": 0},
+        "tools": [],
+        "counts": {"templates": 0, "actions": 0, "tools": 0, "errors": 0},
         "errors": [],
     }
 

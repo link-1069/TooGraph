@@ -16,8 +16,8 @@ from app.core.runtime.page_operation_activity import (
 from app.core.runtime.run_events import publish_run_event, subscribe_run_events
 from app.core.runtime.state import set_run_status, touch_run_lifecycle, utc_now_iso
 from app.core.schemas.node_system import NodeSystemGraphDocument
-from app.core.schemas.run import NodeExecutionDetail, RunDetail, RunSummary
-from app.core.storage.run_store import list_runs, load_run
+from app.core.schemas.run import NodeExecutionDetail, RunDetail, RunSummary, RunTreeNode
+from app.core.storage.run_store import build_run_tree, list_child_runs, list_runs, load_run
 from app.core.storage.run_store import save_run
 
 
@@ -80,8 +80,17 @@ def get_run_endpoint(run_id: str) -> RunDetail:
             {
                 **run,
                 "restorable_snapshot_available": _has_restorable_graph_snapshot(run.get("graph_snapshot")),
+                "children": list_child_runs(run_id),
             }
         )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{run_id}/tree", response_model=RunTreeNode)
+def get_run_tree_endpoint(run_id: str) -> RunTreeNode:
+    try:
+        return RunTreeNode.model_validate(build_run_tree(run_id))
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

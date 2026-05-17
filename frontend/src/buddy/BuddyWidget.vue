@@ -62,16 +62,6 @@
       <span class="buddy-widget__virtual-operation-label">{{ virtualOperationStatus.label }}</span>
       <button
         type="button"
-        class="buddy-widget__virtual-operation-follow"
-        :class="{ 'buddy-widget__virtual-operation-follow--active': virtualOperationFollowEnabled }"
-        :title="virtualOperationFollowEnabled ? t('buddy.virtualOperation.followingTitle') : t('buddy.virtualOperation.followTitle')"
-        :aria-pressed="virtualOperationFollowEnabled"
-        @click="toggleVirtualOperationFollow"
-      >
-        {{ virtualOperationFollowEnabled ? t("buddy.virtualOperation.following") : t("buddy.virtualOperation.follow") }}
-      </button>
-      <button
-        type="button"
         class="buddy-widget__virtual-operation-stop"
         :title="t('buddy.virtualOperation.stop')"
         :aria-label="t('buddy.virtualOperation.stop')"
@@ -258,18 +248,6 @@
                   </span>
                 </ElOption>
               </ElSelect>
-            </div>
-            <div class="buddy-widget__follow-control" :title="virtualOperationFollowEnabled ? t('buddy.virtualOperation.followingTitle') : t('buddy.virtualOperation.followTitle')">
-              <span class="buddy-widget__control-label">{{ t("buddy.virtualOperation.follow") }}</span>
-              <button
-                type="button"
-                class="buddy-widget__follow-toggle"
-                :class="{ 'buddy-widget__follow-toggle--active': virtualOperationFollowEnabled }"
-                :aria-pressed="virtualOperationFollowEnabled"
-                @click="toggleVirtualOperationFollow"
-              >
-                {{ virtualOperationFollowEnabled ? t("buddy.virtualOperation.following") : t("buddy.virtualOperation.follow") }}
-              </button>
             </div>
           </div>
         </header>
@@ -727,7 +705,6 @@ type BuddyFinishVisibleRunOptions = {
 const BUDDY_HISTORY_STORAGE_KEY = "toograph:buddy-history";
 const BUDDY_ACTIVE_SESSION_STORAGE_KEY = "toograph:buddy-active-session";
 const BUDDY_MODEL_STORAGE_KEY = "toograph:buddy-model";
-const BUDDY_VIRTUAL_OPERATION_FOLLOW_STORAGE_KEY = "toograph:buddy-virtual-operation-follow";
 const DRAG_THRESHOLD_PX = 4;
 const AVATAR_SINGLE_CLICK_DELAY_MS = 220;
 const RUN_POLL_INTERVAL_MS = 700;
@@ -814,7 +791,6 @@ const virtualCursorDetached = ref(false);
 const virtualCursorDragging = ref(false);
 const virtualCursorIdleActionMode = ref<VirtualCursorIdleActionMode>("none");
 const virtualOperationStatus = ref<BuddyVirtualOperationStatus | null>(null);
-const virtualOperationFollowEnabled = ref(readStoredVirtualOperationFollowEnabled());
 const activeVirtualOperationToken = shallowRef<BuddyVirtualOperationToken | null>(null);
 const isVirtualOperationRunning = computed(() => Boolean(activeVirtualOperationToken.value));
 const isPanelOpen = ref(false);
@@ -2601,9 +2577,6 @@ async function maybeAutoResumePageOperationRun(
 function resolveBackgroundTemplateRunOperation(
   operationPlan: BuddyVirtualOperationPlan,
 ): Extract<BuddyVirtualOperation, { kind: "run_template" }> | null {
-  if (virtualOperationFollowEnabled.value) {
-    return null;
-  }
   if (operationPlan.operations.length !== 1) {
     return null;
   }
@@ -4943,24 +4916,6 @@ function hydrateBuddyModel() {
   buddyModelRef.value = window.localStorage.getItem(BUDDY_MODEL_STORAGE_KEY)?.trim() ?? "";
 }
 
-function readStoredVirtualOperationFollowEnabled() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  return window.localStorage.getItem(BUDDY_VIRTUAL_OPERATION_FOLLOW_STORAGE_KEY) === "1";
-}
-
-function persistVirtualOperationFollowEnabled(enabled: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(BUDDY_VIRTUAL_OPERATION_FOLLOW_STORAGE_KEY, enabled ? "1" : "0");
-  } catch {
-    // The follow preference is optional; losing it should not block a Buddy run.
-  }
-}
-
 async function loadBuddyModelOptions() {
   buddyModelLoadError.value = "";
   try {
@@ -5590,11 +5545,6 @@ async function restoreTraceGraphRevision(row: BuddyOutputTraceTreeRow) {
   }
 }
 
-function toggleVirtualOperationFollow() {
-  virtualOperationFollowEnabled.value = !virtualOperationFollowEnabled.value;
-  persistVirtualOperationFollowEnabled(virtualOperationFollowEnabled.value);
-}
-
 function resolveTraceSegmentSummary(segment: BuddyOutputTraceSegment) {
   if (segment.status === "running") {
     return findCurrentTraceRecord(segment)?.label ?? segment.boundaryLabel;
@@ -6194,26 +6144,6 @@ function formatErrorMessage(error: unknown): string {
   white-space: nowrap;
 }
 
-.buddy-widget__virtual-operation-follow {
-  appearance: none;
-  min-width: 52px;
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid rgba(255, 247, 237, 0.38);
-  border-radius: 999px;
-  color: #fff7ed;
-  background: rgba(255, 247, 237, 0.1);
-  font-size: 12px;
-  font-weight: 850;
-  cursor: pointer;
-}
-
-.buddy-widget__virtual-operation-follow:hover,
-.buddy-widget__virtual-operation-follow--active {
-  border-color: rgba(255, 247, 237, 0.74);
-  background: rgba(255, 247, 237, 0.24);
-}
-
 .buddy-widget__virtual-operation-stop {
   appearance: none;
   position: relative;
@@ -6505,13 +6435,12 @@ function formatErrorMessage(error: unknown): string {
 .buddy-widget__runtime-controls {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(116px, 136px) minmax(64px, 76px);
+  grid-template-columns: minmax(0, 1fr) minmax(116px, 136px);
   gap: 8px;
 }
 
 .buddy-widget__model,
-.buddy-widget__mode,
-.buddy-widget__follow-control {
+.buddy-widget__mode {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -6542,26 +6471,6 @@ function formatErrorMessage(error: unknown): string {
   box-shadow:
     0 0 0 1px rgba(154, 52, 18, 0.22) inset,
     0 0 0 3px rgba(210, 162, 117, 0.22);
-}
-
-.buddy-widget__follow-toggle {
-  appearance: none;
-  min-height: 30px;
-  border: 1px solid rgba(154, 52, 18, 0.14);
-  border-radius: 8px;
-  color: rgba(120, 53, 15, 0.78);
-  background: rgba(255, 255, 255, 0.66);
-  font-size: 12px;
-  font-weight: 850;
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
-}
-
-.buddy-widget__follow-toggle:hover,
-.buddy-widget__follow-toggle--active {
-  border-color: rgba(154, 52, 18, 0.28);
-  color: rgba(154, 52, 18, 0.96);
-  background: rgba(255, 248, 240, 0.96);
 }
 
 :global(.buddy-widget__select-popper.el-popper) {

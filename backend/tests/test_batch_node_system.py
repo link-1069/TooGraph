@@ -495,7 +495,12 @@ def test_langgraph_runtime_executes_batch_node_with_default_llm_worker(monkeypat
     assert batch_execution["artifacts"]["batch"]["item_count"] == 2
 
 
-def test_langgraph_runtime_executes_batch_node_with_template_worker() -> None:
+def test_langgraph_runtime_executes_batch_node_with_template_worker(monkeypatch) -> None:
+    import copy
+    import app.core.langgraph.runtime as runtime_module
+
+    saved_runs: list[dict] = []
+    monkeypatch.setattr(runtime_module, "save_run", lambda state: saved_runs.append(copy.deepcopy(state)))
     graph = NodeSystemGraphDocument.model_validate(
         {
             "graph_id": "graph_batch_template_runtime",
@@ -528,6 +533,19 @@ def test_langgraph_runtime_executes_batch_node_with_template_worker() -> None:
     result = execute_node_system_graph_langgraph(graph, save_final_run=False, emit_lifecycle_events=False)
 
     assert result["state_values"]["reports"] == ["intro", "middle"]
+    child_runs_by_id = {
+        run["run_id"]: run
+        for run in saved_runs
+        if run.get("parent_run_id") == result["run_id"]
+    }
+    child_runs = list(child_runs_by_id.values())
+    assert len(child_runs) == 2
+    assert {run["invocation_kind"] for run in child_runs} == {"batch_subgraph_worker"}
+    assert {run["batch_group_id"] for run in child_runs} == {"batch"}
+    assert {run["batch_item_index"] for run in child_runs} == {0, 1}
     batch_execution = next(item for item in result["node_executions"] if item["node_id"] == "batch")
     assert batch_execution["artifacts"]["batch"]["items"][0]["status"] == "succeeded"
+    assert batch_execution["artifacts"]["batch"]["items"][0]["subgraph"]["child_run_id"] in {
+        run["run_id"] for run in child_runs
+    }
     assert batch_execution["artifacts"]["batch"]["items"][0]["subgraph"]["status"] == "completed"

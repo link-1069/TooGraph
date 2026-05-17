@@ -47,6 +47,16 @@ class RunSnapshot(TypedDict, total=False):
 class RunState(TypedDict, total=False):
     """Runtime state for node_system graph execution."""
     run_id: str
+    parent_run_id: str
+    root_run_id: str
+    parent_node_id: str
+    invocation_kind: str
+    invocation_key: str
+    run_depth: int
+    run_path: list[str]
+    batch_group_id: str
+    batch_item_index: int | None
+    batch_item_label: str
     graph_id: str
     graph_name: str
     status: RunStatus
@@ -171,6 +181,16 @@ def create_initial_run_state(graph_id: str, graph_name: str, max_revision_round:
     run_id = f"run_{uuid4().hex[:12]}"
     state = RunState(
         run_id=run_id,
+        parent_run_id="",
+        root_run_id=run_id,
+        parent_node_id="",
+        invocation_kind="root",
+        invocation_key="",
+        run_depth=0,
+        run_path=[run_id],
+        batch_group_id="",
+        batch_item_index=None,
+        batch_item_label="",
         graph_id=graph_id,
         graph_name=graph_name,
         status="queued",

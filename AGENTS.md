@@ -12,6 +12,9 @@ These instructions apply to all work in this repository and should persist acros
 - After making code changes, restart TooGraph with the repository's standard cross-platform command: `npm start`.
 - Treat `node scripts/start.mjs` as the underlying standard start command for this repository; `npm start` should resolve to it.
 - TooGraph uses a single-port start model. The default public URL is `http://127.0.0.1:3477`, and the port can be overridden with `PORT=<port> npm start`.
+- For local verification and screenshots, prefer the default `http://127.0.0.1:3477`; do not switch to another port just because 3477 is occupied.
+- `npm start` / `scripts/start.mjs` / `scripts/start.sh` should release existing TooGraph processes that occupy the configured port before starting the new service. If startup reports that 3477 is occupied by a process it cannot safely identify as TooGraph, stop and report the PID/command instead of starting TooGraph on a second port.
+- Use `PORT=<port> npm start` only when the user explicitly asks for an alternate port, or when the user approves a temporary fallback after seeing why 3477 cannot be reused. Do not leave alternate-port TooGraph instances running after verification.
 - `npm start` should reuse `frontend/dist` when its build manifest hash matches the current frontend inputs instead of rebuilding every launch. Use `TOOGRAPH_FORCE_FRONTEND_BUILD=1 npm start` when a forced frontend rebuild is needed.
 - `npm run dev` is intentionally not a supported project command.
 - On Windows PowerShell, if execution policy blocks `npm.ps1`, use `npm.cmd start`.

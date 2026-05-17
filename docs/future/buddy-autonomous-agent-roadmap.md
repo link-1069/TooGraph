@@ -10,6 +10,7 @@
 - 运行时：`backend/app/core/langgraph/`、`backend/app/core/runtime/`
 - Buddy 前端链路：`frontend/src/buddy/`
 - 模板与固定能力选择测试：`backend/tests/test_template_layouts.py`、`backend/tests/test_toograph_capability_selector_action.py`
+- 运行树与动态能力专题剩余工作：`docs/future/run-tree-dynamic-capability-remaining-work.md`
 
 ## 长期约束
 

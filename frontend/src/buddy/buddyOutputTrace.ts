@@ -277,6 +277,7 @@ function applyActivityEvent(
   const activityStatus = normalizeActivityStatus(payload.status, payload.error);
   const runtimeKey = buildActivityRecordRuntimeKey(payload, nodeId, subgraphNodeId);
   const virtualOperation = summarizeVirtualOperationActivity(payload);
+  const runEvidence = summarizeActivityRunEvidence(payload);
   return upsertRecordInSegment(state, segmentId, {
     runtimeKey,
     kind: "activity",
@@ -289,10 +290,33 @@ function applyActivityEvent(
     nodeType: "activity",
     subgraphNodeId: subgraphNodeId || null,
     summary: virtualOperation?.summary || normalizeText(payload.summary),
-    artifactLabels: virtualOperation?.artifactLabels ?? [],
-    triggeredRunId: virtualOperation?.triggeredRunId,
+    artifactLabels: virtualOperation?.artifactLabels ?? runEvidence.artifactLabels,
+    triggeredRunId: virtualOperation?.triggeredRunId ?? runEvidence.triggeredRunId,
     graphRevision: virtualOperation?.graphRevision,
   });
+}
+
+function summarizeActivityRunEvidence(payload: RunEventPayload): { triggeredRunId?: string; artifactLabels: string[] } {
+  const detail = recordFromUnknown(payload.detail) ?? {};
+  const triggeredRunId = normalizeText(
+    detail.child_run_id
+      ?? detail.childRunId
+      ?? detail.triggered_run_id
+      ?? detail.triggeredRunId,
+  );
+  if (!triggeredRunId) {
+    return { artifactLabels: [] };
+  }
+  const status = normalizeText(
+    detail.child_run_status
+      ?? detail.childRunStatus
+      ?? detail.triggered_run_status
+      ?? detail.triggeredRunStatus,
+  );
+  return {
+    triggeredRunId,
+    artifactLabels: [`run: ${triggeredRunId}${status ? ` ${status}` : ""}`],
+  };
 }
 
 function pruneInactiveTerminalOutputSegments(

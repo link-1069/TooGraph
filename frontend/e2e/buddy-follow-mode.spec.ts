@@ -1,11 +1,10 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const ACTIVE_SESSION_STORAGE_KEY = "toograph:buddy-active-session";
-const FOLLOW_STORAGE_KEY = "toograph:buddy-virtual-operation-follow";
 
 test("background template evidence survives route changes and buddy dragging", async ({ page, request }) => {
   const sessionId = await seedBuddyTraceSession(request, "E2E background target stability");
-  await openBuddySession(page, sessionId, false);
+  await openBuddySession(page, sessionId);
   await expandTrace(page);
 
   await expect(page.getByText("artifacts: 2")).toBeVisible();
@@ -23,23 +22,6 @@ test("background template evidence survives route changes and buddy dragging", a
   await openBuddyPanelIfClosed(page);
   await expandTrace(page);
   await expect(page.getByText("run: run_e2e_target completed")).toBeVisible();
-});
-
-test("follow preference is visible, persistent, and independent from restored background evidence", async ({ page, request }) => {
-  const sessionId = await seedBuddyTraceSession(request, "E2E follow preference stability");
-  await openBuddySession(page, sessionId, false);
-  await openBuddyPanelIfClosed(page);
-
-  const followToggle = page.locator(".buddy-widget__follow-toggle");
-  await expect(followToggle).toHaveAttribute("aria-pressed", "false");
-  await followToggle.click();
-  await expect(followToggle).toHaveAttribute("aria-pressed", "true");
-
-  await page.goto("/runs");
-  await openBuddyPanelIfClosed(page);
-  await expect(page.locator(".buddy-widget__follow-toggle")).toHaveAttribute("aria-pressed", "true");
-  await expandTrace(page);
-  await expect(page.getByText("artifacts: 2")).toBeVisible();
 });
 
 async function seedBuddyTraceSession(request: APIRequestContext, title: string) {
@@ -105,13 +87,12 @@ async function seedBuddyTraceSession(request: APIRequestContext, title: string) 
   return sessionId;
 }
 
-async function openBuddySession(page: Page, sessionId: string, followEnabled: boolean) {
+async function openBuddySession(page: Page, sessionId: string) {
   await page.addInitScript(
-    ({ activeSessionId, followValue }) => {
+    ({ activeSessionId }) => {
       window.localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, activeSessionId);
-      window.localStorage.setItem(FOLLOW_STORAGE_KEY, followValue);
     },
-    { activeSessionId: sessionId, followValue: followEnabled ? "1" : "0" },
+    { activeSessionId: sessionId },
   );
   await page.goto("/");
 }

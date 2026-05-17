@@ -236,21 +236,13 @@ class TooGraphContextFanoutActionTests(unittest.TestCase):
         self.assertGreaterEqual(result["assembly_report"]["budget"]["omitted_count"], 1)
         self.assertEqual(result["assembly_report"]["merge_policy"], "priority_budget_with_conflict_notes")
         self.assertEqual(result["context_brief"]["instruction_boundary"], "context_only")
-        self.assertEqual(
-            result["capability_candidates"]["templates"],
-            [
-                {
-                    "kind": "subgraph",
-                    "key": "toograph_page_operation_workflow",
-                    "name": "操作 TooGraph 页面",
-                    "description": "固定 TooGraph 页面操作入口。",
-                    "permissions": [],
-                    "output_contract": [],
-                    "score": 0,
-                }
-            ],
-        )
-        self.assertEqual(result["capability_candidates"]["actions"], [])
+        self.assertEqual(result["capability_candidates"]["templates"][0]["key"], "policy_navigator_agent")
+        self.assertEqual(result["capability_candidates"]["templates"][0]["kind"], "subgraph")
+        self.assertNotEqual(result["capability_candidates"]["templates"][0]["key"], "toograph_page_operation_workflow")
+        self.assertEqual(result["capability_candidates"]["actions"][0]["key"], "web_search")
+        self.assertEqual(result["capability_candidates"]["actions"][0]["kind"], "action")
+        self.assertEqual(result["capability_candidates"]["counts"]["templates"], 1)
+        self.assertEqual(result["capability_candidates"]["counts"]["actions"], 1)
         self.assertEqual(result["activity_events"][0]["kind"], "context_fanout")
 
 

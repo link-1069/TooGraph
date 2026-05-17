@@ -1081,6 +1081,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             return {
                 "source_name": "Advanced Web Research",
                 "status": "succeeded",
+                "child_run_id": "run_child_research",
                 "outputs": {"final_reply": "最终答案"},
                 "output_definitions": {
                     "final_reply": {
@@ -1144,6 +1145,9 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
                     "sourceKey": "advanced_web_research_loop",
                     "sourceName": "Advanced Web Research",
                     "status": "succeeded",
+                    "childRunId": "run_child_research",
+                    "child_run_id": "run_child_research",
+                    "triggered_run_id": "run_child_research",
                     "inputs": {"user_question": "总结今天 AI 新闻"},
                     "outputs": {
                         "final_reply": {

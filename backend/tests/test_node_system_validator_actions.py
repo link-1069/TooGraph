@@ -187,6 +187,33 @@ class NodeSystemValidatorActionTests(unittest.TestCase):
 
         self.assertIn("dynamic_capability_output_state_invalid", [issue.code for issue in validation.issues])
 
+    def test_legacy_skill_capability_kind_is_rejected(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph-1",
+                "name": "Graph",
+                "state_schema": {
+                    "selected_capability": {"type": "capability", "value": {"kind": "skill", "key": "web_search"}},
+                    "dynamic_result": {"type": "result_package"},
+                },
+                "nodes": {
+                    "agent": {
+                        "kind": "agent",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "reads": [{"state": "selected_capability"}],
+                        "writes": [{"state": "dynamic_result"}],
+                        "config": {"actionKey": ""},
+                    },
+                },
+                "edges": [],
+                "conditional_edges": [],
+            }
+        )
+
+        validation = validate_graph(graph)
+
+        self.assertIn("legacy_skill_capability_kind", [issue.code for issue in validation.issues])
+
     def test_static_action_node_cannot_also_read_dynamic_capability_state(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(
             {

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cancelRun, fetchRun, resumeRun } from "./runs.ts";
+import { cancelRun, fetchRun, fetchRunTree, resumeRun } from "./runs.ts";
 
 const originalFetch = globalThis.fetch;
 
@@ -80,6 +80,39 @@ test("fetchRun forwards abort signals to the run detail request", async () => {
   await fetchRun("run-1", { signal: controller.signal });
 
   assert.equal(requestedUrl, "/api/runs/run-1");
+  assert.equal(requestSignal, controller.signal);
+
+  globalThis.fetch = originalFetch;
+});
+
+test("fetchRunTree requests the nested run tree endpoint", async () => {
+  let requestedUrl = "";
+  let requestSignal: AbortSignal | null = null;
+  const controller = new AbortController();
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    requestedUrl = String(input);
+    requestSignal = init?.signal ?? null;
+    return new Response(
+      JSON.stringify({
+        run_id: "run-1",
+        graph_id: "graph-1",
+        graph_name: "Demo",
+        status: "completed",
+        children: [],
+      }),
+      {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    );
+  }) as typeof fetch;
+
+  await fetchRunTree("run-1", { signal: controller.signal });
+
+  assert.equal(requestedUrl, "/api/runs/run-1/tree");
   assert.equal(requestSignal, controller.signal);
 
   globalThis.fetch = originalFetch;

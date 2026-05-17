@@ -177,6 +177,16 @@ class RunArtifacts(BaseModel):
 class RunSummary(BaseModel):
     """Summary returned by GET /api/runs."""
     run_id: str
+    parent_run_id: str = ""
+    root_run_id: str = ""
+    parent_node_id: str = ""
+    invocation_kind: str = ""
+    invocation_key: str = ""
+    run_depth: int = 0
+    run_path: list[str] = Field(default_factory=list)
+    batch_group_id: str = ""
+    batch_item_index: int | None = None
+    batch_item_label: str = ""
     graph_id: str | None = None
     graph_name: str
     status: str
@@ -193,9 +203,21 @@ class RunSummary(BaseModel):
     final_score: float | None = None
 
 
+class RunChildSummary(RunSummary):
+    """Direct child run summary embedded in parent run details."""
+
+
+class RunTreeNode(RunSummary):
+    """Nested run tree node returned by GET /api/runs/{run_id}/tree."""
+    current_node_id: str | None = None
+    final_result: str = ""
+    children: list[RunTreeNode] = Field(default_factory=list)
+
+
 class RunDetail(RunSummary):
     """Full detail returned by GET /api/runs/{run_id}."""
     metadata: dict[str, Any] = Field(default_factory=dict)
+    children: list[RunChildSummary] = Field(default_factory=list)
     selected_actions: list[str] = Field(default_factory=list)
     action_outputs: list[dict[str, Any]] = Field(default_factory=list)
     selected_tools: list[str] = Field(default_factory=list)

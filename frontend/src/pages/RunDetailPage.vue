@@ -101,6 +101,76 @@
           </div>
         </article>
 
+        <article v-if="runTreeVisible" class="run-detail__panel run-detail__panel--run-tree">
+          <div class="run-detail__panel-heading">
+            <div>
+              <span class="run-detail__section-kicker">{{ t("runDetail.runTree") }}</span>
+              <h3>{{ t("runDetail.runTreeTitle") }}</h3>
+            </div>
+            <span class="run-detail__tree-count">{{ t("runDetail.runTreeCount", { count: runTreeNodeCount }) }}</span>
+          </div>
+          <p v-if="runTreeLoading" class="run-detail__muted">{{ t("common.loading") }}</p>
+          <p v-else-if="runTreeError" class="run-detail__muted">{{ t("common.failedToLoad", { error: runTreeError }) }}</p>
+          <div v-else class="run-detail__run-tree">
+            <template v-for="item in runTreeDisplayItems" :key="item.key">
+              <RouterLink
+                v-if="item.kind === 'run'"
+                class="run-detail__run-tree-row"
+                :class="{ 'run-detail__run-tree-row--current': item.runId === runId }"
+                :style="runTreeDepthStyle(item.depth)"
+                :to="item.href"
+              >
+                <span class="run-detail__run-tree-rail" :class="statusBadgeClass(item.status)" aria-hidden="true"></span>
+                <span class="run-detail__run-tree-main">
+                  <strong>{{ item.graphName }}</strong>
+                  <small>{{ item.relation }}</small>
+                </span>
+                <span class="run-detail__run-tree-meta">
+                  <span :class="statusBadgeClass(item.status)">{{ item.status }}</span>
+                  <small>{{ item.durationLabel }}</small>
+                </span>
+                <span class="run-detail__run-tree-badges">
+                  <span v-if="item.currentNodeId">{{ t("runDetail.currentNode") }}: {{ item.currentNodeId }}</span>
+                  <span v-for="label in item.labels" :key="`${item.key}-${label}`">{{ label }}</span>
+                </span>
+              </RouterLink>
+              <details v-else class="run-detail__run-tree-batch">
+                <summary class="run-detail__run-tree-batch-summary" :style="runTreeDepthStyle(item.depth)">
+                  <span>
+                    <strong>{{ item.label }}</strong>
+                    <small>{{ t("runDetail.runTreeBatchCount", { count: item.count }) }}</small>
+                  </span>
+                  <span>{{ item.statusSummary }}</span>
+                </summary>
+                <div class="run-detail__run-tree-batch-body">
+                  <RouterLink
+                    v-for="row in item.rows"
+                    :key="row.key"
+                    class="run-detail__run-tree-row"
+                    :class="{ 'run-detail__run-tree-row--current': row.runId === runId }"
+                    :style="runTreeDepthStyle(row.depth)"
+                    :to="row.href"
+                  >
+                    <span class="run-detail__run-tree-rail" :class="statusBadgeClass(row.status)" aria-hidden="true"></span>
+                    <span class="run-detail__run-tree-main">
+                      <strong>{{ row.graphName }}</strong>
+                      <small>{{ row.relation }}</small>
+                    </span>
+                    <span class="run-detail__run-tree-meta">
+                      <span :class="statusBadgeClass(row.status)">{{ row.status }}</span>
+                      <small>{{ row.durationLabel }}</small>
+                    </span>
+                    <span class="run-detail__run-tree-badges">
+                      <span v-if="row.currentNodeId">{{ t("runDetail.currentNode") }}: {{ row.currentNodeId }}</span>
+                      <span v-for="label in row.labels" :key="`${row.key}-${label}`">{{ label }}</span>
+                    </span>
+                  </RouterLink>
+                </div>
+              </details>
+            </template>
+          </div>
+        </article>
+
         <article v-if="operationJournalVisible" class="run-detail__panel run-detail__panel--operation-journal">
           <div class="run-detail__panel-heading">
             <div>
@@ -301,7 +371,7 @@ import { useI18n } from "vue-i18n";
 
 import { restoreGraphRevision } from "@/api/graphs";
 import { fetchOperationJournal } from "@/api/operationJournal";
-import { fetchRun } from "@/api/runs";
+import { fetchRun, fetchRunTree } from "@/api/runs";
 import {
   buildLiveStreamingOutput,
   buildRunEventStreamUrl,
@@ -315,17 +385,26 @@ import AppShell from "@/layouts/AppShell.vue";
 import { buildCycleVisualization, describeCycleStopReason, formatCycleStopReason } from "@/lib/run-cycle-visualization";
 import { buildSnapshotScopedRun, canRestoreRunDetail, resolveRunRestoreUrl, resolveRunSnapshot } from "@/lib/run-restore";
 import type { OperationJournalPage } from "@/types/operationJournal";
-import type { RunDetail } from "@/types/run";
+import type { RunDetail, RunTreeNode } from "@/types/run";
 
-import { buildRunAggregatedTimeline, buildRunStatusFacts, listRunOutputArtifacts } from "./runDetailModel.ts";
+import {
+  buildRunAggregatedTimeline,
+  buildRunStatusFacts,
+  buildRunTreeDisplayItems,
+  countRunTreeNodes,
+  listRunOutputArtifacts,
+} from "./runDetailModel.ts";
 import { buildOperationJournalDisplayItems, type OperationJournalDisplayItem } from "./operationJournalModel.ts";
 import ArtifactDocumentPager from "./ArtifactDocumentPager.vue";
 
 const route = useRoute();
 const { t, locale } = useI18n();
 const run = ref<RunDetail | null>(null);
+const runTree = ref<RunTreeNode | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const runTreeLoading = ref(false);
+const runTreeError = ref<string | null>(null);
 const selectedSnapshotIdDraft = ref<string | null>(null);
 const expandedContentKeys = ref<Set<string>>(new Set());
 const liveStreamingOutputs = ref<Record<string, LiveStreamingOutput>>({});
@@ -367,6 +446,11 @@ const cycleVisualization = computed(() =>
 );
 const outputArtifacts = computed(() => (viewedRun.value ? listRunOutputArtifacts(viewedRun.value) : []));
 const aggregatedTimeline = computed(() => (viewedRun.value ? buildRunAggregatedTimeline(viewedRun.value) : []));
+const runTreeDisplayItems = computed(() => buildRunTreeDisplayItems(runTree.value));
+const runTreeNodeCount = computed(() => countRunTreeNodes(runTree.value));
+const runTreeVisible = computed(() =>
+  runTreeLoading.value || Boolean(runTreeError.value) || runTreeDisplayItems.value.length > 1,
+);
 const operationJournalItems = computed(() => buildOperationJournalDisplayItems(operationJournal.value?.entries ?? []));
 const operationJournalVisible = computed(() =>
   operationJournalLoading.value || Boolean(operationJournalError.value) || operationJournalItems.value.length > 0,
@@ -401,6 +485,10 @@ function toggleContentExpansion(key: string) {
 
 function isContentExpanded(key: string) {
   return expandedContentKeys.value.has(key);
+}
+
+function runTreeDepthStyle(depth: number) {
+  return { "--run-tree-indent": `${Math.max(0, depth) * 18}px` } as Record<string, string>;
 }
 
 function clearRunPollTimer() {
@@ -596,6 +684,25 @@ async function loadRun(nextRunId = runId.value) {
     }
     run.value = nextRun;
     error.value = null;
+    runTreeLoading.value = true;
+    runTreeError.value = null;
+    try {
+      const nextRunTree = await fetchRunTree(normalizedRunId, { signal: controller.signal });
+      if (requestId !== activeRunRequestId) {
+        return;
+      }
+      runTree.value = nextRunTree;
+    } catch (treeError) {
+      if (requestId !== activeRunRequestId) {
+        return;
+      }
+      runTree.value = null;
+      runTreeError.value = resolveRunFetchErrorMessage(treeError);
+    } finally {
+      if (requestId === activeRunRequestId) {
+        runTreeLoading.value = false;
+      }
+    }
     void loadOperationJournal(normalizedRunId);
     if (shouldPollRunStatus(nextRun.status)) {
       pollTimer = window.setTimeout(() => {
@@ -609,6 +716,9 @@ async function loadRun(nextRunId = runId.value) {
       return;
     }
     run.value = null;
+    runTree.value = null;
+    runTreeLoading.value = false;
+    runTreeError.value = null;
     operationJournal.value = null;
     error.value = resolveRunFetchErrorMessage(fetchError);
   } finally {
@@ -648,7 +758,10 @@ function resetRunView() {
   activeOperationJournalRequestId += 1;
   clearPendingOperationJournalRequest();
   run.value = null;
+  runTree.value = null;
   error.value = null;
+  runTreeLoading.value = false;
+  runTreeError.value = null;
   operationJournal.value = null;
   operationJournalLoading.value = false;
   operationJournalError.value = null;
@@ -765,6 +878,11 @@ function statusBadgeClass(status: string) {
 .run-detail__panel--operation-journal {
   border-color: rgba(14, 116, 144, 0.18);
   background: rgba(246, 253, 255, 0.9);
+}
+
+.run-detail__panel--run-tree {
+  border-color: rgba(13, 148, 136, 0.18);
+  background: rgba(246, 253, 251, 0.9);
 }
 
 .run-detail__panel--wide {
@@ -945,6 +1063,7 @@ function statusBadgeClass(status: string) {
   font-size: 0.84rem;
 }
 
+.run-detail__tree-count,
 .run-detail__timeline-heading span {
   border: 1px solid var(--toograph-status-border, transparent);
   border-radius: 999px;
@@ -959,11 +1078,133 @@ function statusBadgeClass(status: string) {
 .run-detail__artifacts,
 .run-detail__live-list,
 .run-detail__operation-journal-list,
+.run-detail__run-tree,
 .run-detail__timeline,
 .run-detail__info-grid,
 .run-detail__meta-groups {
   display: grid;
   gap: 12px;
+}
+
+.run-detail__run-tree {
+  --run-tree-indent: 0px;
+}
+
+.run-detail__run-tree-row,
+.run-detail__run-tree-batch-summary {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid rgba(13, 148, 136, 0.14);
+  border-radius: 16px;
+  padding: 12px 14px 12px calc(14px + var(--run-tree-indent));
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  text-decoration: none;
+}
+
+.run-detail__run-tree-row:hover {
+  border-color: rgba(13, 148, 136, 0.28);
+  background: rgba(240, 253, 250, 0.92);
+}
+
+.run-detail__run-tree-row--current {
+  border-color: rgba(13, 148, 136, 0.36);
+  background: rgba(224, 253, 250, 0.94);
+}
+
+.run-detail__run-tree-rail {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--toograph-status-fg, rgb(13, 148, 136));
+}
+
+.run-detail__run-tree-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-detail__run-tree-main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--toograph-text-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-detail__run-tree-main small,
+.run-detail__run-tree-meta small,
+.run-detail__run-tree-batch-summary small {
+  color: rgba(60, 41, 20, 0.58);
+  font-size: 0.76rem;
+}
+
+.run-detail__run-tree-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-detail__run-tree-meta > span {
+  border: 1px solid var(--toograph-status-border, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: var(--toograph-status-bg, rgba(255, 248, 240, 0.92));
+  color: var(--toograph-status-fg, rgb(154, 52, 18));
+  font-family: var(--toograph-font-mono);
+  font-size: 0.8rem;
+}
+
+.run-detail__run-tree-badges {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.run-detail__run-tree-badges span {
+  border: 1px solid rgba(13, 148, 136, 0.14);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(240, 253, 250, 0.8);
+  color: rgba(15, 118, 110, 0.86);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.74rem;
+}
+
+.run-detail__run-tree-batch {
+  display: grid;
+  gap: 10px;
+}
+
+.run-detail__run-tree-batch-summary {
+  grid-template-columns: minmax(0, 1fr) auto;
+  cursor: pointer;
+}
+
+.run-detail__run-tree-batch-summary > span:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.run-detail__run-tree-batch-summary > span:last-child {
+  color: rgba(15, 118, 110, 0.84);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.8rem;
+}
+
+.run-detail__run-tree-batch-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .run-detail__subcard,

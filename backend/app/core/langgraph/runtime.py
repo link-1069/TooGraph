@@ -59,6 +59,7 @@ from app.core.runtime.execution_graph import (
 )
 from app.core.runtime.run_artifacts import append_run_snapshot as _append_run_snapshot
 from app.core.runtime.run_artifacts import refresh_run_artifacts as _refresh_run_artifacts
+from app.core.runtime.run_tree import create_child_run_state
 from app.core.runtime.node_execution_records import finish_node_execution, start_node_execution
 from app.core.runtime.runtime_summaries import summarize_first_value as _summarize_values
 from app.core.runtime.state_io import apply_state_writes, collect_node_inputs
@@ -345,6 +346,40 @@ def _apply_inherited_permission_metadata(
             metadata[key] = copy.deepcopy(parent_metadata[key])
     subgraph_document.metadata = metadata
     return subgraph_document
+
+
+def _create_child_graph_run_state(
+    *,
+    parent_state: dict[str, Any],
+    subgraph_document: NodeSystemGraphDocument,
+    parent_node_id: str,
+    invocation_kind: str,
+    invocation_key: str,
+    batch_group_id: str = "",
+    batch_item_index: int | None = None,
+    batch_item_label: str = "",
+) -> dict[str, Any]:
+    child_state = create_child_run_state(
+        parent_state,
+        graph_id=subgraph_document.graph_id,
+        graph_name=subgraph_document.name,
+        parent_node_id=parent_node_id,
+        invocation_kind=invocation_kind,
+        invocation_key=invocation_key,
+        batch_group_id=batch_group_id,
+        batch_item_index=batch_item_index,
+        batch_item_label=batch_item_label,
+    )
+    relation_metadata = dict(child_state.get("metadata") or {})
+    child_state["metadata"] = {
+        **copy.deepcopy(dict(subgraph_document.metadata or {})),
+        **relation_metadata,
+        "resolved_runtime_backend": "langgraph",
+    }
+    child_state["runtime_backend"] = "langgraph"
+    child_state["graph_snapshot"] = subgraph_document.model_dump(by_alias=True)
+    child_state["node_status_map"] = {node_name: "idle" for node_name in subgraph_document.nodes}
+    return child_state
 
 
 def _build_langgraph_node_callable(
@@ -946,29 +981,28 @@ def _execute_subgraph_node_runtime(
     }
     parent_context = _subgraph_context(state)
     parent_path = parent_context["path"] if parent_context else []
-    subgraph_initial_state = create_initial_run_state(subgraph_document.graph_id, subgraph_document.name)
-    subgraph_initial_state["run_id"] = str(state.get("run_id") or subgraph_initial_state["run_id"])
+    subgraph_initial_state = _create_child_graph_run_state(
+        parent_state=_root_parent_run_state(state),
+        subgraph_document=subgraph_document,
+        parent_node_id=node_name,
+        invocation_kind="subgraph_node",
+        invocation_key=f"embedded:{node.name or node_name}",
+    )
     subgraph_initial_state["checkpoint_metadata"] = {
         "available": False,
         "checkpoint_id": None,
-        "thread_id": _subgraph_checkpoint_thread_id(subgraph_initial_state["run_id"], [*parent_path, node_name]),
+        "thread_id": subgraph_initial_state["run_id"],
         "checkpoint_ns": "",
         "saver": None,
         "resume_source": None,
     }
-    subgraph_initial_state["subgraph_status_map"] = parent_status_map
-    subgraph_initial_state["_parent_run_state"] = _root_parent_run_state(state)
-    subgraph_initial_state["_subgraph_context"] = {
-        "node_id": node_name,
-        "path": [*parent_path, node_name],
-    }
-    subgraph_initial_state["_subgraph_persist_progress"] = persist_parent_progress
+    save_run(subgraph_initial_state)
     subgraph_state = execute_node_system_graph_langgraph(
         subgraph_document,
         subgraph_initial_state,
-        persist_progress=False,
-        save_final_run=False,
-        emit_lifecycle_events=False,
+        persist_progress=True,
+        save_final_run=True,
+        emit_lifecycle_events=True,
     )
     if subgraph_state.get("status") == "awaiting_human":
         _mark_pending_subgraph_inner_node_paused(subgraph_state)
@@ -977,7 +1011,10 @@ def _execute_subgraph_node_runtime(
     if persist_parent_progress:
         touch_run_lifecycle(_root_parent_run_state(state))
         save_run(_root_parent_run_state(state))
-    subgraph_artifact = _build_subgraph_execution_artifact(node, subgraph_document, subgraph_state)
+    subgraph_artifact = {
+        **_build_subgraph_execution_artifact(node, subgraph_document, subgraph_state),
+        "child_run_id": subgraph_state.get("run_id"),
+    }
     if subgraph_state.get("status") == "awaiting_human":
         return {
             "outputs": {},
@@ -1025,22 +1062,31 @@ def _execute_batch_subgraph_worker_runtime(
     worker_node_name = f"{node_name}_item_{item_index + 1}"
     subgraph_document = _build_subgraph_document(parent_graph, worker_node_name, worker_node, item_inputs)
     subgraph_document = _apply_inherited_permission_metadata(subgraph_document, state)
-    subgraph_initial_state = create_initial_run_state(subgraph_document.graph_id, subgraph_document.name)
-    subgraph_initial_state["run_id"] = str(state.get("run_id") or subgraph_initial_state["run_id"])
+    subgraph_initial_state = _create_child_graph_run_state(
+        parent_state=_root_parent_run_state(state),
+        subgraph_document=subgraph_document,
+        parent_node_id=node_name,
+        invocation_kind="batch_subgraph_worker",
+        invocation_key=worker_node_name,
+        batch_group_id=node_name,
+        batch_item_index=item_index,
+        batch_item_label=_batch_item_label(item_inputs, item_index),
+    )
     subgraph_initial_state["checkpoint_metadata"] = {
         "available": False,
         "checkpoint_id": None,
-        "thread_id": _subgraph_checkpoint_thread_id(subgraph_initial_state["run_id"], [node_name, f"item_{item_index + 1}"]),
+        "thread_id": subgraph_initial_state["run_id"],
         "checkpoint_ns": "",
         "saver": None,
         "resume_source": None,
     }
+    save_run(subgraph_initial_state)
     subgraph_state = execute_node_system_graph_langgraph(
         subgraph_document,
         subgraph_initial_state,
-        persist_progress=False,
-        save_final_run=False,
-        emit_lifecycle_events=False,
+        persist_progress=True,
+        save_final_run=True,
+        emit_lifecycle_events=True,
     )
     if subgraph_state.get("status") == "awaiting_human":
         raise ValueError(f"Batch node '{node_name}' template worker item {item_index + 1} cannot pause for human review.")
@@ -1068,9 +1114,19 @@ def _execute_batch_subgraph_worker_runtime(
         "warnings": list(subgraph_state.get("warnings", [])),
         "subgraph": {
             **_build_subgraph_execution_artifact(worker_node, subgraph_document, subgraph_state),
+            "child_run_id": subgraph_state.get("run_id"),
             "output_values": output_values_by_internal_state,
         },
     }
+
+
+def _batch_item_label(item_inputs: dict[str, Any], item_index: int) -> str:
+    for value in item_inputs.values():
+        if value in (None, "", [], {}):
+            continue
+        text = str(value)
+        return text[:80]
+    return f"item-{item_index + 1}"
 
 
 def _resume_subgraph_node_runtime(
@@ -1188,30 +1244,29 @@ def _execute_dynamic_subgraph_capability(
     }
     parent_context = _subgraph_context(state)
     parent_path = parent_context["path"] if parent_context else []
-    subgraph_initial_state = create_initial_run_state(subgraph_document.graph_id, subgraph_document.name)
-    subgraph_initial_state["run_id"] = str(state.get("run_id") or subgraph_initial_state["run_id"])
+    subgraph_initial_state = _create_child_graph_run_state(
+        parent_state=_root_parent_run_state(state),
+        subgraph_document=subgraph_document,
+        parent_node_id=node_name,
+        invocation_kind="dynamic_subgraph_capability",
+        invocation_key=template_key,
+    )
     subgraph_initial_state["checkpoint_metadata"] = {
         "available": False,
         "checkpoint_id": None,
-        "thread_id": _subgraph_checkpoint_thread_id(subgraph_initial_state["run_id"], [*parent_path, node_name]),
+        "thread_id": subgraph_initial_state["run_id"],
         "checkpoint_ns": "",
         "saver": None,
         "resume_source": None,
     }
-    subgraph_initial_state["subgraph_status_map"] = parent_status_map
-    subgraph_initial_state["_parent_run_state"] = _root_parent_run_state(state)
-    subgraph_initial_state["_subgraph_context"] = {
-        "node_id": node_name,
-        "path": [*parent_path, node_name],
-    }
-    subgraph_initial_state["_subgraph_persist_progress"] = persist_parent_progress
+    save_run(subgraph_initial_state)
     started_at = time.perf_counter()
     subgraph_state = execute_node_system_graph_langgraph(
         subgraph_document,
         subgraph_initial_state,
-        persist_progress=False,
-        save_final_run=False,
-        emit_lifecycle_events=False,
+        persist_progress=True,
+        save_final_run=True,
+        emit_lifecycle_events=True,
     )
     duration_ms = int((time.perf_counter() - started_at) * 1000)
     if subgraph_state.get("status") == "awaiting_human":
@@ -1226,6 +1281,7 @@ def _execute_dynamic_subgraph_capability(
         return {
             "source_name": str(template.get("label") or template.get("default_graph_name") or template_key),
             "status": "awaiting_human",
+            "child_run_id": subgraph_state.get("run_id"),
             "outputs": {},
             "output_definitions": {},
             "duration_ms": duration_ms,
@@ -1242,7 +1298,10 @@ def _execute_dynamic_subgraph_capability(
                 subgraph_state,
                 parent_path,
             ),
-            "subgraph": _build_dynamic_subgraph_execution_artifact(subgraph_document, subgraph_state),
+            "subgraph": {
+                **_build_dynamic_subgraph_execution_artifact(subgraph_document, subgraph_state),
+                "child_run_id": subgraph_state.get("run_id"),
+            },
         }
 
     output_state_keys = _graph_output_state_keys(subgraph_document)
@@ -1260,13 +1319,17 @@ def _execute_dynamic_subgraph_capability(
     return {
         "source_name": str(template.get("label") or template.get("default_graph_name") or template_key),
         "status": "failed" if status == "failed" or error else "succeeded",
+        "child_run_id": subgraph_state.get("run_id"),
         "outputs": output_values,
         "output_definitions": output_definitions,
         "duration_ms": duration_ms,
         "error": error,
         "error_type": "subgraph_execution_failed" if status == "failed" or error else "",
         "warnings": list(subgraph_state.get("warnings", [])),
-        "subgraph": _build_dynamic_subgraph_execution_artifact(subgraph_document, subgraph_state),
+        "subgraph": {
+            **_build_dynamic_subgraph_execution_artifact(subgraph_document, subgraph_state),
+            "child_run_id": subgraph_state.get("run_id"),
+        },
     }
 
 

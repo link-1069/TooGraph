@@ -73,6 +73,24 @@ def _run_summary(run_id: str, *, internal: bool = False) -> dict:
     }
 
 
+def _child_run_summary(run_id: str = "run_child", *, parent_run_id: str = "run_root") -> dict:
+    payload = _run_summary(run_id)
+    payload.update(
+        {
+            "graph_id": "graph_child",
+            "graph_name": "Child Graph",
+            "parent_run_id": parent_run_id,
+            "root_run_id": "run_root",
+            "parent_node_id": "run_selected_subgraph",
+            "invocation_kind": "dynamic_subgraph_capability",
+            "invocation_key": "advanced_web_research_loop",
+            "run_depth": 1,
+            "run_path": ["run_root", run_id],
+        }
+    )
+    return payload
+
+
 def _paused_run(run_id: str = "run_paused", status: str = "awaiting_human") -> dict:
     return {
         "run_id": run_id,
@@ -121,6 +139,47 @@ class RunRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([run["run_id"] for run in response.json()], ["run_internal", "run_visible"])
+
+    def test_get_run_detail_includes_direct_child_run_summaries(self) -> None:
+        root = _run_summary("run_root")
+        with (
+            patch("app.api.routes_runs.load_run", return_value=root),
+            patch("app.api.routes_runs.list_child_runs", return_value=[_child_run_summary()], create=True),
+        ):
+            with TestClient(app) as client:
+                response = client.get("/api/runs/run_root")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["children"][0]["run_id"], "run_child")
+        self.assertEqual(payload["children"][0]["parent_run_id"], "run_root")
+        self.assertEqual(payload["children"][0]["invocation_kind"], "dynamic_subgraph_capability")
+
+    def test_get_run_tree_returns_nested_child_runs(self) -> None:
+        tree = {
+            **_run_summary("run_root"),
+            "parent_run_id": "",
+            "root_run_id": "run_root",
+            "parent_node_id": "",
+            "invocation_kind": "root",
+            "invocation_key": "",
+            "run_depth": 0,
+            "run_path": ["run_root"],
+            "batch_group_id": "",
+            "batch_item_index": None,
+            "batch_item_label": "",
+            "current_node_id": None,
+            "children": [{**_child_run_summary(), "children": []}],
+        }
+        with patch("app.api.routes_runs.build_run_tree", return_value=tree, create=True):
+            with TestClient(app) as client:
+                response = client.get("/api/runs/run_root/tree")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["run_id"], "run_root")
+        self.assertEqual(payload["children"][0]["run_id"], "run_child")
+        self.assertEqual(payload["children"][0]["run_path"], ["run_root", "run_child"])
 
     def test_cancel_run_marks_paused_run_cancelled_and_clears_pending_resume_metadata(self) -> None:
         run = _paused_run()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 
@@ -260,7 +261,11 @@ def test_subgraph_validation_fails_before_run_when_required_input_is_unbound() -
     assert [issue.code for issue in validation.issues] == ["subgraph_input_binding_missing"]
 
 
-def test_langgraph_runtime_executes_subgraph_with_isolated_input_state() -> None:
+def test_langgraph_runtime_executes_subgraph_with_isolated_input_state(monkeypatch) -> None:
+    import app.core.langgraph.runtime as runtime_module
+
+    saved_runs: list[dict] = []
+    monkeypatch.setattr(runtime_module, "save_run", lambda state: saved_runs.append(copy.deepcopy(state)))
     graph = NodeSystemGraphDocument.model_validate(
         _parent_graph_payload(
             subgraph_reads=[{"state": "question", "required": True}],
@@ -272,7 +277,13 @@ def test_langgraph_runtime_executes_subgraph_with_isolated_input_state() -> None
 
     assert result["status"] == "completed"
     assert result["state_values"]["answer"] == "来自父图的明确输入"
+    child_runs = [run for run in saved_runs if run.get("parent_run_id") == result["run_id"]]
+    assert len(child_runs) >= 1
+    assert child_runs[-1]["parent_node_id"] == "nested_research"
+    assert child_runs[-1]["invocation_kind"] == "subgraph_node"
+    assert child_runs[-1]["root_run_id"] == result["run_id"]
     subgraph_execution = next(item for item in result["node_executions"] if item["node_id"] == "nested_research")
+    assert subgraph_execution["artifacts"]["subgraph"]["child_run_id"] == child_runs[-1]["run_id"]
     assert subgraph_execution["artifacts"]["subgraph"]["output_values"] == {"internal_question": "来自父图的明确输入"}
 
 
@@ -589,7 +600,9 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
     import app.core.langgraph.runtime as runtime_module
     import app.core.runtime.node_system_executor as executor_module
 
+    saved_runs: list[dict] = []
     template = _dynamic_passthrough_template()
+    monkeypatch.setattr(runtime_module, "save_run", lambda state: saved_runs.append(copy.deepcopy(state)))
     monkeypatch.setattr(runtime_module, "load_template_record", lambda template_key: template)
     monkeypatch.setattr(executor_module, "load_template_record", lambda template_key: template)
     monkeypatch.setattr(
@@ -650,10 +663,18 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
     result = execute_node_system_graph_langgraph(graph)
 
     assert result["status"] == "completed"
+    child_runs = [run for run in saved_runs if run.get("parent_run_id") == result["run_id"]]
+    assert len(child_runs) >= 1
+    assert child_runs[-1]["parent_node_id"] == "run_selected_subgraph"
+    assert child_runs[-1]["invocation_kind"] == "dynamic_subgraph_capability"
+    assert child_runs[-1]["invocation_key"] == "simple_dynamic_subgraph"
     package = result["state_values"]["dynamic_result"]
     assert package["kind"] == "result_package"
     assert package["sourceType"] == "subgraph"
     assert package["sourceKey"] == "simple_dynamic_subgraph"
+    assert package["childRunId"] == child_runs[-1]["run_id"]
+    assert package["child_run_id"] == child_runs[-1]["run_id"]
+    assert package["triggered_run_id"] == child_runs[-1]["run_id"]
     assert package["inputs"] == {"final_reply": "子图最终回复"}
     assert package["outputs"]["final_reply"] == {
         "name": "Final Reply",

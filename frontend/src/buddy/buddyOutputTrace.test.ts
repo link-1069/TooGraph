@@ -284,6 +284,39 @@ test("reduceBuddyOutputTraceEvent records tool activity inside the active segmen
   assert.equal(segment.records[1].durationMs, 120);
 });
 
+test("reduceBuddyOutputTraceEvent exposes child run evidence from dynamic subgraph activity", () => {
+  const graph = fiveNodeGraph();
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  let state = createBuddyOutputTraceRuntimeState(plan);
+
+  state = reduceBuddyOutputTraceEvent(state, plan, graph, "node.started", { node_id: "node_a", node_type: "agent" }, 1000);
+  state = reduceBuddyOutputTraceEvent(
+    state,
+    plan,
+    graph,
+    "activity.event",
+    {
+      sequence: 3,
+      kind: "subgraph_invocation",
+      summary: "Subgraph advanced_web_research_loop completed.",
+      node_id: "node_a",
+      status: "succeeded",
+      duration_ms: 640,
+      detail: {
+        subgraph_key: "advanced_web_research_loop",
+        child_run_id: "run_research",
+        child_run_status: "completed",
+      },
+    },
+    1500,
+  );
+
+  const [segment] = listBuddyOutputTraceSegmentsForDisplay(state);
+  assert.equal(segment.records[1].kind, "activity");
+  assert.equal(segment.records[1].triggeredRunId, "run_research");
+  assert.deepEqual(segment.records[1].artifactLabels, ["run: run_research completed"]);
+});
+
 test("reduceBuddyOutputTraceEvent records readable virtual operation activity", () => {
   const graph = fiveNodeGraph();
   const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));

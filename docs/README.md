@@ -8,6 +8,10 @@
   - Buddy 自主循环、自我演进、页面操作、长期记忆、业务模板、Hybrid RAG 和 Eval 的剩余待办。
   - 本文只记录还没完成的方向和验收口径；当前能力以代码、官方模板 JSON、Action manifest 和测试为准。
 
+- [future/run-tree-dynamic-capability-remaining-work.md](future/run-tree-dynamic-capability-remaining-work.md)
+  - 运行树、动态能力、Buddy 胶囊展开态和 child run resume 的专题剩余工作。
+  - 作为 Buddy 路线图下的聚焦子清单维护，不记录逐日实现快照。
+
 - [structured-output-and-function-calling.md](structured-output-and-function-calling.md)
   - 结构化输出和 function/tool calling 适配层的剩余工作。
   - 只作为模型 Provider 与 LLM 输出约束的待办清单，不作为 TooGraph 产品主协议。
@@ -23,6 +27,10 @@
 - [rag-memory-action-convergence-audit.md](rag-memory-action-convergence-audit.md)
   - RAG 与记忆系统共用能力边界、官方 Action 冗余审计和图模板落地路线。
   - 作为 Action 收敛与 RAG/Memory 架构演进参考，不替代长期路线图。
+
+- [local-workspace-action-architecture.md](local-workspace-action-architecture.md)
+  - 本地工作区文件编辑、脚本执行与 Action 拆分边界判断。
+  - 作为 `local_workspace_executor`、`toograph_script_tester` 和底层 workspace primitive 的改造参考。
 
 - [../action/ACTION_AUTHORING_GUIDE.md](../action/ACTION_AUTHORING_GUIDE.md)
   - Action 包结构、生命周期入口、权限边界和输出契约。

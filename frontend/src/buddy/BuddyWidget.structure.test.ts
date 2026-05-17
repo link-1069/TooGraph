@@ -621,22 +621,22 @@ test("BuddyWidget resumes page operation runs after virtual UI execution", () =>
   assert.match(componentSource, /await resumeRun\([\s\S]*operationPlan\.runId,[\s\S]*buildPageOperationResumePayload\(\{[\s\S]*operationResult,[\s\S]*pageContext: pageOperationContextAfter\.pageContext,[\s\S]*pageOperationContext: pageOperationContextAfter\.actionRuntimeContext,[\s\S]*\}\),[\s\S]*\);/);
 });
 
-test("BuddyWidget runs template targets in the background unless follow mode requests visible playback", () => {
+test("BuddyWidget runs template targets in the background without a follow-mode branch", () => {
   assert.match(componentSource, /import \{ fetchTemplate, fetchTemplates, restoreGraphRevision, runGraph \} from "\.\.\/api\/graphs\.ts";/);
   assert.match(componentSource, /import \{ buildBuddyTemplateRunGraph \} from "\.\/buddyTemplateRunGraph\.ts";/);
-  assert.match(componentSource, /const BUDDY_VIRTUAL_OPERATION_FOLLOW_STORAGE_KEY = "toograph:buddy-virtual-operation-follow";/);
-  assert.match(componentSource, /const virtualOperationFollowEnabled = ref\(readStoredVirtualOperationFollowEnabled\(\)\);/);
+  assert.doesNotMatch(componentSource, /BUDDY_VIRTUAL_OPERATION_FOLLOW_STORAGE_KEY/);
+  assert.doesNotMatch(componentSource, /virtualOperationFollowEnabled/);
   assert.match(componentSource, /function resolveBackgroundTemplateRunOperation\(/);
-  assert.match(componentSource, /if \(virtualOperationFollowEnabled\.value\) \{[\s\S]*return null;[\s\S]*\}/);
+  assert.doesNotMatch(componentSource, /if \(virtualOperationFollowEnabled\.value\) \{[\s\S]*return null;[\s\S]*\}/);
   assert.match(componentSource, /async function executeBuddyBackgroundRunTemplateOperation\(/);
   assert.match(componentSource, /const \{ graph \} = buildBuddyTemplateRunGraph\(template,/);
   assert.match(componentSource, /runGraph\(attachPageOperationRuntimeContext\(graph, pageOperationContext\.actionRuntimeContext\)\)/);
   assert.match(componentSource, /buddyMascotDebugStore\.recordVirtualOperationTriggeredRun\(triggeredRun\);/);
   assert.match(componentSource, /syncBackgroundTemplateRunDisplay\(operationPlan, runDetail, execution\.graph\)/);
-  assert.match(componentSource, /class="buddy-widget__virtual-operation-follow"/);
-  assert.match(componentSource, /class="buddy-widget__follow-control"/);
-  assert.match(componentSource, /class="buddy-widget__follow-toggle"/);
-  assert.match(componentSource, /function toggleVirtualOperationFollow\(\)/);
+  assert.doesNotMatch(componentSource, /class="buddy-widget__virtual-operation-follow"/);
+  assert.doesNotMatch(componentSource, /class="buddy-widget__follow-control"/);
+  assert.doesNotMatch(componentSource, /class="buddy-widget__follow-toggle"/);
+  assert.doesNotMatch(componentSource, /function toggleVirtualOperationFollow\(\)/);
 });
 
 test("BuddyWidget keeps a fixed visible virtual page operation sequence for followed template runs", () => {

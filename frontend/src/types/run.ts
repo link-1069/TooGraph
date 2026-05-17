@@ -54,6 +54,7 @@ export type SubgraphExecutionArtifact = {
   graph_id?: string | null;
   name?: string | null;
   status?: string | null;
+  child_run_id?: string | null;
   node_status_map?: Record<string, string>;
   input_values?: Record<string, unknown>;
   output_values?: Record<string, unknown>;
@@ -228,6 +229,16 @@ export type RunArtifacts = {
 
 export type RunSummary = {
   run_id: string;
+  parent_run_id?: string;
+  root_run_id?: string;
+  parent_node_id?: string;
+  invocation_kind?: string;
+  invocation_key?: string;
+  run_depth?: number;
+  run_path?: string[];
+  batch_group_id?: string;
+  batch_item_index?: number | null;
+  batch_item_label?: string;
   graph_id?: string | null;
   graph_name: string;
   status: string;
@@ -244,8 +255,17 @@ export type RunSummary = {
   final_score?: number | null;
 };
 
+export type RunChildSummary = RunSummary;
+
+export type RunTreeNode = RunSummary & {
+  current_node_id?: string | null;
+  final_result?: string;
+  children: RunTreeNode[];
+};
+
 export type RunDetail = RunSummary & {
   metadata: Record<string, unknown>;
+  children?: RunChildSummary[];
   selected_actions: string[];
   action_outputs: Array<Record<string, unknown>>;
   selected_tools: string[];
