@@ -25,6 +25,7 @@ import { buildPythonExportFileName } from "./pythonExportModel.ts";
 import { formatValidationFeedback } from "./runFeedbackModel.ts";
 import { shouldRequestSaveMetadata, type SaveMetadataRequest } from "./saveMetadataModel.ts";
 import type { WorkspaceRunFeedback } from "./useWorkspaceRunVisualState.ts";
+import { formatApiValidationErrorDetail } from "./apiValidationIssueFeedbackModel.ts";
 
 type WorkspaceRouteTab = Pick<EditorWorkspaceTab, "graphId" | "kind" | "templateId" | "defaultTemplateId" | "subgraphSource">;
 
@@ -49,6 +50,7 @@ type WorkspaceGraphPersistenceControllerInput = {
   requestSaveMetadata?: (request: SaveMetadataRequest) => Promise<GraphPayload | GraphDocument | null>;
   showSaveSuccessToast?: (message: string) => void;
   showSaveErrorToast?: (message: string) => void;
+  translate: (key: string, params?: Record<string, unknown>) => string;
   setMessageFeedbackForTab: (
     tabId: string,
     feedback: { tone: WorkspaceRunFeedback["tone"]; message: string; activeRunId?: string | null; activeRunStatus?: string | null },
@@ -81,7 +83,8 @@ export function useWorkspaceGraphPersistenceController(input: WorkspaceGraphPers
   }
 
   function setSaveErrorFeedback(tabId: string, error: unknown, fallbackMessage: string) {
-    const message = error instanceof Error ? error.message : fallbackMessage;
+    const errorDetail = formatApiValidationErrorDetail(error, fallbackMessage, input.translate);
+    const message = input.translate("editor.saveTemplateFailed", { error: errorDetail });
     input.setMessageFeedbackForTab(tabId, {
       tone: "danger",
       message,

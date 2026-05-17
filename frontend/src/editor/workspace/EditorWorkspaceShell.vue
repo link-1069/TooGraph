@@ -1149,6 +1149,7 @@ const {
   requestSaveMetadata: requestSaveMetadataForDocument,
   showSaveSuccessToast,
   showSaveErrorToast,
+  translate: (key, params) => t(key, params ?? {}),
   setMessageFeedbackForTab,
 });
 const {

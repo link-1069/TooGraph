@@ -17,6 +17,7 @@ import {
   updateTemplateCapabilityDiscoverable,
   updateTemplateStatus,
 } from "./graphs.ts";
+import { ApiHttpError } from "./http.ts";
 import type { GraphPayload } from "@/types/node-system";
 
 const originalFetch = globalThis.fetch;
@@ -140,6 +141,62 @@ test("saveGraphAsTemplate posts graph payload to the template save endpoint", as
   assert.equal(response.template_id, "user_template_1");
 
   globalThis.fetch = originalFetch;
+});
+
+test("saveGraphAsTemplate preserves structured validation issues from template save failures", async () => {
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        detail: {
+          valid: false,
+          issues: [
+            {
+              code: "input_node_write_count_invalid",
+              message: "Input node 'input_0edfba58' must define exactly one written state.",
+              path: "nodes.input_0edfba58.writes",
+            },
+          ],
+        },
+      }),
+      {
+        status: 422,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    )) as typeof fetch;
+
+  const payload: GraphPayload = {
+    graph_id: null,
+    name: "Invalid Template Graph",
+    state_schema: {},
+    nodes: {},
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  try {
+    await assert.rejects(
+      () => saveGraphAsTemplate(payload),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiHttpError);
+        assert.equal(error.status, 422);
+        assert.equal(error.method, "POST");
+        assert.equal(error.path, "/api/templates/save");
+        assert.deepEqual(error.validationIssues, [
+          {
+            code: "input_node_write_count_invalid",
+            message: "Input node 'input_0edfba58' must define exactly one written state.",
+            path: "nodes.input_0edfba58.writes",
+          },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("saveGraph can attach revision context to the saved graph request", async () => {

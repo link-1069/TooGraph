@@ -5,6 +5,7 @@ import { ref } from "vue";
 import type { EditorWorkspaceTab } from "@/lib/editor-workspace";
 import type { GraphDocument, GraphPayload, GraphRunResponse } from "@/types/node-system";
 import type { RunDetail } from "@/types/run";
+import { ApiHttpError } from "../../api/http.ts";
 
 import type { RunActivityState } from "./runActivityModel.ts";
 import type { RunNodeTimingByNodeId } from "./runNodeTimingModel.ts";
@@ -173,7 +174,30 @@ function createRunHarness(
     showRunErrorToast: (message) => {
       runErrorToasts.push(message);
     },
-    translate: (key, params) => `${key}:${params?.runId ?? ""}`,
+    translate: (key, params) => {
+      if (key === "feedback.runRequestFailed") {
+        return `运行图失败：${params?.error ?? ""}`;
+      }
+      if (key === "editor.validationConditionRuleValueTypeMismatch") {
+        return `条件节点“${params?.node ?? ""}”对${params?.stateType ?? ""} State“${params?.state ?? ""}”的判定值无效：${params?.reason ?? ""}。位置：${params?.path ?? ""}`;
+      }
+      if (key === "editor.validationConditionBooleanValueInvalid") {
+        return "布尔判定值只能是 true 或 false";
+      }
+      if (key === "editor.validationConditionNumberValueInvalid") {
+        return "数值判定值必须是有限数字";
+      }
+      if (key === "editor.validationStateTypeBoolean") {
+        return "布尔值";
+      }
+      if (key === "editor.validationStateTypeNumber") {
+        return "数值";
+      }
+      if (key === "editor.validationIssueWithPath") {
+        return `${params?.message ?? ""}（位置：${params?.path ?? ""}）`;
+      }
+      return `${key}:${params?.runId ?? ""}`;
+    },
   });
 
   return {
@@ -308,4 +332,40 @@ test("useWorkspaceRunController surfaces run request failures in feedback and a 
   assert.deepEqual(harness.runErrorToasts, [backendMessage]);
   assert.deepEqual(harness.streams, []);
   assert.deepEqual(harness.polls, []);
+});
+
+test("useWorkspaceRunController localizes structured condition validation failures", async () => {
+  const harness = createRunHarness({
+    runGraph: async () => {
+      throw new ApiHttpError({
+        message:
+          "POST /api/graphs/run failed with status 422: Condition node 'condition_cc1eadac' has an invalid value for boolean state 'state_3': Boolean condition value must be true or false. (nodes.condition_cc1eadac.config.rule.value)",
+        method: "POST",
+        path: "/api/graphs/run",
+        status: 422,
+        payload: {
+          detail: {
+            valid: false,
+            issues: [
+              {
+                code: "condition_rule_value_type_mismatch",
+                message:
+                  "Condition node 'condition_cc1eadac' has an invalid value for boolean state 'state_3': Boolean condition value must be true or false.",
+                path: "nodes.condition_cc1eadac.config.rule.value",
+              },
+            ],
+          },
+        },
+      });
+    },
+  });
+
+  await harness.controller.runActiveGraph();
+
+  const localizedMessage =
+    "运行图失败：条件节点“condition_cc1eadac”对布尔值 State“state_3”的判定值无效：布尔判定值只能是 true 或 false。位置：nodes.condition_cc1eadac.config.rule.value";
+  assert.equal(harness.feedbackByTabId.value.tab_a?.tone, "danger");
+  assert.equal(harness.feedbackByTabId.value.tab_a?.message, localizedMessage);
+  assert.deepEqual(harness.runErrorToasts, [localizedMessage]);
+  assert.ok(!localizedMessage.includes("POST /api/graphs/run"));
 });

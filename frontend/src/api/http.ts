@@ -2,6 +2,41 @@ export const API_BASE = import.meta.env?.VITE_API_BASE_URL?.trim() || "";
 
 const MAX_HTTP_ERROR_DETAIL_LENGTH = 1200;
 
+export type ApiValidationIssue = {
+  code: string;
+  message: string;
+  path: string | null;
+};
+
+type ApiHttpErrorInput = {
+  message: string;
+  method: string;
+  path: string;
+  status: number;
+  payload: unknown;
+};
+
+export class ApiHttpError extends Error {
+  readonly method: string;
+  readonly path: string;
+  readonly status: number;
+  readonly payload: unknown;
+  readonly detail: unknown;
+  readonly validationIssues: ApiValidationIssue[];
+
+  constructor(input: ApiHttpErrorInput) {
+    super(input.message);
+    this.name = "ApiHttpError";
+    this.method = input.method;
+    this.path = input.path;
+    this.status = input.status;
+    this.payload = input.payload;
+    this.detail = isRecord(input.payload) && "detail" in input.payload ? input.payload.detail : input.payload;
+    this.validationIssues = extractApiValidationIssues(this.detail);
+    Object.setPrototypeOf(this, ApiHttpError.prototype);
+  }
+}
+
 function buildApiUrl(path: string): string {
   if (!API_BASE) {
     return path;
@@ -21,28 +56,44 @@ function truncateHttpErrorDetail(value: string): string {
   return `${value.slice(0, MAX_HTTP_ERROR_DETAIL_LENGTH - 1)}...`;
 }
 
-function formatValidationIssues(value: unknown): string {
+function extractApiValidationIssues(value: unknown): ApiValidationIssue[] {
   if (!isRecord(value) || !Array.isArray(value.issues)) {
+    return [];
+  }
+
+  return value.issues
+    .map((issue) => {
+      if (!isRecord(issue)) {
+        return null;
+      }
+      const code = typeof issue.code === "string" ? issue.code.trim() : "";
+      const message = typeof issue.message === "string" ? issue.message.trim() : "";
+      const path = typeof issue.path === "string" ? issue.path.trim() : null;
+      if (!code && !message && !path) {
+        return null;
+      }
+      return { code, message, path } satisfies ApiValidationIssue;
+    })
+    .filter((issue): issue is ApiValidationIssue => issue !== null);
+}
+
+function formatValidationIssues(value: unknown): string {
+  const issues = extractApiValidationIssues(value);
+  if (!issues.length) {
     return "";
   }
 
-  const issueMessages = value.issues.slice(0, 5).map((issue) => {
-    if (!isRecord(issue)) {
-      return "";
-    }
-    const message = typeof issue.message === "string" ? issue.message.trim() : "";
-    const code = typeof issue.code === "string" ? issue.code.trim() : "";
-    const path = typeof issue.path === "string" ? issue.path.trim() : "";
-    const label = message || code;
+  const issueMessages = issues.slice(0, 5).map((issue) => {
+    const label = issue.message || issue.code;
     if (!label) {
       return "";
     }
-    return path ? `${label} (${path})` : label;
+    return issue.path ? `${label} (${issue.path})` : label;
   });
 
   const formattedIssues = issueMessages.filter(Boolean);
-  if (value.issues.length > formattedIssues.length) {
-    formattedIssues.push(`还有 ${value.issues.length - formattedIssues.length} 个问题`);
+  if (issues.length > formattedIssues.length) {
+    formattedIssues.push(`还有 ${issues.length - formattedIssues.length} 个问题`);
   }
   return formattedIssues.join("; ");
 }
@@ -120,36 +171,56 @@ function formatHttpErrorPayload(payload: unknown): string {
   }
 }
 
-async function buildHttpErrorMessage(response: Response, method: string, path: string): Promise<string> {
+async function buildHttpError(response: Response, method: string, path: string): Promise<ApiHttpError> {
   const baseMessage = `${method} ${path} failed with status ${response.status}`;
   let responseText = "";
 
   try {
     responseText = await response.text();
   } catch {
-    return baseMessage;
+    return new ApiHttpError({
+      message: baseMessage,
+      method,
+      path,
+      status: response.status,
+      payload: null,
+    });
   }
 
   const trimmedText = responseText.trim();
   if (!trimmedText) {
-    return baseMessage;
+    return new ApiHttpError({
+      message: baseMessage,
+      method,
+      path,
+      status: response.status,
+      payload: null,
+    });
   }
 
   let detail = "";
+  let payload: unknown = trimmedText;
   try {
-    detail = formatHttpErrorPayload(JSON.parse(trimmedText));
+    payload = JSON.parse(trimmedText) as unknown;
+    detail = formatHttpErrorPayload(payload);
   } catch {
     detail = trimmedText;
   }
 
   const trimmedDetail = truncateHttpErrorDetail(detail.trim());
-  return trimmedDetail ? `${baseMessage}: ${trimmedDetail}` : baseMessage;
+  return new ApiHttpError({
+    message: trimmedDetail ? `${baseMessage}: ${trimmedDetail}` : baseMessage,
+    method,
+    path,
+    status: response.status,
+    payload,
+  });
 }
 
 export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(buildApiUrl(path), init);
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "GET", path));
+    throw await buildHttpError(response, "GET", path);
   }
   return response.json() as Promise<T>;
 }
@@ -163,7 +234,7 @@ export async function apiPost<T>(path: string, payload: unknown): Promise<T> {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "POST", path));
+    throw await buildHttpError(response, "POST", path);
   }
   return response.json() as Promise<T>;
 }
@@ -177,7 +248,7 @@ export async function apiPut<T>(path: string, payload: unknown): Promise<T> {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "PUT", path));
+    throw await buildHttpError(response, "PUT", path);
   }
   return response.json() as Promise<T>;
 }
@@ -191,7 +262,7 @@ export async function apiPatch<T>(path: string, payload: unknown): Promise<T> {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "PATCH", path));
+    throw await buildHttpError(response, "PATCH", path);
   }
   return response.json() as Promise<T>;
 }
@@ -205,7 +276,7 @@ export async function apiPostText(path: string, payload: unknown): Promise<strin
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "POST", path));
+    throw await buildHttpError(response, "POST", path);
   }
   return response.text();
 }
@@ -216,7 +287,7 @@ export async function apiPostForm<T>(path: string, payload: FormData): Promise<T
     body: payload,
   });
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "POST", path));
+    throw await buildHttpError(response, "POST", path);
   }
   return response.json() as Promise<T>;
 }
@@ -226,7 +297,7 @@ export async function apiDelete<T>(path: string): Promise<T> {
     method: "DELETE",
   });
   if (!response.ok) {
-    throw new Error(await buildHttpErrorMessage(response, "DELETE", path));
+    throw await buildHttpError(response, "DELETE", path);
   }
   return response.json() as Promise<T>;
 }

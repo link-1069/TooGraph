@@ -4,6 +4,7 @@ import type { EditorWorkspaceTab } from "../../lib/editor-workspace.ts";
 import type { GraphDocument, GraphPayload, GraphRunResponse } from "../../types/node-system.ts";
 import type { RunDetail } from "../../types/run.ts";
 
+import { formatApiValidationErrorDetail, hasApiValidationIssues } from "./apiValidationIssueFeedbackModel.ts";
 import { setTabScopedRecordEntry } from "./editorTabRuntimeModel.ts";
 import type { RunActivityState } from "./runActivityModel.ts";
 import type { RunNodeTimingByNodeId } from "./runNodeTimingModel.ts";
@@ -128,7 +129,11 @@ export function useWorkspaceRunController(input: WorkspaceRunControllerInput) {
       });
       startQueuedRunPolling(tab.tabId, response.run_id);
     } catch (error) {
-      const message = error instanceof Error ? error.message : input.translate("feedback.runFailed", { runId: "" });
+      const fallbackMessage = input.translate("feedback.runFailed", { runId: "" });
+      const errorDetail = formatApiValidationErrorDetail(error, fallbackMessage, input.translate);
+      const message = hasApiValidationIssues(error)
+        ? input.translate("feedback.runRequestFailed", { error: errorDetail })
+        : errorDetail;
       input.setMessageFeedbackForTab(tab.tabId, {
         tone: "danger",
         message,

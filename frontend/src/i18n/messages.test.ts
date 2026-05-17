@@ -58,6 +58,35 @@ test("i18n messages localize preset persistence feedback", () => {
   assert.equal(messages["en-US"].feedback.presetSaveFailed, "Failed to save preset node.");
 });
 
+test("i18n messages localize template save failure context", () => {
+  assert.equal(messages["zh-CN"].editor.saveTemplateFailed, "保存模板失败：{error}");
+  assert.equal(messages["zh-CN"].editor.validationInputNodeWriteCountInvalid, "输入节点“{node}”必须且只能写入一个 State。位置：{path}");
+  assert.equal(
+    messages["zh-CN"].editor.validationConditionRuleValueTypeMismatch,
+    "条件节点“{node}”对{stateType} State“{state}”的判定值无效：{reason}。位置：{path}",
+  );
+  assert.equal(messages["zh-CN"].editor.validationConditionBooleanValueInvalid, "布尔判定值只能是 true 或 false");
+  assert.equal(messages["zh-CN"].editor.validationConditionNumberValueInvalid, "数值判定值必须是有限数字");
+  assert.equal(messages["zh-CN"].editor.validationStateTypeBoolean, "布尔值");
+  assert.equal(messages["zh-CN"].editor.validationStateTypeNumber, "数值");
+  assert.equal(messages["zh-CN"].editor.validationIssueWithPath, "{message}（位置：{path}）");
+  assert.equal(messages["zh-CN"].editor.validationIssueRemainingCount, "还有 {count} 个问题");
+  assert.equal(messages["zh-CN"].feedback.runRequestFailed, "运行图失败：{error}");
+  assert.equal(messages["en-US"].editor.saveTemplateFailed, "Failed to save template: {error}");
+  assert.equal(messages["en-US"].editor.validationInputNodeWriteCountInvalid, 'Input node "{node}" must write exactly one State. Location: {path}');
+  assert.equal(
+    messages["en-US"].editor.validationConditionRuleValueTypeMismatch,
+    'Condition node "{node}" has an invalid value for {stateType} State "{state}": {reason}. Location: {path}',
+  );
+  assert.equal(messages["en-US"].editor.validationConditionBooleanValueInvalid, "Boolean condition value must be true or false");
+  assert.equal(messages["en-US"].editor.validationConditionNumberValueInvalid, "Number condition value must be a finite number");
+  assert.equal(messages["en-US"].editor.validationStateTypeBoolean, "boolean");
+  assert.equal(messages["en-US"].editor.validationStateTypeNumber, "number");
+  assert.equal(messages["en-US"].editor.validationIssueWithPath, "{message} (Location: {path})");
+  assert.equal(messages["en-US"].editor.validationIssueRemainingCount, "{count} more issues");
+  assert.equal(messages["en-US"].feedback.runRequestFailed, "Failed to run graph: {error}");
+});
+
 test("new language packs use handwritten localized UI copy for high-traffic surfaces", () => {
   assert.equal(messages["zh-TW"].nav.runs, "執行記錄");
   assert.equal(messages["ja-JP"].editor.runGraph, "実行");

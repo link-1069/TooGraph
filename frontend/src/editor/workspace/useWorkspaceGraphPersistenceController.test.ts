@@ -10,6 +10,7 @@ import type {
   GraphValidationResponse,
   TemplateSaveResponse,
 } from "@/types/node-system";
+import { ApiHttpError } from "../../api/http.ts";
 
 import { useWorkspaceGraphPersistenceController } from "./useWorkspaceGraphPersistenceController.ts";
 import type { WorkspaceRunFeedback } from "./useWorkspaceRunVisualState.ts";
@@ -84,7 +85,7 @@ function createHarness(options: {
   locked?: boolean;
   savedGraph?: GraphDocument;
   savedTemplateLabel?: string;
-  saveGraphAsTemplateError?: Error;
+  saveGraphAsTemplateError?: unknown;
   requestSaveMetadata?: (request: {
     document: GraphPayload | GraphDocument;
     target: "graph" | "template";
@@ -205,6 +206,18 @@ function createHarness(options: {
     },
     showSaveErrorToast: (message) => {
       saveErrorToasts.push(message);
+    },
+    translate: (key, params) => {
+      if (key === "editor.saveTemplateFailed") {
+        return `保存模板失败：${params?.error ?? ""}`;
+      }
+      if (key === "editor.validationInputNodeWriteCountInvalid") {
+        return `输入节点“${params?.node ?? ""}”必须且只能写入一个 State。位置：${params?.path ?? ""}`;
+      }
+      if (key === "editor.validationIssueWithPath") {
+        return `${params?.message ?? ""}（位置：${params?.path ?? ""}）`;
+      }
+      return `${key}:${params?.error ?? ""}`;
     },
   });
 
@@ -448,7 +461,25 @@ test("useWorkspaceGraphPersistenceController saves the active graph as a user te
 
 test("useWorkspaceGraphPersistenceController surfaces template save failures without rejecting toolbar actions", async () => {
   const harness = createHarness({
-    saveGraphAsTemplateError: new Error("Template validation failed."),
+    saveGraphAsTemplateError: new ApiHttpError({
+      message:
+        "POST /api/templates/save failed with status 422: Input node 'input_0edfba58' must define exactly one written state. (nodes.input_0edfba58.writes)",
+      method: "POST",
+      path: "/api/templates/save",
+      status: 422,
+      payload: {
+        detail: {
+          valid: false,
+          issues: [
+            {
+              code: "input_node_write_count_invalid",
+              message: "Input node 'input_0edfba58' must define exactly one written state.",
+              path: "nodes.input_0edfba58.writes",
+            },
+          ],
+        },
+      },
+    }),
   });
 
   const saved = await harness.controller.saveActiveGraphAsTemplate();
@@ -456,8 +487,13 @@ test("useWorkspaceGraphPersistenceController surfaces template save failures wit
   assert.equal(saved, false);
   assert.equal(harness.templateLoadCount, 0);
   assert.equal(harness.feedback.at(-1)?.feedback.tone, "danger");
-  assert.equal(harness.feedback.at(-1)?.feedback.message, "Template validation failed.");
-  assert.deepEqual(harness.saveErrorToasts, ["Template validation failed."]);
+  assert.equal(
+    harness.feedback.at(-1)?.feedback.message,
+    "保存模板失败：输入节点“input_0edfba58”必须且只能写入一个 State。位置：nodes.input_0edfba58.writes",
+  );
+  assert.deepEqual(harness.saveErrorToasts, [
+    "保存模板失败：输入节点“input_0edfba58”必须且只能写入一个 State。位置：nodes.input_0edfba58.writes",
+  ]);
 });
 
 test("useWorkspaceGraphPersistenceController warns with the resolved name when duplicate graph or template names are renamed", async () => {

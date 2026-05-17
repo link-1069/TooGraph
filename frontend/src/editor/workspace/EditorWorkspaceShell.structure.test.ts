@@ -588,6 +588,8 @@ test("EditorWorkspaceShell surfaces run request errors as a prominent toast", ()
     componentSource,
     /useWorkspaceRunController\(\{[\s\S]*setMessageFeedbackForTab,[\s\S]*showRunErrorToast,[\s\S]*translate: \(key, params\) => t\(key, params \?\? \{\}\),[\s\S]*\}\);/,
   );
+  assert.match(runControllerSource, /formatApiValidationErrorDetail\(error, fallbackMessage, input\.translate\)/);
+  assert.match(runControllerSource, /input\.translate\("feedback\.runRequestFailed", \{ error: errorDetail \}\)/);
   assert.match(runControllerSource, /input\.showRunErrorToast\(message\);/);
   assert.match(componentSource, /function showRunErrorToast\(message: string\)/);
   assert.match(
@@ -599,9 +601,12 @@ test("EditorWorkspaceShell surfaces run request errors as a prominent toast", ()
 });
 
 test("EditorWorkspaceShell surfaces template save errors as a prominent toast", () => {
-  assert.match(componentSource, /useWorkspaceGraphPersistenceController\(\{[\s\S]*showSaveSuccessToast,[\s\S]*showSaveErrorToast,[\s\S]*setMessageFeedbackForTab,[\s\S]*\}\);/);
+  assert.match(componentSource, /useWorkspaceGraphPersistenceController\(\{[\s\S]*showSaveSuccessToast,[\s\S]*showSaveErrorToast,[\s\S]*translate: \(key, params\) => t\(key, params \?\? \{\}\),[\s\S]*setMessageFeedbackForTab,[\s\S]*\}\);/);
   assert.match(graphPersistenceControllerSource, /showSaveErrorToast\?: \(message: string\) => void;/);
+  assert.match(graphPersistenceControllerSource, /translate: \(key: string, params\?: Record<string, unknown>\) => string;/);
   assert.match(graphPersistenceControllerSource, /function setSaveErrorFeedback\(tabId: string, error: unknown, fallbackMessage: string\)/);
+  assert.match(graphPersistenceControllerSource, /formatApiValidationErrorDetail\(error, fallbackMessage, input\.translate\)/);
+  assert.match(graphPersistenceControllerSource, /input\.translate\("editor\.saveTemplateFailed", \{ error: errorDetail \}\)/);
   assert.match(graphPersistenceControllerSource, /input\.showSaveErrorToast\?\.\(message\);/);
   assert.match(graphPersistenceControllerSource, /setSaveErrorFeedback\(tab\.tabId, error, "Failed to save graph as template\."\);[\s\S]*return false;/);
   assert.match(componentSource, /function showSaveErrorToast\(message: string\) \{[\s\S]*customClass:\s*"editor-workspace-shell__save-error-toast"[\s\S]*type:\s*"error"[\s\S]*duration:\s*9000,/);
