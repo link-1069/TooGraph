@@ -16,6 +16,14 @@
   - 源码运行、Docker 镜像、数据卷、端口绑定、健康检查和更新流程。
   - 启动命令仍统一为 `npm start` / `node scripts/start.mjs`。
 
+- [rag-system-research-and-tutorial.md](rag-system-research-and-tutorial.md)
+  - RAG 系统调研、专业术语解释、搭建教学、技术选型和 TooGraph RAG 建设路线。
+  - 作为正式教学与架构参考文档维护，不记录阶段性执行流水。
+
+- [rag-memory-action-convergence-audit.md](rag-memory-action-convergence-audit.md)
+  - RAG 与记忆系统共用能力边界、官方 Action 冗余审计和图模板落地路线。
+  - 作为 Action 收敛与 RAG/Memory 架构演进参考，不替代长期路线图。
+
 - [../action/ACTION_AUTHORING_GUIDE.md](../action/ACTION_AUTHORING_GUIDE.md)
   - Action 包结构、生命周期入口、权限边界和输出契约。
   - 手工创建 Action 与图模板生成 Action 都应遵守该协议。
