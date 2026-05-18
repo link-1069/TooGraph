@@ -37,6 +37,12 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
             ["capability", "found"],
         )
         self.assertNotIn("audit", [field["key"] for field in manifest["stateOutputSchema"]])
+        instruction = manifest["llmInstruction"]
+        self.assertIn("优先级", instruction)
+        self.assertLess(instruction.index("subgraph"), instruction.index("action"))
+        self.assertLess(instruction.index("action"), instruction.index("tool"))
+        self.assertIn('{"kind":"none"}', instruction)
+        self.assertNotIn('{"kind":"none","reason"', instruction)
 
     def test_before_llm_publishes_enabled_capability_key_description_context(self) -> None:
         selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_test")
@@ -124,8 +130,7 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
             capability={"kind": "none", "reason": "没有合适能力。"},
         )
 
-        self.assertEqual(result["capability"]["kind"], "none")
-        self.assertEqual(result["capability"]["reason"], "没有合适能力。")
+        self.assertEqual(result["capability"], {"kind": "none"})
         self.assertFalse(result["found"])
 
 

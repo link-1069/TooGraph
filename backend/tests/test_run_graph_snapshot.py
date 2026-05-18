@@ -21,7 +21,6 @@ class RunGraphSnapshotTests(unittest.TestCase):
                 "advanced_web_research_loop",
                 "ai_news_digest_to_wechat_article",
                 "buddy_autonomous_loop",
-                "buddy_capability_loop",
                 "ecommerce_review_mining_agent",
                 "game_creative_factory",
                 "job_application_interview_coach",

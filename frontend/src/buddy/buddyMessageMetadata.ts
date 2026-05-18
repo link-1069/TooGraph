@@ -1,8 +1,24 @@
 import type { BuddyOutputTraceRecord, BuddyOutputTraceSegment } from "./buddyOutputTrace.ts";
 
+export type BuddyPublicOutputMetadata = {
+  outputNodeId: string;
+  stateKey: string;
+  stateName: string;
+  stateType: string;
+  displayMode: string;
+  kind: "text" | "card";
+  durationMs: number | null;
+  status: "streaming" | "completed" | "failed";
+};
+
 type OutputTraceBuddyMessageMetadata = {
   kind: "output_trace";
   outputTrace: BuddyOutputTraceSegment;
+};
+
+type PublicOutputBuddyMessageMetadata = {
+  kind: "public_output";
+  publicOutput: BuddyPublicOutputMetadata;
 };
 
 export function buildOutputTraceBuddyMessageMetadata(outputTrace: BuddyOutputTraceSegment): OutputTraceBuddyMessageMetadata {
@@ -12,12 +28,43 @@ export function buildOutputTraceBuddyMessageMetadata(outputTrace: BuddyOutputTra
   };
 }
 
+export function buildPublicOutputBuddyMessageMetadata(publicOutput: BuddyPublicOutputMetadata): PublicOutputBuddyMessageMetadata {
+  return {
+    kind: "public_output",
+    publicOutput,
+  };
+}
+
 export function resolveOutputTraceBuddyMessageMetadata(metadata: unknown): BuddyOutputTraceSegment | null {
   if (!isRecord(metadata) || metadata.kind !== "output_trace") {
     return null;
   }
   const outputTrace = metadata.outputTrace;
   return isBuddyOutputTraceSegment(outputTrace) ? outputTrace : null;
+}
+
+export function resolvePublicOutputBuddyMessageMetadata(metadata: unknown): BuddyPublicOutputMetadata | null {
+  if (!isRecord(metadata) || metadata.kind !== "public_output") {
+    return null;
+  }
+  const publicOutput = metadata.publicOutput;
+  return isBuddyPublicOutputMetadata(publicOutput) ? publicOutput : null;
+}
+
+function isBuddyPublicOutputMetadata(value: unknown): value is BuddyPublicOutputMetadata {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.outputNodeId === "string" &&
+    typeof value.stateKey === "string" &&
+    typeof value.stateName === "string" &&
+    typeof value.stateType === "string" &&
+    typeof value.displayMode === "string" &&
+    (value.kind === "text" || value.kind === "card") &&
+    isNullableNumber(value.durationMs) &&
+    (value.status === "streaming" || value.status === "completed" || value.status === "failed")
+  );
 }
 
 function isBuddyOutputTraceSegment(value: unknown): value is BuddyOutputTraceSegment {

@@ -4,7 +4,7 @@
 
 1. 在仓库根目录运行 `npm start`。这会执行 `node scripts/start.mjs`，构建或复用 `frontend/dist`，然后在单端口启动 TooGraph。
 2. 打开 `http://127.0.0.1:3477`，进入 Editor。
-3. 新建一张图，或从官方模板创建一张图，例如 `advanced_web_research_loop`、`buddy_autonomous_loop`、`buddy_capability_loop`、`toograph_page_operation_workflow` 或 `toograph_action_creation_workflow`。
+3. 新建一张图，或从官方模板创建一张图，例如 `advanced_web_research_loop`、`buddy_autonomous_loop`、`toograph_page_operation_workflow` 或 `toograph_action_creation_workflow`。
 4. 先看清节点链路：最小图通常是 `input -> agent -> output`；复杂图会通过 `condition` 和 `subgraph` 表达分支、循环和封装流程。
 5. 在 input 节点里改一个你关心的问题。
 6. 如果要运行 LLM 节点，先到 Model Providers 页面配置可用的本地 OpenAI-compatible 网关、私有网关或云端 Provider，并选择默认文本模型。
@@ -16,7 +16,6 @@
 
 - `advanced_web_research_loop`：多轮联网搜索、证据评估、补充检索和最终回复。
 - `buddy_autonomous_loop`：Buddy 可见主循环，读取 Buddy Home、本轮消息、页面上下文和对话历史，完成请求理解、按需任务计划、能力循环和最终回复；澄清和能力缺口通过最终回复结束本轮。
-- `buddy_capability_loop`：Buddy 官方能力循环子图，负责选择 Action、Subgraph、Tool 或可运行图模板能力、执行、复盘和决定是否继续。
 - `toograph_page_operation_workflow`：操作 TooGraph 页面和运行指定图模板的官方可见操作入口。
 - `toograph_action_creation_workflow`：通过澄清、样例生成、Action 文件生成、脚本测试和受控写入来创建用户自定义 Action。
 - `buddy_autonomous_review`：Buddy 回复完成后的内部后台自主复盘模板，显示名为“自主复盘”，不作为普通模板入口。

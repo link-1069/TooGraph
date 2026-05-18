@@ -236,6 +236,77 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
         self.assertEqual(state["node_status_map"], {"output_active": "success"})
         self.assertEqual(state["final_result"], "fresh")
 
+    def test_collect_output_boundaries_includes_formal_outputs_for_written_states(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph_1",
+                "name": "Formal Output Graph",
+                "state_schema": {
+                    "intro": {"name": "Intro", "type": "text", "value": ""},
+                    "final": {"name": "Final", "type": "text", "value": ""},
+                },
+                "nodes": {
+                    "selector": {
+                        "kind": "agent",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "writes": [{"state": "intro"}],
+                    },
+                    "dynamic": {
+                        "kind": "agent",
+                        "ui": {"position": {"x": 200, "y": 0}},
+                        "writes": [{"state": "final"}],
+                    },
+                    "output_intro": {
+                        "kind": "output",
+                        "name": "初步回复",
+                        "ui": {"position": {"x": 400, "y": -120}},
+                        "reads": [{"state": "intro"}],
+                    },
+                    "output_final": {
+                        "kind": "output",
+                        "name": "最终回复",
+                        "ui": {"position": {"x": 400, "y": 120}},
+                        "reads": [{"state": "final"}],
+                    },
+                },
+                "edges": [
+                    {"source": "selector", "target": "output_intro"},
+                    {"source": "dynamic", "target": "output_final"},
+                ],
+            }
+        )
+        state = {
+            "state_values": {
+                "intro": "我会先帮你联网调研。",
+                "final": "这是最终整理结果。",
+            },
+            "state_last_writers": {
+                "intro": {"node_id": "selector", "output_key": "intro"},
+                "final": {"node_id": "dynamic", "output_key": "final"},
+            },
+            "output_previews": [],
+            "saved_outputs": [],
+        }
+
+        collect_output_boundaries(
+            graph,
+            state,
+            {build_regular_edge_id("dynamic", "output_final")},
+        )
+
+        self.assertEqual(
+            [(preview["node_id"], preview["value"]) for preview in state["output_previews"]],
+            [
+                ("output_intro", "我会先帮你联网调研。"),
+                ("output_final", "这是最终整理结果。"),
+            ],
+        )
+        self.assertEqual(
+            state["node_status_map"],
+            {"output_intro": "success", "output_final": "success"},
+        )
+        self.assertEqual(state["final_result"], "这是最终整理结果。")
+
 
 if __name__ == "__main__":
     unittest.main()

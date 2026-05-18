@@ -3,8 +3,8 @@
   "actionKey": "toograph_capability_selector",
   "name": "TooGraph 能力选择器",
   "description": "根据用户需求和 before_llm.py 提供的当前启用能力目录，选择一个动态 Action、Subgraph、Tool 或 none 能力。",
-  "llmInstruction": "你已绑定 TooGraph 能力选择器。读取 requirement 和 Action Pre-LLM Context 中按 Subgraphs、Actions、Tools 分区列出的当前启用能力目录；目录中的每个能力只提供 key 和使用场景 description。只输出 llmOutputSchema.capability：kind 必须是 action、subgraph、tool 或 none；选择能力时 key 必须完全来自对应分区；没有合适能力时输出 {\"kind\":\"none\",\"reason\":\"...\"}。不要执行能力，不要输出候选列表。",
-  "version": "3.0.0",
+  "llmInstruction": "你已绑定 TooGraph 能力选择器。读取 requirement 和 Action Pre-LLM Context 中按 Subgraphs、Actions、Tools 分区列出的当前启用能力目录；目录中的每个能力只提供 key 和使用场景 description。只输出 llmOutputSchema.capability。选择优先级：subgraph > action > tool；当多个能力都能完成需求时，选择优先级最高且描述最匹配的一个。kind 必须是 subgraph、action、tool 或 none；选择能力时 key 必须完全来自对应分区；没有合适能力时只输出 {\"kind\":\"none\"}，不需要 reason。不要执行能力，不要输出候选列表。",
+  "version": "3.0.1",
   "timeoutSeconds": 30,
   "permissions": [],
   "stateInputSchema": [

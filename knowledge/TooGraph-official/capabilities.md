@@ -14,7 +14,6 @@ TooGraph 当前适合做这些事情：
 - 使用 `toograph_capability_selector` 在 Buddy 或模板内选择一个启用的 Action、Subgraph、Tool 或 `none` 能力。
 - 使用 `toograph_page_operator` 通过结构化页面操作书发起普通页面操作、固定化运行图模板操作，或在编辑器中用 `graph_edit editor.graph.playback` 可见回放目标图搭建。
 - 使用 `toograph_page_operation_workflow` 让 Buddy 可见地打开模板库、搜索目标模板、写入本次目标、点击运行并读取公开输出。
-- 使用 `buddy_capability_loop` 作为官方能力循环子图，让 Buddy 选择、执行和复盘一个 Action、Subgraph 或 Tool 能力。
 - 使用 `toograph_action_builder`、`toograph_script_tester` 和 `local_workspace_executor` 组成用户自定义 Action 创建流程。
 - 用 output 节点实时预览 state，并展示本地 artifact 路径指向的文档、图片和视频。
 - 在 Run Detail 里查看节点执行结果、Action 输出、状态快照、输出产物、warnings 和 errors。

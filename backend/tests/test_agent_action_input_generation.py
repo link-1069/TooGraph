@@ -550,7 +550,7 @@ class AgentActionInputGenerationTests(unittest.TestCase):
             }
         )
 
-        action_inputs, _reasoning, warnings, updated_config = generate_agent_action_inputs(
+        action_inputs, state_outputs, _reasoning, warnings, updated_config = generate_agent_action_inputs(
             node=node,
             input_values={"question": "How should LLM nodes emit JSON?"},
             bindings=[
@@ -590,6 +590,7 @@ class AgentActionInputGenerationTests(unittest.TestCase):
         )
 
         self.assertEqual(action_inputs, {"web_search": {"query": "TooGraph structured output", "search_context": ""}})
+        self.assertEqual(state_outputs, {})
         self.assertEqual(warnings, [])
         schema = captured["structured_output_schema"]
         self.assertEqual(schema["type"], "object")
@@ -599,6 +600,110 @@ class AgentActionInputGenerationTests(unittest.TestCase):
         self.assertFalse(schema["properties"]["web_search"]["additionalProperties"])
         self.assertEqual(schema["properties"]["web_search"]["properties"]["query"]["type"], "string")
         self.assertEqual(updated_config["action_input_structured_output_strategy"], "json_schema")
+
+    def test_generate_action_inputs_returns_custom_state_outputs_in_node_write_order(self) -> None:
+        captured: dict[str, object] = {}
+
+        def chat_with_local_model_with_meta_func(**kwargs):
+            captured.update(kwargs)
+            return (
+                json.dumps(
+                    {
+                        "web_search": {"query": "TooGraph RAG"},
+                        "planner_notes": "Use recent docs first.",
+                        "draft_answer": "Draft response.",
+                    }
+                ),
+                {"warnings": []},
+            )
+
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "writes": [
+                    {"state": "planner_notes", "mode": "replace"},
+                    {"state": "source_documents", "mode": "replace"},
+                    {"state": "draft_answer", "mode": "replace"},
+                ],
+                "config": {
+                    "actionKey": "web_search",
+                    "taskInstruction": "Plan search arguments and draft intermediate outputs.",
+                    "actionBindings": [
+                        {
+                            "actionKey": "web_search",
+                            "outputMapping": {"source_documents": "source_documents"},
+                        }
+                    ],
+                },
+            }
+        )
+        state_schema = {
+            "planner_notes": NodeSystemStateDefinition.model_validate(
+                {
+                    "name": "Planner Notes",
+                    "description": "Reasoning notes for the next LLM node.",
+                    "type": "markdown",
+                }
+            ),
+            "source_documents": NodeSystemStateDefinition.model_validate({"name": "Source Documents", "type": "json"}),
+            "draft_answer": NodeSystemStateDefinition.model_validate(
+                {
+                    "name": "Draft Answer",
+                    "description": "Intermediate user-facing draft.",
+                    "type": "markdown",
+                }
+            ),
+        }
+
+        action_inputs, state_outputs, _reasoning, warnings, updated_config = generate_agent_action_inputs(
+            node=node,
+            input_values={"question": "Explain TooGraph RAG"},
+            bindings=[
+                ResolvedAgentActionBinding(
+                    binding=NodeSystemAgentActionBinding(
+                        actionKey="web_search",
+                        outputMapping={"source_documents": "source_documents"},
+                    ),
+                    source="node_config",
+                )
+            ],
+            action_definitions={
+                "web_search": ActionDefinition(
+                    actionKey="web_search",
+                    name="Web Search",
+                    llmOutputSchema=[ActionIoField(key="query", name="Query", valueType="text")],
+                    stateOutputSchema=[ActionIoField(key="source_documents", name="Source Documents", valueType="json")],
+                )
+            },
+            runtime_config={
+                "resolved_provider_id": "local",
+                "runtime_model_name": "test-model",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+            },
+            state_schema=state_schema,
+            chat_with_local_model_with_meta_func=chat_with_local_model_with_meta_func,
+        )
+
+        self.assertEqual(action_inputs, {"web_search": {"query": "TooGraph RAG"}})
+        self.assertEqual(
+            state_outputs,
+            {
+                "planner_notes": "Use recent docs first.",
+                "draft_answer": "Draft response.",
+            },
+        )
+        self.assertEqual(warnings, [])
+        schema = captured["structured_output_schema"]
+        self.assertEqual(list(schema["properties"].keys()), ["web_search", "planner_notes", "draft_answer"])
+        self.assertEqual(schema["required"], ["web_search", "planner_notes", "draft_answer"])
+        prompt = captured["system_prompt"]
+        self.assertIn("== Custom LLM State Outputs ==", prompt)
+        self.assertIn("These state outputs are written directly to graph state and are not passed to after_llm.py.", prompt)
+        self.assertLess(prompt.index("stateKey: planner_notes"), prompt.index("stateKey: draft_answer"))
+        self.assertEqual(updated_config["action_input_state_output_keys"], ["planner_notes", "draft_answer"])
 
     def test_repairs_invalid_action_inputs_without_original_prompt_context(self) -> None:
         calls: list[dict[str, object]] = []
@@ -620,7 +725,7 @@ class AgentActionInputGenerationTests(unittest.TestCase):
             }
         )
 
-        action_inputs, _reasoning, warnings, updated_config = generate_agent_action_inputs(
+        action_inputs, state_outputs, _reasoning, warnings, updated_config = generate_agent_action_inputs(
             node=node,
             input_values={"question": "ORIGINAL SECRET INPUT"},
             bindings=[
@@ -654,6 +759,7 @@ class AgentActionInputGenerationTests(unittest.TestCase):
         )
 
         self.assertEqual(action_inputs, {"web_search": {"query": "repaired query"}})
+        self.assertEqual(state_outputs, {})
         self.assertEqual(warnings, [])
         self.assertEqual(len(calls), 2)
         repair_call = calls[1]

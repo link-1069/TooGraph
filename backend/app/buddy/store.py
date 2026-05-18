@@ -264,7 +264,10 @@ def load_run_template_binding() -> dict[str, Any]:
         value = {}
     if not isinstance(value, dict):
         value = {}
-    return _normalize_run_template_binding(value)
+    try:
+        return _normalize_run_template_binding(value)
+    except Exception:
+        return _normalize_run_template_binding(DEFAULT_RUN_TEMPLATE_BINDING)
 
 
 def save_run_template_binding(payload: dict[str, Any], *, changed_by: str, change_reason: str) -> dict[str, Any]:

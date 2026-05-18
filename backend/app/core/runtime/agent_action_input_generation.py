@@ -10,7 +10,12 @@ from app.core.runtime.agent_prompt import format_graph_state_input_prompt_lines,
 from app.core.runtime.agent_response_generation import _resolve_media_runtime_config, repair_structured_output_with_runtime_model
 from app.core.runtime.action_bindings import ResolvedAgentActionBinding
 from app.core.runtime.structured_output import build_action_llm_output_schema, validate_structured_output
-from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemReadBindingKind, NodeSystemStateDefinition
+from app.core.schemas.node_system import (
+    NodeSystemAgentNode,
+    NodeSystemReadBindingKind,
+    NodeSystemStateBindingKind,
+    NodeSystemStateDefinition,
+)
 from app.core.schemas.actions import ActionDefinition, ActionIoField
 from app.core.thinking_levels import resolve_effective_thinking_level
 from app.actions.runtime import (
@@ -35,10 +40,15 @@ def generate_agent_action_inputs(
     get_default_video_model_ref_func: Callable[..., str] = get_default_video_model_ref,
     resolve_runtime_model_name_func: Callable[[str], str] = resolve_runtime_model_name,
     resolve_effective_thinking_level_func: Callable[..., str] = resolve_effective_thinking_level,
-) -> tuple[dict[str, dict[str, Any]], str, list[str], dict[str, Any]]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any], str, list[str], dict[str, Any]]:
     if not bindings:
-        return {}, "", [], runtime_config
+        return {}, {}, "", [], runtime_config
 
+    state_output_keys = collect_action_planning_state_output_keys(
+        node=node,
+        bindings=bindings,
+        state_schema=state_schema,
+    )
     raw_input_attachments = collect_input_attachments(input_values, state_schema=state_schema)
     input_attachments, attachment_warnings, attachment_meta = prepare_model_input_attachments(raw_input_attachments)
     runtime_config = _resolve_media_runtime_config(
@@ -55,8 +65,14 @@ def generate_agent_action_inputs(
         state_schema=state_schema,
         node=node,
         runtime_context=resolve_action_runtime_context(runtime_config),
+        state_output_keys=state_output_keys,
     )
-    structured_output_schema = build_action_llm_output_schema(bindings, action_definitions)
+    structured_output_schema = build_action_llm_output_schema(
+        bindings,
+        action_definitions,
+        state_output_keys=state_output_keys,
+        state_schema=state_schema,
+    )
     user_prompt = build_action_input_user_prompt(node)
     thinking_level = runtime_config.get("resolved_thinking_level")
     if not isinstance(thinking_level, str):
@@ -92,8 +108,15 @@ def generate_agent_action_inputs(
         finally:
             cleanup_prepared_media_paths(attachment_meta.get("cleanup_paths"))
 
-    action_inputs = parse_action_input_response(content, [binding.binding.action_key for binding in bindings])
-    initial_structured_output_validation_errors = validate_structured_output(action_inputs, structured_output_schema)
+    action_keys = [binding.binding.action_key for binding in bindings]
+    action_inputs, state_outputs = parse_action_planning_response(content, action_keys, state_output_keys)
+    structured_output_payload = compose_action_planning_output_payload(
+        action_inputs,
+        state_outputs,
+        action_keys=action_keys,
+        state_output_keys=state_output_keys,
+    )
+    initial_structured_output_validation_errors = validate_structured_output(structured_output_payload, structured_output_schema)
     structured_output_validation_errors = list(initial_structured_output_validation_errors)
     repair_attempted = False
     repair_succeeded = False
@@ -111,14 +134,23 @@ def generate_agent_action_inputs(
                 chat_with_local_model_with_meta_func=chat_with_local_model_with_meta_func,
                 chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
             )
-            repaired_action_inputs = parse_action_input_response(
+            repaired_action_inputs, repaired_state_outputs = parse_action_planning_response(
                 repair_content,
-                [binding.binding.action_key for binding in bindings],
+                action_keys,
+                state_output_keys,
             )
-            repair_validation_errors = validate_structured_output(repaired_action_inputs, structured_output_schema)
+            repaired_payload = compose_action_planning_output_payload(
+                repaired_action_inputs,
+                repaired_state_outputs,
+                action_keys=action_keys,
+                state_output_keys=state_output_keys,
+            )
+            repair_validation_errors = validate_structured_output(repaired_payload, structured_output_schema)
             if not repair_validation_errors:
                 content = repair_content
                 action_inputs = repaired_action_inputs
+                state_outputs = repaired_state_outputs
+                structured_output_payload = repaired_payload
                 structured_output_validation_errors = []
                 repair_succeeded = True
         except Exception as exc:
@@ -145,6 +177,7 @@ def generate_agent_action_inputs(
         "action_input_structured_output_repair_provider_response_id": repair_meta.get("response_id"),
         "action_input_structured_output_repair_provider_usage": repair_meta.get("usage"),
         "action_input_structured_output_repair_provider_timings": repair_meta.get("timings"),
+        "action_input_state_output_keys": list(state_output_keys),
     }
     warnings = [*attachment_warnings, *llm_meta.get("warnings", []), *repair_meta.get("warnings", [])]
     if repair_error:
@@ -154,7 +187,7 @@ def generate_agent_action_inputs(
             "Action LLM output validation found mismatches: "
             + "; ".join(structured_output_validation_errors[:5])
         )
-    return action_inputs, reasoning, warnings, updated_runtime_config
+    return action_inputs, state_outputs, reasoning, warnings, updated_runtime_config
 
 
 def build_action_input_system_prompt(
@@ -165,8 +198,10 @@ def build_action_input_system_prompt(
     state_schema: dict[str, NodeSystemStateDefinition] | None = None,
     node: NodeSystemAgentNode | None = None,
     runtime_context: dict[str, Any] | None = None,
+    state_output_keys: list[str] | None = None,
 ) -> str:
     resolved_state_schema = state_schema or {}
+    resolved_state_output_keys = list(state_output_keys or [])
     action_state_input_slots = collect_action_state_input_slots(
         node=node,
         input_values=input_values,
@@ -176,8 +211,10 @@ def build_action_input_system_prompt(
         "You are the Action LLM-output planning phase of a graph LLM node.",
         "Choose concrete structured LLM output for every bound action from the current graph state and the action schemas.",
         "Return only one JSON object. Do not add markdown fences or prose.",
-        "The top-level keys must be action keys. Each value must be a JSON object of arguments for that action.",
-        "Do not summarize action results. Do not answer the user here. Only produce the structured LLM output described by llmOutputSchema.",
+        "The top-level keys must include every bound action key and every listed custom state output key.",
+        "Action key values must be JSON objects of arguments for that action.",
+        "Custom state output values are normal LLM-authored graph state values.",
+        "Do not summarize action results. Do not answer the user here. Only produce the structured LLM output described by llmOutputSchema and the custom state outputs.",
     ]
     if input_values:
         parts.append("\n== Graph State Inputs ==")
@@ -216,6 +253,24 @@ def build_action_input_system_prompt(
             field.key: example_action_input_value(field)
             for field in definition.llm_output_schema
         }
+
+    if resolved_state_output_keys:
+        parts.append("\n== Custom LLM State Outputs ==")
+        parts.append("These state outputs are written directly to graph state and are not passed to after_llm.py.")
+        parts.append("Return them in the same top-to-bottom order listed here.")
+        for state_key in resolved_state_output_keys:
+            definition = resolved_state_schema.get(state_key)
+            parts.append(f"- stateKey: {state_key}")
+            name = getattr(definition, "name", "") if definition is not None else ""
+            description = getattr(definition, "description", "") if definition is not None else ""
+            value_type = getattr(definition, "type", None)
+            if name and name != state_key:
+                parts.append(f"  name: {name}")
+            if value_type is not None:
+                parts.append(f"  type: {value_type.value if hasattr(value_type, 'value') else value_type}")
+            if description:
+                parts.append(f"  description: {description}")
+            example[state_key] = example_state_output_value(definition)
 
     before_llm_context_lines = format_action_before_llm_context_lines(
         bindings=bindings,
@@ -384,15 +439,80 @@ def resolve_effective_action_llm_instruction(
     return definition.llm_instruction.strip() if definition.llm_instruction else ""
 
 
-def parse_action_input_response(content: str, action_keys: list[str]) -> dict[str, dict[str, Any]]:
+def collect_action_planning_state_output_keys(
+    *,
+    node: NodeSystemAgentNode | None,
+    bindings: list[ResolvedAgentActionBinding],
+    state_schema: dict[str, NodeSystemStateDefinition] | None = None,
+) -> list[str]:
+    if node is None:
+        return []
+    resolved_state_schema = state_schema or {}
+    action_keys = {resolved.binding.action_key for resolved in bindings}
+    mapped_action_output_states = {
+        state_key
+        for resolved in bindings
+        for state_key in resolved.binding.output_mapping.values()
+        if state_key
+    }
+    output_keys: list[str] = []
+    seen: set[str] = set()
+    for write in node.writes:
+        state_key = write.state
+        if state_key in seen or state_key in mapped_action_output_states or state_key in action_keys:
+            continue
+        definition = resolved_state_schema.get(state_key)
+        binding = getattr(definition, "binding", None)
+        if binding is not None:
+            if binding.kind == NodeSystemStateBindingKind.ACTION_OUTPUT and binding.action_key in action_keys:
+                continue
+            if binding.kind == NodeSystemStateBindingKind.CAPABILITY_RESULT:
+                continue
+        seen.add(state_key)
+        output_keys.append(state_key)
+    return output_keys
+
+
+def parse_action_planning_response(
+    content: str,
+    action_keys: list[str],
+    state_output_keys: list[str],
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
     parsed = _parse_json_object(content)
     if not isinstance(parsed, dict):
-        return {action_key: {} for action_key in action_keys}
+        return {action_key: {} for action_key in action_keys}, {}
     result: dict[str, dict[str, Any]] = {}
     for action_key in action_keys:
         value = parsed.get(action_key)
         result[action_key] = dict(value) if isinstance(value, dict) else {}
-    return result
+    state_outputs = {
+        state_key: parsed.get(state_key)
+        for state_key in state_output_keys
+        if state_key in parsed
+    }
+    return result, state_outputs
+
+
+def parse_action_input_response(content: str, action_keys: list[str]) -> dict[str, dict[str, Any]]:
+    action_inputs, _state_outputs = parse_action_planning_response(content, action_keys, [])
+    return action_inputs
+
+
+def compose_action_planning_output_payload(
+    action_inputs: dict[str, dict[str, Any]],
+    state_outputs: dict[str, Any],
+    *,
+    action_keys: list[str],
+    state_output_keys: list[str],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        action_key: dict(action_inputs.get(action_key) or {})
+        for action_key in action_keys
+    }
+    for state_key in state_output_keys:
+        if state_key in state_outputs:
+            payload[state_key] = state_outputs[state_key]
+    return payload
 
 
 def format_action_input_field_lines(field: ActionIoField) -> list[str]:
@@ -419,6 +539,24 @@ def example_action_input_value(field: ActionIoField) -> Any:
     if field.value_type == "capability":
         return {"kind": "none"}
     return f"<{field.key}>"
+
+
+def example_state_output_value(definition: NodeSystemStateDefinition | None) -> Any:
+    value_type = getattr(definition, "type", None)
+    normalized = value_type.value if hasattr(value_type, "value") else str(value_type or "text")
+    if normalized == "json":
+        return {}
+    if normalized == "result_package":
+        return {}
+    if normalized == "number":
+        return 0
+    if normalized == "boolean":
+        return False
+    if normalized == "capability":
+        return {"kind": "none"}
+    if normalized in {"file", "image", "audio", "video"}:
+        return "<local artifact path or path array>"
+    return f"<{getattr(definition, 'name', '') or 'state output'}>"
 
 
 def cleanup_prepared_media_paths(paths: Any) -> None:

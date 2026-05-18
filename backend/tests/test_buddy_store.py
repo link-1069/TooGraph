@@ -5,12 +5,16 @@ import tempfile
 import unittest
 import json
 import sqlite3
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing
 from pathlib import Path
+from threading import Lock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.buddy import home as buddy_home
 from app.buddy import store
 
 
@@ -114,6 +118,32 @@ class BuddyStoreTests(unittest.TestCase):
         self.assertNotIn("buddy_memories", table_names)
         self.assertIn("buddy_messages_fts", table_names)
         self.assertIn("buddy_messages_fts_trigram", table_names)
+
+    def test_buddy_database_initialization_is_serialized_for_same_home_dir(self) -> None:
+        active_initializers = 0
+        initializer_lock = Lock()
+        original_ensure_fts = buddy_home._ensure_buddy_message_fts
+
+        def guarded_ensure_fts(connection: sqlite3.Connection) -> None:
+            nonlocal active_initializers
+            with initializer_lock:
+                active_initializers += 1
+                if active_initializers > 1:
+                    raise RuntimeError("Buddy database initialization entered concurrently.")
+            try:
+                time.sleep(0.05)
+                original_ensure_fts(connection)
+            finally:
+                with initializer_lock:
+                    active_initializers -= 1
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            home_dir = Path(temp_dir) / "buddy_home"
+            with patch.object(buddy_home, "_ensure_buddy_message_fts", guarded_ensure_fts):
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    futures = [pool.submit(buddy_home.ensure_buddy_database, home_dir) for _ in range(8)]
+                    for future in as_completed(futures):
+                        future.result()
 
     def test_buddy_database_includes_session_lineage_columns(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -622,6 +652,25 @@ class BuddyStoreTests(unittest.TestCase):
                         changed_by="user",
                         change_reason="测试拒绝断点模板绑定",
                     )
+
+    def test_run_template_binding_falls_back_when_saved_template_is_unloadable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"):
+                store._write_kv(
+                    store.RUN_TEMPLATE_BINDING_KEY,
+                    {
+                        "version": store.RUN_TEMPLATE_BINDING_VERSION,
+                        "template_id": "deleted_or_legacy_template",
+                        "input_bindings": {"input_user_message": "current_message"},
+                        "updated_at": "2026-01-01T00:00:00Z",
+                    },
+                    "2026-01-01T00:00:00Z",
+                )
+
+                binding = store.load_run_template_binding()
+
+        self.assertEqual(binding["template_id"], store.DEFAULT_RUN_TEMPLATE_BINDING["template_id"])
+        self.assertEqual(binding["input_bindings"], store.DEFAULT_RUN_TEMPLATE_BINDING["input_bindings"])
 
     def test_memory_review_template_binding_defaults_and_revision_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

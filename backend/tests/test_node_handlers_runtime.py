@@ -1563,6 +1563,94 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         self.assertEqual(result["runtime_config"], {"runtime": "initial"})
         self.assertEqual(finalized, {"context": "loaded context", "snapshot": {"ok": True}})
 
+    def test_execute_agent_node_writes_custom_action_planning_outputs_without_agent_response(self) -> None:
+        state_schema = {
+            "question": NodeSystemStateDefinition.model_validate({"type": "text"}),
+            "planner_notes": NodeSystemStateDefinition.model_validate({"type": "markdown"}),
+            "source_documents": NodeSystemStateDefinition.model_validate({"type": "json"}),
+            "draft_answer": NodeSystemStateDefinition.model_validate({"type": "markdown"}),
+        }
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "name": "search_planner",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "reads": [{"state": "question"}],
+                "writes": [
+                    {"state": "planner_notes", "mode": "replace"},
+                    {"state": "source_documents", "mode": "replace"},
+                    {"state": "draft_answer", "mode": "replace"},
+                ],
+                "config": {
+                    "actionKey": "web_search",
+                    "actionBindings": [
+                        {
+                            "actionKey": "web_search",
+                            "outputMapping": {"source_documents": "source_documents"},
+                        }
+                    ],
+                },
+            }
+        )
+        source_documents = [{"title": "TooGraph", "url": "https://example.com"}]
+        finalized: dict[str, object] = {}
+        invoked_inputs: list[dict[str, object]] = []
+
+        def generate_action_inputs(**kwargs):
+            return (
+                {"web_search": {"query": "TooGraph RAG"}},
+                {
+                    "planner_notes": "Search first, then synthesize.",
+                    "draft_answer": "Initial draft.",
+                },
+                "planned",
+                [],
+                kwargs["runtime_config"],
+            )
+
+        def invoke_action(action_func, action_inputs):
+            invoked_inputs.append(dict(action_inputs))
+            return {
+                "status": "succeeded",
+                "source_documents": source_documents,
+            }
+
+        def generate_agent_response_func(*args, **kwargs):
+            raise AssertionError("custom outputs produced by Action planning must not trigger a second LLM call")
+
+        result = execute_agent_node(
+            state_schema,
+            node,
+            {"question": "q"},
+            {"state": {}},
+            node_name="search_planner",
+            state={"run_id": "run-1"},
+            get_action_registry_func=lambda *, include_disabled: {"web_search": object()},
+            generate_agent_action_inputs_func=generate_action_inputs,
+            invoke_action_func=invoke_action,
+            resolve_agent_runtime_config_func=lambda agent_node: {"runtime": "initial"},
+            build_agent_stream_delta_callback_func=lambda *, state, node_name, output_keys: None,
+            callable_accepts_keyword_func=lambda func, keyword: False,
+            generate_agent_response_func=generate_agent_response_func,
+            finalize_agent_stream_delta_func=lambda *, state, node_name, output_values: finalized.update(output_values),
+            first_truthy_func=lambda values: next((value for value in values if value), None),
+        )
+
+        self.assertEqual(invoked_inputs, [{"query": "TooGraph RAG"}])
+        self.assertEqual(
+            result["outputs"],
+            {
+                "planner_notes": "Search first, then synthesize.",
+                "source_documents": source_documents,
+                "draft_answer": "Initial draft.",
+            },
+        )
+        self.assertEqual(result["response"], {})
+        self.assertEqual(result["reasoning"], "")
+        self.assertEqual(result["action_input_reasoning"], "planned")
+        self.assertEqual(result["llm_phases"], ["action_input_planning"])
+        self.assertEqual(finalized, result["outputs"])
+
     def test_execute_agent_node_preserves_mapped_action_output_when_response_omits_that_state(self) -> None:
         state_schema = {
             "query": NodeSystemStateDefinition.model_validate({"type": "text"}),

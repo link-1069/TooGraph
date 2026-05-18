@@ -62,7 +62,7 @@ def normalize_selected_capability(
     kind = _text(capability.get("kind")).lower()
     reason = _text(capability.get("reason"))
     if not kind or kind == "none":
-        return _none_capability(reason or "LLM selected no capability.")
+        return _none_capability()
     if kind not in SUPPORTED_KINDS:
         return _none_capability(f"Unsupported capability kind '{kind}'.")
 
@@ -200,12 +200,14 @@ def _parse_capability(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _none_capability(reason: str) -> dict[str, Any]:
+def _none_capability(reason: str = "") -> dict[str, Any]:
+    capability = {
+        "kind": "none",
+    }
+    if reason:
+        capability["reason"] = reason
     return {
-        "capability": {
-            "kind": "none",
-            "reason": reason,
-        },
+        "capability": capability,
         "found": False,
     }
 

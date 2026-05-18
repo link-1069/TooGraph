@@ -303,7 +303,7 @@ def _generate_agent_response(
     )
 
 
-def _generate_agent_action_inputs(**kwargs: Any) -> tuple[dict[str, dict[str, Any]], str, list[str], dict[str, Any]]:
+def _generate_agent_action_inputs(**kwargs: Any) -> tuple[dict[str, dict[str, Any]], dict[str, Any], str, list[str], dict[str, Any]]:
     return generate_agent_action_inputs(**kwargs)
 
 

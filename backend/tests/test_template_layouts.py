@@ -31,7 +31,6 @@ BUDDY_INTERNAL_TEMPLATE_IDS = {
 BUDDY_MAIN_LOOP_SUBGRAPH_TEMPLATE_IDS = {
     "buddy_context_fanout": "buddy_context_fanout",
     "buddy_turn_intake": "buddy_request_intake",
-    "buddy_capability_loop": "buddy_capability_loop",
 }
 
 
@@ -109,7 +108,6 @@ class TemplateLayoutTests(unittest.TestCase):
                 "advanced_web_research_loop",
                 "ai_news_digest_to_wechat_article",
                 "buddy_autonomous_loop",
-                "buddy_capability_loop",
                 "ecommerce_review_mining_agent",
                 "game_creative_factory",
                 "job_application_interview_coach",
@@ -140,14 +138,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("完整 Buddy 对话主流程", buddy_template["description"])
         self.assertIs(buddy_template["capabilityDiscoverable"], False)
         self.assertNotIn("hideFromCapabilitySelector", buddy_template["metadata"])
-
-        capability_loop_template = templates["buddy_capability_loop"]
-        self.assertEqual(capability_loop_template["source"], "official")
-        self.assertEqual(capability_loop_template["label"], "伙伴能力循环")
-        self.assertEqual(capability_loop_template["default_graph_name"], "伙伴能力循环")
-        self.assertNotEqual(capability_loop_template["metadata"].get("internal"), True)
-        self.assertIs(capability_loop_template["capabilityDiscoverable"], False)
-        self.assertNotIn("hideFromCapabilitySelector", capability_loop_template["metadata"])
 
         page_operation_template = templates["toograph_page_operation_workflow"]
         self.assertEqual(page_operation_template["source"], "official")

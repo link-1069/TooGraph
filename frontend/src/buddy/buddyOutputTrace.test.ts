@@ -13,6 +13,22 @@ import {
   reduceBuddyOutputTraceEvent,
 } from "./buddyOutputTrace.ts";
 
+function execution(nodeId: string, nodeType: string, _label: string, startedAt: string, durationMs: number) {
+  return {
+    node_id: nodeId,
+    node_type: nodeType,
+    status: "success",
+    started_at: startedAt,
+    finished_at: new Date(Date.parse(startedAt) + durationMs).toISOString(),
+    duration_ms: durationMs,
+    input_summary: "",
+    output_summary: "",
+    artifacts: { inputs: {}, outputs: {}, family: nodeType, state_reads: [], state_writes: [] },
+    warnings: [],
+    errors: [],
+  };
+}
+
 function fiveNodeGraph(): GraphPayload {
   const state = (name: string) => ({ name, description: "", type: "markdown", value: "", color: "#000" });
   const agent = (name: string, stateKey: string) => ({
@@ -156,6 +172,69 @@ test("reduceBuddyOutputTraceEvent maps branched nodes to their nearest downstrea
   assert.equal(segments.length, 1);
   assert.equal(segments[0].segmentId, "boundary:node_e");
   assert.deepEqual(segments[0].records.map((record) => record.label), ["C", "E"]);
+});
+
+test("buildBuddyOutputTracePlan prefers conditional gates as formal output boundaries", () => {
+  const graph = fiveNodeGraph();
+  graph.nodes.node_f = {
+    kind: "condition",
+    name: "Review Gate",
+    description: "",
+    reads: [{ state: "state_e1", required: true }],
+    writes: [],
+    config: { branches: ["true", "false"], loopLimit: 5, branchMapping: {}, rule: null },
+    ui: { position: { x: 0, y: 0 } },
+  };
+  graph.edges = [
+    { source: "node_a", target: "node_b" },
+    { source: "node_c", target: "output_e1" },
+    { source: "node_c", target: "node_d" },
+    { source: "node_d", target: "node_f" },
+  ];
+  graph.conditional_edges = [
+    { source: "node_b", branches: { false: "output_b1", true: "node_c" } },
+    { source: "node_f", branches: { true: "output_e1", false: "node_a" } },
+  ];
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  const run = {
+    status: "completed",
+    node_executions: [
+      execution("node_a", "agent", "A", "2026-05-13T10:00:00.000Z", 300),
+      execution("node_b", "condition", "B", "2026-05-13T10:00:00.400Z", 0),
+      execution("node_c", "agent", "C", "2026-05-13T10:00:00.500Z", 500),
+      execution("node_d", "agent", "D", "2026-05-13T10:00:01.100Z", 200),
+      execution("node_f", "condition", "Review Gate", "2026-05-13T10:00:01.400Z", 0),
+    ],
+    output_previews: [
+      {
+        node_id: "output_b1",
+        source_kind: "state",
+        source_key: "state_b1",
+        display_mode: "plain",
+        persist_enabled: false,
+        persist_format: "auto",
+        value: "intro",
+      },
+      {
+        node_id: "output_e1",
+        source_kind: "state",
+        source_key: "state_e1",
+        display_mode: "markdown",
+        persist_enabled: false,
+        persist_format: "auto",
+        value: "final",
+      },
+    ],
+    artifacts: {},
+  } as Partial<RunDetail> as RunDetail;
+
+  const state = buildBuddyOutputTraceStateFromRunDetail(run, plan, graph);
+  const segments = listBuddyOutputTraceSegmentsForDisplay(state);
+
+  assert.deepEqual(plan.order, ["boundary:node_b", "boundary:node_f"]);
+  assert.deepEqual(segments.map((segment) => segment.outputNodeIds), [["output_b1"], ["output_e1"]]);
+  assert.deepEqual(segments[0].records.map((record) => record.label), ["A", "B"]);
+  assert.deepEqual(segments[1].records.map((record) => record.label), ["C", "D", "Review Gate"]);
 });
 
 test("reduceBuddyOutputTraceEvent keeps subgraph headers before indented inner rows", () => {

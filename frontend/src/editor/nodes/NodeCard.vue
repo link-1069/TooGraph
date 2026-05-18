@@ -858,7 +858,6 @@ const agentOutputPorts = computed<NodePortViewModel[]>(() =>
     ? view.value.outputs.filter((port) => !port.virtual)
     : [],
 );
-const isAgentOutputManagedByAction = computed(() => props.node.kind === "agent" && props.node.config.actionKey.trim().length > 0);
 const isAgentOutputManagedByCapability = computed(() =>
   isAgentOutputManagedByDynamicCapability({
     nodeId: props.nodeId,
@@ -868,7 +867,7 @@ const isAgentOutputManagedByCapability = computed(() =>
 );
 const shouldShowAgentCreateInputPort = computed(() => agentInputPorts.value.length === 0);
 const shouldShowAgentCreateOutputPort = computed(
-  () => !isAgentOutputManagedByAction.value && !isAgentOutputManagedByCapability.value && agentOutputPorts.value.length === 0,
+  () => !isAgentOutputManagedByCapability.value && agentOutputPorts.value.length === 0,
 );
 const agentCreateInputAnchorStateKey = computed(() =>
   props.pendingStateInputSource ? CREATE_AGENT_INPUT_STATE_KEY : VIRTUAL_ANY_INPUT_STATE_KEY,
@@ -1161,7 +1160,6 @@ const hasFloatingPanelOpen = computed(
 const shouldRevealAgentCreateInputPort = computed(() => shouldShowAgentCreateInputPort.value || props.selected || Boolean(props.hovered) || hasFloatingPanelOpen.value);
 const shouldRevealAgentCreateOutputPort = computed(
   () =>
-    !isAgentOutputManagedByAction.value &&
     !isAgentOutputManagedByCapability.value &&
     (shouldShowAgentCreateOutputPort.value || props.selected || Boolean(props.hovered) || hasFloatingPanelOpen.value),
 );
@@ -1564,7 +1562,7 @@ function openPortStateCreate(side: "input" | "output") {
   if (guardLockedGraphInteraction()) {
     return;
   }
-  if (side === "output" && (isAgentOutputManagedByAction.value || isAgentOutputManagedByCapability.value)) {
+  if (side === "output" && isAgentOutputManagedByCapability.value) {
     return;
   }
   clearTopActionTimeout();

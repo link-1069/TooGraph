@@ -325,7 +325,6 @@ TooGraph/
 
 - `advanced_web_research_loop`（界面名称：高级联网搜索）
 - `buddy_autonomous_loop`（界面名称：伙伴自主循环）
-- `buddy_capability_loop`（界面名称：伙伴能力循环，官方基础能力子图，默认不被能力发现）
 - `buddy_context_fanout`（界面名称：伙伴上下文并行装配，内部子图）
 - `toograph_page_operation_workflow`（界面名称：操作 TooGraph 页面）
 - `toograph_action_creation_workflow`（界面名称：创建自定义 Action）
@@ -339,8 +338,6 @@ TooGraph/
 `advanced_web_research_loop` 是当前联网搜索基线模板：它会规划搜索词、调用 `web_search`、判断证据是否足够、按需循环补查，并输出最终答案；证据链接和本地 source documents 作为中间 state 供后续节点使用，不直接连接 output 节点。
 
 `buddy_autonomous_loop` 是当前 Buddy 的可见运行路径：读取 Buddy Home 和用户请求，进行请求理解、按需任务计划、能力循环和最终回复。需求不明确或能力缺口通过 `final_reply` 询问用户并结束本轮，不在聊天中透传断点 resume。
-
-`buddy_capability_loop` 是 Buddy 的官方能力循环子图：选择一个 Action、Subgraph、Tool 或可运行图模板能力，执行后复盘结果，并决定继续能力循环、透传目标模板输出、说明失败或交给最终回复收束。
 
 `toograph_page_operation_workflow` 是 Buddy 可见操作 TooGraph 页面和运行指定图模板的官方入口：页面操作器负责固定化映射，例如进入图与模板、搜索目标模板、打开模板、写入本次目标、点击运行、等待结果并回收公开输出。
 

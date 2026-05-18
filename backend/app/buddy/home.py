@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import threading
 from typing import Any
 
 from app.core.storage.database import BASE_DIR
@@ -50,6 +51,20 @@ DEFAULT_SESSION_SUMMARY = {
     "content": "当前对话尚未形成摘要。",
     "updated_at": "",
 }
+_BUDDY_DATABASE_LOCKS_GUARD = threading.Lock()
+_BUDDY_DATABASE_LOCKS: dict[Path, threading.RLock] = {}
+
+
+def _buddy_database_lock(db_path: Path) -> threading.RLock:
+    resolved_path = db_path.resolve()
+    with _BUDDY_DATABASE_LOCKS_GUARD:
+        lock = _BUDDY_DATABASE_LOCKS.get(resolved_path)
+        if lock is None:
+            lock = threading.RLock()
+            _BUDDY_DATABASE_LOCKS[resolved_path] = lock
+        return lock
+
+
 CAPABILITY_USAGE_STATS_KEY = "capability_usage_stats"
 DEFAULT_CAPABILITY_USAGE_STATS = {
     "version": 1,
@@ -142,106 +157,107 @@ def ensure_buddy_home(home_dir: Path | None = None) -> Path:
 
 
 def ensure_buddy_database(home_dir: Path) -> Path:
-    db_path = home_dir / BUDDY_DB_PATH
+    db_path = (home_dir / BUDDY_DB_PATH).resolve()
     home_dir.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(db_path)
-    try:
-        connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS buddy_revisions (
-                revision_id TEXT PRIMARY KEY,
-                target_type TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                operation TEXT NOT NULL,
-                previous_value_json TEXT NOT NULL DEFAULT '{}',
-                next_value_json TEXT NOT NULL DEFAULT '{}',
-                changed_by TEXT NOT NULL,
-                change_reason TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
+    with _buddy_database_lock(db_path):
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS buddy_revisions (
+                    revision_id TEXT PRIMARY KEY,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    previous_value_json TEXT NOT NULL DEFAULT '{}',
+                    next_value_json TEXT NOT NULL DEFAULT '{}',
+                    changed_by TEXT NOT NULL,
+                    change_reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS buddy_commands (
-                command_id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL,
-                action TEXT NOT NULL,
-                status TEXT NOT NULL,
-                target_type TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                revision_id TEXT,
-                run_id TEXT,
-                payload_json TEXT NOT NULL DEFAULT '{}',
-                change_reason TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                completed_at TEXT
-            );
+                CREATE TABLE IF NOT EXISTS buddy_commands (
+                    command_id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    revision_id TEXT,
+                    run_id TEXT,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    change_reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT
+                );
 
-            CREATE TABLE IF NOT EXISTS buddy_kv (
-                key TEXT PRIMARY KEY,
-                value_json TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS buddy_kv (
+                    key TEXT PRIMARY KEY,
+                    value_json TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS buddy_sessions (
-                session_id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                archived INTEGER NOT NULL DEFAULT 0,
-                deleted INTEGER NOT NULL DEFAULT 0,
-                parent_session_id TEXT,
-                source TEXT NOT NULL DEFAULT 'buddy',
-                ended_at TEXT,
-                end_reason TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY(parent_session_id) REFERENCES buddy_sessions(session_id)
-            );
+                CREATE TABLE IF NOT EXISTS buddy_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    archived INTEGER NOT NULL DEFAULT 0,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    parent_session_id TEXT,
+                    source TEXT NOT NULL DEFAULT 'buddy',
+                    ended_at TEXT,
+                    end_reason TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(parent_session_id) REFERENCES buddy_sessions(session_id)
+                );
 
-            CREATE TABLE IF NOT EXISTS buddy_messages (
-                message_id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                client_order REAL,
-                include_in_context INTEGER NOT NULL DEFAULT 1,
-                run_id TEXT,
-                metadata_json TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY(session_id) REFERENCES buddy_sessions(session_id)
-            );
+                CREATE TABLE IF NOT EXISTS buddy_messages (
+                    message_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    client_order REAL,
+                    include_in_context INTEGER NOT NULL DEFAULT 1,
+                    run_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(session_id) REFERENCES buddy_sessions(session_id)
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_buddy_revisions_target
-                ON buddy_revisions (target_type, target_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_buddy_revisions_target
+                    ON buddy_revisions (target_type, target_id, created_at);
 
-            CREATE INDEX IF NOT EXISTS idx_buddy_sessions_visible
-                ON buddy_sessions (deleted, archived, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_buddy_sessions_visible
+                    ON buddy_sessions (deleted, archived, updated_at);
 
-            CREATE INDEX IF NOT EXISTS idx_buddy_messages_session
-                ON buddy_messages (session_id, created_at);
-            """
-        )
-        _migrate_buddy_database(connection)
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_buddy_sessions_parent
-                ON buddy_sessions (parent_session_id)
-            """
-        )
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_buddy_sessions_source
-                ON buddy_sessions (source)
-            """
-        )
-        _ensure_buddy_message_fts(connection)
-        connection.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_buddy_messages_client_order
-                ON buddy_messages (session_id, client_order)
-            """
-        )
-        connection.commit()
-    finally:
-        connection.close()
+                CREATE INDEX IF NOT EXISTS idx_buddy_messages_session
+                    ON buddy_messages (session_id, created_at);
+                """
+            )
+            _migrate_buddy_database(connection)
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_buddy_sessions_parent
+                    ON buddy_sessions (parent_session_id)
+                """
+            )
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_buddy_sessions_source
+                    ON buddy_sessions (source)
+                """
+            )
+            _ensure_buddy_message_fts(connection)
+            connection.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_buddy_messages_client_order
+                    ON buddy_messages (session_id, client_order)
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
     return db_path
 
 

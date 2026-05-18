@@ -69,8 +69,10 @@ def build_pending_permission_approval(
     binding_source: str,
     permissions: list[str],
     inputs: dict[str, Any],
+    state_outputs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_permissions = _ordered_risky_permissions(permissions)
+    normalized_state_outputs = dict(state_outputs or {})
     approval_seed = {
         "run_id": str(state.get("run_id") or ""),
         "node_id": node_name,
@@ -79,11 +81,12 @@ def build_pending_permission_approval(
         "binding_source": binding_source,
         "permissions": normalized_permissions,
         "inputs": inputs,
+        "state_outputs": normalized_state_outputs,
     }
     approval_id = hashlib.sha256(
         json.dumps(approval_seed, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
     ).hexdigest()[:16]
-    return {
+    pending = {
         "kind": "capability_permission_approval",
         "approval_id": approval_id,
         "node_id": node_name,
@@ -97,6 +100,9 @@ def build_pending_permission_approval(
         "reason": _approval_reason(normalized_permissions, action_name or action_key),
         "requested_at": utc_now_iso(),
     }
+    if normalized_state_outputs:
+        pending["state_outputs"] = normalized_state_outputs
+    return pending
 
 
 def consume_pending_permission_approval(

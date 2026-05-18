@@ -43,6 +43,9 @@ def build_agent_state_output_schema(
 def build_action_llm_output_schema(
     bindings: list[Any],
     action_definitions: dict[str, ActionDefinition],
+    *,
+    state_output_keys: list[str] | None = None,
+    state_schema: dict[str, NodeSystemStateDefinition] | None = None,
 ) -> dict[str, Any]:
     properties: dict[str, Any] = {}
     required_action_keys: list[str] = []
@@ -62,7 +65,23 @@ def build_action_llm_output_schema(
             additional_properties=False,
         )
 
-    return _object_schema(properties, required=required_action_keys, additional_properties=False)
+    resolved_state_schema = state_schema or {}
+    required_state_keys: list[str] = []
+    for state_key in state_output_keys or []:
+        if state_key in properties:
+            continue
+        definition = resolved_state_schema.get(state_key)
+        state_type = _coerce_state_type(getattr(definition, "type", NodeSystemStateType.TEXT))
+        field_schema = _schema_for_value_type(state_type.value)
+        _apply_schema_metadata(
+            field_schema,
+            name=getattr(definition, "name", "") or state_key,
+            description=getattr(definition, "description", ""),
+        )
+        properties[state_key] = field_schema
+        required_state_keys.append(state_key)
+
+    return _object_schema(properties, required=[*required_action_keys, *required_state_keys], additional_properties=False)
 
 
 def schema_for_action_io_field(field: ActionIoField) -> dict[str, Any]:

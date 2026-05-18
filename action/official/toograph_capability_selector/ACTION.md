@@ -23,14 +23,16 @@ description: 从当前启用的 TooGraph 能力目录中选择一个 Action、Su
 ## LLM 输出
 
 - `capability`：单个对象，`kind` 只能是 `action`、`subgraph`、`tool` 或 `none`。
+- 多个能力都能完成需求时，选择优先级是 `subgraph` > `action` > `tool`。
 - 当 `kind` 是 `action`、`subgraph` 或 `tool` 时，`key` 必须完全匹配目录中列出的能力。
-- 当没有合适能力时，输出 `kind=none`，并包含简短 `reason`。
+- 当没有合适能力时，输出 `{"kind":"none"}`，不需要 `reason`。
 
 ## After-LLM 行为
 
 - `after_llm.py` 只校验 LLM 选择的 `kind:key` 是否当前启用且可发现。
 - 校验通过时，使用目录中的元数据规范化返回的能力对象。
-- 当 LLM 选择未知、禁用、不可发现、不支持或选择器自身时，返回 `kind=none` 和 `found=false`。
+- 当 LLM 显式选择 `none` 时，返回 `{"kind":"none"}` 和 `found=false`。
+- 当 LLM 选择未知、禁用、不可发现、不支持或选择器自身时，返回带错误 `reason` 的 `kind=none` 和 `found=false`。
 - `after_llm.py` 不根据关键词自行选择能力，也不执行被选中的能力。
 
 ## State 输出

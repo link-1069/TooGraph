@@ -918,7 +918,7 @@ test("updateAgentNodeConfigInDocument materializes attached action outputs as ma
   assert.deepEqual(document.nodes.search_agent.writes, []);
 });
 
-test("updateAgentNodeConfigInDocument suspends free agent outputs while a static action owns outputs", () => {
+test("updateAgentNodeConfigInDocument preserves free agent outputs while a static action owns action outputs", () => {
   const document: GraphPayload = {
     graph_id: null,
     name: "Action Managed Output Graph",
@@ -989,11 +989,15 @@ test("updateAgentNodeConfigInDocument suspends free agent outputs while a static
   const actionNode = withAction.nodes.search_agent;
 
   assert.equal(actionNode.kind, "agent");
-  assert.deepEqual(actionNode.writes.map((binding) => binding.state), ["state_1", "state_2", "state_3", "state_4"]);
-  assert.deepEqual(actionNode.config.suspendedFreeWrites, [
-    { state: "free_answer", mode: "replace" },
-    { state: "free_notes", mode: "append" },
+  assert.deepEqual(actionNode.writes.map((binding) => binding.state), [
+    "free_answer",
+    "free_notes",
+    "state_1",
+    "state_2",
+    "state_3",
+    "state_4",
   ]);
+  assert.equal(actionNode.config.suspendedFreeWrites, undefined);
   assert.equal(withAction.state_schema.free_answer?.name, "Free Answer");
 
   const connectedActionDocument = cloneGraphDocument(withAction);
@@ -1299,6 +1303,87 @@ test("reconcileAgentActionOutputBindingsInDocument prunes stale managed outputs 
   assert.equal(nextDocument.state_schema.state_1?.type, "boolean");
   assert.equal(nextDocument.state_schema.state_2?.name, "Result");
   assert.equal(nextDocument.state_schema.state_2?.type, "markdown");
+});
+
+test("reconcileAgentActionOutputBindingsInDocument preserves user-created outputs beside managed action outputs", () => {
+  const document: GraphPayload = {
+    graph_id: null,
+    name: "Action With Free Outputs",
+    state_schema: {
+      free_notes: {
+        name: "Free Notes",
+        description: "LLM-authored notes.",
+        type: "markdown",
+        value: "",
+        color: "#7c3aed",
+      },
+      stale_summary: {
+        name: "Old Summary",
+        description: "Old generated summary.",
+        type: "markdown",
+        value: "",
+        color: "#2563eb",
+        binding: {
+          kind: "action_output",
+          actionKey: "local_workspace_executor",
+          nodeId: "executor",
+          fieldKey: "summary",
+          managed: true,
+        },
+      },
+    },
+    nodes: {
+      executor: {
+        kind: "agent",
+        name: "Executor",
+        description: "",
+        ui: { position: { x: 0, y: 0 } },
+        reads: [],
+        writes: [
+          { state: "free_notes", mode: "replace" },
+          { state: "stale_summary", mode: "replace" },
+        ],
+        config: {
+          actionKey: "local_workspace_executor",
+          actionBindings: [
+            {
+              actionKey: "local_workspace_executor",
+              outputMapping: {
+                summary: "stale_summary",
+              },
+            },
+          ],
+          actionInstructionBlocks: {},
+          taskInstruction: "",
+          modelSource: "global",
+          model: "",
+          thinkingMode: "high",
+          temperature: 0.2,
+        },
+      },
+    },
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  const nextDocument = reconcileAgentActionOutputBindingsInDocument(document, [localWorkspaceExecutorAction]);
+  const executor = nextDocument.nodes.executor;
+
+  assert.equal(executor.kind, "agent");
+  assert.deepEqual(executor.writes.map((binding) => binding.state), ["free_notes", "state_1", "state_2"]);
+  assert.equal(executor.config.suspendedFreeWrites, undefined);
+  assert.equal(nextDocument.state_schema.free_notes?.name, "Free Notes");
+  assert.equal(nextDocument.state_schema.stale_summary, undefined);
+  assert.deepEqual(executor.config.actionBindings, [
+    {
+      actionKey: "local_workspace_executor",
+      outputMapping: {
+        success: "state_1",
+        result: "state_2",
+      },
+    },
+  ]);
 });
 
 test("reconcileAgentActionOutputBindingsInDocument shortens existing managed output names", () => {

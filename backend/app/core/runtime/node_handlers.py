@@ -471,7 +471,7 @@ def execute_agent_node(
     resolve_agent_runtime_config_func: Callable[..., dict[str, Any]] = resolve_agent_runtime_config,
     build_agent_stream_delta_callback_func: Callable[..., Any] = build_agent_stream_delta_callback,
     callable_accepts_keyword_func: Callable[..., bool] = callable_accepts_keyword,
-    generate_agent_action_inputs_func: Callable[..., tuple[dict[str, dict[str, Any]], str, list[str], dict[str, Any]]] = generate_agent_action_inputs,
+    generate_agent_action_inputs_func: Callable[..., Any] = generate_agent_action_inputs,
     generate_agent_subgraph_inputs_func: Callable[..., tuple[dict[str, dict[str, Any]], str, list[str], dict[str, Any]]] = generate_agent_subgraph_inputs,
     generate_agent_response_func: Callable[..., tuple[dict[str, Any], str, list[str], dict[str, Any]]] = generate_agent_response,
     resolve_subgraph_capability_definition_func: Callable[..., SubgraphCapabilityDefinition] | None = None,
@@ -527,6 +527,7 @@ def execute_agent_node(
         for resolved_binding in resolved_bindings
     ]
     generated_action_inputs: dict[str, dict[str, Any]] = {}
+    generated_action_state_outputs: dict[str, Any] = {}
     action_input_reasoning = ""
     pending_permission_approval = find_pending_permission_approval_for_node(
         state,
@@ -536,7 +537,9 @@ def execute_agent_node(
     if pending_permission_approval:
         pending_action_key = str(pending_permission_approval.get("capability_key") or "")
         pending_action_inputs = pending_permission_approval.get("inputs")
+        pending_state_outputs = pending_permission_approval.get("state_outputs")
         generated_action_inputs[pending_action_key] = dict(pending_action_inputs) if isinstance(pending_action_inputs, dict) else {}
+        generated_action_state_outputs = dict(pending_state_outputs) if isinstance(pending_state_outputs, dict) else {}
         action_input_reasoning = "Resuming approved risky Action execution with stored Action LLM output."
     elif resolved_bindings:
         record_file_context_activity_events(
@@ -547,7 +550,7 @@ def execute_agent_node(
             phase="action_input_planning",
             record_activity_event_func=record_activity_event_func,
         )
-        generated_action_inputs, action_input_reasoning, action_input_warnings, runtime_config = generate_agent_action_inputs_func(
+        action_generation_result = generate_agent_action_inputs_func(
             node=node,
             input_values=input_values,
             bindings=resolved_bindings,
@@ -555,6 +558,13 @@ def execute_agent_node(
             runtime_config=runtime_config,
             state_schema=state_schema,
         )
+        (
+            generated_action_inputs,
+            generated_action_state_outputs,
+            action_input_reasoning,
+            action_input_warnings,
+            runtime_config,
+        ) = _unpack_agent_action_input_generation_result(action_generation_result)
         llm_phases.append("action_input_planning")
         warnings.extend(action_input_warnings)
 
@@ -645,6 +655,7 @@ def execute_agent_node(
                             binding_source=resolved_binding.source,
                             permissions=approval_decision.risky_permissions,
                             inputs=action_inputs,
+                            state_outputs=generated_action_state_outputs,
                         ),
                         "action_input_reasoning": action_input_reasoning,
                         "subgraph_input_reasoning": "",
@@ -877,11 +888,15 @@ def execute_agent_node(
             error=error,
         )
 
-    mapped_capability_and_action_outputs = {**mapped_action_outputs, **mapped_capability_outputs}
+    mapped_capability_and_action_outputs = {
+        **generated_action_state_outputs,
+        **mapped_action_outputs,
+        **mapped_capability_outputs,
+    }
     output_keys = [binding.state for binding in node.writes]
     write_modes = {binding.state: binding.mode for binding in node.writes}
     if output_keys and all(state_name in mapped_capability_and_action_outputs for state_name in output_keys):
-        output_values = dict(mapped_capability_and_action_outputs)
+        output_values = _ordered_output_values(output_keys, mapped_capability_and_action_outputs)
         final_result_value = first_truthy_func(output_values.values())
         finalize_kwargs: dict[str, Any] = {
             "state": state,
@@ -908,13 +923,20 @@ def execute_agent_node(
             "final_result": "" if final_result_value in (None, "", [], {}) else str(final_result_value),
         }
 
+    response_output_keys = [
+        state_name
+        for state_name in output_keys
+        if state_name not in mapped_capability_and_action_outputs
+    ]
+    response_node = _agent_node_with_only_writes(node, response_output_keys) if response_output_keys else node
+
     stream_delta_kwargs: dict[str, Any] = {
         "state": state,
         "node_name": node_name,
-        "output_keys": output_keys,
+        "output_keys": response_output_keys or output_keys,
     }
     if callable_accepts_keyword_func(build_agent_stream_delta_callback_func, "stream_state_keys"):
-        stream_delta_kwargs["stream_state_keys"] = output_keys
+        stream_delta_kwargs["stream_state_keys"] = response_output_keys or output_keys
     stream_delta_callback = build_agent_stream_delta_callback_func(**stream_delta_kwargs)
 
     generate_kwargs: dict[str, Any] = {}
@@ -931,7 +953,7 @@ def execute_agent_node(
         record_activity_event_func=record_activity_event_func,
     )
     response_payload, response_reasoning, response_warnings, runtime_config = generate_agent_response_func(
-        node,
+        response_node,
         input_values,
         action_context,
         runtime_config,
@@ -940,12 +962,20 @@ def execute_agent_node(
     llm_phases.append("agent_response")
     warnings.extend(response_warnings)
 
-    output_values = dict(mapped_capability_and_action_outputs)
+    output_key_set = set(output_keys)
+    output_values: dict[str, Any] = {
+        state_name: value
+        for state_name, value in mapped_capability_and_action_outputs.items()
+        if state_name not in output_key_set
+    }
     for state_name in output_keys:
         if state_name in mapped_capability_and_action_outputs and write_modes.get(state_name) == StateWriteMode.APPEND:
+            output_values[state_name] = mapped_capability_and_action_outputs[state_name]
             continue
         if state_name in response_payload:
             output_values[state_name] = response_payload.get(state_name)
+        elif state_name in mapped_capability_and_action_outputs:
+            output_values[state_name] = mapped_capability_and_action_outputs[state_name]
         elif state_name not in output_values:
             output_values[state_name] = None
     finalize_kwargs: dict[str, Any] = {
@@ -973,6 +1003,62 @@ def execute_agent_node(
         "context_assembly_report": context_assembly_report(),
         "final_result": str(first_truthy_func(output_values.values()) or response_payload.get("summary") or ""),
     }
+
+
+def _unpack_agent_action_input_generation_result(
+    result: Any,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any], str, list[str], dict[str, Any]]:
+    if isinstance(result, tuple) and len(result) == 5:
+        action_inputs, state_outputs, reasoning, warnings, runtime_config = result
+        return (
+            dict(action_inputs) if isinstance(action_inputs, dict) else {},
+            dict(state_outputs) if isinstance(state_outputs, dict) else {},
+            str(reasoning or ""),
+            list(warnings) if isinstance(warnings, list) else [],
+            dict(runtime_config) if isinstance(runtime_config, dict) else {},
+        )
+    if isinstance(result, tuple) and len(result) == 4:
+        action_inputs, reasoning, warnings, runtime_config = result
+        return (
+            dict(action_inputs) if isinstance(action_inputs, dict) else {},
+            {},
+            str(reasoning or ""),
+            list(warnings) if isinstance(warnings, list) else [],
+            dict(runtime_config) if isinstance(runtime_config, dict) else {},
+        )
+    raise ValueError("Action LLM output planning returned an invalid result shape.")
+
+
+def _ordered_output_values(output_keys: list[str], values: dict[str, Any]) -> dict[str, Any]:
+    output_key_set = set(output_keys)
+    output_values = {
+        state_key: value
+        for state_key, value in values.items()
+        if state_key not in output_key_set
+    }
+    output_values.update(
+        {
+            state_key: values[state_key]
+            for state_key in output_keys
+            if state_key in values
+        }
+    )
+    return output_values
+
+
+def _agent_node_with_only_writes(node: NodeSystemAgentNode, output_keys: list[str]) -> NodeSystemAgentNode:
+    output_key_set = set(output_keys)
+    if len(output_key_set) == len(node.writes) and all(binding.state in output_key_set for binding in node.writes):
+        return node
+    return node.model_copy(
+        update={
+            "writes": [
+                copy.deepcopy(binding)
+                for binding in node.writes
+                if binding.state in output_key_set
+            ]
+        }
+    )
 
 
 def record_file_context_activity_events(

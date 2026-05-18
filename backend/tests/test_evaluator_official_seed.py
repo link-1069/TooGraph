@@ -37,7 +37,6 @@ class OfficialEvalSeedTests(unittest.TestCase):
 
             expected_suite_ids = {
                 "buddy_autonomous_loop_core",
-                "buddy_capability_loop_core",
                 "toograph_page_operation_workflow_core",
                 "toograph_action_creation_workflow_core",
                 "advanced_web_research_loop_core",

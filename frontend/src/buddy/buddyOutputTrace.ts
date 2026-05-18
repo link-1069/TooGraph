@@ -79,7 +79,7 @@ export function buildBuddyOutputTracePlan(
   const segmentIdByOutputNodeId: Record<string, string> = {};
 
   for (const binding of bindings) {
-    const boundaryNodeId = binding.upstreamNodeIds[0]?.trim();
+    const boundaryNodeId = resolveOutputTraceBoundaryNodeId(graph, binding);
     if (!boundaryNodeId) {
       continue;
     }
@@ -107,6 +107,26 @@ export function buildBuddyOutputTracePlan(
     segmentIdByOutputNodeId,
     segmentIdByNodeId: buildNearestBoundarySegmentByNodeId(graph, segmentIdByBoundaryNodeId),
   };
+}
+
+function resolveOutputTraceBoundaryNodeId(
+  graph: Pick<GraphPayload, "conditional_edges">,
+  binding: BuddyPublicOutputBinding,
+) {
+  const outputNodeId = binding.outputNodeId.trim();
+  if (outputNodeId) {
+    for (const route of graph.conditional_edges ?? []) {
+      if (!route.source?.trim()) {
+        continue;
+      }
+      for (const target of Object.values(route.branches ?? {})) {
+        if (target === outputNodeId) {
+          return route.source.trim();
+        }
+      }
+    }
+  }
+  return binding.upstreamNodeIds[0]?.trim() ?? "";
 }
 
 export function createBuddyOutputTraceRuntimeState(plan: BuddyOutputTracePlan): BuddyOutputTraceRuntimeState {

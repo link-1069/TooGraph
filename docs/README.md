@@ -418,11 +418,10 @@ operation:
 已完成：
 
 - Eval 存储、API 和前端评测中心已存在，支持 suite、case、run、case result、check result、artifact、单 case run/rerun、批量运行/采集、LLM judge 开关和失败诊断。
-- 官方 `eval_cases.json` 已覆盖 Buddy 主循环、能力循环、页面操作、Action 创建、联网搜索和现有业务模板。
+- 官方 `eval_cases.json` 已覆盖 Buddy 主循环、页面操作、Action 创建、联网搜索和现有业务模板。
 - 官方模板已经覆盖：
   - `advanced_web_research_loop`
   - `buddy_autonomous_loop`
-  - `buddy_capability_loop`
   - `buddy_context_fanout`
   - `buddy_request_intake`
   - `buddy_autonomous_review`

@@ -1040,20 +1040,17 @@ function reconcileAgentActionOutputBindings<T extends GraphPayload | GraphDocume
       }
     }
 
-    const suspendedFreeWrites = mergeWriteBindings(
-      normalizeWriteBindings(node.config.suspendedFreeWrites).filter((binding) => document.state_schema[binding.state]),
-      node.writes.filter(
-        (binding) =>
-          !isManagedActionOutputStateForNode(document, nodeId, binding.state) &&
-          !isManagedCapabilityResultStateForNode(document, nodeId, binding.state),
-      ),
+    const currentFreeWrites = node.writes.filter(
+      (binding) =>
+        !isManagedActionOutputStateForNode(document, nodeId, binding.state) &&
+        !isManagedCapabilityResultStateForNode(document, nodeId, binding.state),
     );
-    if (suspendedFreeWrites.length > 0) {
-      node.config.suspendedFreeWrites = suspendedFreeWrites;
-    } else {
-      delete node.config.suspendedFreeWrites;
-    }
-    node.writes = node.writes.filter((binding) => isManagedActionOutputStateForNode(document, nodeId, binding.state, attachedActionKey));
+    const restoredFreeWrites = normalizeWriteBindings(node.config.suspendedFreeWrites).filter((binding) => document.state_schema[binding.state]);
+    node.writes = mergeWriteBindings(
+      currentFreeWrites,
+      restoredFreeWrites,
+    );
+    delete node.config.suspendedFreeWrites;
 
     const existingBinding = currentBindingByAction.get(attachedActionKey);
     if (!definition?.stateOutputSchema.length) {

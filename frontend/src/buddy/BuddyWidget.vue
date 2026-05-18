@@ -535,8 +535,11 @@ import {
   type GraphEditPlaybackAuditSummary,
 } from "./graphEditPlaybackAudit.ts";
 import {
+  buildPublicOutputBuddyMessageMetadata,
   buildOutputTraceBuddyMessageMetadata,
+  resolvePublicOutputBuddyMessageMetadata,
   resolveOutputTraceBuddyMessageMetadata,
+  type BuddyPublicOutputMetadata,
 } from "./buddyMessageMetadata.ts";
 import { buildBuddyPageContext } from "./buddyPageContext.ts";
 import {
@@ -619,17 +622,6 @@ type BuddyMessage = BuddyChatMessage & {
   runId?: string | null;
   publicOutput?: BuddyPublicOutputMetadata;
   outputTrace?: BuddyOutputTraceSegment;
-};
-
-type BuddyPublicOutputMetadata = {
-  outputNodeId: string;
-  stateKey: string;
-  stateName: string;
-  stateType: string;
-  displayMode: string;
-  kind: "text" | "card";
-  durationMs: number | null;
-  status: "streaming" | "completed" | "failed";
 };
 
 type BuddyMessagePatch = Partial<
@@ -5922,12 +5914,16 @@ function messageRecordToBuddyMessage(record: BuddyChatMessageRecord): BuddyMessa
     runId: record.run_id,
     activityText: "",
     outputTrace: resolveOutputTraceBuddyMessageMetadata(record.metadata) ?? undefined,
+    publicOutput: resolvePublicOutputBuddyMessageMetadata(record.metadata) ?? undefined,
   };
 }
 
 function buildBuddyMessageMetadata(message: BuddyMessage) {
   if (message.outputTrace) {
     return buildOutputTraceBuddyMessageMetadata(message.outputTrace);
+  }
+  if (message.publicOutput) {
+    return buildPublicOutputBuddyMessageMetadata(message.publicOutput);
   }
   return null;
 }

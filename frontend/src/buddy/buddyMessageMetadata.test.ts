@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildPublicOutputBuddyMessageMetadata,
   buildOutputTraceBuddyMessageMetadata,
+  resolvePublicOutputBuddyMessageMetadata,
   resolveOutputTraceBuddyMessageMetadata,
 } from "./buddyMessageMetadata.ts";
 import type { BuddyOutputTraceSegment } from "./buddyOutputTrace.ts";
@@ -33,11 +35,48 @@ const outputTrace: BuddyOutputTraceSegment = {
   durationMs: 800,
 };
 
+const publicOutput = {
+  outputNodeId: "output_1",
+  stateKey: "answer",
+  stateName: "Answer",
+  stateType: "result_package",
+  displayMode: "auto",
+  kind: "card" as const,
+  durationMs: 800,
+  status: "completed" as const,
+};
+
 test("buildOutputTraceBuddyMessageMetadata stores trace segments as buddy message metadata", () => {
   assert.deepEqual(buildOutputTraceBuddyMessageMetadata(outputTrace), {
     kind: "output_trace",
     outputTrace,
   });
+});
+
+test("buildPublicOutputBuddyMessageMetadata stores public output display metadata", () => {
+  assert.deepEqual(buildPublicOutputBuddyMessageMetadata(publicOutput), {
+    kind: "public_output",
+    publicOutput,
+  });
+});
+
+test("resolvePublicOutputBuddyMessageMetadata restores only valid public output metadata", () => {
+  assert.deepEqual(resolvePublicOutputBuddyMessageMetadata({ kind: "public_output", publicOutput }), publicOutput);
+  assert.equal(resolvePublicOutputBuddyMessageMetadata({ kind: "output_trace", publicOutput }), null);
+  assert.equal(
+    resolvePublicOutputBuddyMessageMetadata({
+      kind: "public_output",
+      publicOutput: { ...publicOutput, status: "idle" },
+    }),
+    null,
+  );
+  assert.equal(
+    resolvePublicOutputBuddyMessageMetadata({
+      kind: "public_output",
+      publicOutput: { ...publicOutput, durationMs: "800" },
+    }),
+    null,
+  );
 });
 
 test("resolveOutputTraceBuddyMessageMetadata restores only valid trace metadata", () => {
