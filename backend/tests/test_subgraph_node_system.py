@@ -769,12 +769,28 @@ def test_langgraph_runtime_resumes_dynamic_subgraph_against_original_child_run(m
 
 def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs(monkeypatch) -> None:
     import app.core.langgraph.runtime as runtime_module
+    import app.core.runtime.activity_events as activity_events_module
     import app.core.runtime.node_system_executor as executor_module
 
     saved_runs: list[dict] = []
-    template = _dynamic_passthrough_template()
+    published_events: list[tuple[str | None, str, dict]] = []
+    template = _dynamic_breakpoint_template()
+    template["template_id"] = "simple_dynamic_subgraph"
+    template["label"] = "Simple Dynamic Subgraph"
+    template["default_graph_name"] = "Simple Dynamic Subgraph"
+    template["metadata"] = {}
     monkeypatch.setattr(runtime_module, "save_run", lambda state: saved_runs.append(copy.deepcopy(state)))
     monkeypatch.setattr(runtime_module, "load_template_record", lambda template_key: template)
+    monkeypatch.setattr(
+        runtime_module,
+        "publish_run_event",
+        lambda run_id, event_type, payload=None: published_events.append((run_id, event_type, copy.deepcopy(payload or {}))),
+    )
+    monkeypatch.setattr(
+        activity_events_module,
+        "publish_run_event",
+        lambda run_id, event_type, payload=None: published_events.append((run_id, event_type, copy.deepcopy(payload or {}))),
+    )
     monkeypatch.setattr(executor_module, "load_template_record", lambda template_key: template)
     monkeypatch.setattr(
         executor_module,
@@ -784,6 +800,16 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
             "planned subgraph inputs",
             [],
             kwargs["runtime_config"],
+        ),
+    )
+    monkeypatch.setattr(
+        executor_module,
+        "_generate_agent_response",
+        lambda _node, _input_values, _action_context, runtime_config, **_kwargs: (
+            {"final_reply": "子图最终回复"},
+            "",
+            [],
+            runtime_config,
         ),
     )
 
@@ -855,3 +881,28 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
     }
     execution = next(item for item in result["node_executions"] if item["node_id"] == "run_selected_subgraph")
     assert execution["artifacts"]["capability_outputs"][0]["inputs"] == {"final_reply": "子图最终回复"}
+
+    child_run_id = child_runs[-1]["run_id"]
+    parent_activity_events = [
+        payload
+        for run_id, event_type, payload in published_events
+        if run_id == result["run_id"] and event_type == "activity.event"
+    ]
+    running_activity = next(
+        event
+        for event in parent_activity_events
+        if event.get("kind") == "subgraph_invocation" and event.get("status") == "running"
+    )
+    assert running_activity["node_id"] == "run_selected_subgraph"
+    assert running_activity["detail"]["capability_name"] == "Simple Dynamic Subgraph"
+    assert running_activity["detail"]["child_run_id"] == child_run_id
+
+    parent_child_node_events = [
+        payload
+        for run_id, event_type, payload in published_events
+        if run_id == result["run_id"] and event_type == "node.started" and payload.get("node_id") == "inner_agent"
+    ]
+    assert parent_child_node_events
+    assert parent_child_node_events[0]["dynamic_capability_parent_node_id"] == "run_selected_subgraph"
+    assert parent_child_node_events[0]["dynamic_capability_label"] == "Simple Dynamic Subgraph"
+    assert parent_child_node_events[0]["dynamic_capability_run_id"] == child_run_id

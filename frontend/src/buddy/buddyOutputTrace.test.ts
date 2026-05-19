@@ -508,6 +508,95 @@ test("reduceBuddyOutputTraceEvent exposes child run evidence from dynamic subgra
   assert.deepEqual(segment.records[1].artifactLabels, ["run: run_research completed"]);
 });
 
+test("reduceBuddyOutputTraceEvent merges dynamic subgraph activity updates by child run id", () => {
+  const graph = fiveNodeGraph();
+  graph.nodes.node_a.name = "动态能力";
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  let state = createBuddyOutputTraceRuntimeState(plan);
+
+  state = reduceBuddyOutputTraceEvent(state, plan, graph, "node.started", { node_id: "node_a", node_type: "agent" }, 1000);
+  state = reduceBuddyOutputTraceEvent(
+    state,
+    plan,
+    graph,
+    "activity.event",
+    {
+      sequence: 1,
+      kind: "subgraph_invocation",
+      summary: "Subgraph advanced_web_research_loop started.",
+      node_id: "node_a",
+      status: "running",
+      detail: {
+        capability_key: "advanced_web_research_loop",
+        capability_name: "高级联网搜索",
+        child_run_id: "run_research",
+        child_run_status: "running",
+      },
+    },
+    1100,
+  );
+  state = reduceBuddyOutputTraceEvent(
+    state,
+    plan,
+    graph,
+    "activity.event",
+    {
+      sequence: 2,
+      kind: "subgraph_invocation",
+      summary: "Subgraph advanced_web_research_loop completed.",
+      node_id: "node_a",
+      status: "succeeded",
+      duration_ms: 640,
+      detail: {
+        capability_key: "advanced_web_research_loop",
+        capability_name: "高级联网搜索",
+        child_run_id: "run_research",
+        child_run_status: "completed",
+      },
+    },
+    1740,
+  );
+
+  const [segment] = listBuddyOutputTraceSegmentsForDisplay(state);
+  assert.equal(segment.records.length, 2);
+  assert.equal(segment.records[1].label, "动态能力 / 高级联网搜索");
+  assert.equal(segment.records[1].status, "completed");
+  assert.equal(segment.records[1].durationMs, 640);
+});
+
+test("reduceBuddyOutputTraceEvent names dynamic capability activity with the selected ability name", () => {
+  const graph = fiveNodeGraph();
+  graph.nodes.node_a.name = "动态能力";
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  let state = createBuddyOutputTraceRuntimeState(plan);
+
+  state = reduceBuddyOutputTraceEvent(state, plan, graph, "node.started", { node_id: "node_a", node_type: "agent" }, 1000);
+  state = reduceBuddyOutputTraceEvent(
+    state,
+    plan,
+    graph,
+    "activity.event",
+    {
+      sequence: 33,
+      kind: "subgraph_invocation",
+      summary: "Subgraph advanced_web_research_loop completed.",
+      node_id: "node_a",
+      status: "succeeded",
+      duration_ms: 640,
+      detail: {
+        capability_key: "advanced_web_research_loop",
+        capability_name: "高级联网搜索",
+        child_run_id: "run_research",
+        child_run_status: "completed",
+      },
+    },
+    1500,
+  );
+
+  const [segment] = listBuddyOutputTraceSegmentsForDisplay(state);
+  assert.equal(segment.records[1].label, "动态能力 / 高级联网搜索");
+});
+
 test("reduceBuddyOutputTraceEvent records readable virtual operation activity", () => {
   const graph = fiveNodeGraph();
   const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
@@ -752,6 +841,145 @@ test("buildBuddyOutputTraceStateFromRunDetail rebuilds completed segments from r
 
   assert.deepEqual(segments[0].records.map((record) => record.label), ["A", "B"]);
   assert.deepEqual(segments[1].records.map((record) => record.label), ["C", "C / toograph_script_tester"]);
+});
+
+test("buildBuddyOutputTraceStateFromRunDetail keeps trace-only empty outputs with the next visible output capsule", () => {
+  const graph = fiveNodeGraph();
+  graph.nodes.node_gate = {
+    kind: "condition",
+    name: "能力选择结果",
+    description: "",
+    reads: [{ state: "state_b1", required: true }],
+    writes: [],
+    config: { branches: ["empty", "continue"], loopLimit: 5, branchMapping: {}, rule: null },
+    ui: { position: { x: 0, y: 0 } },
+  };
+  graph.nodes.node_dynamic = {
+    ...graph.nodes.node_c,
+    name: "动态能力",
+  };
+  graph.nodes.node_final = {
+    kind: "condition",
+    name: "最终回复判断",
+    description: "",
+    reads: [{ state: "state_e1", required: true }],
+    writes: [],
+    config: { branches: ["done"], loopLimit: 5, branchMapping: {}, rule: null },
+    ui: { position: { x: 0, y: 0 } },
+  };
+  graph.edges = [
+    { source: "node_a", target: "node_gate" },
+    { source: "node_dynamic", target: "node_final" },
+  ];
+  graph.conditional_edges = [
+    { source: "node_gate", branches: { empty: "output_b1", continue: "node_dynamic" } },
+    { source: "node_final", branches: { done: "output_e1" } },
+  ];
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  const run = {
+    status: "completed",
+    node_executions: [
+      execution("node_a", "agent", "理解请求", "2026-05-13T10:00:00.000Z", 100),
+      execution("node_gate", "condition", "能力选择结果", "2026-05-13T10:00:00.200Z", 0),
+      execution("node_dynamic", "agent", "动态能力", "2026-05-13T10:00:00.300Z", 500),
+      execution("node_final", "condition", "最终回复判断", "2026-05-13T10:00:01.000Z", 0),
+    ],
+    output_previews: [
+      {
+        node_id: "output_b1",
+        source_kind: "state",
+        source_key: "state_b1",
+        display_mode: "markdown",
+        persist_enabled: false,
+        persist_format: "auto",
+        value: "",
+      },
+      {
+        node_id: "output_e1",
+        source_kind: "state",
+        source_key: "state_e1",
+        display_mode: "markdown",
+        persist_enabled: false,
+        persist_format: "auto",
+        value: "最终回复",
+      },
+    ],
+    artifacts: {},
+  } as Partial<RunDetail> as RunDetail;
+
+  const state = buildBuddyOutputTraceStateFromRunDetail(run, plan, graph);
+  const segments = listBuddyOutputTraceSegmentsForDisplay(state, { visibleOutputNodeIds: new Set(["output_e1"]) });
+
+  assert.equal(segments.length, 1);
+  assert.equal(segments[0].segmentId, "boundary:node_final");
+  assert.deepEqual(segments[0].records.map((record) => record.label), ["A", "能力选择结果", "动态能力", "最终回复判断"]);
+});
+
+test("buildBuddyOutputTraceStateFromRunDetail nests dynamic subgraph node executions below the selected ability", () => {
+  const graph = fiveNodeGraph();
+  graph.nodes.node_a.name = "动态能力";
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  const run = {
+    status: "completed",
+    node_executions: [
+      {
+        ...execution("node_a", "agent", "动态能力", "2026-05-13T10:00:00.000Z", 1000),
+        artifacts: {
+          inputs: {},
+          outputs: {},
+          family: "agent",
+          state_reads: [],
+          state_writes: [],
+          capability_outputs: [
+            {
+              capability_key: "advanced_web_research_loop",
+              capability_name: "高级联网搜索",
+              subgraph: {
+                name: "高级联网搜索",
+                child_run_id: "run_research",
+                node_executions: [
+                  execution("plan_search", "agent", "规划搜索", "2026-05-13T10:00:00.100Z", 200),
+                  execution("summarize_results", "agent", "整理结果", "2026-05-13T10:00:00.400Z", 300),
+                ],
+              },
+            },
+          ],
+        },
+      },
+    ],
+    artifacts: {
+      activity_events: [
+        {
+          sequence: 1,
+          kind: "subgraph_invocation",
+          summary: "Subgraph advanced_web_research_loop completed.",
+          node_id: "node_a",
+          status: "succeeded",
+          duration_ms: 1000,
+          detail: {
+            capability_key: "advanced_web_research_loop",
+            capability_name: "高级联网搜索",
+            child_run_id: "run_research",
+            child_run_status: "completed",
+          },
+          created_at: "2026-05-13T10:00:01.000Z",
+        },
+      ],
+    },
+  } as Partial<RunDetail> as RunDetail;
+
+  const state = buildBuddyOutputTraceStateFromRunDetail(run, plan, graph);
+  const [segment] = listBuddyOutputTraceSegmentsForDisplay(state);
+
+  assert.deepEqual(
+    segment.records.map((record) => ({ label: record.label, treeDepth: record.treeDepth ?? 0 })),
+    [
+      { label: "动态能力", treeDepth: 0 },
+      { label: "动态能力 / 高级联网搜索", treeDepth: 1 },
+      { label: "动态能力 / 高级联网搜索 / plan search", treeDepth: 2 },
+      { label: "动态能力 / 高级联网搜索 / summarize results", treeDepth: 2 },
+    ],
+  );
 });
 
 test("buildBuddyOutputTraceStateFromRunDetail hides abandoned output branches after a terminal run", () => {

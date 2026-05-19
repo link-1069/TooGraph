@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { BuddyOutputTraceSegment } from "./buddyOutputTrace.ts";
-import type { RunTreeNode } from "../types/run.ts";
+import type { RunDetail, RunTreeNode } from "../types/run.ts";
 import { buildBuddyOutputTraceTreeRows } from "./buddyOutputTraceTree.ts";
 
 const baseRecord = {
@@ -147,6 +147,246 @@ test("buildBuddyOutputTraceTreeRows exposes activity evidence labels", () => {
 
   assert.deepEqual(rows[0].artifactLabels, ["artifacts: 2", "retries: 5"]);
   assert.equal(rows[0].evidenceRunId, "run_report");
+});
+
+test("buildBuddyOutputTraceTreeRows hides internal child run artifact labels", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "主图输出",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 1400,
+    durationMs: 400,
+    records: [
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_subgraph",
+        runtimeKey: "activity:subgraph:dynamic_capability:run_research",
+        label: "动态能力 / 高级联网搜索",
+        nodeId: "dynamic_capability",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        treeDepth: 1,
+        artifactLabels: ["run: run_research completed"],
+        triggeredRunId: "run_research",
+      },
+    ],
+  };
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "主图开始" });
+
+  assert.deepEqual(rows[0].artifactLabels, []);
+  assert.equal(rows[0].evidenceRunId, "run_research");
+});
+
+test("buildBuddyOutputTraceTreeRows renders dynamic capability traces like a file tree", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "最终回复",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 2400,
+    durationMs: 1400,
+    records: [
+      {
+        ...baseRecord,
+        recordId: "record_dynamic",
+        runtimeKey: "node:dynamic_capability",
+        label: "动态能力",
+        nodeId: "dynamic_capability",
+        subgraphNodeId: null,
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_ability",
+        runtimeKey: "activity:1:dynamic_capability",
+        label: "动态能力 / 高级联网搜索",
+        nodeId: "dynamic_capability",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        treeDepth: 1,
+        triggeredRunId: "run_research",
+      },
+      {
+        ...baseRecord,
+        recordId: "record_child_1",
+        runtimeKey: "node:dynamic_capability/advanced_web_research_loop/plan_search",
+        label: "动态能力 / 高级联网搜索 / 规划搜索",
+        nodeId: "plan_search",
+        subgraphNodeId: null,
+        treeDepth: 2,
+      },
+      {
+        ...baseRecord,
+        recordId: "record_child_2",
+        runtimeKey: "node:dynamic_capability/advanced_web_research_loop/summarize_results",
+        label: "动态能力 / 高级联网搜索 / 整理结果",
+        nodeId: "summarize_results",
+        subgraphNodeId: null,
+        treeDepth: 2,
+      },
+    ],
+  };
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "主图开始" });
+
+  assert.deepEqual(
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind, evidenceRunId: row.evidenceRunId })),
+    [
+      { label: "动态能力", depth: 0, kind: "node", evidenceRunId: null },
+      { label: "高级联网搜索", depth: 1, kind: "subgraph", evidenceRunId: "run_research" },
+      { label: "规划搜索", depth: 2, kind: "node", evidenceRunId: null },
+      { label: "整理结果", depth: 2, kind: "node", evidenceRunId: null },
+    ],
+  );
+});
+
+test("buildBuddyOutputTraceTreeRows resolves dynamic subgraph child node names from child run detail", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "最终回复",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 2400,
+    durationMs: 1400,
+    records: [
+      {
+        ...baseRecord,
+        recordId: "record_child_1",
+        runtimeKey: "node:dynamic_capability/advanced_web_research_loop/plan_search",
+        label: "动态能力 / 高级联网搜索 / plan search",
+        nodeId: "plan_search",
+        subgraphNodeId: null,
+        treeDepth: 2,
+        dynamicCapabilityRunId: "run_research",
+      },
+    ],
+  };
+  const childRun = {
+    graph_snapshot: {
+      nodes: {
+        plan_search: {
+          name: "制定搜索计划",
+          description: "",
+          kind: "agent",
+        },
+      },
+    },
+  } as Partial<RunDetail> as RunDetail;
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, {
+    rootLabel: "主图开始",
+    childRunDetailsByRunId: { run_research: childRun },
+  });
+
+  assert.equal(rows[0].label, "制定搜索计划");
+});
+
+test("buildBuddyOutputTraceTreeRows upgrades stored dynamic capability activity rows from run evidence", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "最终回复",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 2400,
+    durationMs: 1400,
+    records: [
+      {
+        ...baseRecord,
+        recordId: "record_dynamic",
+        runtimeKey: "node:dynamic_capability",
+        label: "动态能力",
+        nodeId: "dynamic_capability",
+        subgraphNodeId: null,
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_ability",
+        runtimeKey: "activity:2:dynamic_capability",
+        label: "动态能力 / advanced_web_research_loop",
+        nodeId: "dynamic_capability",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        triggeredRunId: "run_research",
+      },
+    ],
+  };
+  const runTree = createRunTreeNode({
+    run_id: "run_parent",
+    graph_name: "Buddy Loop",
+    children: [
+      createRunTreeNode({
+        run_id: "run_research",
+        graph_name: "高级联网搜索",
+        parent_run_id: "run_parent",
+        parent_node_id: "dynamic_capability",
+        invocation_kind: "dynamic_subgraph_capability",
+        invocation_key: "advanced_web_research_loop",
+      }),
+    ],
+  });
+  const childRun = {
+    graph_snapshot: {
+      nodes: {
+        plan_search: { name: "制定搜索计划", description: "", kind: "agent" },
+        output_final: { name: "最终回复", description: "", kind: "output" },
+      },
+    },
+    node_executions: [
+      {
+        node_id: "plan_search",
+        node_type: "agent",
+        status: "success",
+        started_at: "2026-05-13T10:00:00.100Z",
+        finished_at: "2026-05-13T10:00:00.300Z",
+        duration_ms: 200,
+        input_summary: "",
+        output_summary: "",
+        artifacts: { inputs: {}, outputs: {}, family: "agent", state_reads: [], state_writes: [] },
+        warnings: [],
+        errors: [],
+      },
+      {
+        node_id: "output_final",
+        node_type: "output",
+        status: "success",
+        started_at: "2026-05-13T10:00:00.350Z",
+        finished_at: "2026-05-13T10:00:00.350Z",
+        duration_ms: 0,
+        input_summary: "",
+        output_summary: "",
+        artifacts: { inputs: {}, outputs: {}, family: "output", state_reads: [], state_writes: [] },
+        warnings: [],
+        errors: [],
+      },
+    ],
+  } as Partial<RunDetail> as RunDetail;
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, {
+    rootLabel: "主图开始",
+    runTree,
+    childRunDetailsByRunId: { run_research: childRun },
+  });
+
+  assert.deepEqual(
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind, evidenceRunId: row.evidenceRunId })),
+    [
+      { label: "动态能力", depth: 0, kind: "node", evidenceRunId: null },
+      { label: "高级联网搜索", depth: 1, kind: "subgraph", evidenceRunId: "run_research" },
+      { label: "制定搜索计划", depth: 2, kind: "node", evidenceRunId: null },
+    ],
+  );
 });
 
 test("buildBuddyOutputTraceTreeRows exposes graph revision restore metadata", () => {

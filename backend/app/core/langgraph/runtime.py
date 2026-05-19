@@ -63,6 +63,7 @@ from app.core.runtime.run_tree import create_child_run_state
 from app.core.runtime.node_execution_records import finish_node_execution, start_node_execution
 from app.core.runtime.runtime_summaries import summarize_first_value as _summarize_values
 from app.core.runtime.state_io import apply_state_writes, collect_node_inputs
+from app.core.runtime.activity_events import record_activity_event as _record_activity_event
 from app.core.runtime.run_events import publish_run_event
 from app.core.runtime.node_system_executor import (
     _execute_node,
@@ -313,6 +314,42 @@ def _subgraph_event_context(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _dynamic_capability_event_context(state: dict[str, Any]) -> dict[str, Any]:
+    context = state.get("_dynamic_capability_context")
+    if not isinstance(context, dict):
+        return {}
+    parent_node_id = str(context.get("parent_node_id") or "").strip()
+    if not parent_node_id:
+        return {}
+    capability_key = str(context.get("capability_key") or "").strip()
+    capability_label = str(context.get("capability_label") or "").strip()
+    run_id = str(context.get("run_id") or "").strip()
+    return {
+        "dynamic_capability_parent_node_id": parent_node_id,
+        "dynamic_capability_key": capability_key,
+        "dynamic_capability_label": capability_label,
+        "dynamic_capability_run_id": run_id,
+    }
+
+
+def _publish_run_event_for_state(state: dict[str, Any], event_type: str, payload: dict[str, Any]) -> None:
+    run_id = str(state.get("run_id") or "").strip()
+    publish_run_event(run_id, event_type, payload)
+
+    parent_state = state.get("_parent_run_state")
+    if not isinstance(parent_state, dict):
+        return
+    parent_run_id = str(parent_state.get("run_id") or "").strip()
+    if not parent_run_id or parent_run_id == run_id:
+        return
+    parent_payload = {
+        **payload,
+        **_subgraph_event_context(state),
+        **_dynamic_capability_event_context(state),
+    }
+    publish_run_event(parent_run_id, event_type, parent_payload)
+
+
 def _root_parent_run_state(state: dict[str, Any]) -> dict[str, Any]:
     parent_state = state.get("_parent_run_state")
     return parent_state if isinstance(parent_state, dict) else state
@@ -419,8 +456,8 @@ def _build_langgraph_node_callable(
                 **dict(state.get("state_values", {})),
                 **dict(current_values or {}),
             }
-            publish_run_event(
-                str(state.get("run_id") or ""),
+            _publish_run_event_for_state(
+                state,
                 "node.started",
                 {
                     "node_id": node_name,
@@ -520,8 +557,8 @@ def _build_langgraph_node_callable(
                 state_writes = apply_state_writes(node_name, node.writes, outputs, state)
                 graph_updates = {write["state_key"]: write["value"] for write in state_writes}
                 for write in state_writes:
-                    publish_run_event(
-                        str(state.get("run_id") or ""),
+                    _publish_run_event_for_state(
+                        state,
                         "state.updated",
                         {
                             "node_id": node_name,
@@ -599,8 +636,8 @@ def _build_langgraph_node_callable(
                     selected_edge_ids=selected_edge_ids,
                     state_writes=state_writes,
                 )
-                publish_run_event(
-                    str(state.get("run_id") or ""),
+                _publish_run_event_for_state(
+                    state,
                     "node.completed",
                     {
                         "node_id": node_name,
@@ -652,8 +689,8 @@ def _build_langgraph_node_callable(
                         checkpoint_saver=checkpoint_saver,
                         checkpoint_lookup_config=checkpoint_lookup_config,
                     )
-                publish_run_event(
-                    str(state.get("run_id") or ""),
+                _publish_run_event_for_state(
+                    state,
                     "node.failed",
                     {
                         "node_id": node_name,
@@ -1347,6 +1384,7 @@ def _execute_dynamic_subgraph_capability(
     }
     parent_context = _subgraph_context(state)
     parent_path = parent_context["path"] if parent_context else []
+    source_name = _dynamic_subgraph_source_name(template, template_key)
     subgraph_initial_state = _create_child_graph_run_state(
         parent_state=_root_parent_run_state(state),
         subgraph_document=subgraph_document,
@@ -1363,6 +1401,28 @@ def _execute_dynamic_subgraph_capability(
         "resume_source": None,
     }
     save_run(subgraph_initial_state)
+    child_run_id = str(subgraph_initial_state.get("run_id") or "").strip()
+    subgraph_initial_state["subgraph_status_map"] = parent_status_map
+    subgraph_initial_state["_parent_run_state"] = _root_parent_run_state(state)
+    subgraph_initial_state["_subgraph_context"] = {
+        "node_id": node_name,
+        "path": [*parent_path, node_name],
+    }
+    subgraph_initial_state["_dynamic_capability_context"] = {
+        "parent_node_id": node_name,
+        "capability_key": template_key,
+        "capability_label": source_name,
+        "run_id": child_run_id,
+    }
+    subgraph_initial_state["_subgraph_persist_progress"] = persist_parent_progress
+    _record_dynamic_subgraph_invocation_started(
+        state,
+        node_name=node_name,
+        template_key=template_key,
+        source_name=source_name,
+        subgraph_inputs=subgraph_inputs,
+        child_run_id=child_run_id,
+    )
     started_at = time.perf_counter()
     subgraph_state = execute_node_system_graph_langgraph(
         subgraph_document,
@@ -1382,7 +1442,7 @@ def _execute_dynamic_subgraph_capability(
 
     if subgraph_state.get("status") == "awaiting_human":
         return {
-            "source_name": str(template.get("label") or template.get("default_graph_name") or template_key),
+            "source_name": source_name,
             "status": "awaiting_human",
             "child_run_id": subgraph_state.get("run_id"),
             "outputs": {},
@@ -1420,7 +1480,7 @@ def _execute_dynamic_subgraph_capability(
     errors = list(subgraph_state.get("errors", []))
     error = "; ".join(str(item) for item in errors if str(item))
     return {
-        "source_name": str(template.get("label") or template.get("default_graph_name") or template_key),
+        "source_name": source_name,
         "status": "failed" if status == "failed" or error else "succeeded",
         "child_run_id": subgraph_state.get("run_id"),
         "outputs": output_values,
@@ -1434,6 +1494,40 @@ def _execute_dynamic_subgraph_capability(
             "child_run_id": subgraph_state.get("run_id"),
         },
     }
+
+
+def _dynamic_subgraph_source_name(template: dict[str, Any], template_key: str) -> str:
+    return str(template.get("label") or template.get("default_graph_name") or template_key).strip() or template_key
+
+
+def _record_dynamic_subgraph_invocation_started(
+    state: dict[str, Any],
+    *,
+    node_name: str,
+    template_key: str,
+    source_name: str,
+    subgraph_inputs: dict[str, Any],
+    child_run_id: str,
+) -> None:
+    detail: dict[str, Any] = {
+        "capability_key": template_key,
+        "capability_name": source_name,
+        "input_keys": sorted(subgraph_inputs.keys()),
+        "output_keys": [],
+    }
+    if child_run_id:
+        detail["child_run_id"] = child_run_id
+        detail["triggered_run_id"] = child_run_id
+        detail["child_run_status"] = "running"
+    _record_activity_event(
+        _root_parent_run_state(state),
+        kind="subgraph_invocation",
+        summary=f"Subgraph '{template_key}' started.",
+        node_id=node_name,
+        status="running",
+        detail=detail,
+        publish_run_event_func=publish_run_event,
+    )
 
 
 def _resume_dynamic_subgraph_capability(
@@ -1463,10 +1557,20 @@ def _resume_dynamic_subgraph_capability(
     subgraph_initial_state["subgraph_status_map"] = parent_status_map
     parent_context = _subgraph_context(state)
     parent_path = parent_context["path"] if parent_context else []
+    source_name = _dynamic_subgraph_source_name(template, template_key)
+    pending_child_run_id = str(
+        subgraph_initial_state.get("run_id") or pending_subgraph.get("child_run_id") or ""
+    ).strip()
     subgraph_initial_state["_parent_run_state"] = _root_parent_run_state(state)
     subgraph_initial_state["_subgraph_context"] = {
         "node_id": node_name,
         "path": [*parent_path, node_name],
+    }
+    subgraph_initial_state["_dynamic_capability_context"] = {
+        "parent_node_id": node_name,
+        "capability_key": template_key,
+        "capability_label": source_name,
+        "run_id": pending_child_run_id,
     }
     subgraph_initial_state["_subgraph_persist_progress"] = persist_parent_progress
     started_at = time.perf_counter()
@@ -1492,7 +1596,7 @@ def _resume_dynamic_subgraph_capability(
 
     if subgraph_state.get("status") == "awaiting_human":
         return {
-            "source_name": str(template.get("label") or template.get("default_graph_name") or template_key),
+            "source_name": source_name,
             "status": "awaiting_human",
             "child_run_id": child_run_id,
             "outputs": {},
@@ -1531,7 +1635,7 @@ def _resume_dynamic_subgraph_capability(
     errors = list(subgraph_state.get("errors", []))
     error = "; ".join(str(item) for item in errors if str(item))
     return {
-        "source_name": str(template.get("label") or template.get("default_graph_name") or template_key),
+        "source_name": source_name,
         "status": "failed" if status == "failed" or error else "succeeded",
         "child_run_id": child_run_id,
         "outputs": output_values,
@@ -1708,8 +1812,8 @@ def _build_langgraph_route_callable(
                 )
                 state["node_status_map"][condition_name] = "running"
                 _record_subgraph_node_status(state, condition_name, "running")
-                publish_run_event(
-                    str(state.get("run_id") or ""),
+                _publish_run_event_for_state(
+                    state,
                     "node.started",
                     {
                         "node_id": condition_name,
@@ -1788,8 +1892,8 @@ def _build_langgraph_route_callable(
                         warnings=body.get("warnings", []),
                         errors=[],
                     )
-                    publish_run_event(
-                        str(state.get("run_id") or ""),
+                    _publish_run_event_for_state(
+                        state,
                         "node.completed",
                         {
                             "node_id": condition_name,

@@ -1,5 +1,5 @@
 import type { ConditionalEdge, GraphEdge, GraphNode, GraphPayload } from "../types/node-system.ts";
-import type { ActivityEvent, NodeExecutionDetail, RunDetail } from "../types/run.ts";
+import type { NodeExecutionDetail, RunDetail } from "../types/run.ts";
 import { summarizeVirtualOperationActivity, type VirtualOperationGraphRevision } from "../lib/virtual-operation-activity.ts";
 import type { BuddyPublicOutputBinding } from "./buddyPublicOutput.ts";
 
@@ -38,6 +38,8 @@ export type BuddyOutputTraceRecord = {
   summary?: string;
   artifactLabels?: string[];
   triggeredRunId?: string;
+  treeDepth?: number | null;
+  dynamicCapabilityRunId?: string | null;
   graphRevision?: VirtualOperationGraphRevision;
 };
 
@@ -200,54 +202,65 @@ export function reduceBuddyOutputTraceEvent(
     return state;
   }
   const subgraphNodeId = normalizeText(payload.subgraph_node_id);
-  const nodeType = normalizeText(payload.node_type) || resolveTraceNodeType(graph, nodeId, subgraphNodeId);
+  const dynamicCapabilityContext = resolveDynamicCapabilityContext(payload);
+  const segmentScopeNodeId = subgraphNodeId || dynamicCapabilityContext.parentNodeId;
+  const nodeType = normalizeText(payload.node_type) || resolveTraceNodeType(graph, nodeId, segmentScopeNodeId);
   if (nodeType === "input" || nodeType === "output") {
     return state;
   }
+  const runtimeKey = dynamicCapabilityContext.parentNodeId
+    ? buildDynamicCapabilityNodeRecordRuntimeKey(nodeId, dynamicCapabilityContext)
+    : buildNodeRecordRuntimeKey(nodeId, subgraphNodeId);
+  const nodeLabel = dynamicCapabilityContext.parentNodeId
+    ? resolveDynamicCapabilityNodePathLabel(graph, nodeId, dynamicCapabilityContext)
+    : resolveTraceNodePathLabel(graph, nodeId, subgraphNodeId);
 
   const eventTimeMs = resolveNodeEventTime(payload, eventType, nowEpochMs);
   if (eventType === "node.started") {
-    const segmentId = resolveSegmentIdForEvent(state, plan, nodeId, subgraphNodeId);
+    const segmentId = resolveSegmentIdForEvent(state, plan, nodeId, segmentScopeNodeId);
     if (!segmentId) {
       return state;
     }
-    const runtimeKey = buildNodeRecordRuntimeKey(nodeId, subgraphNodeId);
     return upsertRecordInSegment(state, segmentId, {
       runtimeKey,
       kind: "node",
-      label: resolveTraceNodePathLabel(graph, nodeId, subgraphNodeId),
+      label: nodeLabel,
       status: "running",
       startedAtMs: eventTimeMs,
       completedAtMs: null,
       durationMs: null,
       nodeId,
       nodeType,
-      subgraphNodeId: subgraphNodeId || null,
-      aggregateSubgraphNodeId: !subgraphNodeId && nodeType === "subgraph" ? nodeId : null,
+      subgraphNodeId: segmentScopeNodeId || null,
+      aggregateSubgraphNodeId: !segmentScopeNodeId && nodeType === "subgraph" ? nodeId : null,
+      treeDepth: dynamicCapabilityContext.parentNodeId ? 2 : undefined,
+      dynamicCapabilityRunId: dynamicCapabilityContext.runId || null,
     });
   }
 
-  const segmentId = findSegmentIdWithRunningRecord(state, buildNodeRecordRuntimeKey(nodeId, subgraphNodeId))
-    ?? resolveSegmentIdForEvent(state, plan, nodeId, subgraphNodeId);
+  const segmentId = findSegmentIdWithRunningRecord(state, runtimeKey)
+    ?? resolveSegmentIdForEvent(state, plan, nodeId, segmentScopeNodeId);
   if (!segmentId) {
     return state;
   }
   const status: BuddyOutputTraceRecordStatus = eventType === "node.failed" ? "failed" : "completed";
   const nextState = upsertRecordInSegment(state, segmentId, {
-    runtimeKey: buildNodeRecordRuntimeKey(nodeId, subgraphNodeId),
+    runtimeKey,
     kind: "node",
-    label: resolveTraceNodePathLabel(graph, nodeId, subgraphNodeId),
+    label: nodeLabel,
     status,
     startedAtMs: parseEventEpochMs(payload.started_at),
     completedAtMs: eventTimeMs,
     durationMs: normalizeDurationMs(payload.duration_ms),
     nodeId,
     nodeType,
-    subgraphNodeId: subgraphNodeId || null,
-    aggregateSubgraphNodeId: !subgraphNodeId && nodeType === "subgraph" ? nodeId : null,
+    subgraphNodeId: segmentScopeNodeId || null,
+    aggregateSubgraphNodeId: !segmentScopeNodeId && nodeType === "subgraph" ? nodeId : null,
+    treeDepth: dynamicCapabilityContext.parentNodeId ? 2 : undefined,
+    dynamicCapabilityRunId: dynamicCapabilityContext.runId || null,
   });
 
-  if (!subgraphNodeId && plan.segmentIdByBoundaryNodeId[nodeId] === segmentId) {
+  if (!segmentScopeNodeId && plan.segmentIdByBoundaryNodeId[nodeId] === segmentId) {
     return completeSegment(nextState, plan, segmentId, status === "failed" ? "failed" : "completed", eventTimeMs);
   }
   return nextState;
@@ -266,8 +279,15 @@ export function buildBuddyOutputTraceStateFromRunDetail(
   return pruneInactiveTerminalOutputSegments(state, run);
 }
 
-export function listBuddyOutputTraceSegmentsForDisplay(state: BuddyOutputTraceRuntimeState): BuddyOutputTraceSegment[] {
-  return state.order
+export type BuddyOutputTraceDisplayOptions = {
+  visibleOutputNodeIds?: ReadonlySet<string>;
+};
+
+export function listBuddyOutputTraceSegmentsForDisplay(
+  state: BuddyOutputTraceRuntimeState,
+  options: BuddyOutputTraceDisplayOptions = {},
+): BuddyOutputTraceSegment[] {
+  const segments = state.order
     .map((segmentId) => state.segmentsById[segmentId])
     .filter((segment): segment is BuddyOutputTraceSegment => Boolean(segment))
     .map((segment) => ({
@@ -275,6 +295,9 @@ export function listBuddyOutputTraceSegmentsForDisplay(state: BuddyOutputTraceRu
       records: listVisibleTraceRecords(segment.records),
     }))
     .filter((segment) => segment.status !== "idle" || segment.records.length > 0);
+  return options.visibleOutputNodeIds
+    ? coalesceTraceOnlyOutputSegments(segments, options.visibleOutputNodeIds)
+    : segments;
 }
 
 function applyActivityEvent(
@@ -298,6 +321,7 @@ function applyActivityEvent(
   const runtimeKey = buildActivityRecordRuntimeKey(payload, nodeId, subgraphNodeId);
   const virtualOperation = summarizeVirtualOperationActivity(payload);
   const runEvidence = summarizeActivityRunEvidence(payload);
+  const dynamicSubgraphActivity = isDynamicSubgraphActivity(payload);
   return upsertRecordInSegment(state, segmentId, {
     runtimeKey,
     kind: "activity",
@@ -312,6 +336,8 @@ function applyActivityEvent(
     summary: virtualOperation?.summary || normalizeText(payload.summary),
     artifactLabels: virtualOperation?.artifactLabels ?? runEvidence.artifactLabels,
     triggeredRunId: virtualOperation?.triggeredRunId ?? runEvidence.triggeredRunId,
+    treeDepth: dynamicSubgraphActivity ? 1 : undefined,
+    dynamicCapabilityRunId: dynamicSubgraphActivity ? runEvidence.triggeredRunId ?? null : null,
     graphRevision: virtualOperation?.graphRevision,
   });
 }
@@ -595,10 +621,81 @@ function buildNodeRecordRuntimeKey(nodeId: string, subgraphNodeId: string) {
   return `node:${subgraphNodeId ? `${subgraphNodeId}/` : ""}${nodeId}`;
 }
 
+function buildDynamicCapabilityNodeRecordRuntimeKey(
+  nodeId: string,
+  context: DynamicCapabilityTraceContext,
+) {
+  return `node:${context.parentNodeId}/${context.capabilityKey || context.capabilityLabel}/${nodeId}`;
+}
+
 function buildActivityRecordRuntimeKey(payload: RunEventPayload, nodeId: string, subgraphNodeId: string) {
+  const dynamicSubgraphRuntimeKey = buildDynamicSubgraphActivityRecordRuntimeKey(payload, nodeId, subgraphNodeId);
+  if (dynamicSubgraphRuntimeKey) {
+    return dynamicSubgraphRuntimeKey;
+  }
   const sequence = normalizePositiveInteger(payload.sequence);
   const kind = normalizeText(payload.kind) || "activity";
   return `activity:${sequence ?? kind}:${subgraphNodeId ? `${subgraphNodeId}/` : ""}${nodeId}`;
+}
+
+function buildDynamicSubgraphActivityRecordRuntimeKey(payload: RunEventPayload, nodeId: string, subgraphNodeId: string) {
+  if (!isDynamicSubgraphActivity(payload)) {
+    return "";
+  }
+  const detail = recordFromUnknown(payload.detail) ?? {};
+  const childRunId = normalizeText(
+    detail.child_run_id
+      ?? detail.childRunId
+      ?? detail.triggered_run_id
+      ?? detail.triggeredRunId,
+  );
+  const capabilityKey = (
+    normalizeText(detail.capability_key)
+    || normalizeText(detail.subgraph_key)
+    || normalizeText(detail.capability_name)
+    || normalizeText(detail.subgraph_name)
+  );
+  const stableKey = childRunId || capabilityKey;
+  return stableKey ? `activity:subgraph:${subgraphNodeId ? `${subgraphNodeId}/` : ""}${nodeId}:${stableKey}` : "";
+}
+
+type DynamicCapabilityTraceContext = {
+  parentNodeId: string;
+  capabilityKey: string;
+  capabilityLabel: string;
+  runId: string;
+};
+
+function resolveDynamicCapabilityContext(payload: RunEventPayload): DynamicCapabilityTraceContext {
+  return {
+    parentNodeId: normalizeText(payload.dynamic_capability_parent_node_id),
+    capabilityKey: normalizeText(payload.dynamic_capability_key),
+    capabilityLabel: normalizeText(payload.dynamic_capability_label),
+    runId: normalizeText(payload.dynamic_capability_run_id),
+  };
+}
+
+function resolveDynamicCapabilityNodePathLabel(
+  graph: GraphPayload | null | undefined,
+  nodeId: string,
+  context: DynamicCapabilityTraceContext,
+) {
+  const parentLabel = resolveTraceNodeLabel(graph, context.parentNodeId, "");
+  const capabilityLabel = context.capabilityLabel || context.capabilityKey || "capability";
+  return `${parentLabel} / ${capabilityLabel} / ${humanizeRuntimeKey(nodeId)}`;
+}
+
+function isDynamicSubgraphActivity(payload: RunEventPayload) {
+  if (normalizeText(payload.kind) !== "subgraph_invocation") {
+    return false;
+  }
+  const detail = recordFromUnknown(payload.detail) ?? {};
+  return Boolean(
+    normalizeText(detail.capability_name)
+    || normalizeText(detail.capability_key)
+    || normalizeText(detail.subgraph_name)
+    || normalizeText(detail.subgraph_key),
+  );
 }
 
 function resolveTraceNodePathLabel(graph: GraphPayload | null | undefined, nodeId: string, subgraphNodeId: string) {
@@ -621,14 +718,24 @@ function resolveTraceActivityLabel(
   if (virtualOperation) {
     return `${nodeLabel} / ${virtualOperation.label}`;
   }
-  const detail = recordFromUnknown(payload.detail) ?? {};
-  const capabilityLabel =
-    normalizeText(detail.action_key)
-    || normalizeText(detail.tool_key)
-    || normalizeText(detail.capability_key)
-    || normalizeText(payload.kind)
-    || "activity";
+  const capabilityLabel = resolveActivityCapabilityLabel(payload);
   return `${nodeLabel} / ${capabilityLabel}`;
+}
+
+function resolveActivityCapabilityLabel(payload: RunEventPayload) {
+  const detail = recordFromUnknown(payload.detail) ?? {};
+  return (
+    normalizeText(detail.action_name)
+    || normalizeText(detail.action_key)
+    || normalizeText(detail.tool_name)
+    || normalizeText(detail.tool_key)
+    || normalizeText(detail.capability_name)
+    || normalizeText(detail.capability_key)
+    || normalizeText(detail.subgraph_name)
+    || normalizeText(detail.subgraph_key)
+    || normalizeText(payload.kind)
+    || "activity"
+  );
 }
 
 function resolveTraceNodeLabel(graph: GraphPayload | null | undefined, nodeId: string, subgraphNodeId: string) {
@@ -650,6 +757,72 @@ function resolveTraceNode(graph: GraphPayload | null | undefined, nodeId: string
 
 function listVisibleTraceRecords(records: BuddyOutputTraceRecord[]) {
   return records;
+}
+
+function coalesceTraceOnlyOutputSegments(
+  segments: BuddyOutputTraceSegment[],
+  visibleOutputNodeIds: ReadonlySet<string>,
+) {
+  const result: BuddyOutputTraceSegment[] = [];
+  let pendingTraceOnlySegment: BuddyOutputTraceSegment | null = null;
+  for (const segment of segments) {
+    const hasVisibleOutput = segment.outputNodeIds.some((outputNodeId) => visibleOutputNodeIds.has(outputNodeId));
+    const isTraceOnlyCompletedOutput =
+      segment.status === "completed" &&
+      segment.outputNodeIds.length > 0 &&
+      !hasVisibleOutput;
+    if (isTraceOnlyCompletedOutput) {
+      pendingTraceOnlySegment = pendingTraceOnlySegment
+        ? mergeTraceSegments(pendingTraceOnlySegment, segment, { keepRightIdentity: false })
+        : segment;
+      continue;
+    }
+    const nextSegment = pendingTraceOnlySegment
+      ? mergeTraceSegments(pendingTraceOnlySegment, segment, { keepRightIdentity: true })
+      : segment;
+    pendingTraceOnlySegment = null;
+    result.push(nextSegment);
+  }
+  if (pendingTraceOnlySegment && result.length === 0) {
+    result.push(pendingTraceOnlySegment);
+  }
+  return result;
+}
+
+function mergeTraceSegments(
+  left: BuddyOutputTraceSegment,
+  right: BuddyOutputTraceSegment,
+  options: { keepRightIdentity: boolean },
+): BuddyOutputTraceSegment {
+  const startedAtMs = minNullableNumber(left.startedAtMs, right.startedAtMs);
+  const completedAtMs = right.completedAtMs ?? left.completedAtMs;
+  return {
+    ...right,
+    segmentId: options.keepRightIdentity ? right.segmentId : left.segmentId,
+    boundaryNodeId: options.keepRightIdentity ? right.boundaryNodeId : left.boundaryNodeId,
+    boundaryLabel: options.keepRightIdentity ? right.boundaryLabel : left.boundaryLabel,
+    outputNodeIds: unionTextLists(left.outputNodeIds, right.outputNodeIds),
+    status: right.status === "idle" ? left.status : right.status,
+    startedAtMs,
+    completedAtMs,
+    durationMs: resolveDurationMs(startedAtMs, completedAtMs) ?? right.durationMs ?? left.durationMs,
+    records: [...left.records, ...right.records],
+  };
+}
+
+function unionTextLists(left: string[], right: string[]) {
+  const result: string[] = [];
+  for (const value of [...left, ...right]) {
+    if (value && !result.includes(value)) {
+      result.push(value);
+    }
+  }
+  return result;
+}
+
+function minNullableNumber(left: number | null, right: number | null) {
+  const values = [left, right].filter(isNumber);
+  return values.length > 0 ? Math.min(...values) : null;
 }
 
 function buildTraceTimelineFromRunDetail(run: RunDetail) {
@@ -679,6 +852,10 @@ function appendExecutionTimelineItems(
   subgraphNodeId: string,
   subgraphPath: string[],
   nextOrder: () => number,
+  options: {
+    timelineTimeMs?: number | null;
+    dynamicCapability?: DynamicCapabilityTraceContext;
+  } = {},
 ) {
   const nodeId = normalizeText(execution.node_id);
   if (!nodeId) {
@@ -703,8 +880,9 @@ function appendExecutionTimelineItems(
         node_type: nodeType,
         started_at: execution.started_at,
         ...context,
+        ...buildDynamicCapabilityTimelineContext(options.dynamicCapability),
       },
-      timeMs: startedAtMs,
+      timeMs: options.timelineTimeMs ?? startedAtMs,
       order: nextOrder(),
     });
   }
@@ -713,9 +891,17 @@ function appendExecutionTimelineItems(
   if (Array.isArray(childExecutions)) {
     const childPath = [...subgraphPath, nodeId];
     for (const childExecution of childExecutions) {
-      appendExecutionTimelineItems(items, childExecution, nodeId, childPath, nextOrder);
+      appendExecutionTimelineItems(items, childExecution, nodeId, childPath, nextOrder, options);
     }
   }
+
+  appendDynamicCapabilitySubgraphTimelineItems(
+    items,
+    execution,
+    nodeId,
+    completionEventTimeMs !== null ? completionEventTimeMs + 1 : null,
+    nextOrder,
+  );
 
   if (completionEventTimeMs !== null) {
     items.push({
@@ -727,11 +913,88 @@ function appendExecutionTimelineItems(
         started_at: execution.started_at,
         duration_ms: execution.duration_ms,
         ...context,
+        ...buildDynamicCapabilityTimelineContext(options.dynamicCapability),
       },
-      timeMs: completionEventTimeMs,
+      timeMs: options.timelineTimeMs ?? completionEventTimeMs,
       order: nextOrder(),
     });
   }
+}
+
+function appendDynamicCapabilitySubgraphTimelineItems(
+  items: TraceTimelineItem[],
+  execution: NodeExecutionDetail,
+  parentNodeId: string,
+  timelineTimeMs: number | null,
+  nextOrder: () => number,
+) {
+  for (const capabilityOutput of listRecordArray(execution.artifacts?.capability_outputs)) {
+    const subgraph = recordFromUnknown(capabilityOutput.subgraph);
+    const childExecutions = Array.isArray(subgraph?.node_executions) ? subgraph.node_executions : [];
+    if (childExecutions.length === 0) {
+      continue;
+    }
+    const capabilityLabel = resolveCapabilityOutputLabel(capabilityOutput, subgraph);
+    const capabilityKey = resolveCapabilityOutputKey(capabilityOutput, subgraph, capabilityLabel);
+    const dynamicCapability: DynamicCapabilityTraceContext = {
+      parentNodeId,
+      capabilityKey,
+      capabilityLabel,
+      runId: normalizeText(subgraph?.child_run_id) || normalizeText(capabilityOutput.child_run_id),
+    };
+    for (const childExecution of childExecutions) {
+      appendExecutionTimelineItems(
+        items,
+        childExecution as NodeExecutionDetail,
+        "",
+        [],
+        nextOrder,
+        {
+          timelineTimeMs,
+          dynamicCapability,
+        },
+      );
+    }
+  }
+}
+
+function buildDynamicCapabilityTimelineContext(context: DynamicCapabilityTraceContext | undefined) {
+  if (!context?.parentNodeId) {
+    return {};
+  }
+  return {
+    dynamic_capability_parent_node_id: context.parentNodeId,
+    dynamic_capability_key: context.capabilityKey,
+    dynamic_capability_label: context.capabilityLabel,
+    dynamic_capability_run_id: context.runId,
+  };
+}
+
+function resolveCapabilityOutputLabel(
+  capabilityOutput: Record<string, unknown>,
+  subgraph: Record<string, unknown> | null,
+) {
+  return (
+    normalizeText(capabilityOutput.capability_name)
+    || normalizeText(capabilityOutput.name)
+    || normalizeText(subgraph?.name)
+    || normalizeText(capabilityOutput.capability_key)
+    || normalizeText(subgraph?.graph_id)
+    || "capability"
+  );
+}
+
+function resolveCapabilityOutputKey(
+  capabilityOutput: Record<string, unknown>,
+  subgraph: Record<string, unknown> | null,
+  fallback: string,
+) {
+  return (
+    normalizeText(capabilityOutput.capability_key)
+    || normalizeText(capabilityOutput.key)
+    || normalizeText(subgraph?.graph_id)
+    || fallback
+  );
 }
 
 function eventTypeOrder(eventType: TraceTimelineItem["eventType"]) {
@@ -808,6 +1071,15 @@ function normalizeText(value: unknown) {
 
 function recordFromUnknown(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function listRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.flatMap((item) => {
+        const record = recordFromUnknown(item);
+        return record ? [record] : [];
+      })
+    : [];
 }
 
 function isNumber(value: unknown): value is number {

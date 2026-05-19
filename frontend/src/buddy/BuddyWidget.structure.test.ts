@@ -854,7 +854,10 @@ test("BuddyWidget stores buddy chat in backend sessions and exposes a compact hi
   assert.match(componentSource, /function startSessionDeleteConfirmWindow\(sessionId: string\)/);
   assert.match(componentSource, /function handleSessionDeleteActionClick\(sessionId: string\)/);
   assert.match(componentSource, /chatSessionInitializationPromise = initializeBuddyChatSessions\(\)\.finally/);
-  assert.match(componentSource, /async function migrateLegacyBuddyHistory\(\)/);
+  assert.doesNotMatch(componentSource, /BUDDY_HISTORY_STORAGE_KEY/);
+  assert.doesNotMatch(componentSource, /migrateLegacyBuddyHistory/);
+  assert.doesNotMatch(componentSource, /readLegacyBuddyMessages/);
+  assert.doesNotMatch(componentSource, /normalizeBuddyRunDisplayMessages/);
   assert.match(componentSource, /\.buddy-widget__panel\s*\{[\s\S]*overflow:\s*visible;/);
   assert.match(componentSource, /\.buddy-widget__avatar\s*\{[\s\S]*z-index:\s*4;/);
   assert.match(componentSource, /\.buddy-widget__sessions-panel\s*\{[\s\S]*position:\s*absolute;[\s\S]*z-index:\s*3;[\s\S]*width:\s*min\(330px,[\s\S]*max-height:\s*min\(520px,[\s\S]*overflow-y:\s*auto;/);

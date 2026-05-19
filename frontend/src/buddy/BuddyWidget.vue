@@ -309,7 +309,7 @@
                   <p v-else-if="traceRunTreeError(message.runId)" class="buddy-widget__run-trace-state">
                     {{ t("common.failedToLoad", { error: traceRunTreeError(message.runId) }) }}
                   </p>
-                  <ol class="buddy-widget__run-trace-list">
+                  <ol class="buddy-widget__run-trace-list" role="tree">
                     <li
                       v-for="row in buildTraceTreeRows(message.outputTrace, message.runId)"
                       :key="row.rowId"
@@ -319,6 +319,8 @@
                         { 'buddy-widget__run-trace-row--nested': row.depth > 0 },
                       ]"
                       :style="traceTreeRowStyle(row)"
+                      role="treeitem"
+                      :aria-level="row.depth + 1"
                     >
                       <span
                         class="buddy-widget__run-trace-dot buddy-widget__run-trace-dot--small"
@@ -480,7 +482,7 @@
 
 <script setup lang="ts">
 import { Check, Clock, Close, Delete, FullScreen, Plus, Promotion, RefreshLeft, SemiSelect } from "@element-plus/icons-vue";
-import { ElButton, ElInput, ElMessage, ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import { ElIcon, ElOption, ElPopover, ElSelect } from "element-plus";
 import { storeToRefs } from "pinia";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
@@ -582,6 +584,7 @@ import {
 import {
   buildBuddyPublicOutputBindings,
   createBuddyPublicOutputRuntimeState,
+  isBuddyPublicOutputMessageVisible,
   reduceBuddyPublicOutputEvent,
   resolveBuddyPublicOutputMessageKind,
   type BuddyPublicOutputBinding,
@@ -694,13 +697,11 @@ type BuddyAutoResumedPageOperationFinishOptions = {
   runId: string;
   assistantMessageId: string;
   sessionId: string;
-  graph: GraphPayload;
 };
 type BuddyFinishVisibleRunOptions = {
   includeOutputTrace?: boolean;
 };
 
-const BUDDY_HISTORY_STORAGE_KEY = "toograph:buddy-history";
 const BUDDY_ACTIVE_SESSION_STORAGE_KEY = "toograph:buddy-active-session";
 const BUDDY_MODEL_STORAGE_KEY = "toograph:buddy-model";
 const DRAG_THRESHOLD_PX = 4;
@@ -828,6 +829,7 @@ const traceClockNowMs = ref(Date.now());
 const traceDurationDisplayByKey = ref<Record<string, SmoothNumberDisplayState>>({});
 const expandedTraceMessageIds = ref<Set<string>>(new Set());
 const traceRunTreeByRunId = ref<Record<string, RunTreeNode>>({});
+const traceRunDetailByRunId = ref<Record<string, RunDetail>>({});
 const traceRunTreeLoadingByRunId = ref<Record<string, boolean>>({});
 const traceRunTreeErrorByRunId = ref<Record<string, string>>({});
 const restoringTraceGraphRevisionRowId = ref<string | null>(null);
@@ -2571,7 +2573,6 @@ async function maybeAutoResumePageOperationRun(
     runId: response.run_id,
     assistantMessageId,
     sessionId,
-    graph: runDetail.graph_snapshot as unknown as GraphPayload,
   });
 }
 
@@ -4439,7 +4440,6 @@ async function finishAutoResumedPageOperationRun({
   runId,
   assistantMessageId,
   sessionId,
-  graph,
 }: BuddyAutoResumedPageOperationFinishOptions) {
   clearSpeakingIdleTimer();
   errorMessage.value = "";
@@ -4627,40 +4627,6 @@ function abortBackgroundReviewRuns() {
   backgroundReviewAbortControllers.clear();
 }
 
-async function clearMessages() {
-  queuedTurns.value = [];
-  clearSpeakingIdleTimer();
-  closeEventSource();
-  activeAbortController?.abort();
-  activeAbortController = null;
-  activeRunId.value = null;
-  resetPausedBuddyPause();
-  const sessionId = activeSessionId.value;
-  messages.value = [];
-  nextBuddyMessageClientOrder = 0;
-  errorMessage.value = "";
-  mood.value = "idle";
-  window.localStorage.removeItem(BUDDY_HISTORY_STORAGE_KEY);
-  if (!sessionId) {
-    window.localStorage.removeItem(BUDDY_ACTIVE_SESSION_STORAGE_KEY);
-    return;
-  }
-  try {
-    await deleteBuddyChatSession(sessionId);
-    chatSessions.value = chatSessions.value.filter((session) => session.session_id !== sessionId);
-    const nextSession = chatSessions.value[0];
-    if (nextSession) {
-      await activateChatSession(nextSession.session_id);
-    } else {
-      activeSessionId.value = null;
-      window.localStorage.removeItem(BUDDY_ACTIVE_SESSION_STORAGE_KEY);
-    }
-    await loadChatSessions();
-  } catch (error) {
-    errorMessage.value = t("buddy.historyDeleteFailed", { error: formatErrorMessage(error) });
-  }
-}
-
 async function initializeBuddyChatSessions() {
   isSessionLoading.value = true;
   try {
@@ -4672,10 +4638,12 @@ async function initializeBuddyChatSessions() {
       await activateChatSession(targetSession.session_id, { skipInitializationWait: true });
       return;
     }
-    await migrateLegacyBuddyHistory();
+    messages.value = [];
+    nextBuddyMessageClientOrder = 0;
   } catch (error) {
     errorMessage.value = t("buddy.historyLoadFailed", { error: formatErrorMessage(error) });
-    messages.value = readLegacyBuddyMessages();
+    messages.value = [];
+    nextBuddyMessageClientOrder = 0;
   } finally {
     isSessionLoading.value = false;
   }
@@ -4843,32 +4811,6 @@ async function persistBuddyMessage(
   }
 }
 
-async function migrateLegacyBuddyHistory() {
-  const legacyMessages = readLegacyBuddyMessages();
-  if (legacyMessages.length === 0) {
-    messages.value = [];
-    nextBuddyMessageClientOrder = 0;
-    return;
-  }
-  const firstUserMessage = legacyMessages.find((message) => message.role === "user" && message.content.trim());
-  const session = await createBuddyChatSession({ title: firstUserMessage?.content.trim() || undefined });
-  activeSessionId.value = session.session_id;
-  messages.value = legacyMessages;
-  resetNextBuddyMessageClientOrder();
-  window.localStorage.setItem(BUDDY_ACTIVE_SESSION_STORAGE_KEY, session.session_id);
-  for (const message of legacyMessages) {
-    await appendBuddyChatMessage(session.session_id, {
-      message_id: message.id,
-      role: message.role,
-      content: message.content,
-      client_order: message.clientOrder ?? null,
-      include_in_context: message.includeInContext !== false,
-    });
-  }
-  window.localStorage.removeItem(BUDDY_HISTORY_STORAGE_KEY);
-  await loadChatSessions();
-}
-
 function resetVisibleBuddyRunState() {
   resetPausedBuddyPause();
 }
@@ -4893,24 +4835,6 @@ function hydratePosition() {
     DEFAULT_BUDDY_SIZE,
     DEFAULT_BUDDY_MARGIN,
   );
-}
-
-function readLegacyBuddyMessages(): BuddyMessage[] {
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(BUDDY_HISTORY_STORAGE_KEY) ?? "[]") as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed
-      .filter(isPersistedMessage)
-      .slice(-24)
-      .map((message, index) => ({
-        ...createMessage(message.role, message.content, undefined, index),
-        includeInContext: message.includeInContext,
-      }));
-  } catch {
-    return [];
-  }
 }
 
 function hydrateBuddyModel() {
@@ -5284,20 +5208,24 @@ function syncBuddyRunDisplayMessages(
   const publicOutputMessages: BuddyMessage[] = [];
   const displayMessages: BuddyMessage[] = [];
   const handledOutputNodeIds = new Set<string>();
+  const visibleOutputNodeIds = buildVisibleOutputNodeIdSet(outputState);
 
-  for (const segment of listBuddyOutputTraceSegmentsForDisplay(outputTraceState)) {
+  for (const segment of listBuddyOutputTraceSegmentsForDisplay(outputTraceState, { visibleOutputNodeIds })) {
     const traceMessage = buildOutputTraceMessage(controllerMessageId, runId, segment, existingMessages);
     displayMessages.push(traceMessage);
     outputTraceMessages.push(traceMessage);
     for (const outputNodeId of segment.outputNodeIds) {
       const output = outputState.messagesByOutputNodeId[outputNodeId];
+      handledOutputNodeIds.add(outputNodeId);
       if (!output) {
+        continue;
+      }
+      if (!isBuddyPublicOutputMessageVisible(output)) {
         continue;
       }
       const outputMessage = buildPublicOutputMessage(controllerMessageId, runId, output, existingMessages);
       displayMessages.push(outputMessage);
       publicOutputMessages.push(outputMessage);
-      handledOutputNodeIds.add(outputNodeId);
     }
   }
 
@@ -5309,6 +5237,9 @@ function syncBuddyRunDisplayMessages(
     if (!output) {
       continue;
     }
+    if (!isBuddyPublicOutputMessageVisible(output)) {
+      continue;
+    }
     const outputMessage = buildPublicOutputMessage(controllerMessageId, runId, output, existingMessages);
     displayMessages.push(outputMessage);
     publicOutputMessages.push(outputMessage);
@@ -5318,6 +5249,17 @@ function syncBuddyRunDisplayMessages(
     messages.value.splice(resolveBuddyRunDisplayInsertionIndex(controllerMessageId), 0, ...displayMessages);
   }
   return { publicOutputMessages, outputTraceMessages };
+}
+
+function buildVisibleOutputNodeIdSet(outputState: BuddyPublicOutputRuntimeState) {
+  const result = new Set<string>();
+  for (const outputNodeId of outputState.order) {
+    const output = outputState.messagesByOutputNodeId[outputNodeId];
+    if (isBuddyPublicOutputMessageVisible(output)) {
+      result.add(outputNodeId);
+    }
+  }
+  return result;
 }
 
 function buildOutputTraceMessage(
@@ -5489,6 +5431,7 @@ function buildTraceTreeRows(segment: BuddyOutputTraceSegment, runId?: string | n
   return buildBuddyOutputTraceTreeRows(segment, {
     rootLabel: t("buddy.runTraceMainGraph"),
     runTree: resolveTraceRunTree(runId),
+    childRunDetailsByRunId: traceRunDetailByRunId.value,
   });
 }
 
@@ -5511,6 +5454,7 @@ async function ensureTraceRunTreeLoaded(runId: string | null | undefined) {
       ...traceRunTreeByRunId.value,
       [normalizedRunId]: tree,
     };
+    await ensureTraceChildRunDetailsLoaded(tree);
   } catch (treeError) {
     traceRunTreeErrorByRunId.value = {
       ...traceRunTreeErrorByRunId.value,
@@ -5522,6 +5466,48 @@ async function ensureTraceRunTreeLoaded(runId: string | null | undefined) {
       [normalizedRunId]: false,
     };
   }
+}
+
+async function ensureTraceChildRunDetailsLoaded(tree: RunTreeNode) {
+  const runIds = listTraceChildRunIds(tree).filter((runId) => !traceRunDetailByRunId.value[runId]);
+  if (runIds.length === 0) {
+    return;
+  }
+  const detailEntries = await Promise.all(
+    runIds.map(async (runId) => {
+      try {
+        return [runId, await fetchRun(runId)] as const;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const nextDetails = { ...traceRunDetailByRunId.value };
+  let changed = false;
+  for (const entry of detailEntries) {
+    if (!entry) {
+      continue;
+    }
+    nextDetails[entry[0]] = entry[1];
+    changed = true;
+  }
+  if (changed) {
+    traceRunDetailByRunId.value = nextDetails;
+  }
+}
+
+function listTraceChildRunIds(tree: RunTreeNode) {
+  const result: string[] = [];
+  const stack = [...(tree.children ?? [])];
+  while (stack.length > 0) {
+    const node = stack.shift();
+    const runId = String(node?.run_id ?? "").trim();
+    if (runId && !result.includes(runId)) {
+      result.push(runId);
+    }
+    stack.push(...(node?.children ?? []));
+  }
+  return result;
 }
 
 function resolveTraceRunTree(runId: string | null | undefined) {
@@ -5838,10 +5824,6 @@ async function scrollMessagesToBottom() {
   element.scrollTop = element.scrollHeight;
 }
 
-function buildPageContext() {
-  return buildPageOperationRuntimeContext().pageContext;
-}
-
 function buildPageOperationRuntimeContext(options: BuddyPageOperationRuntimeContextOptions = {}) {
   const snapshot = collectPageOperationSnapshot({
     routePath: route.fullPath,
@@ -5984,18 +5966,6 @@ function waitForFrontendObservation(timeoutMs: number) {
     const setTimer = typeof window === "undefined" ? globalThis.setTimeout : window.setTimeout;
     setTimer(resolve, Math.max(0, Math.round(timeoutMs)));
   });
-}
-
-function isPersistedMessage(value: unknown): value is BuddyChatMessage {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    ((value as BuddyChatMessage).role === "user" || (value as BuddyChatMessage).role === "assistant") &&
-    typeof (value as BuddyChatMessage).content === "string" &&
-    ((value as BuddyChatMessage).includeInContext === undefined ||
-      typeof (value as BuddyChatMessage).includeInContext === "boolean")
-  );
 }
 
 function formatErrorMessage(error: unknown): string {

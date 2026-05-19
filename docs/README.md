@@ -132,8 +132,8 @@ npm start
   - 恢复完成或再次暂停后会更新同一个 child run，并把 `child_run_id` 写回父 run 的 subgraph artifact 和动态 result package。
 - 前端运行树展示模型已经抽到 `frontend/src/lib/runTreeDisplayModel.ts`，RunDetail 使用同一套 run row、batch group 和 status summary 逻辑。
 - RunDetail 前端已有运行树和 batch group 折叠展示。
-- Buddy run trace 胶囊折叠态按 output boundary 分组：运行中显示当前节点，subgraph 内运行时显示 `subgraph 节点 / 子节点`；完成后显示已完成节点数和耗时。
-- Buddy 胶囊展开态只展示当前 output-boundary segment 的主图节点和 subgraph 子节点；按消息 `runId` 拉取 `/api/runs/{run_id}/tree` 只用于给 subgraph 行补 `child_run_id` 跳转，不再用整棵 run tree 替换胶囊内容。展开状态本身还不是持久化 UI 状态。
+- Buddy run trace 胶囊折叠态按可见 output boundary 分组：运行中显示当前节点，动态 subgraph 能力会显示为 `动态能力节点 / 已选择能力 / 子图节点`；完成后显示已完成节点数和耗时，空输出边界不会单独留下可见胶囊。
+- Buddy 胶囊展开态只展示当前可见 output-boundary segment 的主图节点、动态能力分支和 subgraph 子节点；按消息 `runId` 拉取 `/api/runs/{run_id}/tree` 给 subgraph 行补 `child_run_id` 跳转，并按 child run detail 补动态 subgraph 子节点名称，不再用整棵 run tree 替换胶囊内容。展开状态本身还不是持久化 UI 状态。
 
 仍未完成：
 
