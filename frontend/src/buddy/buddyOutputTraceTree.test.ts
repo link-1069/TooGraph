@@ -106,14 +106,13 @@ test("buildBuddyOutputTraceTreeRows renders main and subgraph records as an inde
   const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "主图开始" });
 
   assert.deepEqual(
-    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind, canOpen: Boolean(row.playbackTarget) })),
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind, evidenceRunId: row.evidenceRunId })),
     [
-      { label: "主图开始", depth: 0, kind: "root", canOpen: true },
-      { label: "主图节点 A", depth: 0, kind: "node", canOpen: false },
-      { label: "子图 A", depth: 0, kind: "subgraph", canOpen: true },
-      { label: "子图节点 1", depth: 1, kind: "node", canOpen: false },
-      { label: "子图节点 2", depth: 1, kind: "node", canOpen: false },
-      { label: "主图节点 B", depth: 0, kind: "node", canOpen: false },
+      { label: "主图节点 A", depth: 0, kind: "node", evidenceRunId: null },
+      { label: "子图 A", depth: 0, kind: "subgraph", evidenceRunId: null },
+      { label: "子图节点 1", depth: 1, kind: "node", evidenceRunId: null },
+      { label: "子图节点 2", depth: 1, kind: "node", evidenceRunId: null },
+      { label: "主图节点 B", depth: 0, kind: "node", evidenceRunId: null },
     ],
   );
 });
@@ -146,8 +145,8 @@ test("buildBuddyOutputTraceTreeRows exposes activity evidence labels", () => {
 
   const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "主图开始" });
 
-  assert.deepEqual(rows[1].artifactLabels, ["artifacts: 2", "retries: 5"]);
-  assert.equal(rows[1].evidenceRunId, "run_report");
+  assert.deepEqual(rows[0].artifactLabels, ["artifacts: 2", "retries: 5"]);
+  assert.equal(rows[0].evidenceRunId, "run_report");
 });
 
 test("buildBuddyOutputTraceTreeRows exposes graph revision restore metadata", () => {
@@ -182,14 +181,14 @@ test("buildBuddyOutputTraceTreeRows exposes graph revision restore metadata", ()
 
   const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "主图开始" });
 
-  assert.deepEqual(rows[1].graphRevision, {
+  assert.deepEqual(rows[0].graphRevision, {
     graphId: "graph_buddy",
     revisionId: "grev_buddy",
     status: "saved",
   });
 });
 
-test("buildBuddyOutputTraceTreeRows can render fetched run tree rows for expanded Buddy capsules", () => {
+test("buildBuddyOutputTraceTreeRows keeps segment rows when a fetched run tree exists", () => {
   const segment: BuddyOutputTraceSegment = {
     segmentId: "boundary:final",
     boundaryNodeId: "final",
@@ -263,64 +262,88 @@ test("buildBuddyOutputTraceTreeRows can render fetched run tree rows for expande
     })),
     [
       {
-        kind: "root",
-        label: "Buddy Loop",
+        kind: "node",
+        label: "局部 fallback",
         depth: 0,
         status: "completed",
-        evidenceRunId: "run_parent",
+        evidenceRunId: null,
         artifactLabels: [],
       },
+    ],
+  );
+});
+
+test("buildBuddyOutputTraceTreeRows enriches subgraph segment rows with child run links", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:node_c",
+    boundaryNodeId: "node_c",
+    boundaryLabel: "C",
+    outputNodeIds: ["output_c"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 2500,
+    durationMs: 1500,
+    records: [
       {
-        kind: "subgraph",
-        label: "Research",
-        depth: 1,
-        status: "completed",
-        evidenceRunId: "run_child",
-        artifactLabels: [
-          "dynamic_subgraph_capability · advanced_web_research_loop · from execute_capability",
-          "node: execute_capability",
-          "kind: dynamic_subgraph_capability",
-          "capability: advanced_web_research_loop",
-        ],
+        ...baseRecord,
+        recordId: "record_a",
+        runtimeKey: "node:node_a",
+        label: "A",
+        nodeId: "node_a",
+        subgraphNodeId: null,
       },
       {
-        kind: "subgraph",
-        label: "Batch batch_news",
-        depth: 1,
-        status: "failed",
-        evidenceRunId: null,
-        artifactLabels: ["batch: 2", "completed 1 / failed 1"],
+        ...baseRecord,
+        recordId: "record_c",
+        runtimeKey: "node:node_c",
+        label: "C",
+        nodeId: "node_c",
+        nodeType: "subgraph",
+        subgraphNodeId: null,
+        aggregateSubgraphNodeId: "node_c",
+        durationMs: 900,
       },
       {
-        kind: "subgraph",
-        label: "Batch worker",
-        depth: 2,
-        status: "completed",
-        evidenceRunId: "run_item_a",
-        artifactLabels: [
-          "batch_subgraph_worker · summarize_article · from batch_news",
-          "node: batch_news",
-          "kind: batch_subgraph_worker",
-          "capability: summarize_article",
-          "item: 1",
-          "case: article-a",
-        ],
+        ...baseRecord,
+        recordId: "record_inner_1",
+        runtimeKey: "node:node_c/inner_1",
+        label: "C / 子节点 1",
+        nodeId: "inner_1",
+        subgraphNodeId: "node_c",
       },
-      {
-        kind: "subgraph",
-        label: "Batch worker",
-        depth: 2,
-        status: "failed",
-        evidenceRunId: "run_item_b",
-        artifactLabels: [
-          "batch_subgraph_worker · summarize_article · from batch_news",
-          "node: batch_news",
-          "kind: batch_subgraph_worker",
-          "capability: summarize_article",
-          "item: 2",
-          "case: article-b",
-        ],
-      },
+    ],
+  };
+  const runTree = createRunTreeNode({
+    run_id: "run_parent",
+    graph_name: "Buddy Loop",
+    children: [
+      createRunTreeNode({
+        run_id: "run_child_c",
+        graph_name: "C Child Run",
+        parent_run_id: "run_parent",
+        parent_node_id: "node_c",
+        invocation_kind: "subgraph_node",
+        invocation_key: "embedded:C",
+      }),
+      createRunTreeNode({
+        run_id: "run_unrelated_f",
+        graph_name: "F Child Run",
+        parent_run_id: "run_parent",
+        parent_node_id: "node_f",
+        invocation_kind: "subgraph_node",
+        invocation_key: "embedded:F",
+      }),
+    ],
+  });
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "主图开始", runTree });
+
+  assert.deepEqual(
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind, evidenceRunId: row.evidenceRunId, playbackTarget: row.playbackTarget })),
+    [
+      { label: "A", depth: 0, kind: "node", evidenceRunId: null, playbackTarget: null },
+      { label: "C", depth: 0, kind: "subgraph", evidenceRunId: "run_child_c", playbackTarget: null },
+      { label: "子节点 1", depth: 1, kind: "node", evidenceRunId: null, playbackTarget: null },
     ],
   );
 });

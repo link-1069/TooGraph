@@ -1046,8 +1046,8 @@ const baseMessages = {
       runTraceExpand: "展开运行过程",
       runTraceCollapse: "收起运行过程",
       runTraceMainGraph: "主图开始",
-      runTraceCompleted: "{count} 个步骤",
-      runTraceFailed: "{count} 个步骤失败",
+      runTraceCompleted: "已完成 {count} 个节点",
+      runTraceFailed: "{count} 个节点失败",
       activity: {
         preparing: "准备运行图",
         prepared: "已准备运行图",
@@ -2327,8 +2327,8 @@ const baseMessages = {
       runTraceExpand: "Expand run trace",
       runTraceCollapse: "Collapse run trace",
       runTraceMainGraph: "Main graph start",
-      runTraceCompleted: "{count} steps",
-      runTraceFailed: "{count} failed steps",
+      runTraceCompleted: "Completed {count} nodes",
+      runTraceFailed: "{count} nodes failed",
       activity: {
         preparing: "Preparing the run graph",
         prepared: "Prepared the run graph",

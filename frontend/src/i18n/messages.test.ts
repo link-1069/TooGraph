@@ -87,6 +87,13 @@ test("i18n messages localize template save failure context", () => {
   assert.equal(messages["en-US"].feedback.runRequestFailed, "Failed to run graph: {error}");
 });
 
+test("i18n messages describe completed Buddy trace capsules as completed nodes", () => {
+  assert.equal(messages["zh-CN"].buddy.runTraceCompleted, "已完成 {count} 个节点");
+  assert.equal(messages["zh-CN"].buddy.runTraceFailed, "{count} 个节点失败");
+  assert.equal(messages["en-US"].buddy.runTraceCompleted, "Completed {count} nodes");
+  assert.equal(messages["en-US"].buddy.runTraceFailed, "{count} nodes failed");
+});
+
 test("new language packs use handwritten localized UI copy for high-traffic surfaces", () => {
   assert.equal(messages["zh-TW"].nav.runs, "執行記錄");
   assert.equal(messages["ja-JP"].editor.runGraph, "実行");

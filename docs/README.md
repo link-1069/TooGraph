@@ -130,10 +130,10 @@ npm start
   - 普通 Subgraph node 和动态 Subgraph capability resume 会优先加载原 child run。
   - resume 使用 pending breakpoint 中的 checkpoint、state values、metadata、node status 和 node executions，避免测试或中间保存产生的不完整 child run 覆盖真正暂停点。
   - 恢复完成或再次暂停后会更新同一个 child run，并把 `child_run_id` 写回父 run 的 subgraph artifact 和动态 result package。
-- 前端运行树展示模型已经抽到 `frontend/src/lib/runTreeDisplayModel.ts`，RunDetail 和 Buddy 共用同一套 run row、batch group 和 status summary 逻辑。
+- 前端运行树展示模型已经抽到 `frontend/src/lib/runTreeDisplayModel.ts`，RunDetail 使用同一套 run row、batch group 和 status summary 逻辑。
 - RunDetail 前端已有运行树和 batch group 折叠展示。
-- Buddy run trace 胶囊折叠态仍保持 output-boundary 摘要；展开态会按消息 `runId` 拉取 `/api/runs/{run_id}/tree`，展示 parent run、child run、动态 subgraph 和 batch group。
-- Buddy 胶囊展开态有运行树 loading/error 状态；页面刷新后，已持久化消息中的 `runId` 能在再次展开时重新拉取同一运行树。展开状态本身还不是持久化 UI 状态。
+- Buddy run trace 胶囊折叠态按 output boundary 分组：运行中显示当前节点，subgraph 内运行时显示 `subgraph 节点 / 子节点`；完成后显示已完成节点数和耗时。
+- Buddy 胶囊展开态只展示当前 output-boundary segment 的主图节点和 subgraph 子节点；按消息 `runId` 拉取 `/api/runs/{run_id}/tree` 只用于给 subgraph 行补 `child_run_id` 跳转，不再用整棵 run tree 替换胶囊内容。展开状态本身还不是持久化 UI 状态。
 
 仍未完成：
 
@@ -499,10 +499,10 @@ operation:
 已完成：
 
 1. Buddy 胶囊折叠态保持 output-boundary 摘要。
-2. 展开态接入 `/api/runs/{run_id}/tree`，按消息 `runId` 拉取真实运行树。
-3. RunDetail 与 Buddy 共用 `frontend/src/lib/runTreeDisplayModel.ts`。
-4. batch worker 子运行按 `batch_group_id` 折叠，并共享 status summary。
-5. 页面刷新后，持久化消息里的 `runId` 能在再次展开时重新拉取同一运行树。
+2. 展开态保留当前 output-boundary segment 的节点列表，并用 `/api/runs/{run_id}/tree` 补 subgraph 行的 child run 跳转。
+3. RunDetail 使用 `frontend/src/lib/runTreeDisplayModel.ts` 展示完整运行树。
+4. RunDetail 中 batch worker 子运行按 `batch_group_id` 折叠，并共享 status summary。
+5. 页面刷新后，持久化消息里的 `runId` 能在再次展开时重新拉取 child run 跳转所需运行树信息。
 
 剩余回归：
 

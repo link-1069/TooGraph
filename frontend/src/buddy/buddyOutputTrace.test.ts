@@ -98,6 +98,90 @@ function fiveNodeGraph(): GraphPayload {
   };
 }
 
+function sevenNodeBoundaryGraph(): GraphPayload {
+  const state = (name: string) => ({ name, description: "", type: "markdown", value: "", color: "#000" });
+  const agent = (name: string, stateKey: string) => ({
+    kind: "agent" as const,
+    name,
+    description: "",
+    reads: [],
+    writes: [{ state: stateKey, mode: "replace" as const }],
+    config: {
+      actionKey: "",
+      actionBindings: [],
+      taskInstruction: "",
+      modelSource: "global" as const,
+      model: "",
+      thinkingMode: "medium" as const,
+      temperature: 0.4,
+    },
+    ui: { position: { x: 0, y: 0 } },
+  });
+  const subgraph = (name: string, stateKey: string) => ({
+    kind: "subgraph" as const,
+    name,
+    description: "",
+    reads: [],
+    writes: [{ state: stateKey, mode: "replace" as const }],
+    config: {
+      graph: {
+        state_schema: {},
+        nodes: {},
+        edges: [],
+        conditional_edges: [],
+        metadata: {},
+      },
+    },
+    ui: { position: { x: 0, y: 0 } },
+  });
+  const output = (name: string, stateKey: string) => ({
+    kind: "output" as const,
+    name,
+    description: "",
+    reads: [{ state: stateKey, required: true }],
+    writes: [],
+    config: { displayMode: "markdown" as const, persistEnabled: false, persistFormat: "auto" as const, fileNameTemplate: "" },
+    ui: { position: { x: 0, y: 0 } },
+  });
+  return {
+    graph_id: null,
+    name: "Buddy",
+    state_schema: {
+      state_c: state("C reply"),
+      state_f1: state("F reply 1"),
+      state_f2: state("F reply 2"),
+      state_g: state("G reply"),
+    },
+    nodes: {
+      node_a: agent("A", "state_c"),
+      node_b: agent("B", "state_c"),
+      node_c: subgraph("C", "state_c"),
+      node_d: agent("D", "state_f1"),
+      node_e: agent("E", "state_f1"),
+      node_f: agent("F", "state_f1"),
+      node_g: agent("G", "state_g"),
+      output_c: output("C Output", "state_c"),
+      output_f1: output("F Output 1", "state_f1"),
+      output_f2: output("F Output 2", "state_f2"),
+      output_g: output("G Output", "state_g"),
+    },
+    edges: [
+      { source: "node_a", target: "node_b" },
+      { source: "node_b", target: "node_c" },
+      { source: "node_c", target: "output_c" },
+      { source: "node_c", target: "node_d" },
+      { source: "node_d", target: "node_e" },
+      { source: "node_e", target: "node_f" },
+      { source: "node_f", target: "output_f1" },
+      { source: "node_f", target: "output_f2" },
+      { source: "node_f", target: "node_g" },
+      { source: "node_g", target: "output_g" },
+    ],
+    conditional_edges: [],
+    metadata: {},
+  };
+}
+
 test("buildBuddyOutputTracePlan groups multiple parent outputs behind one boundary segment", () => {
   const graph = fiveNodeGraph();
   const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
@@ -111,6 +195,34 @@ test("buildBuddyOutputTracePlan groups multiple parent outputs behind one bounda
     "output_e4",
   ]);
   assert.equal(plan.segmentIdByOutputNodeId.output_b2, "boundary:node_b");
+});
+
+test("buildBuddyOutputTracePlan segments linear Buddy runs by output boundary nodes", () => {
+  const graph = sevenNodeBoundaryGraph();
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  let state = createBuddyOutputTraceRuntimeState(plan);
+
+  assert.deepEqual(plan.order, ["boundary:node_c", "boundary:node_f", "boundary:node_g"]);
+  assert.deepEqual(plan.segmentsById["boundary:node_c"].outputNodeIds, ["output_c"]);
+  assert.deepEqual(plan.segmentsById["boundary:node_f"].outputNodeIds, ["output_f1", "output_f2"]);
+  assert.deepEqual(plan.segmentsById["boundary:node_g"].outputNodeIds, ["output_g"]);
+
+  const nodeIds = ["node_a", "node_b", "node_c", "node_d", "node_e", "node_f", "node_g"];
+  nodeIds.forEach((nodeId, index) => {
+    const startedAt = 1000 + index * 200;
+    state = reduceBuddyOutputTraceEvent(state, plan, graph, "node.started", { node_id: nodeId, node_type: nodeId === "node_c" ? "subgraph" : "agent" }, startedAt);
+    state = reduceBuddyOutputTraceEvent(state, plan, graph, "node.completed", { node_id: nodeId, node_type: nodeId === "node_c" ? "subgraph" : "agent", duration_ms: 100 }, startedAt + 100);
+  });
+
+  const segments = listBuddyOutputTraceSegmentsForDisplay(state);
+  assert.deepEqual(
+    segments.map((segment) => segment.records.map((record) => record.label)),
+    [
+      ["A", "B", "C"],
+      ["D", "E", "F"],
+      ["G"],
+    ],
+  );
 });
 
 test("createBuddyPendingOutputTraceRuntimeState shows the first segment immediately", () => {
