@@ -324,7 +324,7 @@ import { fetchTemplate, fetchTemplates, runGraph } from "../api/graphs.ts";
 import { fetchRun, resumeRun } from "../api/runs.ts";
 import SandboxedHtmlFrame from "../components/SandboxedHtmlFrame.vue";
 import { buildRunEventStreamUrl, parseRunEventPayload, shouldPollRunStatus } from "../lib/run-event-stream.ts";
-import type { GraphEditCommand, GraphEditIntent, GraphEditPlaybackStep } from "../editor/workspace/graphEditPlaybackModel.ts";
+import type { GraphEditPlaybackStep } from "../editor/workspace/graphEditPlaybackModel.ts";
 import { useBuddyContextStore } from "../stores/buddyContext.ts";
 import {
   useBuddyMascotDebugStore,
@@ -333,7 +333,7 @@ import {
   type BuddyVirtualOperationTriggeredRun,
 } from "../stores/buddyMascotDebug.ts";
 import { buildBuddyBubblePreviewLabel } from "./buddyBubblePreviewModel.ts";
-import type { GraphPayload, GraphPosition, TemplateRecord } from "../types/node-system.ts";
+import type { GraphPayload, TemplateRecord } from "../types/node-system.ts";
 import type { RunDetail } from "../types/run.ts";
 
 import BuddyMascot from "./BuddyMascot.vue";
@@ -344,22 +344,47 @@ import BuddyVirtualOperationBanner from "./BuddyVirtualOperationBanner.vue";
 import { useBuddyChatSessions } from "./useBuddyChatSessions.ts";
 import { useBuddyMessages, type BuddyMessage, type BuddyQueuedTurn } from "./useBuddyMessages.ts";
 import { useBuddyModelSelection } from "./useBuddyModelSelection.ts";
+import { useBuddyPageOperationContext } from "./useBuddyPageOperationContext.ts";
 import { useBuddyRunDisplayMessages } from "./useBuddyRunDisplayMessages.ts";
 import { useBuddyRunTraceDisplay } from "./useBuddyRunTraceDisplay.ts";
 import type { BuddyMascotDebugAction } from "./buddyMascotDebug.ts";
 import {
+  BUDDY_GRAPH_EDIT_PLAYBACK_VIEWPORT_SETTLE_MS,
+  BUDDY_GRAPH_EDIT_PLAYBACK_VISIBLE_MARGIN_PX,
+  createGraphEditPlaybackUiState,
+  dispatchGraphEditPlaybackApplyCommand,
+  requestGraphEditPlaybackEnsureVisible,
+  requestGraphEditPlaybackPlan,
+  requestGraphEditPlaybackSave,
+  resolveAliasedGraphEditPlaybackStep,
+  resolveAliasedGraphEditPlaybackTarget,
+  setGraphEditPlaybackRunning,
+  type GraphEditPlaybackUiState,
+} from "./buddyGraphEditPlaybackBridge.ts";
+import {
+  resolveGraphEditPlaybackStepElementWithRetry,
+  shouldSkipGraphEditPlaybackConnectionStep,
+} from "./buddyGraphEditPlaybackTargets.ts";
+import {
+  hasVirtualOperationAffordanceElement,
+  isVisibleVirtualOperationElement,
+  resolveVirtualOperationAffordance,
+  resolveVirtualOperationTextInput,
+  resolveVirtualOperationTextInputElement,
+} from "./buddyVirtualOperationTargets.ts";
+import {
+  dispatchVirtualClick,
+  dispatchVirtualDoubleClick,
+  dispatchVirtualInputEvents,
+  dispatchVirtualPointerEvent,
+  dispatchVirtualPointerTap,
+} from "./buddyVirtualPointerEvents.ts";
+import {
   buildGraphEditPlaybackAuditSummary,
   type GraphEditPlaybackAuditApplyResult,
-  type GraphEditPlaybackAuditDiffEntry,
-  type GraphEditPlaybackAuditRevision,
   type GraphEditPlaybackAuditSummary,
 } from "./graphEditPlaybackAudit.ts";
-import { buildBuddyPageContext } from "./buddyPageContext.ts";
-import {
-  attachPageOperationRuntimeContext,
-  buildPageOperationRuntimeContext as buildPageOperationActionRuntimeContext,
-  collectPageOperationSnapshot,
-} from "./pageOperationAffordances.ts";
+import { attachPageOperationRuntimeContext } from "./pageOperationAffordances.ts";
 import {
   buildPageOperationArtifactRefs,
   buildPageOperationResult,
@@ -448,15 +473,6 @@ type BuddyVirtualOperationToken = {
   interruptPromise: Promise<void>;
   interrupt: () => void;
 };
-type BuddyPageOperationForegroundRun = {
-  runId: string;
-  status: string;
-  resultSummary: string;
-};
-type BuddyPageOperationRuntimeContextOptions = {
-  latestOperationReport?: Record<string, unknown> | null;
-  latestForegroundRun?: BuddyPageOperationForegroundRun | null;
-};
 type BuddyBackgroundTemplateRunExecution = {
   triggeredRun: BuddyVirtualOperationTriggeredRun;
   graph: GraphPayload;
@@ -509,17 +525,6 @@ const BUDDY_VIRTUAL_OPERATION_TARGET_WAIT_MS = 4000;
 const BUDDY_VIRTUAL_OPERATION_TARGET_RETRY_MS = 80;
 const BUDDY_VIRTUAL_TEMPLATE_SEARCH_SETTLE_MS = 180;
 const BUDDY_PAGE_OPERATION_TRIGGERED_RUN_MAX_WAIT_MS = 120000;
-const BUDDY_VIRTUAL_POINTER_ID = 9001;
-const TOOGRAPH_VIRTUAL_POINTER_EVENT_KEY = "__toographVirtualPointerEvent";
-const TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY = "__toographVirtualEmptyCanvasPointerEvent";
-const TOOGRAPH_GRAPH_EDIT_PLAYBACK_RUNNING_EVENT = "toograph:graph-edit-playback-running";
-const TOOGRAPH_GRAPH_EDIT_PLAYBACK_ENSURE_VISIBLE_EVENT = "toograph:graph-edit-playback-ensure-visible";
-const TOOGRAPH_GRAPH_EDIT_PLAYBACK_APPLY_COMMAND_EVENT = "toograph:graph-edit-playback-apply-command";
-const TOOGRAPH_GRAPH_EDIT_PLAYBACK_SAVE_EVENT = "toograph:graph-edit-playback-save-request";
-const BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_WAIT_MS = 2400;
-const BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_RETRY_MS = 80;
-const BUDDY_GRAPH_EDIT_PLAYBACK_VIEWPORT_SETTLE_MS = 80;
-const BUDDY_GRAPH_EDIT_PLAYBACK_VISIBLE_MARGIN_PX = 112;
 const VIRTUAL_CURSOR_STAR_PATH =
   "M0-72 C5-46 18-33 44-28 C18-23 5-10 0 16 C-5-10 -18-23 -44-28 C-18-33 -5-46 0-72Z";
 const VIRTUAL_CURSOR_SHAPE_PATH =
@@ -580,6 +585,14 @@ const mood = ref<BuddyMood>("idle");
 const tapNonce = ref(0);
 const tailSwitchNonce = ref(0);
 const activeRunId = ref<string | null>(null);
+const {
+  buildPageOperationRuntimeContext,
+  buildTriggeredForegroundRunFact,
+} = useBuddyPageOperationContext({
+  routePath: computed(() => route.fullPath),
+  activeRunId,
+  getEditorSnapshot: () => buddyContextStore.editorSnapshot,
+});
 const pausedBuddyRun = ref<RunDetail | null>(null);
 const pausedBuddyAssistantMessageId = ref<string | null>(null);
 const pausedBuddyResumeBusy = ref(false);
@@ -2469,27 +2482,6 @@ async function waitForTriggeredRunCompletion(
   return latestRun;
 }
 
-function buildTriggeredForegroundRunFact(
-  triggeredRun: BuddyVirtualOperationTriggeredRun | null,
-  runDetail: RunDetail | null,
-): BuddyPageOperationForegroundRun | null {
-  if (runDetail) {
-    return {
-      runId: runDetail.run_id,
-      status: runDetail.status,
-      resultSummary: compactPageFactText(runDetail.final_result),
-    };
-  }
-  if (!triggeredRun) {
-    return null;
-  }
-  return {
-    runId: triggeredRun.runId,
-    status: triggeredRun.initialStatus,
-    resultSummary: "",
-  };
-}
-
 function hasRunActiveGraphOperation(operationPlan: BuddyVirtualOperationPlan) {
   return operationPlan.operations.some(
     (operation) => operation.kind === "run_template" || ("targetId" in operation && operation.targetId === "editor.action.runActiveGraph"),
@@ -2669,38 +2661,6 @@ async function executeBuddyVirtualRunTemplateOperation(operation: BuddyVirtualOp
   await clickVirtualOperationTargetWithRetry(operation.runTargetId, token);
 }
 
-type GraphEditPlaybackPlanRequestResponse = {
-  requestId: string;
-  ok: boolean;
-  graphCommands: GraphEditCommand[];
-  playbackSteps: GraphEditPlaybackStep[];
-  issues: string[];
-};
-
-type GraphEditPlaybackUiState = {
-  nodeIdAliases: Map<string, string>;
-  stateKeyAliases: Map<string, string>;
-};
-
-type GraphEditPlaybackEnsureVisibleResponse = {
-  ok: boolean;
-  moved: boolean;
-};
-
-type GraphEditPlaybackApplyCommandResponse = {
-  ok: boolean;
-  applied: boolean;
-  issues: string[];
-  diff?: GraphEditPlaybackAuditDiffEntry[];
-};
-
-type GraphEditPlaybackSaveResponse = {
-  ok: boolean;
-  graphId: string | null;
-  revisionId: string | null;
-  issues: string[];
-};
-
 async function executeBuddyVirtualGraphEditOperation(
   operationPlan: BuddyVirtualOperationPlan,
   operation: BuddyVirtualOperation,
@@ -2770,14 +2730,22 @@ async function executeBuddyVirtualGraphEditOperation(
       }
       const step = response.playbackSteps[stepIndex]!;
       await ensureGraphEditPlaybackStepVisible(step, playbackState);
-      const targetElement = await resolveGraphEditPlaybackStepElementWithRetry(step, playbackState, token);
+      const targetElement = await resolveGraphEditPlaybackStepElementWithRetry({
+        step,
+        playbackState,
+        token,
+        resolveAffordance: resolveVirtualOperationAffordance,
+        isInterrupted: isVirtualOperationInterrupted,
+        waitForRetry: (timeoutMs) => waitForVirtualOperation(timeoutMs),
+        recordRetry: recordVirtualOperationRetry,
+      });
       if (isVirtualOperationInterrupted(token)) {
         break;
       }
       if (shouldSkipGraphEditPlaybackTextStep(step, response.playbackSteps, stepIndex, playbackState, targetElement)) {
         continue;
       }
-      if (shouldSkipGraphEditPlaybackConnectionStep(step, playbackState)) {
+      if (shouldSkipGraphEditPlaybackConnectionStep(step, playbackState, hasVirtualOperationAffordanceElement)) {
         continue;
       }
       if (isGraphEditPlaybackDragStep(step)) {
@@ -2844,13 +2812,6 @@ async function executeBuddyVirtualGraphEditOperation(
 
 function isGraphEditPlaybackDragStep(step: GraphEditPlaybackStep) {
   return step.kind === "drag_state_edge_to_canvas" || step.kind === "drag_state_edge_to_node" || step.kind === "draw_flow_edge";
-}
-
-function createGraphEditPlaybackUiState(): GraphEditPlaybackUiState {
-  return {
-    nodeIdAliases: new Map(),
-    stateKeyAliases: new Map(),
-  };
 }
 
 async function ensureGraphEditPlaybackStepVisible(
@@ -2953,328 +2914,6 @@ function resolveGraphEditPlaybackAnchorNodeFallbackPoint(targetId: string) {
   return nodeAffordance ? resolveElementCenterPoint(nodeAffordance.element) : null;
 }
 
-function requestGraphEditPlaybackPlan(input: { requestId: string; graphEditIntents: GraphEditIntent[] }): GraphEditPlaybackPlanRequestResponse | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const detail: {
-    requestId: string;
-    graphEditIntents: GraphEditIntent[];
-    response: GraphEditPlaybackPlanRequestResponse | null;
-  } = {
-    requestId: input.requestId,
-    graphEditIntents: input.graphEditIntents.map((intent) => ({ ...intent })),
-    response: null,
-  };
-  window.dispatchEvent(new CustomEvent("toograph:graph-edit-playback-plan-request", { detail }));
-  return detail.response;
-}
-
-function setGraphEditPlaybackRunning(running: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.dispatchEvent(
-    new CustomEvent(TOOGRAPH_GRAPH_EDIT_PLAYBACK_RUNNING_EVENT, {
-      detail: { running },
-    }),
-  );
-}
-
-function requestGraphEditPlaybackEnsureVisible(input: {
-  position?: GraphPosition;
-  targetId?: string;
-  nodeId?: string;
-  margin?: number;
-}): GraphEditPlaybackEnsureVisibleResponse | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const detail: {
-    position?: GraphPosition;
-    targetId?: string;
-    nodeId?: string;
-    margin?: number;
-    response: GraphEditPlaybackEnsureVisibleResponse | null;
-  } = {
-    position: input.position,
-    targetId: input.targetId,
-    nodeId: input.nodeId,
-    margin: input.margin,
-    response: null,
-  };
-  window.dispatchEvent(new CustomEvent(TOOGRAPH_GRAPH_EDIT_PLAYBACK_ENSURE_VISIBLE_EVENT, { detail }));
-  return detail.response;
-}
-
-function dispatchGraphEditPlaybackApplyCommand(
-  step: GraphEditPlaybackStep,
-  graphCommands: GraphEditCommand[],
-  playbackState: GraphEditPlaybackUiState,
-): GraphEditPlaybackApplyCommandResponse | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  const commandId = step.commandId ?? step.commandIds?.[0] ?? "";
-  const command = graphCommands.find((candidate) => candidate.commandId === commandId) ?? null;
-  if (!command) {
-    return null;
-  }
-  const detail: {
-    command: GraphEditCommand;
-    response: GraphEditPlaybackApplyCommandResponse | null;
-  } = {
-    command: resolveAliasedGraphEditPlaybackCommand(command, playbackState),
-    response: null,
-  };
-  window.dispatchEvent(new CustomEvent(TOOGRAPH_GRAPH_EDIT_PLAYBACK_APPLY_COMMAND_EVENT, { detail }));
-  return detail.response;
-}
-
-async function requestGraphEditPlaybackSave(input: {
-  requestId: string;
-  runId: string;
-  nodeId: string;
-  reason: string;
-}): Promise<GraphEditPlaybackAuditRevision> {
-  if (typeof window === "undefined") {
-    return {
-      status: "failed",
-      graphId: null,
-      revisionId: null,
-      issues: ["Graph edit revision save requires a browser window."],
-    };
-  }
-  const detail: {
-    requestId: string;
-    runId: string;
-    nodeId: string;
-    reason: string;
-    response: GraphEditPlaybackSaveResponse | Promise<GraphEditPlaybackSaveResponse> | null;
-  } = {
-    requestId: input.requestId,
-    runId: input.runId,
-    nodeId: input.nodeId,
-    reason: input.reason,
-    response: null,
-  };
-  window.dispatchEvent(new CustomEvent(TOOGRAPH_GRAPH_EDIT_PLAYBACK_SAVE_EVENT, { detail }));
-  const response = isGraphEditPlaybackSaveResponsePromise(detail.response) ? await detail.response : detail.response;
-  if (!response) {
-    return {
-      status: "failed",
-      graphId: null,
-      revisionId: null,
-      issues: ["Graph edit revision save did not return a response."],
-    };
-  }
-  if (!response.ok) {
-    return {
-      status: "failed",
-      graphId: response.graphId ?? null,
-      revisionId: response.revisionId ?? null,
-      issues: response.issues.length ? response.issues : ["Graph edit revision save failed."],
-    };
-  }
-  return {
-    status: "saved",
-    graphId: response.graphId,
-    revisionId: response.revisionId,
-    issues: response.issues,
-  };
-}
-
-function isGraphEditPlaybackSaveResponsePromise(
-  response: GraphEditPlaybackSaveResponse | Promise<GraphEditPlaybackSaveResponse> | null,
-): response is Promise<GraphEditPlaybackSaveResponse> {
-  return Boolean(response && typeof (response as Promise<GraphEditPlaybackSaveResponse>).then === "function");
-}
-
-async function resolveGraphEditPlaybackStepElementWithRetry(
-  step: GraphEditPlaybackStep,
-  playbackState: GraphEditPlaybackUiState,
-  token: BuddyVirtualOperationToken | null,
-) {
-  const startedAt = Date.now();
-  const targetId = resolveAliasedGraphEditPlaybackTarget(step.target, playbackState);
-  const deadlineMs = Date.now() + BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_WAIT_MS;
-  let attempts = 0;
-  while (!isVirtualOperationInterrupted(token) && Date.now() <= deadlineMs) {
-    attempts += 1;
-    const targetElement = resolveGraphEditPlaybackStepElement(step, playbackState);
-    if (targetElement) {
-      recordVirtualOperationRetry(token, buildVirtualOperationRetryRecord("graph_edit_step", targetId, attempts, "resolved", startedAt));
-      return targetElement;
-    }
-    await waitForVirtualOperation(BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_RETRY_MS);
-  }
-  const targetElement = resolveGraphEditPlaybackStepElement(step, playbackState);
-  recordVirtualOperationRetry(
-    token,
-    buildVirtualOperationRetryRecord(
-      "graph_edit_step",
-      targetId,
-      attempts,
-      isVirtualOperationInterrupted(token) ? "interrupted" : targetElement ? "resolved" : "missing",
-      startedAt,
-    ),
-  );
-  if (isVirtualOperationInterrupted(token)) {
-    return null;
-  }
-  return targetElement;
-}
-
-function resolveGraphEditPlaybackStepElement(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState): HTMLElement | null {
-  const targetId = resolveAliasedGraphEditPlaybackTarget(step.target, playbackState);
-  const exactAffordance = resolveVirtualOperationAffordance(targetId);
-  if (exactAffordance) {
-    return exactAffordance.element;
-  }
-  if (targetId.startsWith("editor.canvas.")) {
-    return resolveVirtualOperationAffordance(targetId)?.element ?? resolveGraphEditPlaybackStepFallbackElement(step, playbackState);
-  }
-  const nodeId = resolveGraphEditPlaybackTargetNodeId(targetId);
-  if (nodeId) {
-    return resolveVirtualOperationAffordance(`editor.canvas.node.${nodeId}`)?.element ?? null;
-  }
-  return resolveGraphEditPlaybackStepFallbackElement(step, playbackState);
-}
-
-function resolveGraphEditPlaybackStepFallbackElement(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState): HTMLElement | null {
-  const targetId = resolveAliasedGraphEditPlaybackTarget(step.target, playbackState);
-  if (targetId === "editor.canvas.empty.createFirstNode") {
-    return resolveVirtualOperationAffordance("editor.canvas.surface")?.element ?? null;
-  }
-  if ((step.kind === "move_virtual_cursor" || step.kind === "open_node_creation_menu") && targetId === "editor.canvas.surface") {
-    return resolveVirtualOperationAffordance("editor.canvas.surface")?.element ?? null;
-  }
-  return null;
-}
-
-function resolveGraphEditPlaybackTargetNodeId(targetId: string): string {
-  return targetId.match(/^editor\.canvas\.node\.([^.]+)/)?.[1] ?? "";
-}
-
-function resolveAliasedGraphEditPlaybackStep(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState): GraphEditPlaybackStep {
-  return {
-    ...step,
-    target: resolveAliasedGraphEditPlaybackTarget(step.target, playbackState),
-    endTarget: step.endTarget ? resolveAliasedGraphEditPlaybackTarget(step.endTarget, playbackState) : undefined,
-    nodeId: step.nodeId ? playbackState.nodeIdAliases.get(step.nodeId) ?? step.nodeId : undefined,
-    stateKey: step.stateKey ? playbackState.stateKeyAliases.get(step.stateKey) ?? step.stateKey : undefined,
-    sourceNodeId: step.sourceNodeId ? playbackState.nodeIdAliases.get(step.sourceNodeId) ?? step.sourceNodeId : undefined,
-    sourceStateKey: step.sourceStateKey ? playbackState.stateKeyAliases.get(step.sourceStateKey) ?? step.sourceStateKey : undefined,
-  };
-}
-
-function resolveAliasedGraphEditPlaybackCommand(command: GraphEditCommand, playbackState: GraphEditPlaybackUiState): GraphEditCommand {
-  switch (command.kind) {
-    case "create_node":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-        creationSource: command.creationSource
-          ? {
-              ...command.creationSource,
-              sourceNodeId: resolveGraphEditPlaybackNodeAlias(command.creationSource.sourceNodeId, playbackState),
-              ...(command.creationSource.kind === "state"
-                ? { stateKey: resolveGraphEditPlaybackStateAlias(command.creationSource.stateKey, playbackState) }
-                : {}),
-            }
-          : null,
-      };
-    case "update_node":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-      };
-    case "move_node":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-      };
-    case "create_state":
-      return {
-        ...command,
-        stateKey: resolveGraphEditPlaybackStateAlias(command.stateKey, playbackState),
-        targetNodeId: command.targetNodeId ? resolveGraphEditPlaybackNodeAlias(command.targetNodeId, playbackState) : undefined,
-      };
-    case "update_state":
-      return {
-        ...command,
-        stateKey: resolveGraphEditPlaybackStateAlias(command.stateKey, playbackState),
-      };
-    case "update_input_config":
-    case "update_output_config":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-      };
-    case "bind_state":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-        stateKey: resolveGraphEditPlaybackStateAlias(command.stateKey, playbackState),
-        sourceNodeId: command.sourceNodeId ? resolveGraphEditPlaybackNodeAlias(command.sourceNodeId, playbackState) : undefined,
-      };
-    case "connect_nodes":
-      return {
-        ...command,
-        sourceNodeId: resolveGraphEditPlaybackNodeAlias(command.sourceNodeId, playbackState),
-        targetNodeId: resolveGraphEditPlaybackNodeAlias(command.targetNodeId, playbackState),
-      };
-    case "connect_route":
-      return {
-        ...command,
-        sourceNodeId: resolveGraphEditPlaybackNodeAlias(command.sourceNodeId, playbackState),
-        targetNodeId: resolveGraphEditPlaybackNodeAlias(command.targetNodeId, playbackState),
-      };
-    case "select_action":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-      };
-    case "delete_node":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-      };
-    case "restore_node":
-      return {
-        ...command,
-        nodeId: resolveGraphEditPlaybackNodeAlias(command.nodeId, playbackState),
-      };
-  }
-}
-
-function resolveGraphEditPlaybackNodeAlias(nodeId: string, playbackState: GraphEditPlaybackUiState) {
-  return playbackState.nodeIdAliases.get(nodeId) ?? nodeId;
-}
-
-function resolveGraphEditPlaybackStateAlias(stateKey: string, playbackState: GraphEditPlaybackUiState) {
-  return playbackState.stateKeyAliases.get(stateKey) ?? stateKey;
-}
-
-function resolveAliasedGraphEditPlaybackTarget(targetId: string, playbackState: GraphEditPlaybackUiState) {
-  let resolvedTargetId = targetId;
-  for (const [plannedNodeId, actualNodeId] of playbackState.nodeIdAliases) {
-    resolvedTargetId = replaceAllLiteral(resolvedTargetId, `editor.canvas.node.${plannedNodeId}`, `editor.canvas.node.${actualNodeId}`);
-    resolvedTargetId = replaceAllLiteral(resolvedTargetId, `editor.canvas.anchor.${plannedNodeId}:`, `editor.canvas.anchor.${actualNodeId}:`);
-  }
-  for (const [plannedStateKey, actualStateKey] of playbackState.stateKeyAliases) {
-    resolvedTargetId = replaceAllLiteral(resolvedTargetId, `:state-out:${plannedStateKey}`, `:state-out:${actualStateKey}`);
-    resolvedTargetId = replaceAllLiteral(resolvedTargetId, `:state-in:${plannedStateKey}`, `:state-in:${actualStateKey}`);
-    resolvedTargetId = replaceAllLiteral(resolvedTargetId, `.port.input.${plannedStateKey}`, `.port.input.${actualStateKey}`);
-    resolvedTargetId = replaceAllLiteral(resolvedTargetId, `.port.output.${plannedStateKey}`, `.port.output.${actualStateKey}`);
-  }
-  return resolvedTargetId;
-}
-
-function replaceAllLiteral(value: string, search: string, replacement: string) {
-  return value.split(search).join(replacement);
-}
-
 function shouldSkipGraphEditPlaybackTextStep(
   step: GraphEditPlaybackStep,
   steps: GraphEditPlaybackStep[],
@@ -3294,36 +2933,6 @@ function shouldSkipGraphEditPlaybackTextStep(
     return isGraphEditPlaybackTextAlreadyCurrent(step, playbackState, targetElement);
   }
   return false;
-}
-
-function shouldSkipGraphEditPlaybackConnectionStep(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState) {
-  const edgeTargetId =
-    step.kind === "drag_state_edge_to_node"
-      ? resolveGraphEditPlaybackDataEdgeTarget(step, playbackState)
-      : step.kind === "draw_flow_edge"
-        ? resolveGraphEditPlaybackFlowEdgeTarget(step, playbackState)
-        : "";
-  return Boolean(edgeTargetId && hasVirtualOperationAffordanceElement(edgeTargetId));
-}
-
-function resolveGraphEditPlaybackDataEdgeTarget(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState) {
-  const resolvedStep = resolveAliasedGraphEditPlaybackStep(step, playbackState);
-  if (resolvedStep.kind !== "drag_state_edge_to_node" || !resolvedStep.sourceNodeId || !resolvedStep.nodeId) {
-    return "";
-  }
-  const stateKey = resolvedStep.sourceStateKey || resolvedStep.stateKey || "";
-  if (!stateKey) {
-    return "";
-  }
-  return `editor.canvas.edge.data:${resolvedStep.sourceNodeId}:${stateKey}->${resolvedStep.nodeId}`;
-}
-
-function resolveGraphEditPlaybackFlowEdgeTarget(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState) {
-  const resolvedStep = resolveAliasedGraphEditPlaybackStep(step, playbackState);
-  if (resolvedStep.kind !== "draw_flow_edge" || !resolvedStep.sourceNodeId || !resolvedStep.nodeId) {
-    return "";
-  }
-  return `editor.canvas.edge.flow:${resolvedStep.sourceNodeId}->${resolvedStep.nodeId}`;
 }
 
 function isGraphEditPlaybackTextAlreadyCurrent(
@@ -3456,25 +3065,6 @@ function resolveGraphEditPlaybackStepDelayMs(step: GraphEditPlaybackStep): numbe
     return 160;
   }
   return 90;
-}
-
-function resolveVirtualOperationAffordance(targetId: string): { element: HTMLElement } | null {
-  if (targetId.startsWith("buddy.") || targetId === "app.nav.buddy") {
-    return null;
-  }
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const affordanceElements = queryVirtualOperationAffordanceElements(targetId);
-  let visibleElement: HTMLElement | null = null;
-  for (const element of affordanceElements) {
-    const rect = element.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      continue;
-    }
-    visibleElement = element;
-  }
-  return visibleElement ? { element: visibleElement } : null;
 }
 
 async function clickVirtualOperationTargetWithRetry(targetId: string, token: BuddyVirtualOperationToken | null) {
@@ -3735,52 +3325,8 @@ function routeMatchesVirtualOperationTargetPath(currentPath: string, expectedPat
   return current === expected || current.startsWith(`${expected}/`);
 }
 
-function isVisibleVirtualOperationElement(element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
-}
-
 function normalizeTemplateRunMatchText(value: unknown) {
   return String(value ?? "").trim().toLowerCase();
-}
-
-function hasVirtualOperationAffordanceElement(targetId: string) {
-  if (targetId.startsWith("buddy.") || targetId === "app.nav.buddy" || typeof document === "undefined") {
-    return false;
-  }
-  return queryVirtualOperationAffordanceElements(targetId).length > 0;
-}
-
-function queryVirtualOperationAffordanceElements(targetId: string) {
-  return document.querySelectorAll<HTMLElement>(`[data-virtual-affordance-id="${escapeVirtualOperationTargetId(targetId)}"]`);
-}
-
-function resolveVirtualOperationTextInput(targetId: string): HTMLInputElement | HTMLTextAreaElement | null {
-  const affordance = resolveVirtualOperationAffordance(targetId);
-  if (affordance) {
-    return resolveVirtualOperationTextInputElement(affordance.element) ?? resolveVirtualOperationTextInputAffordance(`${targetId}.input`);
-  }
-  return resolveVirtualOperationTextInputAffordance(`${targetId}.input`);
-}
-
-function resolveVirtualOperationTextInputAffordance(targetId: string): HTMLInputElement | HTMLTextAreaElement | null {
-  const affordance = resolveVirtualOperationAffordance(targetId);
-  if (!affordance) {
-    return null;
-  }
-  return resolveVirtualOperationTextInputElement(affordance.element);
-}
-
-function resolveVirtualOperationTextInputElement(element: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
-  if (isVirtualOperationTextInputElement(element)) {
-    return element;
-  }
-  const input = element.querySelector<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
-  return input && isVirtualOperationTextInputElement(input) ? input : null;
-}
-
-function isVirtualOperationTextInputElement(element: Element): element is HTMLInputElement | HTMLTextAreaElement {
-  return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
 }
 
 async function moveVirtualCursorToElement(element: HTMLElement) {
@@ -3854,10 +3400,6 @@ function resolveGraphEditPlaybackViewportTransform(viewportElement: HTMLElement 
   };
 }
 
-function escapeVirtualOperationTargetId(targetId: string) {
-  return targetId.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
 async function ensureVirtualCursorReadyForOperation() {
   if (!virtualCursorEnabled.value) {
     buddyMascotDebugStore.setVirtualCursorEnabled(true);
@@ -3876,47 +3418,6 @@ function resolveVirtualCursorPositionForClientPoint(point: BuddyPosition): Buddy
     x: point.x - BUDDY_VIRTUAL_CURSOR_SIZE.width / 2,
     y: point.y - BUDDY_VIRTUAL_CURSOR_SIZE.height / 2,
   });
-}
-
-function dispatchVirtualClick(element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
-  const clientX = rect.left + rect.width / 2;
-  const clientY = rect.top + rect.height / 2;
-  dispatchVirtualPointerTap(element);
-  element.dispatchEvent(
-    new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-      clientX,
-      clientY,
-      view: window,
-    }),
-  );
-}
-
-function dispatchVirtualDoubleClick(element: HTMLElement, point?: BuddyPosition | null) {
-  const rect = element.getBoundingClientRect();
-  const clientX = point?.x ?? rect.left + rect.width / 2;
-  const clientY = point?.y ?? rect.top + rect.height / 2;
-  dispatchVirtualPointerTap(element, point);
-  dispatchVirtualPointerTap(element, point);
-  element.dispatchEvent(
-    new MouseEvent("dblclick", {
-      bubbles: true,
-      cancelable: true,
-      clientX,
-      clientY,
-      view: window,
-    }),
-  );
-}
-
-function dispatchVirtualPointerTap(element: HTMLElement, point?: BuddyPosition | null) {
-  const rect = element.getBoundingClientRect();
-  const clientX = point?.x ?? rect.left + rect.width / 2;
-  const clientY = point?.y ?? rect.top + rect.height / 2;
-  dispatchVirtualPointerEvent(element, "pointerdown", clientX, clientY);
-  dispatchVirtualPointerEvent(element, "pointerup", clientX, clientY);
 }
 
 async function replaceVirtualText(element: HTMLInputElement | HTMLTextAreaElement, text: string) {
@@ -3946,56 +3447,8 @@ async function typeVirtualText(element: HTMLInputElement | HTMLTextAreaElement, 
   }
 }
 
-function dispatchVirtualInputEvents(element: HTMLInputElement | HTMLTextAreaElement, inputType: string, data: string) {
-  if (typeof InputEvent === "function") {
-    element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType, data }));
-  } else {
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-  element.dispatchEvent(new Event("change", { bubbles: true }));
-}
-
 function normalizeVirtualText(value: unknown) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim();
-}
-
-function dispatchVirtualPointerEvent(
-  element: HTMLElement,
-  type: "pointerdown" | "pointermove" | "pointerup",
-  clientX: number,
-  clientY: number,
-  options: { forceEmptyCanvasDrop?: boolean } = {},
-) {
-  const eventInit = {
-    bubbles: true,
-    cancelable: true,
-    clientX,
-    clientY,
-    pointerId: BUDDY_VIRTUAL_POINTER_ID,
-    pointerType: "mouse",
-    button: 0,
-    buttons: type === "pointerup" ? 0 : 1,
-    view: window,
-  };
-  if (typeof PointerEvent === "function") {
-    element.dispatchEvent(markVirtualPointerEvent(new PointerEvent(type, eventInit), options));
-    return;
-  }
-  element.dispatchEvent(markVirtualPointerEvent(new MouseEvent(type, eventInit), options));
-}
-
-function markVirtualPointerEvent<T extends Event>(event: T, options: { forceEmptyCanvasDrop?: boolean } = {}): T {
-  Object.defineProperty(event, TOOGRAPH_VIRTUAL_POINTER_EVENT_KEY, {
-    configurable: true,
-    value: true,
-  });
-  if (options.forceEmptyCanvasDrop) {
-    Object.defineProperty(event, TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY, {
-      configurable: true,
-      value: true,
-    });
-  }
-  return event;
 }
 
 function waitForVirtualOperation(timeoutMs: number, token: BuddyVirtualOperationToken | null = activeVirtualOperationToken.value) {
@@ -4592,53 +4045,6 @@ function clearAvatarSingleClickTimer() {
   }
   window.clearTimeout(avatarSingleClickTimerId);
   avatarSingleClickTimerId = null;
-}
-
-function buildPageOperationRuntimeContext(options: BuddyPageOperationRuntimeContextOptions = {}) {
-  const snapshot = collectPageOperationSnapshot({
-    routePath: route.fullPath,
-    root: typeof document === "undefined" ? null : document,
-  });
-  const actionRuntimeContext = buildPageOperationActionRuntimeContext({
-    routePath: route.fullPath,
-    root: typeof document === "undefined" ? null : document,
-    snapshot,
-    editor: buildBuddyPageOperationEditorFacts(),
-    latestForegroundRun: options.latestForegroundRun ?? null,
-    latestOperationReport: options.latestOperationReport ?? null,
-  });
-  return {
-    pageContext: buildBuddyPageContext({
-      routePath: route.fullPath,
-      editor: buddyContextStore.editorSnapshot,
-      activeBuddyRunId: activeRunId.value,
-      pageOperationBook: actionRuntimeContext.page_operation_book,
-      pageFacts: actionRuntimeContext.page_facts,
-    }),
-    actionRuntimeContext,
-  };
-}
-
-function buildBuddyPageOperationEditorFacts() {
-  const editor = buddyContextStore.editorSnapshot;
-  if (!editor) {
-    return null;
-  }
-  const documentName = editor.document?.name ?? "";
-  const documentGraphId = editor.document && "graph_id" in editor.document ? editor.document.graph_id ?? "" : "";
-  return {
-    activeTabId: editor.activeTabId,
-    activeTabTitle: editor.activeTabTitle,
-    activeTabKind: editor.activeTabKind,
-    activeGraphId: editor.activeGraphId ?? documentGraphId,
-    activeGraphName: editor.activeGraphName ?? documentName ?? editor.activeTabTitle,
-    activeGraphDirty: editor.activeGraphDirty === true,
-  };
-}
-
-function compactPageFactText(value: unknown) {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
-  return text.length > 180 ? `${text.slice(0, 177)}...` : text;
 }
 
 function resolveViewport() {

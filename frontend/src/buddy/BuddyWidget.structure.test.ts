@@ -12,6 +12,11 @@ const runTraceSource = readFileSync(resolve(currentDirectory, "BuddyRunTrace.vue
 const runTraceDisplaySource = readFileSync(resolve(currentDirectory, "useBuddyRunTraceDisplay.ts"), "utf8");
 const runDisplayMessagesSource = readFileSync(resolve(currentDirectory, "useBuddyRunDisplayMessages.ts"), "utf8");
 const messagesSource = readFileSync(resolve(currentDirectory, "useBuddyMessages.ts"), "utf8");
+const pageOperationContextSource = readFileSync(resolve(currentDirectory, "useBuddyPageOperationContext.ts"), "utf8");
+const graphEditPlaybackBridgeSource = readFileSync(resolve(currentDirectory, "buddyGraphEditPlaybackBridge.ts"), "utf8");
+const graphEditPlaybackTargetsSource = readFileSync(resolve(currentDirectory, "buddyGraphEditPlaybackTargets.ts"), "utf8");
+const virtualOperationTargetsSource = readFileSync(resolve(currentDirectory, "buddyVirtualOperationTargets.ts"), "utf8");
+const virtualPointerEventsSource = readFileSync(resolve(currentDirectory, "buddyVirtualPointerEvents.ts"), "utf8");
 const chatSessionsSource = readFileSync(resolve(currentDirectory, "useBuddyChatSessions.ts"), "utf8");
 const modelSelectionSource = readFileSync(resolve(currentDirectory, "useBuddyModelSelection.ts"), "utf8");
 const sessionHistorySource = readFileSync(resolve(currentDirectory, "BuddySessionHistory.vue"), "utf8");
@@ -432,16 +437,27 @@ test("BuddyWidget executes virtual UI operation events through the virtual curso
   assert.match(componentSource, /case "graph_edit":[\s\S]*executeBuddyVirtualGraphEditOperation\(operationPlan, operation\)/);
   assert.match(componentSource, /function executeBuddyVirtualClickOperation\(operation: BuddyVirtualOperation\)/);
   assert.match(componentSource, /async function executeBuddyVirtualGraphEditOperation\([\s\S]*operationPlan: BuddyVirtualOperationPlan,[\s\S]*operation: BuddyVirtualOperation,[\s\S]*\)/);
-  assert.match(componentSource, /import type \{ GraphEditCommand, GraphEditIntent, GraphEditPlaybackStep \} from "\.\.\/editor\/workspace\/graphEditPlaybackModel\.ts";/);
+  assert.match(componentSource, /import type \{ GraphEditPlaybackStep \} from "\.\.\/editor\/workspace\/graphEditPlaybackModel\.ts";/);
+  assert.match(componentSource, /import \{[\s\S]*BUDDY_GRAPH_EDIT_PLAYBACK_VIEWPORT_SETTLE_MS,[\s\S]*BUDDY_GRAPH_EDIT_PLAYBACK_VISIBLE_MARGIN_PX,[\s\S]*createGraphEditPlaybackUiState,[\s\S]*dispatchGraphEditPlaybackApplyCommand,[\s\S]*requestGraphEditPlaybackEnsureVisible,[\s\S]*requestGraphEditPlaybackPlan,[\s\S]*requestGraphEditPlaybackSave,[\s\S]*resolveAliasedGraphEditPlaybackStep,[\s\S]*resolveAliasedGraphEditPlaybackTarget,[\s\S]*setGraphEditPlaybackRunning,[\s\S]*type GraphEditPlaybackUiState,[\s\S]*\} from "\.\/buddyGraphEditPlaybackBridge\.ts";/);
+  assert.match(componentSource, /import \{[\s\S]*resolveGraphEditPlaybackStepElementWithRetry,[\s\S]*shouldSkipGraphEditPlaybackConnectionStep,[\s\S]*\} from "\.\/buddyGraphEditPlaybackTargets\.ts";/);
+  assert.match(componentSource, /import \{[\s\S]*hasVirtualOperationAffordanceElement,[\s\S]*isVisibleVirtualOperationElement,[\s\S]*resolveVirtualOperationAffordance,[\s\S]*resolveVirtualOperationTextInput,[\s\S]*resolveVirtualOperationTextInputElement,[\s\S]*\} from "\.\/buddyVirtualOperationTargets\.ts";/);
+  assert.match(componentSource, /import \{[\s\S]*dispatchVirtualClick,[\s\S]*dispatchVirtualDoubleClick,[\s\S]*dispatchVirtualInputEvents,[\s\S]*dispatchVirtualPointerEvent,[\s\S]*dispatchVirtualPointerTap,[\s\S]*\} from "\.\/buddyVirtualPointerEvents\.ts";/);
+  assert.match(graphEditPlaybackBridgeSource, /import type \{ GraphEditCommand, GraphEditIntent, GraphEditPlaybackStep \} from "\.\.\/editor\/workspace\/graphEditPlaybackModel\.ts";/);
+  assert.match(graphEditPlaybackTargetsSource, /import type \{ GraphEditPlaybackStep \} from "\.\.\/editor\/workspace\/graphEditPlaybackModel\.ts";/);
+  assert.match(graphEditPlaybackTargetsSource, /import \{[\s\S]*BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_RETRY_MS,[\s\S]*BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_WAIT_MS,[\s\S]*resolveAliasedGraphEditPlaybackStep,[\s\S]*resolveAliasedGraphEditPlaybackTarget,[\s\S]*type GraphEditPlaybackUiState,[\s\S]*\} from "\.\/buddyGraphEditPlaybackBridge\.ts";/);
   assert.match(componentSource, /requestGraphEditPlaybackPlan\(\{[\s\S]*requestId,[\s\S]*graphEditIntents: operation\.graphEditIntents,[\s\S]*\}\);/);
-  assert.match(componentSource, /window\.dispatchEvent\(new CustomEvent\("toograph:graph-edit-playback-plan-request", \{ detail \}\)\);/);
+  assert.match(graphEditPlaybackBridgeSource, /window\.dispatchEvent\(new CustomEvent\("toograph:graph-edit-playback-plan-request", \{ detail \}\)\);/);
+  assert.doesNotMatch(componentSource, /function requestGraphEditPlaybackPlan\(/);
+  assert.doesNotMatch(componentSource, /function setGraphEditPlaybackRunning\(/);
   assert.doesNotMatch(componentSource, /v-if="virtualGraphDragLine"/);
   assert.doesNotMatch(componentSource, /class="buddy-widget__graph-drag-line"/);
   assert.match(componentSource, /const playbackState = createGraphEditPlaybackUiState\(\);/);
-  assert.match(componentSource, /await resolveGraphEditPlaybackStepElementWithRetry\(step, playbackState, token\)/);
+  assert.match(componentSource, /await resolveGraphEditPlaybackStepElementWithRetry\(\{[\s\S]*step,[\s\S]*playbackState,[\s\S]*token,[\s\S]*resolveAffordance: resolveVirtualOperationAffordance,[\s\S]*isInterrupted: isVirtualOperationInterrupted,[\s\S]*waitForRetry:[\s\S]*recordRetry: recordVirtualOperationRetry,[\s\S]*\}\)/);
   assert.match(componentSource, /executeGraphEditPlaybackDragStep\(step, targetElement, playbackState\)/);
-  assert.match(componentSource, /function resolveGraphEditPlaybackStepElementWithRetry\([\s\S]*step: GraphEditPlaybackStep,[\s\S]*playbackState: GraphEditPlaybackUiState,[\s\S]*token: BuddyVirtualOperationToken \| null,[\s\S]*\)/);
-  assert.match(componentSource, /const deadlineMs = Date\.now\(\) \+ BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_WAIT_MS;/);
+  assert.match(graphEditPlaybackTargetsSource, /type GraphEditPlaybackStepElementResolver<TToken> = \{[\s\S]*step: GraphEditPlaybackStep;[\s\S]*playbackState: GraphEditPlaybackUiState;[\s\S]*token: TToken \| null;[\s\S]*\};/);
+  assert.match(graphEditPlaybackTargetsSource, /export async function resolveGraphEditPlaybackStepElementWithRetry<TToken>/);
+  assert.doesNotMatch(componentSource, /function resolveGraphEditPlaybackStepElementWithRetry\(/);
+  assert.match(graphEditPlaybackTargetsSource, /const deadlineMs = Date\.now\(\) \+ BUDDY_GRAPH_EDIT_PLAYBACK_TARGET_WAIT_MS;/);
   assert.doesNotMatch(componentSource, /resolveGraphEditPlaybackStepElement\(step, playbackState\) \?\? affordance\?\.element/);
   assert.match(componentSource, /dispatchVirtualGraphDragPointerEvents\(resolvedStep, targetElement\)/);
   assert.match(componentSource, /dispatchVirtualPointerEvent\(targetElement, "pointerdown"/);
@@ -457,31 +473,40 @@ test("BuddyWidget executes virtual UI operation events through the virtual curso
   assert.match(componentSource, /if \(step\.kind === "apply_graph_command"\) \{[\s\S]*const applyResponse = dispatchGraphEditPlaybackApplyCommand\(step, response\.graphCommands, playbackState\);[\s\S]*applyResults\.push\(/);
   assert.match(componentSource, /const revision = await requestGraphEditPlaybackSave\(\{[\s\S]*requestId,[\s\S]*runId: operationPlan\.runId \?\? "",[\s\S]*nodeId: operationPlan\.nodeId \?\? operationPlan\.subgraphNodeId \?\? "",[\s\S]*reason: operationPlan\.reason,[\s\S]*\}\);/);
   assert.match(componentSource, /return buildGraphEditPlaybackAuditSummary\(\{[\s\S]*requestId,[\s\S]*applyResults,[\s\S]*revision,[\s\S]*\}\);/);
-  assert.match(componentSource, /graphCommands: GraphEditCommand\[\];/);
+  assert.match(graphEditPlaybackBridgeSource, /graphCommands: GraphEditCommand\[\];/);
   assert.doesNotMatch(componentSource, /dispatchGraphEditPlaybackOpenMenu/);
   assert.doesNotMatch(componentSource, /toograph:graph-edit-playback-open-node-menu/);
-  assert.match(componentSource, /function dispatchGraphEditPlaybackApplyCommand\(/);
-  assert.match(componentSource, /TOOGRAPH_GRAPH_EDIT_PLAYBACK_APPLY_COMMAND_EVENT = "toograph:graph-edit-playback-apply-command"/);
-  assert.match(componentSource, /TOOGRAPH_GRAPH_EDIT_PLAYBACK_SAVE_EVENT = "toograph:graph-edit-playback-save-request"/);
-  assert.match(componentSource, /window\.dispatchEvent\(new CustomEvent\(TOOGRAPH_GRAPH_EDIT_PLAYBACK_APPLY_COMMAND_EVENT, \{ detail \}\)\);/);
-  assert.match(componentSource, /function requestGraphEditPlaybackSave\(/);
-  assert.match(componentSource, /window\.dispatchEvent\(new CustomEvent\(TOOGRAPH_GRAPH_EDIT_PLAYBACK_SAVE_EVENT, \{ detail \}\)\);/);
-  assert.match(componentSource, /function resolveAliasedGraphEditPlaybackCommand\(command: GraphEditCommand, playbackState: GraphEditPlaybackUiState\): GraphEditCommand/);
-  assert.match(componentSource, /function resolveAliasedGraphEditPlaybackTarget\(targetId: string, playbackState: GraphEditPlaybackUiState\)/);
-  assert.match(componentSource, /function resolveVirtualOperationAffordance\(targetId: string\)/);
-  assert.match(componentSource, /const targetId = resolveAliasedGraphEditPlaybackTarget\(step\.target, playbackState\);/);
-  assert.match(componentSource, /querySelectorAll<HTMLElement>\(`\[data-virtual-affordance-id="\$\{escapeVirtualOperationTargetId\(targetId\)\}"\]`\)/);
-  assert.match(componentSource, /for \(const element of affordanceElements\) \{/);
-  assert.match(componentSource, /if \(rect\.width <= 0 \|\| rect\.height <= 0\) \{[\s\S]*continue;/);
+  assert.match(graphEditPlaybackBridgeSource, /export function dispatchGraphEditPlaybackApplyCommand\(/);
+  assert.doesNotMatch(componentSource, /function dispatchGraphEditPlaybackApplyCommand\(/);
+  assert.match(graphEditPlaybackBridgeSource, /TOOGRAPH_GRAPH_EDIT_PLAYBACK_APPLY_COMMAND_EVENT = "toograph:graph-edit-playback-apply-command"/);
+  assert.match(graphEditPlaybackBridgeSource, /TOOGRAPH_GRAPH_EDIT_PLAYBACK_SAVE_EVENT = "toograph:graph-edit-playback-save-request"/);
+  assert.match(graphEditPlaybackBridgeSource, /window\.dispatchEvent\(new CustomEvent\(TOOGRAPH_GRAPH_EDIT_PLAYBACK_APPLY_COMMAND_EVENT, \{ detail \}\)\);/);
+  assert.match(graphEditPlaybackBridgeSource, /export async function requestGraphEditPlaybackSave\(/);
+  assert.doesNotMatch(componentSource, /function requestGraphEditPlaybackSave\(/);
+  assert.match(graphEditPlaybackBridgeSource, /window\.dispatchEvent\(new CustomEvent\(TOOGRAPH_GRAPH_EDIT_PLAYBACK_SAVE_EVENT, \{ detail \}\)\);/);
+  assert.match(graphEditPlaybackBridgeSource, /function resolveAliasedGraphEditPlaybackCommand\(command: GraphEditCommand, playbackState: GraphEditPlaybackUiState\): GraphEditCommand/);
+  assert.match(graphEditPlaybackBridgeSource, /export function resolveAliasedGraphEditPlaybackTarget\(targetId: string, playbackState: GraphEditPlaybackUiState\)/);
+  assert.doesNotMatch(componentSource, /function resolveAliasedGraphEditPlaybackCommand\(/);
+  assert.doesNotMatch(componentSource, /function resolveAliasedGraphEditPlaybackTarget\(/);
+  assert.match(virtualOperationTargetsSource, /export function resolveVirtualOperationAffordance\(targetId: string\)/);
+  assert.doesNotMatch(componentSource, /function resolveVirtualOperationAffordance\(targetId: string\)/);
+  assert.match(graphEditPlaybackTargetsSource, /const targetId = resolveAliasedGraphEditPlaybackTarget\(step\.target, playbackState\);/);
+  assert.doesNotMatch(componentSource, /function resolveGraphEditPlaybackStepElement\(/);
+  assert.doesNotMatch(componentSource, /function resolveGraphEditPlaybackDataEdgeTarget\(/);
+  assert.match(virtualOperationTargetsSource, /querySelectorAll<HTMLElement>\(`\[data-virtual-affordance-id="\$\{escapeVirtualOperationTargetId\(targetId\)\}"\]`\)/);
+  assert.match(virtualOperationTargetsSource, /for \(const element of affordanceElements\) \{/);
+  assert.match(virtualOperationTargetsSource, /if \(rect\.width <= 0 \|\| rect\.height <= 0\) \{[\s\S]*continue;/);
   assert.doesNotMatch(componentSource, /const element = document\.querySelector<HTMLElement>/);
   assert.doesNotMatch(componentSource, /"app\.nav\.buddy":/);
   assert.doesNotMatch(componentSource, /BUDDY_VIRTUAL_OPERATION_TARGET_SELECTORS/);
   assert.match(componentSource, /moveVirtualCursorToWithArmedTransition\(cursorPosition\)/);
   assert.match(componentSource, /dispatchVirtualClick\(affordance\.element\);/);
-  assert.match(componentSource, /function resolveVirtualOperationTextInputAffordance\(targetId: string\)/);
-  assert.match(componentSource, /return resolveVirtualOperationTextInputElement\(affordance\.element\) \?\? resolveVirtualOperationTextInputAffordance\(`\$\{targetId\}\.input`\);/);
+  assert.match(virtualOperationTargetsSource, /function resolveVirtualOperationTextInputAffordance\(targetId: string\)/);
+  assert.match(virtualOperationTargetsSource, /return resolveVirtualOperationTextInputElement\(affordance\.element\) \?\? resolveVirtualOperationTextInputAffordance\(`\$\{targetId\}\.input`\);/);
+  assert.doesNotMatch(componentSource, /function resolveVirtualOperationTextInputAffordance\(targetId: string\)/);
   assert.match(componentSource, /operationPlan\.cursorLifecycle === "return_after_step"/);
-  assert.match(componentSource, /dispatchVirtualInputEvents/);
+  assert.match(virtualPointerEventsSource, /export function dispatchVirtualInputEvents\(element: HTMLInputElement \| HTMLTextAreaElement, inputType: string, data: string\)/);
+  assert.doesNotMatch(componentSource, /function dispatchVirtualInputEvents\(/);
   assert.match(componentSource, /buddyMascotDebugStore\.setVirtualCursorEnabled\(false\);/);
 });
 
@@ -523,25 +548,29 @@ test("BuddyWidget can interrupt virtual operations and skips graph connections t
   assert.match(componentSource, /function interruptVirtualOperation\(\)/);
   assert.match(componentSource, /function isVirtualOperationInterrupted\(token: BuddyVirtualOperationToken \| null\)/);
   assert.match(componentSource, /waitForVirtualOperation\([^)]*, activeVirtualOperationToken\.value\)/);
-  assert.match(componentSource, /resolveGraphEditPlaybackStepElementWithRetry\(step, playbackState, token\)/);
-  assert.match(componentSource, /function resolveGraphEditPlaybackStepElementWithRetry\([\s\S]*step: GraphEditPlaybackStep,[\s\S]*playbackState: GraphEditPlaybackUiState,[\s\S]*token: BuddyVirtualOperationToken \| null,[\s\S]*\)/);
-  assert.match(componentSource, /while \(!isVirtualOperationInterrupted\(token\) && Date\.now\(\) <= deadlineMs\) \{/);
-  assert.match(componentSource, /recordVirtualOperationRetry\(token,\s*buildVirtualOperationRetryRecord\("graph_edit_step"/);
-  assert.match(componentSource, /if \(isVirtualOperationInterrupted\(token\)\) \{[\s\S]*return null;/);
-  assert.match(componentSource, /shouldSkipGraphEditPlaybackConnectionStep\(step, playbackState\)/);
-  assert.match(componentSource, /function hasVirtualOperationAffordanceElement\(targetId: string\)/);
-  assert.match(componentSource, /return Boolean\(edgeTargetId && hasVirtualOperationAffordanceElement\(edgeTargetId\)\);/);
-  assert.match(componentSource, /function resolveGraphEditPlaybackDataEdgeTarget\(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState\)/);
-  assert.match(componentSource, /function resolveGraphEditPlaybackFlowEdgeTarget\(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState\)/);
-  assert.match(componentSource, /const BUDDY_VIRTUAL_POINTER_ID = 9001;/);
-  assert.match(componentSource, /const TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY = "__toographVirtualEmptyCanvasPointerEvent";/);
-  assert.match(componentSource, /function markVirtualPointerEvent/);
+  assert.match(componentSource, /resolveGraphEditPlaybackStepElementWithRetry\(\{[\s\S]*step,[\s\S]*playbackState,[\s\S]*token,[\s\S]*\}\)/);
+  assert.match(graphEditPlaybackTargetsSource, /export async function resolveGraphEditPlaybackStepElementWithRetry/);
+  assert.match(graphEditPlaybackTargetsSource, /while \(!isInterrupted\(token\) && Date\.now\(\) <= deadlineMs\) \{/);
+  assert.match(graphEditPlaybackTargetsSource, /recordRetry\(token,\s*buildGraphEditPlaybackRetryRecord\("graph_edit_step"/);
+  assert.match(graphEditPlaybackTargetsSource, /if \(isInterrupted\(token\)\) \{[\s\S]*return null;/);
+  assert.match(componentSource, /shouldSkipGraphEditPlaybackConnectionStep\(step, playbackState, hasVirtualOperationAffordanceElement\)/);
+  assert.match(virtualOperationTargetsSource, /export function hasVirtualOperationAffordanceElement\(targetId: string\)/);
+  assert.doesNotMatch(componentSource, /function hasVirtualOperationAffordanceElement\(targetId: string\)/);
+  assert.match(graphEditPlaybackTargetsSource, /return Boolean\(edgeTargetId && hasAffordanceElement\(edgeTargetId\)\);/);
+  assert.match(graphEditPlaybackTargetsSource, /function resolveGraphEditPlaybackDataEdgeTarget\(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState\)/);
+  assert.match(graphEditPlaybackTargetsSource, /function resolveGraphEditPlaybackFlowEdgeTarget\(step: GraphEditPlaybackStep, playbackState: GraphEditPlaybackUiState\)/);
+  assert.match(virtualPointerEventsSource, /const BUDDY_VIRTUAL_POINTER_ID = 9001;/);
+  assert.match(virtualPointerEventsSource, /const TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY = "__toographVirtualEmptyCanvasPointerEvent";/);
+  assert.match(virtualPointerEventsSource, /function markVirtualPointerEvent/);
+  assert.doesNotMatch(componentSource, /const BUDDY_VIRTUAL_POINTER_ID = 9001;/);
+  assert.doesNotMatch(componentSource, /const TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY = "__toographVirtualEmptyCanvasPointerEvent";/);
+  assert.doesNotMatch(componentSource, /function markVirtualPointerEvent/);
   assert.match(componentSource, /function shouldForceGraphEditPlaybackEmptyCanvasDrop\(step: GraphEditPlaybackStep\)/);
   assert.match(componentSource, /dispatchVirtualPointerEvent\(pointerSurface, "pointermove", point\.x, point\.y, \{ forceEmptyCanvasDrop \}\)/);
   assert.match(componentSource, /dispatchVirtualPointerEvent\(pointerSurface, "pointerup", endPoint\.x, endPoint\.y, \{ forceEmptyCanvasDrop \}\)/);
-  assert.match(componentSource, /Object\.defineProperty\(event, TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY,/);
+  assert.match(virtualPointerEventsSource, /Object\.defineProperty\(event, TOOGRAPH_VIRTUAL_EMPTY_CANVAS_POINTER_EVENT_KEY,/);
   assert.match(componentSource, /function resolveGraphEditPlaybackAnchorNodeFallbackPoint\(targetId: string\)/);
-  assert.match(componentSource, /pointerId: BUDDY_VIRTUAL_POINTER_ID,/);
+  assert.match(virtualPointerEventsSource, /pointerId: BUDDY_VIRTUAL_POINTER_ID,/);
 });
 
 test("BuddyWidget debug panel can trigger every mascot animation state without graph runs", () => {
@@ -613,16 +642,20 @@ test("BuddyWidget lets the buddy runtime choose its own model", () => {
 });
 
 test("BuddyWidget builds page context from the shared editor snapshot", () => {
-  assert.match(componentSource, /import \{ buildBuddyPageContext \} from "\.\/buddyPageContext\.ts";/);
-  assert.match(componentSource, /buildPageOperationRuntimeContext as buildPageOperationActionRuntimeContext/);
-  assert.match(componentSource, /collectPageOperationSnapshot/);
+  assert.match(componentSource, /import \{ useBuddyPageOperationContext \} from "\.\/useBuddyPageOperationContext\.ts";/);
+  assert.match(pageOperationContextSource, /import \{ buildBuddyPageContext,[\s\S]*type BuddyEditorContextSnapshot[\s\S]*\} from "\.\/buddyPageContext\.ts";/);
+  assert.match(pageOperationContextSource, /buildPageOperationRuntimeContext as buildPageOperationActionRuntimeContext/);
+  assert.match(pageOperationContextSource, /collectPageOperationSnapshot/);
   assert.match(componentSource, /import \{ useBuddyContextStore \} from "\.\.\/stores\/buddyContext\.ts";/);
   assert.match(componentSource, /const buddyContextStore = useBuddyContextStore\(\);/);
+  assert.match(componentSource, /useBuddyPageOperationContext\(\{[\s\S]*routePath: computed\(\(\) => route\.fullPath\),[\s\S]*activeRunId,[\s\S]*getEditorSnapshot: \(\) => buddyContextStore\.editorSnapshot,[\s\S]*\}\)/);
   assert.match(componentSource, /const pageOperationContext = buildPageOperationRuntimeContext\(\);[\s\S]*pageContext: pageOperationContext\.pageContext,[\s\S]*pageOperationContext: pageOperationContext\.actionRuntimeContext/);
-  assert.match(componentSource, /const snapshot = collectPageOperationSnapshot\(\{[\s\S]*routePath: route\.fullPath,[\s\S]*root: typeof document === "undefined" \? null : document,[\s\S]*\}\);/);
-  assert.match(componentSource, /const actionRuntimeContext = buildPageOperationActionRuntimeContext\(\{[\s\S]*snapshot,[\s\S]*editor: buildBuddyPageOperationEditorFacts\(\),[\s\S]*latestForegroundRun: options\.latestForegroundRun \?\? null,[\s\S]*latestOperationReport: options\.latestOperationReport \?\? null,[\s\S]*\}\);/);
-  assert.match(componentSource, /pageContext: buildBuddyPageContext\(\{[\s\S]*routePath: route\.fullPath,[\s\S]*editor: buddyContextStore\.editorSnapshot,[\s\S]*activeBuddyRunId: activeRunId\.value,[\s\S]*pageOperationBook: actionRuntimeContext\.page_operation_book,[\s\S]*pageFacts: actionRuntimeContext\.page_facts,[\s\S]*\}\)/);
-  assert.match(componentSource, /actionRuntimeContext,/);
+  assert.match(pageOperationContextSource, /const snapshot = collectPageOperationSnapshot\(\{[\s\S]*routePath: routePath\.value,[\s\S]*root,[\s\S]*\}\);/);
+  assert.match(pageOperationContextSource, /const actionRuntimeContext = buildPageOperationActionRuntimeContext\(\{[\s\S]*snapshot,[\s\S]*editor: buildBuddyPageOperationEditorFacts\(editorSnapshot\),[\s\S]*latestForegroundRun: options\.latestForegroundRun \?\? null,[\s\S]*latestOperationReport: options\.latestOperationReport \?\? null,[\s\S]*\}\);/);
+  assert.match(pageOperationContextSource, /pageContext: buildBuddyPageContext\(\{[\s\S]*routePath: routePath\.value,[\s\S]*editor: editorSnapshot,[\s\S]*activeBuddyRunId: activeRunId\.value,[\s\S]*pageOperationBook: actionRuntimeContext\.page_operation_book,[\s\S]*pageFacts: actionRuntimeContext\.page_facts,[\s\S]*\}\)/);
+  assert.match(pageOperationContextSource, /actionRuntimeContext,/);
+  assert.doesNotMatch(componentSource, /function buildPageOperationRuntimeContext/);
+  assert.doesNotMatch(componentSource, /function buildBuddyPageOperationEditorFacts/);
 });
 
 test("BuddyWidget resumes page operation runs after virtual UI execution", () => {
@@ -1012,8 +1045,9 @@ test("BuddyWidget finishes auto-resumed page-operation runs back into the chat r
   assert.match(runDisplayMessagesSource, /function findPrimaryCompletedTextPublicOutput\(/);
   assert.match(
     componentSource,
-    /const assistantMessageId = resolveBuddyRunControllerMessageId\(operationPlan\.runId\);[\s\S]*const sessionId = activeSessionId\.value;[\s\S]*resetPausedBuddyPause\(\);[\s\S]*await finishAutoResumedPageOperationRun\(\{[\s\S]*runId:\s*response\.run_id,[\s\S]*assistantMessageId,[\s\S]*sessionId,[\s\S]*graph:[\s\S]*runDetail\.graph_snapshot/,
+    /const assistantMessageId = resolveBuddyRunControllerMessageId\(operationPlan\.runId\);[\s\S]*const sessionId = activeSessionId\.value;[\s\S]*resetPausedBuddyPause\(\);[\s\S]*await finishAutoResumedPageOperationRun\(\{[\s\S]*runId:\s*response\.run_id,[\s\S]*assistantMessageId,[\s\S]*sessionId,[\s\S]*\}\);/,
   );
+  assert.doesNotMatch(componentSource, /type BuddyAutoResumedPageOperationFinishOptions = \{[\s\S]*graph: GraphPayload;[\s\S]*\};/);
   assert.match(componentSource, /async function finishAutoResumedPageOperationRun\(/);
   assert.match(
     componentSource,
