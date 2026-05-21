@@ -311,7 +311,7 @@
 import { Close, FullScreen, Plus, SemiSelect } from "@element-plus/icons-vue";
 import { ElIcon, ElOption, ElSelect } from "element-plus";
 import { storeToRefs } from "pinia";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 
@@ -367,10 +367,8 @@ import {
 } from "./buddyGraphEditPlaybackTargets.ts";
 import {
   hasVirtualOperationAffordanceElement,
-  isVisibleVirtualOperationElement,
   resolveVirtualOperationAffordance,
   resolveVirtualOperationTextInput,
-  resolveVirtualOperationTextInputElement,
 } from "./buddyVirtualOperationTargets.ts";
 import {
   dispatchVirtualClick,
@@ -379,6 +377,12 @@ import {
   dispatchVirtualPointerEvent,
   dispatchVirtualPointerTap,
 } from "./buddyVirtualPointerEvents.ts";
+import {
+  normalizeTemplateRunMatchText,
+  resolveTemplateRunInputTextInput,
+  resolveTemplateRunTargetAffordance,
+  routeMatchesVirtualOperationTargetPath,
+} from "./buddyVirtualTemplateRunTargets.ts";
 import {
   buildGraphEditPlaybackAuditSummary,
   type GraphEditPlaybackAuditApplyResult,
@@ -394,7 +398,6 @@ import {
   findAutoResumablePageOperationRequestId,
   type PageOperationResult,
   type PageOperationResultStatus,
-  type PageOperationRetryKind,
   type PageOperationRetryRecord,
 } from "./pageOperationResume.ts";
 import { resolveBuddyVirtualOperationPlanFromActivityEvent } from "./virtualOperationProtocol.ts";
@@ -403,6 +406,7 @@ import {
   resolveBuddyVirtualOperationUserAction,
   shouldHandleVirtualCursorPointerDown,
 } from "./buddyVirtualOperationInteractionPolicy.ts";
+import { useBuddyVirtualOperationLifecycle, type BuddyVirtualOperationToken } from "./useBuddyVirtualOperationLifecycle.ts";
 import {
   resolveBuddyComposerDecision,
   shouldHoldBuddyQueueDrain,
@@ -457,21 +461,10 @@ type VirtualCursorPhase = "hidden" | "launching" | "active" | "returning";
 type BuddyIdleAnimationAction = "tail-switch" | "random-move" | "virtual-cursor-orbit" | "virtual-cursor-chase";
 type BuddyIdleRunOptions = { force?: boolean };
 type VirtualCursorIdleActionMode = "none" | "orbit" | "chase";
-type BuddyVirtualOperationStatus = {
-  label: string;
-  tone: "active" | "stopping";
-};
 type BuddyVirtualOperationCommandResult = {
   status: PageOperationResultStatus;
   graphEditSummary: Record<string, unknown> | null;
   retryChain: PageOperationRetryRecord[];
-};
-type BuddyVirtualOperationToken = {
-  id: number;
-  interrupted: boolean;
-  retryChain: PageOperationRetryRecord[];
-  interruptPromise: Promise<void>;
-  interrupt: () => void;
 };
 type BuddyBackgroundTemplateRunExecution = {
   triggeredRun: BuddyVirtualOperationTriggeredRun;
@@ -554,9 +547,19 @@ const virtualCursorRotateDurationMs = ref(BUDDY_VIRTUAL_CURSOR_ROTATE_TRANSITION
 const virtualCursorDetached = ref(false);
 const virtualCursorDragging = ref(false);
 const virtualCursorIdleActionMode = ref<VirtualCursorIdleActionMode>("none");
-const virtualOperationStatus = ref<BuddyVirtualOperationStatus | null>(null);
-const activeVirtualOperationToken = shallowRef<BuddyVirtualOperationToken | null>(null);
-const isVirtualOperationRunning = computed(() => Boolean(activeVirtualOperationToken.value));
+const {
+  activeVirtualOperationToken,
+  beginBackgroundVirtualOperation: beginBackgroundVirtualOperationLifecycle,
+  beginVirtualOperation: beginVirtualOperationLifecycle,
+  buildVirtualOperationRetryRecord,
+  finishVirtualOperation,
+  interruptVirtualOperation: interruptVirtualOperationLifecycle,
+  isVirtualOperationInterrupted,
+  isVirtualOperationRunning,
+  recordVirtualOperationRetry,
+  virtualOperationStatus,
+  waitForVirtualOperation,
+} = useBuddyVirtualOperationLifecycle();
 const isPanelOpen = ref(false);
 const draft = ref("");
 const avatarHopCycle = ref(0);
@@ -617,7 +620,6 @@ let virtualCursorDrag: {
   startY: number;
   startPosition: BuddyPosition;
 } | null = null;
-let virtualOperationTokenId = 0;
 let suppressNextClick = false;
 let eventSource: EventSource | null = null;
 let activeAbortController: AbortController | null = null;
@@ -2176,7 +2178,9 @@ async function executeVirtualOperationRequest(request: BuddyVirtualOperationRequ
         }
         status = completedTriggeredRunDetail?.status === "failed" ? "failed" : "succeeded";
       } finally {
-        finishVirtualOperation(token);
+        if (finishVirtualOperation(token)) {
+          virtualCursorDragging.value = false;
+        }
       }
     } else {
       buddyMascotDebugStore.beginVirtualOperationRunAttribution(operationPlan);
@@ -2252,7 +2256,9 @@ async function executeVirtualOperationCommands(operationPlan: BuddyVirtualOperat
       retryChain: [...token.retryChain],
     };
   } finally {
-    finishVirtualOperation(token);
+    if (finishVirtualOperation(token)) {
+      virtualCursorDragging.value = false;
+    }
   }
 }
 
@@ -2373,47 +2379,12 @@ function templateMatchesVirtualRunTarget(template: TemplateRecord, expectedTexts
 }
 
 function beginVirtualOperation(): BuddyVirtualOperationToken {
-  activeVirtualOperationToken.value?.interrupt();
-  const token = createBuddyVirtualOperationToken();
-  activeVirtualOperationToken.value = token;
-  virtualOperationStatus.value = {
-    label: t("buddy.virtualOperation.running"),
-    tone: "active",
-  };
-  return token;
+  return beginVirtualOperationLifecycle(t("buddy.virtualOperation.running"));
 }
 
 function beginBackgroundVirtualOperation(): BuddyVirtualOperationToken {
   stopBuddyIdleAnimation();
-  activeVirtualOperationToken.value?.interrupt();
-  const token = createBuddyVirtualOperationToken();
-  activeVirtualOperationToken.value = token;
-  virtualOperationStatus.value = {
-    label: t("buddy.virtualOperation.backgroundRunning"),
-    tone: "active",
-  };
-  return token;
-}
-
-function createBuddyVirtualOperationToken(): BuddyVirtualOperationToken {
-  let resolveInterrupt: () => void = () => undefined;
-  const interruptPromise = new Promise<void>((resolve) => {
-    resolveInterrupt = resolve;
-  });
-  const token: BuddyVirtualOperationToken = {
-    id: ++virtualOperationTokenId,
-    interrupted: false,
-    retryChain: [],
-    interruptPromise,
-    interrupt: () => {
-      if (token.interrupted) {
-        return;
-      }
-      token.interrupted = true;
-      resolveInterrupt();
-    },
-  };
-  return token;
+  return beginBackgroundVirtualOperationLifecycle(t("buddy.virtualOperation.backgroundRunning"));
 }
 
 function interruptVirtualOperation() {
@@ -2424,16 +2395,9 @@ function interruptVirtualOperation() {
   if (!action.interruptOperation) {
     return;
   }
-  const token = activeVirtualOperationToken.value;
-  if (!token) {
-    return;
+  if (interruptVirtualOperationLifecycle(t("buddy.virtualOperation.stopping"))) {
+    virtualCursorDragging.value = false;
   }
-  token.interrupt();
-  virtualCursorDragging.value = false;
-  virtualOperationStatus.value = {
-    label: t("buddy.virtualOperation.stopping"),
-    tone: "stopping",
-  };
 }
 
 async function waitForVirtualOperationTriggeredRun(
@@ -2486,19 +2450,6 @@ function hasRunActiveGraphOperation(operationPlan: BuddyVirtualOperationPlan) {
   return operationPlan.operations.some(
     (operation) => operation.kind === "run_template" || ("targetId" in operation && operation.targetId === "editor.action.runActiveGraph"),
   );
-}
-
-function finishVirtualOperation(token: BuddyVirtualOperationToken) {
-  if (activeVirtualOperationToken.value !== token) {
-    return;
-  }
-  activeVirtualOperationToken.value = null;
-  virtualOperationStatus.value = null;
-  virtualCursorDragging.value = false;
-}
-
-function isVirtualOperationInterrupted(token: BuddyVirtualOperationToken | null) {
-  return !token || token.interrupted || activeVirtualOperationToken.value !== token;
 }
 
 async function executeBuddyVirtualOperationCommand(
@@ -3080,29 +3031,6 @@ async function clickVirtualOperationTargetWithRetry(targetId: string, token: Bud
   await waitForVirtualOperation(BUDDY_VIRTUAL_OPERATION_CLICK_SETTLE_MS, token);
 }
 
-function recordVirtualOperationRetry(token: BuddyVirtualOperationToken | null, record: PageOperationRetryRecord) {
-  if (!token) {
-    return;
-  }
-  token.retryChain.push(record);
-}
-
-function buildVirtualOperationRetryRecord(
-  kind: PageOperationRetryKind,
-  targetId: string,
-  attempts: number,
-  status: PageOperationRetryRecord["status"],
-  startedAt: number,
-): PageOperationRetryRecord {
-  return {
-    kind,
-    target_id: targetId,
-    attempts: Math.max(1, attempts),
-    status,
-    elapsed_ms: Math.max(0, Date.now() - startedAt),
-  };
-}
-
 async function waitForVirtualOperationAffordance(targetId: string, token: BuddyVirtualOperationToken | null) {
   const startedAt = Date.now();
   const deadline = Date.now() + BUDDY_VIRTUAL_OPERATION_TARGET_WAIT_MS;
@@ -3264,71 +3192,6 @@ async function waitForRoutePath(expectedPath: string, token: BuddyVirtualOperati
   return matched;
 }
 
-function resolveTemplateRunTargetAffordance(operation: Extract<BuddyVirtualOperation, { kind: "run_template" }>) {
-  const exactTargetIds = [
-    operation.targetId,
-    operation.templateId ? `library.template.${operation.templateId}.open` : "",
-  ].filter(Boolean);
-  for (const targetId of exactTargetIds) {
-    const affordance = resolveVirtualOperationAffordance(targetId);
-    if (affordance) {
-      return affordance;
-    }
-  }
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const candidates = Array.from(
-    document.querySelectorAll<HTMLElement>('[data-virtual-affordance-id^="library.template."][data-virtual-affordance-id$=".open"]'),
-  ).filter(isVisibleVirtualOperationElement);
-  if (candidates.length === 0) {
-    return null;
-  }
-  const expectedTexts = [operation.templateId, operation.templateName, operation.searchText]
-    .map(normalizeTemplateRunMatchText)
-    .filter(Boolean);
-  if (expectedTexts.length === 0) {
-    return { element: candidates[0]! };
-  }
-  for (const element of candidates) {
-    const haystack = normalizeTemplateRunMatchText(
-      `${element.dataset.virtualAffordanceId ?? ""} ${element.dataset.virtualAffordanceLabel ?? ""} ${element.textContent ?? ""}`,
-    );
-    if (expectedTexts.some((text) => haystack.includes(text))) {
-      return { element };
-    }
-  }
-  return null;
-}
-
-function resolveTemplateRunInputTextInput() {
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const candidates = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      '[data-virtual-affordance-id^="editor.canvas.node."][data-virtual-affordance-id$=".input.value"]',
-    ),
-  ).filter(isVisibleVirtualOperationElement);
-  for (const element of candidates) {
-    const input = resolveVirtualOperationTextInputElement(element);
-    if (input) {
-      return input;
-    }
-  }
-  return null;
-}
-
-function routeMatchesVirtualOperationTargetPath(currentPath: string, expectedPath: string) {
-  const current = currentPath.split("?", 1)[0]?.split("#", 1)[0] || "/";
-  const expected = expectedPath.split("?", 1)[0]?.split("#", 1)[0] || "/";
-  return current === expected || current.startsWith(`${expected}/`);
-}
-
-function normalizeTemplateRunMatchText(value: unknown) {
-  return String(value ?? "").trim().toLowerCase();
-}
-
 async function moveVirtualCursorToElement(element: HTMLElement) {
   const cursorPosition = resolveVirtualCursorPositionForElement(element);
   const flightWaitMs = moveVirtualCursorToWithArmedTransition(cursorPosition);
@@ -3449,33 +3312,6 @@ async function typeVirtualText(element: HTMLInputElement | HTMLTextAreaElement, 
 
 function normalizeVirtualText(value: unknown) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim();
-}
-
-function waitForVirtualOperation(timeoutMs: number, token: BuddyVirtualOperationToken | null = activeVirtualOperationToken.value) {
-  return new Promise<void>((resolve) => {
-    if (typeof window === "undefined") {
-      resolve();
-      return;
-    }
-    if (token?.interrupted) {
-      resolve();
-      return;
-    }
-    let settled = false;
-    let timeoutId: number | null = null;
-    const finishWait = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeoutId !== null) {
-        window.clearTimeout(timeoutId);
-      }
-      resolve();
-    };
-    timeoutId = window.setTimeout(finishWait, Math.max(0, Math.round(timeoutMs)));
-    token?.interruptPromise.then(finishWait);
-  });
 }
 
 function clampNumber(value: number, min: number, max: number) {
