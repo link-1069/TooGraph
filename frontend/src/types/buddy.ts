@@ -42,7 +42,7 @@ export type BuddyMemoryReviewInputSource =
   | "request_understanding"
   | "capability_result"
   | "capability_review"
-  | "final_reply";
+  | "public_response";
 
 export type BuddyMemoryReviewTemplateBinding = {
   version?: number;

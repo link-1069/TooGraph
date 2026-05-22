@@ -76,6 +76,53 @@ test("buildAnchorModel keeps managed tool input anchor ids stable when the bound
   assert.equal(connectedAnchor?.stateKey, "uploaded_video");
 });
 
+test("buildAnchorModel keeps managed action input anchor ids stable when the bound state changes", () => {
+  const slotNode: GraphNode = {
+    kind: "agent",
+    name: "capability_selector",
+    description: "Pick a capability.",
+    ui: { position: { x: 520, y: 220 } },
+    reads: [
+      {
+        state: "action_requirement_slot",
+        required: true,
+        binding: {
+          kind: "action_input",
+          actionKey: "toograph_capability_selector",
+          fieldKey: "requirement",
+          managed: true,
+        },
+      },
+    ],
+    writes: [],
+    config: {
+      actionKey: "toograph_capability_selector",
+      taskInstruction: "Choose a capability.",
+      modelSource: "global",
+      model: "",
+      thinkingMode: "high",
+      temperature: 0.2,
+    },
+  };
+  const connectedNode: GraphNode = {
+    ...slotNode,
+    reads: [
+      {
+        ...slotNode.reads[0],
+        state: "requirement",
+      },
+    ],
+  };
+
+  const slotAnchor = buildAnchorModel("capability_selector", slotNode).stateInputs[0];
+  const connectedAnchor = buildAnchorModel("capability_selector", connectedNode).stateInputs[0];
+
+  assert.equal(slotAnchor?.id, "state-in:action_input_toograph_capability_selector_requirement");
+  assert.equal(connectedAnchor?.id, slotAnchor?.id);
+  assert.equal(slotAnchor?.stateKey, "action_requirement_slot");
+  assert.equal(connectedAnchor?.stateKey, "requirement");
+});
+
 test("buildAnchorModel creates route outputs for condition nodes", () => {
   const node: GraphNode = {
     kind: "condition",

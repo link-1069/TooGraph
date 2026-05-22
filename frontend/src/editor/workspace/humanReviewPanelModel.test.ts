@@ -507,7 +507,7 @@ test("buildHumanReviewPanelModel renders a dynamic subgraph breakpoint from the 
         inner_node_name: "Inner Agent",
         subgraph_path: ["dynamic_executor"],
         state_values: {
-          final_reply: "dynamic pause input",
+          public_response: "dynamic pause input",
           approval_note: "",
         },
         node_status_map: {
@@ -526,11 +526,11 @@ test("buildHumanReviewPanelModel renders a dynamic subgraph breakpoint from the 
               inputs: {},
               outputs: {},
               family: "agent",
-              state_reads: [{ state_key: "final_reply", input_key: "final_reply", value: "dynamic pause input" }],
+              state_reads: [{ state_key: "public_response", input_key: "public_response", value: "dynamic pause input" }],
               state_writes: [
                 {
-                  state_key: "final_reply",
-                  output_key: "final_reply",
+                  state_key: "public_response",
+                  output_key: "public_response",
                   mode: "replace",
                   value: "dynamic pause input",
                   changed: false,
@@ -545,8 +545,8 @@ test("buildHumanReviewPanelModel renders a dynamic subgraph breakpoint from the 
           graph_id: "dynamic_subgraph_dynamic_breakpoint_subgraph",
           name: "Dynamic Breakpoint Subgraph",
           state_schema: {
-            final_reply: {
-              name: "Final Reply",
+            public_response: {
+              name: "Public Response",
               description: "The dynamic subgraph output",
               type: "markdown",
               value: "",
@@ -566,8 +566,8 @@ test("buildHumanReviewPanelModel renders a dynamic subgraph breakpoint from the 
               name: "Inner Agent",
               description: "",
               ui: { position: { x: 0, y: 0 } },
-              reads: [{ state: "final_reply", required: true }],
-              writes: [{ state: "final_reply", mode: "replace" }],
+              reads: [{ state: "public_response", required: true }],
+              writes: [{ state: "public_response", mode: "replace" }],
               config: { actionKey: "", taskInstruction: "", modelSource: "global", model: "", thinkingMode: "on", temperature: 0.2 },
             },
             inner_output: {
@@ -576,7 +576,7 @@ test("buildHumanReviewPanelModel renders a dynamic subgraph breakpoint from the 
               description: "",
               ui: { position: { x: 240, y: 0 } },
               reads: [
-                { state: "final_reply", required: true },
+                { state: "public_response", required: true },
                 { state: "approval_note", required: true },
               ],
               writes: [],
@@ -594,7 +594,7 @@ test("buildHumanReviewPanelModel renders a dynamic subgraph breakpoint from the 
   const panel = buildHumanReviewPanelModel(run, document);
 
   assert.deepEqual(panel.scopePath, ["Dynamic Breakpoint Subgraph", "Inner Agent"]);
-  assert.deepEqual(panel.producedRows.map((row) => row.key), ["final_reply"]);
+  assert.deepEqual(panel.producedRows.map((row) => row.key), ["public_response"]);
   assert.deepEqual(panel.requiredNow.map((row) => row.key), ["approval_note"]);
 });
 
@@ -604,7 +604,7 @@ test("buildHumanReviewPanelModel restores buddy clarification pause from run met
     name: "Buddy Loop",
     state_schema: {
       request_understanding: { name: "Request Understanding", description: "", type: "json", value: {}, color: "#16a34a" },
-      final_reply: { name: "Final Reply", description: "", type: "markdown", value: "", color: "#16a34a" },
+      public_response: { name: "Public Response", description: "", type: "markdown", value: "", color: "#16a34a" },
     },
     nodes: {
       intake_request: {

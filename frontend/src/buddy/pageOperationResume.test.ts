@@ -130,9 +130,9 @@ test("buildPageOperationTargetRunValidation summarizes terminal run outputs, war
     output_previews: [
       {
         node_id: "output_final",
-        label: "Final Reply",
+        label: "Public Response",
         source_kind: "state",
-        source_key: "final_reply",
+        source_key: "public_response",
         display_mode: "markdown",
         persist_enabled: false,
         persist_format: "md",
@@ -153,16 +153,16 @@ test("buildPageOperationTargetRunValidation summarizes terminal run outputs, war
       exported_outputs: [
         {
           node_id: "output_final",
-          label: "Final Reply",
+          label: "Public Response",
           source_kind: "state",
-          source_key: "final_reply",
+          source_key: "public_response",
           display_mode: "markdown",
           persist_enabled: true,
           persist_format: "md",
           value: "# Final answer\n\nThis is the long answer body.",
           saved_file: {
             node_id: "output_final",
-            source_key: "final_reply",
+            source_key: "public_response",
             path: "runs/run_search/final.md",
             format: "md",
             file_name: "final.md",
@@ -197,8 +197,8 @@ test("buildPageOperationTargetRunValidation summarizes terminal run outputs, war
     root_outputs: [
       {
         node_id: "output_final",
-        source_key: "final_reply",
-        label: "Final Reply",
+        source_key: "public_response",
+        label: "Public Response",
         display_mode: "markdown",
         persist_enabled: false,
         persist_format: "md",
@@ -238,12 +238,12 @@ test("buildPageOperationTargetRunValidation summarizes terminal run outputs, war
     ],
     artifact_refs: [
       {
-        title: "Final Reply",
+        title: "Public Response",
         artifact_kind: "saved_output",
         path: "runs/run_search/final.md",
         local_path: null,
         file_name: "final.md",
-        source_key: "final_reply",
+        source_key: "public_response",
         node_id: "output_final",
         format: "md",
         content_type: null,
@@ -265,9 +265,9 @@ test("buildPageOperationTargetRunValidation falls back to artifact output previe
       output_previews: [
         {
           node_id: "output_final",
-          label: "Final Reply",
+          label: "Public Response",
           source_kind: "state",
-          source_key: "final_reply",
+          source_key: "public_response",
           display_mode: "markdown",
           persist_enabled: false,
           persist_format: "md",
@@ -278,7 +278,7 @@ test("buildPageOperationTargetRunValidation falls back to artifact output previe
   } as RunDetail);
 
   assert.equal(validation?.root_outputs.length, 1);
-  assert.equal(validation?.root_outputs[0]?.source_key, "final_reply");
+  assert.equal(validation?.root_outputs[0]?.source_key, "public_response");
   assert.equal(validation?.root_outputs[0]?.value_preview, "Artifact output answer.");
 });
 
@@ -504,7 +504,7 @@ test("buildPageOperationResult records compact triggered run outputs in the repo
       root_outputs: [
         {
           node_id: "output_final",
-          source_key: "final_reply",
+          source_key: "public_response",
           label: "最终回复",
           display_mode: "markdown",
           persist_enabled: false,
@@ -527,7 +527,7 @@ test("buildPageOperationResult records compact triggered run outputs in the repo
   assert.equal(result.operation_report.triggered_run_result_summary, "已拿到《鸣潮》最新资讯摘要。");
   assert.equal(result.operation_report.triggered_run_final_result, "# 《鸣潮》最新资讯汇总\n\n完整结果正文。");
   assert.deepEqual(result.operation_report.artifact_refs, artifactRefs);
-  assert.equal(result.operation_report.target_run_validation?.root_outputs[0]?.source_key, "final_reply");
+  assert.equal(result.operation_report.target_run_validation?.root_outputs[0]?.source_key, "public_response");
   assert.equal("page_snapshot_after" in result.operation_report, false);
 });
 

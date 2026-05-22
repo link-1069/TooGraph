@@ -192,7 +192,7 @@ function resolveResultPackageDisplayMode(text: string): OutputPreviewContentKind
   if (pages.length === 0) {
     return null;
   }
-  return pages.length === 1 ? pages[0].kind : "package";
+  return "package";
 }
 
 function resolveResultPackagePreviewContent(text: string): OutputPreviewContent | null {
@@ -203,16 +203,6 @@ function resolveResultPackagePreviewContent(text: string): OutputPreviewContent 
   const pages = buildResultPackagePages(packageValue);
   if (pages.length === 0) {
     return null;
-  }
-  if (pages.length === 1) {
-    const page = pages[0];
-    return {
-      kind: page.kind,
-      text: page.text,
-      html: page.html,
-      isEmpty: page.isEmpty,
-      documentRefs: page.documentRefs,
-    };
   }
   return {
     kind: "package",

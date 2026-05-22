@@ -14,7 +14,7 @@ const BUDDY_MEMORY_REVIEW_REQUIRED_INPUT_SOURCES = new Set<BuddyMemoryReviewInpu
   "source_run_id",
   "current_session_id",
   "user_message",
-  "final_reply",
+  "public_response",
   "buddy_home_context",
 ]);
 
@@ -92,7 +92,7 @@ export const BUDDY_MEMORY_REVIEW_INPUT_SOURCE_OPTIONS: BuddyMemoryReviewInputSou
   { value: "source_run_id", labelKey: "buddyPage.binding.memoryReviewSources.sourceRunId" },
   { value: "current_session_id", labelKey: "buddyPage.binding.memoryReviewSources.currentSessionId" },
   { value: "user_message", labelKey: "buddyPage.binding.memoryReviewSources.userMessage" },
-  { value: "final_reply", labelKey: "buddyPage.binding.memoryReviewSources.finalReply" },
+  { value: "public_response", labelKey: "buddyPage.binding.memoryReviewSources.publicResponse" },
   { value: "buddy_home_context", labelKey: "buddyPage.binding.memoryReviewSources.buddyHomeContext" },
   { value: "conversation_history", labelKey: "buddyPage.binding.sources.conversationHistory" },
   { value: "page_context", labelKey: "buddyPage.binding.sources.pageContext" },
@@ -128,7 +128,7 @@ export function buildDefaultBuddyMemoryReviewTemplateBinding(): BuddyMemoryRevie
       input_request_understanding: "request_understanding",
       input_capability_result: "capability_result",
       input_capability_review: "capability_review",
-      input_final_reply: "final_reply",
+      input_public_response: "public_response",
     },
   };
 }
@@ -424,7 +424,7 @@ export function isBuddyMemoryReviewInputSource(value: unknown): value is BuddyMe
     || value === "request_understanding"
     || value === "capability_result"
     || value === "capability_review"
-    || value === "final_reply";
+    || value === "public_response";
 }
 
 export function isBuddyMemoryReviewTemplateRecord(template: TemplateRecord | null | undefined): boolean {

@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   buildBuddyPublicOutputBindings,
   createBuddyPublicOutputRuntimeState,
+  listBuddyPublicOutputMessageIdsForOutputNode,
+  listVisibleBuddyPublicOutputNodeIds,
   reduceBuddyPublicOutputEvent,
   resolveBuddyPublicOutputMessageKind,
 } from "./buddyPublicOutput.ts";
@@ -131,6 +133,74 @@ test("reduceBuddyPublicOutputEvent starts output timing from upstream node start
   assert.equal(state.messagesByOutputNodeId.output_answer.content, "你好");
   assert.equal(state.messagesByOutputNodeId.output_answer.durationMs, 900);
   assert.equal(state.messagesByOutputNodeId.output_answer.status, "completed");
+});
+
+test("reduceBuddyPublicOutputEvent splits completed result packages into independent output messages", () => {
+  const bindings = [
+    {
+      outputNodeId: "output_capability",
+      outputNodeName: "Capability Result",
+      stateKey: "capability_result",
+      stateName: "Capability Result",
+      stateType: "result_package",
+      displayMode: "auto",
+      upstreamNodeIds: ["dynamic_capability"],
+    },
+  ];
+  const packageValue = {
+    kind: "result_package",
+    sourceType: "subgraph",
+    sourceKey: "advanced_web_research_loop",
+    outputs: {
+      summary: {
+        name: "整理结果",
+        description: "面向用户展示的整理结果。",
+        type: "markdown",
+        value: "# Done",
+      },
+      source_documents: {
+        name: "来源文档",
+        description: "联网搜索下载到本地的原文。",
+        type: "file",
+        value: [{ title: "Article One", local_path: "runs/run_1/doc.md" }],
+      },
+    },
+  };
+  let state = createBuddyPublicOutputRuntimeState();
+
+  state = reduceBuddyPublicOutputEvent(state, bindings, "node.started", { node_id: "dynamic_capability" }, 1000);
+  state = reduceBuddyPublicOutputEvent(
+    state,
+    bindings,
+    "state.updated",
+    { node_id: "dynamic_capability", state_key: "capability_result", value: packageValue },
+    2500,
+  );
+
+  assert.deepEqual(state.order, ["output_capability:summary", "output_capability:source_documents"]);
+  assert.deepEqual(listBuddyPublicOutputMessageIdsForOutputNode(state, "output_capability"), state.order);
+  assert.deepEqual(listVisibleBuddyPublicOutputNodeIds(state), ["output_capability"]);
+
+  const summary = state.messagesByOutputNodeId["output_capability:summary"];
+  assert.equal(summary.sourceOutputNodeId, "output_capability");
+  assert.equal(summary.outputNodeName, "Capability Result");
+  assert.equal(summary.stateKey, "capability_result.summary");
+  assert.equal(summary.stateName, "整理结果");
+  assert.equal(summary.stateType, "markdown");
+  assert.equal(summary.displayMode, "markdown");
+  assert.equal(summary.kind, "text");
+  assert.equal(summary.content, "# Done");
+  assert.equal(summary.durationMs, 1500);
+  assert.equal(summary.status, "completed");
+
+  const sources = state.messagesByOutputNodeId["output_capability:source_documents"];
+  assert.equal(sources.sourceOutputNodeId, "output_capability");
+  assert.equal(sources.stateKey, "capability_result.source_documents");
+  assert.equal(sources.stateName, "来源文档");
+  assert.equal(sources.stateType, "file");
+  assert.equal(sources.displayMode, "documents");
+  assert.equal(sources.kind, "card");
+  assert.deepEqual(sources.content, [{ title: "Article One", local_path: "runs/run_1/doc.md" }]);
 });
 
 test("reduceBuddyPublicOutputEvent uses run event timestamps instead of local receive time", () => {

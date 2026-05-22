@@ -2,6 +2,7 @@ import type { BuddyOutputTraceRecord, BuddyOutputTraceSegment } from "./buddyOut
 
 export type BuddyPublicOutputMetadata = {
   outputNodeId: string;
+  sourceOutputNodeId?: string;
   stateKey: string;
   stateName: string;
   stateType: string;
@@ -57,6 +58,7 @@ function isBuddyPublicOutputMetadata(value: unknown): value is BuddyPublicOutput
   }
   return (
     typeof value.outputNodeId === "string" &&
+    (value.sourceOutputNodeId === undefined || typeof value.sourceOutputNodeId === "string") &&
     typeof value.stateKey === "string" &&
     typeof value.stateName === "string" &&
     typeof value.stateType === "string" &&

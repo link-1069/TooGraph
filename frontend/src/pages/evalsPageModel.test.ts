@@ -88,7 +88,7 @@ test("eval page model builds case cards with check and artifact counts", () => {
           case_name: "Case One",
           status: "passed",
           graph_run_id: "run_1",
-          final_output: { final_reply: "ok" },
+          final_output: { public_response: "ok" },
           artifacts: { "final.md": { path: "final.md" } },
           check_results: [{ status: "passed", kind: "schema" }, { status: "passed", kind: "artifact" }],
         },
@@ -101,7 +101,7 @@ test("eval page model builds case cards with check and artifact counts", () => {
   assert.equal(cards[0].graphRunId, "run_1");
   assert.equal(cards[0].checkCount, 2);
   assert.equal(cards[0].artifactCount, 1);
-  assert.equal(cards[0].finalOutputPreview, '{"final_reply":"ok"}');
+  assert.equal(cards[0].finalOutputPreview, '{"public_response":"ok"}');
 });
 
 test("eval page model builds compact expected and actual comparison previews", () => {
@@ -110,7 +110,7 @@ test("eval page model builds compact expected and actual comparison previews", (
       {
         case_id: "case_one",
         name: "Case One",
-        expected: { final_reply: "must cite policy", citations: 1 },
+        expected: { public_response: "must cite policy", citations: 1 },
         checks: [{ kind: "rule" }],
       },
     ] as never,
@@ -120,7 +120,7 @@ test("eval page model builds compact expected and actual comparison previews", (
           case_id: "case_one",
           case_name: "Case One",
           status: "failed",
-          final_output: { final_reply: "no citation" },
+          final_output: { public_response: "no citation" },
           check_results: [
             {
               status: "failed",
@@ -136,8 +136,8 @@ test("eval page model builds compact expected and actual comparison previews", (
     }),
   );
 
-  assert.equal(cards[0].expectedPreview, '{"final_reply":"must cite policy","citations":1}');
-  assert.equal(cards[0].actualPreview, '{"final_reply":"no citation"}');
+  assert.equal(cards[0].expectedPreview, '{"public_response":"must cite policy","citations":1}');
+  assert.equal(cards[0].actualPreview, '{"public_response":"no citation"}');
   assert.deepEqual(cards[0].checkComparisons, [
     {
       key: "case_one-0",

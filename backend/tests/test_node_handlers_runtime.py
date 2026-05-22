@@ -1082,9 +1082,9 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
                 "source_name": "Advanced Web Research",
                 "status": "succeeded",
                 "child_run_id": "run_child_research",
-                "outputs": {"final_reply": "最终答案"},
+                "outputs": {"public_response": "最终答案"},
                 "output_definitions": {
-                    "final_reply": {
+                    "public_response": {
                         "name": "最终回复",
                         "description": "面向用户展示的最终整理结果。",
                         "type": "markdown",
@@ -1150,7 +1150,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
                     "triggered_run_id": "run_child_research",
                     "inputs": {"user_question": "总结今天 AI 新闻"},
                     "outputs": {
-                        "final_reply": {
+                        "public_response": {
                             "name": "最终回复",
                             "description": "面向用户展示的最终整理结果。",
                             "type": "markdown",
@@ -1212,7 +1212,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             execute_subgraph_capability_func=lambda **kwargs: {
                 "source_name": "Advanced Web Research",
                 "status": "succeeded",
-                "outputs": {"final_reply": "最终答案"},
+                "outputs": {"public_response": "最终答案"},
                 "output_definitions": {},
                 "duration_ms": 12,
                 "error": "",
@@ -1239,7 +1239,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         self.assertEqual(recorded_events[0]["duration_ms"], 12)
         self.assertEqual(recorded_events[0]["detail"]["capability_key"], "advanced_web_research_loop")
         self.assertEqual(recorded_events[0]["detail"]["input_keys"], ["user_question"])
-        self.assertEqual(recorded_events[0]["detail"]["output_keys"], ["final_reply"])
+        self.assertEqual(recorded_events[0]["detail"]["output_keys"], ["public_response"])
 
     def test_execute_agent_node_infers_action_output_mapping_from_state_outputs(self) -> None:
         state_schema = {

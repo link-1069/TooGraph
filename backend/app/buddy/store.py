@@ -63,13 +63,13 @@ ALLOWED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES = {
     "request_understanding",
     "capability_result",
     "capability_review",
-    "final_reply",
+    "public_response",
 }
 REQUIRED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES = {
     "source_run_id",
     "current_session_id",
     "user_message",
-    "final_reply",
+    "public_response",
     "buddy_home_context",
 }
 DEFAULT_RUN_TEMPLATE_BINDING = {
@@ -95,7 +95,7 @@ DEFAULT_MEMORY_REVIEW_TEMPLATE_BINDING = {
         "input_request_understanding": "request_understanding",
         "input_capability_result": "capability_result",
         "input_capability_review": "capability_review",
-        "input_final_reply": "final_reply",
+        "input_public_response": "public_response",
     },
 }
 

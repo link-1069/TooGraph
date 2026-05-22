@@ -167,7 +167,7 @@ function createAgenticTemplate(): TemplateRecord {
       state_16: { name: "approval_prompt", description: "", type: "markdown", value: "", color: "#ea580c" },
       state_25: { name: "direct_reply", description: "", type: "markdown", value: "", color: "#d97706" },
       state_26: { name: "denied_reply", description: "", type: "markdown", value: "", color: "#a16207" },
-      state_27: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      state_27: { name: "public_response", description: "", type: "markdown", value: "", color: "#4f46e5" },
     },
     nodes: {
       input_user_message: {
@@ -214,9 +214,9 @@ function createAgenticTemplate(): TemplateRecord {
           temperature: 0.2,
         },
       },
-      output_final_reply: {
+      output_public_response: {
         kind: "output",
-        name: "output_final_reply",
+        name: "output_public_response",
         description: "",
         ui: { position: { x: 1440, y: 80 }, collapsed: false },
         reads: [{ state: "state_27", required: false }],
@@ -254,7 +254,7 @@ function createReviewTemplate(): TemplateRecord {
       request_understanding: { name: "request_understanding", description: "", type: "json", value: {}, color: "#16a34a" },
       capability_result: { name: "capability_result", description: "", type: "result_package", value: {}, color: "#0284c7" },
       capability_review: { name: "capability_review", description: "", type: "json", value: {}, color: "#0f766e" },
-      final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#16a34a" },
+      public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#16a34a" },
       autonomous_review: { name: "autonomous_review", description: "", type: "json", value: {}, color: "#9333ea" },
       improvement_candidates: { name: "improvement_candidates", description: "", type: "json", value: [], color: "#7c3aed" },
       memory_update_plan: { name: "memory_update_plan", description: "", type: "json", value: { has_updates: false, commands: [] }, color: "#22c55e" },
@@ -291,13 +291,13 @@ function createReviewTemplate(): TemplateRecord {
         writes: [{ state: "user_message", mode: "replace" }],
         config: { value: "" },
       },
-      input_final_reply: {
+      input_public_response: {
         kind: "input",
         name: "最终回复",
         description: "",
         ui: { position: { x: 80, y: 280 }, collapsed: false },
         reads: [],
-        writes: [{ state: "final_reply", mode: "replace" }],
+        writes: [{ state: "public_response", mode: "replace" }],
         config: { value: "" },
       },
       input_buddy_context: {
@@ -316,7 +316,7 @@ function createReviewTemplate(): TemplateRecord {
         ui: { position: { x: 640, y: 160 }, collapsed: false },
         reads: [
           { state: "user_message", required: true },
-          { state: "final_reply", required: true },
+          { state: "public_response", required: true },
         ],
         writes: [
           { state: "autonomous_review", mode: "replace" },
@@ -371,7 +371,7 @@ function createReviewTemplate(): TemplateRecord {
     },
     edges: [
       { source: "input_user_message", target: "decide_autonomous_review" },
-      { source: "input_final_reply", target: "decide_autonomous_review" },
+      { source: "input_public_response", target: "decide_autonomous_review" },
     ],
     conditional_edges: [],
     metadata: { internal: true, role: "buddy_autonomous_review" },
@@ -385,7 +385,7 @@ function createMemoryReviewBinding(): BuddyMemoryReviewTemplateBinding {
       input_source_run_id: "source_run_id",
       input_current_session_id: "current_session_id",
       input_user_message: "user_message",
-      input_final_reply: "final_reply",
+      input_public_response: "public_response",
       input_buddy_context: "buddy_home_context",
     },
   };
@@ -399,7 +399,7 @@ function createActivityGraph() {
     buddyMode: "advisory",
   });
   graph.state_schema.state_10 = { name: "request_understanding", description: "", type: "json", value: {}, color: "#16a34a" };
-  graph.state_schema.state_27 = { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" };
+  graph.state_schema.state_27 = { name: "public_response", description: "", type: "markdown", value: "", color: "#4f46e5" };
   graph.nodes.buddy_turn_intake = {
     kind: "subgraph",
     name: "理解请求",
@@ -623,20 +623,20 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
       output_previews: [],
       artifacts: {
         state_values: {
-          final_reply: "你好，我在。",
+          public_response: "你好，我在。",
         },
       },
       state_snapshot: {
         values: {
           user_message: "你好",
-          final_reply: "你好，我在。",
+          public_response: "你好，我在。",
         },
         last_writers: {},
       },
       graph_snapshot: {
         state_schema: {
           user_message: { name: "user_message" },
-          final_reply: { name: "final_reply" },
+          public_response: { name: "public_response" },
         },
       },
     } as RunDetail,
@@ -653,7 +653,7 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
   assert.equal(graph.state_schema.source_run_id.value, "run_visible_1");
   assert.equal(graph.state_schema.current_session_id.value, "session_live_1");
   assert.equal(graph.state_schema.user_message.value, "你好");
-  assert.equal(graph.state_schema.final_reply.value, "你好，我在。");
+  assert.equal(graph.state_schema.public_response.value, "你好，我在。");
   assert.deepEqual(graph.state_schema.buddy_context.value, {
     kind: "local_folder",
     root: "buddy_home",
@@ -670,11 +670,11 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
   assertInputNode(graph.nodes.input_source_run_id);
   assertInputNode(graph.nodes.input_current_session_id);
   assertInputNode(graph.nodes.input_user_message);
-  assertInputNode(graph.nodes.input_final_reply);
+  assertInputNode(graph.nodes.input_public_response);
   assert.equal(graph.nodes.input_source_run_id.config.value, "run_visible_1");
   assert.equal(graph.nodes.input_current_session_id.config.value, "session_live_1");
   assert.equal(graph.nodes.input_user_message.config.value, "你好");
-  assert.equal(graph.nodes.input_final_reply.config.value, "你好，我在。");
+  assert.equal(graph.nodes.input_public_response.config.value, "你好，我在。");
   assertAgentNode(graph.nodes.decide_autonomous_review);
   assert.equal(graph.nodes.decide_autonomous_review.config.modelSource, "override");
   assert.equal(graph.nodes.decide_autonomous_review.config.model, "openai/gpt-4.1");
@@ -869,7 +869,7 @@ test("resolveBuddyReplyFromRunEvent recognizes reply states by graph state name"
     state_schema: {
       user_message: { name: "user_message", description: "", type: "text", value: "", color: "#9a3412" },
       visible_reply: { name: "visible_reply", description: "", type: "markdown", value: "", color: "#0f766e" },
-      final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#4f46e5" },
     },
   };
 
@@ -889,7 +889,7 @@ test("resolveBuddyReplyFromRunEvent recognizes reply states by graph state name"
     resolveBuddyReplyFromRunEvent(
       {
         event: "state.updated",
-        state_key: "final_reply",
+        state_key: "public_response",
         value: "你好，我是 Buddy。",
       },
       graph,
@@ -901,7 +901,7 @@ test("resolveBuddyReplyFromRunEvent recognizes reply states by graph state name"
 test("resolveBuddyReplyFromRunEvent reads completed output values for named reply states", () => {
   const graph = {
     state_schema: {
-      final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#4f46e5" },
     },
   };
 
@@ -909,9 +909,9 @@ test("resolveBuddyReplyFromRunEvent reads completed output values for named repl
     resolveBuddyReplyFromRunEvent(
       {
         event: "node.output.completed",
-        output_keys: ["final_reply"],
+        output_keys: ["public_response"],
         output_values: {
-          final_reply: "已经组织好的回复。",
+          public_response: "已经组织好的回复。",
         },
       },
       graph,
@@ -937,7 +937,7 @@ test("resolveBuddyReplyFromRunEvent does not treat request_understanding as visi
 test("resolveBuddyReplyFromRunEvent streams partial markdown from a structured reply field", () => {
   const graph = {
     state_schema: {
-      final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#4f46e5" },
+      public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#4f46e5" },
     },
   };
 
@@ -945,10 +945,10 @@ test("resolveBuddyReplyFromRunEvent streams partial markdown from a structured r
     resolveBuddyReplyFromRunEvent(
       {
         event: "node.output.delta",
-        node_id: "draft_final_reply",
-        output_keys: ["final_reply"],
-        stream_state_keys: ["final_reply"],
-        text: '{"final_reply":"# 你好\\n我正在',
+        node_id: "draft_public_response",
+        output_keys: ["public_response"],
+        stream_state_keys: ["public_response"],
+        text: '{"public_response":"# 你好\\n我正在',
       },
       graph,
     ),
@@ -1109,9 +1109,9 @@ test("resolveBuddyRunTraceFromRunEvent hides subgraph plumbing from buddy progre
     resolveBuddyRunTraceFromRunEvent(
       "node.completed",
       {
-        node_id: "output_final_reply",
+        node_id: "output_public_response",
         node_type: "output",
-        subgraph_node_id: "buddy_final_reply",
+        subgraph_node_id: "buddy_public_response",
         status: "success",
       },
       graph,

@@ -100,7 +100,7 @@
       "color": "#4f46e5",
       "binding": null
     },
-    "final_reply": {
+    "public_response": {
       "name": "最终回复",
       "description": "面向用户展示的最终整理结果。",
       "type": "markdown",
@@ -451,7 +451,7 @@
       ],
       "writes": [
         {
-          "state": "final_reply",
+          "state": "public_response",
           "mode": "replace"
         }
       ],
@@ -483,7 +483,7 @@
       },
       "reads": [
         {
-          "state": "final_reply",
+          "state": "public_response",
           "required": true
         }
       ],
@@ -539,7 +539,7 @@
     "graphProtocol": "node_system",
     "outputContract": [
       {
-        "key": "final_reply",
+        "key": "public_response",
         "name": "最终回复",
         "description": "可直接透传给用户的研究结论 Markdown。",
         "type": "markdown",

@@ -288,12 +288,12 @@ test("resolveOutputPreviewContent treats a single local path as a document refer
   assert.match(preview.text, /1 local source document/);
 });
 
-test("resolveOutputPreviewContent unwraps single-output result packages for direct display", () => {
+test("resolveOutputPreviewContent paginates single-output result packages as one package page", () => {
   const preview = resolveOutputPreviewContent(
     JSON.stringify({
       kind: "result_package",
       outputs: {
-        final_reply: {
+        public_response: {
           name: "最终回复",
           description: "面向用户展示的最终整理结果。",
           type: "markdown",
@@ -304,10 +304,13 @@ test("resolveOutputPreviewContent unwraps single-output result packages for dire
     "auto",
   );
 
-  assert.equal(preview.kind, "markdown");
-  assert.equal(preview.text, "# Done");
-  assert.match(preview.html, /<h1>Done<\/h1>/);
-  assert.equal(preview.packagePages, undefined);
+  assert.equal(preview.kind, "package");
+  assert.equal(preview.packagePages?.length, 1);
+  assert.equal(preview.packagePages?.[0]?.key, "public_response");
+  assert.equal(preview.packagePages?.[0]?.title, "最终回复");
+  assert.equal(preview.packagePages?.[0]?.kind, "markdown");
+  assert.equal(preview.packagePages?.[0]?.text, "# Done");
+  assert.match(preview.packagePages?.[0]?.html ?? "", /<h1>Done<\/h1>/);
 });
 
 test("resolveOutputPreviewContent paginates multi-output result packages by output field", () => {
@@ -315,7 +318,7 @@ test("resolveOutputPreviewContent paginates multi-output result packages by outp
     JSON.stringify({
       kind: "result_package",
       outputs: {
-        final_reply: {
+        public_response: {
           name: "最终回复",
           description: "面向用户展示的最终整理结果。",
           type: "markdown",
@@ -341,7 +344,7 @@ test("resolveOutputPreviewContent paginates multi-output result packages by outp
 
   assert.equal(preview.kind, "package");
   assert.equal(preview.packagePages?.length, 2);
-  assert.equal(preview.packagePages?.[0]?.key, "final_reply");
+  assert.equal(preview.packagePages?.[0]?.key, "public_response");
   assert.equal(preview.packagePages?.[0]?.title, "最终回复");
   assert.equal(preview.packagePages?.[0]?.kind, "markdown");
   assert.match(preview.packagePages?.[0]?.html ?? "", /<h1>Done<\/h1>/);
@@ -416,6 +419,6 @@ test("resolveOutputPreviewDisplayMode exposes the effective auto-detected format
       }),
       "auto",
     ),
-    "markdown",
+    "package",
   );
 });

@@ -457,7 +457,7 @@ function buildBuddyMemoryReviewRuntimeSourceValues(
     request_understanding: resolveRunStateValueByName(input.mainRun, "request_understanding", {}),
     capability_result: resolveRunStateValueByName(input.mainRun, "capability_result", {}),
     capability_review: resolveRunStateValueByName(input.mainRun, "capability_review", {}),
-    final_reply: resolveRunStateValueByName(input.mainRun, "final_reply", resolveBuddyReplyText(input.mainRun)),
+    public_response: resolveRunStateValueByName(input.mainRun, "public_response", resolveBuddyReplyText(input.mainRun)),
   };
 }
 
@@ -697,8 +697,8 @@ const BUDDY_ACTIVITY_PHASE_BY_NODE_ID: Record<string, string> = {
   review_capability_result: "reviewingCapability",
   continue_capability_loop: "reviewingCapability",
   finalize_capability_cycle: "reviewingCapability",
-  buddy_final_reply: "draftingReply",
-  draft_final_reply: "draftingReply",
+  buddy_public_response: "draftingReply",
+  draft_public_response: "draftingReply",
   decide_autonomous_review: "reviewingMemory",
   prepare_session_recall_request: "reviewingMemory",
   recall_related_sessions: "reviewingMemory",
@@ -779,7 +779,7 @@ function resolveBuddyReplyStateKeys(graphSnapshot: Record<string, unknown> | nul
           [
             "buddy_reply",
             "visible_reply",
-            "final_reply",
+            "public_response",
             "direct_reply",
             "denied_reply",
             "approval_prompt",

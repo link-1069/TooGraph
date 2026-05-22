@@ -91,9 +91,9 @@ def _completed_eval_graph_run() -> dict[str, object]:
         "output_previews": [
             {
                 "node_id": "output_final",
-                "label": "final_reply",
+                "label": "public_response",
                 "source_kind": "state",
-                "source_key": "final_reply",
+                "source_key": "public_response",
                 "value": "结论引用 [1]。",
             },
             {
@@ -107,7 +107,7 @@ def _completed_eval_graph_run() -> dict[str, object]:
         "saved_outputs": [
             {
                 "node_id": "output_final",
-                "source_key": "final_reply",
+                "source_key": "public_response",
                 "path": "backend/data/outputs/run_completed/final.md",
                 "format": "md",
                 "file_name": "final.md",
@@ -117,7 +117,7 @@ def _completed_eval_graph_run() -> dict[str, object]:
             "exported_outputs": [
                 {
                     "node_id": "output_final",
-                    "source_key": "final_reply",
+                    "source_key": "public_response",
                     "value": "结论引用 [1]。",
                     "saved_file": {
                         "path": "backend/data/outputs/run_completed/final.md",
@@ -126,7 +126,7 @@ def _completed_eval_graph_run() -> dict[str, object]:
                     },
                 }
             ],
-            "state_values": {"final_reply": "结论引用 [1]。", "citations": ["kb:1"]},
+            "state_values": {"public_response": "结论引用 [1]。", "citations": ["kb:1"]},
         },
         "node_executions": [],
     }
@@ -234,7 +234,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                     json={
                         "graph_run_id": "old_graph_run",
                         "status": "failed",
-                        "final_output": {"final_reply": "旧输出"},
+                        "final_output": {"public_response": "旧输出"},
                         "artifacts": {"old.md": {"path": "old.md"}},
                         "node_failures": [{"node_id": "agent", "error": "failed"}],
                         "check_results": [{"kind": "rule", "status": "failed", "message": "old"}],
@@ -275,7 +275,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                             {
                                 "kind": "schema",
                                 "target": "final_output",
-                                "required": ["final_reply", "citations"],
+                                "required": ["public_response", "citations"],
                             },
                             {"kind": "artifact", "target": "final.md"},
                             {"kind": "citation", "min_citations": 1},
@@ -294,7 +294,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(collect_response.status_code, 200)
         collected = collect_response.json()
         self.assertEqual(collected["status"], "passed")
-        self.assertEqual(collected["final_output"]["final_reply"], "结论引用 [1]。")
+        self.assertEqual(collected["final_output"]["public_response"], "结论引用 [1]。")
         self.assertEqual(collected["final_output"]["citations"], ["kb:1"])
         self.assertEqual(collected["artifacts"]["final.md"]["path"], "backend/data/outputs/run_completed/final.md")
         self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed"])
@@ -393,13 +393,13 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                     "kind": "schema",
                     "name": "Final output fields",
                     "target": "final_output",
-                    "required": ["final_reply", "citations"],
+                    "required": ["public_response", "citations"],
                 },
                 {"kind": "artifact", "name": "Markdown artifact", "target": "final.md"},
                 {
                     "kind": "rule",
                     "name": "Grounded answer",
-                    "target": "final_reply",
+                    "target": "public_response",
                     "must_include": ["引用"],
                     "forbidden": ["保证通过"],
                 },
@@ -409,12 +409,12 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
 
         results = evaluate_case_checks(
             case,
-            final_output={"final_reply": "已引用 [1] 和 [2]，仍需人工确认。", "citations": ["kb:1", "kb:2"]},
+            final_output={"public_response": "已引用 [1] 和 [2]，仍需人工确认。", "citations": ["kb:1", "kb:2"]},
             artifacts={"final.md": {"path": "backend/data/outputs/run/final.md", "summary": "final answer"}},
         )
 
         self.assertEqual([result["status"] for result in results], ["passed", "passed", "passed", "passed"])
-        self.assertEqual(results[0]["actual"]["present"], ["final_reply", "citations"])
+        self.assertEqual(results[0]["actual"]["present"], ["public_response", "citations"])
         self.assertEqual(results[1]["actual"]["found"], True)
         self.assertEqual(results[2]["actual"]["forbidden_found"], [])
         self.assertEqual(results[3]["actual"]["citation_count"], 2)
@@ -550,7 +550,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                 {
                     "kind": "rule",
                     "name": "No certainty",
-                    "target": "final_reply",
+                    "target": "public_response",
                     "forbidden": ["保证通过"],
                 },
             ],
@@ -558,7 +558,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
 
         results = evaluate_case_checks(
             case,
-            final_output={"final_reply": "这份材料保证通过审批。"},
+            final_output={"public_response": "这份材料保证通过审批。"},
             artifacts={},
         )
 
@@ -581,7 +581,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
 
         results = evaluate_case_checks(
             case,
-            final_output={"final_reply": "Policy answer with [1]."},
+            final_output={"public_response": "Policy answer with [1]."},
             artifacts={},
         )
 
@@ -609,7 +609,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                 {
                     "kind": "llm_judge",
                     "name": "Risk-aware answer judge",
-                    "target": "final_reply",
+                    "target": "public_response",
                     "rubric": "Score whether the answer explains concrete operational risk.",
                     "min_score": 0.75,
                 }
@@ -618,14 +618,14 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
 
         results = evaluate_case_checks(
             case,
-            final_output={"final_reply": "Policy answer with [1]."},
+            final_output={"public_response": "Policy answer with [1]."},
             artifacts={"final.md": {"path": "backend/data/outputs/run/final.md"}},
             judge_runner=fake_judge_runner,
         )
 
         self.assertEqual(seen["case"]["case_id"], "policy_answer")
         self.assertEqual(seen["check"]["name"], "Risk-aware answer judge")
-        self.assertEqual(seen["final_output"], {"final_reply": "Policy answer with [1]."})
+        self.assertEqual(seen["final_output"], {"public_response": "Policy answer with [1]."})
         self.assertEqual(results[0]["kind"], "llm_judge")
         self.assertEqual(results[0]["status"], "failed")
         self.assertEqual(results[0]["score"], 0.4)
@@ -641,7 +641,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         result = run_llm_judge(
             case={"case_id": "policy_answer"},
             check={"kind": "llm_judge", "name": "Policy judge"},
-            final_output={"final_reply": "Answer."},
+            final_output={"public_response": "Answer."},
             artifacts={},
             get_default_text_model_ref_func=lambda **_kwargs: "",
             chat_with_model_ref_with_meta_func=fail_chat,
@@ -673,7 +673,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                 "model_ref": "test/judge-model",
                 "rubric": "The answer must be grounded and useful.",
             },
-            final_output={"final_reply": "Answer with [1]."},
+            final_output={"public_response": "Answer with [1]."},
             artifacts={},
             get_default_text_model_ref_func=lambda **_kwargs: "",
             chat_with_model_ref_with_meta_func=fake_chat,
@@ -709,7 +709,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                     "input_values": {"input_user_message": "Summarize the cited policy."},
                     "expected": {"must_include": ["citation"]},
                     "checks": [
-                        {"kind": "schema", "name": "Final reply schema", "required": ["final_reply"]},
+                        {"kind": "schema", "name": "Final reply schema", "required": ["public_response"]},
                         {"kind": "citation", "name": "Citation present"},
                     ],
                     "metadata": {"priority": "p0"},
@@ -729,7 +729,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                 {
                     "graph_run_id": "run_graph_123",
                     "status": "failed",
-                    "final_output": {"final_reply": "No citation."},
+                    "final_output": {"public_response": "No citation."},
                     "error": "Missing citation.",
                     "artifacts": {"output_path": "backend/data/outputs/run_graph_123/final.md"},
                     "node_failures": [{"node_id": "citation_check", "error": "No citation ids found."}],
@@ -883,7 +883,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
             return {
                 "graph_run_id": case_result["graph_run_id"],
                 "status": "passed",
-                "final_output": {"final_reply": case_result["case_id"]},
+                "final_output": {"public_response": case_result["case_id"]},
                 "artifacts": {},
                 "node_failures": [],
                 "check_results": [],
@@ -942,7 +942,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                                 "kind": "schema",
                                 "name": "Final output fields",
                                 "target": "final_output",
-                                "required": ["final_reply", "citations"],
+                                "required": ["public_response", "citations"],
                             },
                             {"kind": "artifact", "name": "Final artifact", "target": "final.md"},
                             {"kind": "citation", "name": "Citation present", "min_citations": 1},
@@ -957,7 +957,7 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
                     json={
                         "graph_run_id": "run_policy_eval",
                         "final_output": {
-                            "final_reply": "结论引用 [1]，仍需人工确认。",
+                            "public_response": "结论引用 [1]，仍需人工确认。",
                             "citations": ["kb:policy:1"],
                         },
                         "artifacts": {"final.md": {"path": "backend/data/outputs/run_policy_eval/final.md"}},
@@ -1017,11 +1017,11 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
 
                 skipped_response = client.post(
                     f"/api/evals/runs/{eval_run_id}/cases/judge_answer/evaluate",
-                    json={"final_output": {"final_reply": "Grounded answer [1]."}},
+                    json={"final_output": {"public_response": "Grounded answer [1]."}},
                 )
                 judged_response = client.post(
                     f"/api/evals/runs/{eval_run_id}/cases/judge_answer/evaluate",
-                    json={"run_llm_judge": True, "final_output": {"final_reply": "Grounded answer [1]."}},
+                    json={"run_llm_judge": True, "final_output": {"public_response": "Grounded answer [1]."}},
                 )
 
         self.assertEqual(skipped_response.status_code, 200)

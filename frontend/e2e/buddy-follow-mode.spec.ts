@@ -45,17 +45,17 @@ async function seedBuddyTraceSession(request: APIRequestContext, title: string) 
       metadata: {
         kind: "output_trace",
         outputTrace: {
-          segmentId: "boundary:final_reply",
-          boundaryNodeId: "final_reply",
+          segmentId: "boundary:public_response",
+          boundaryNodeId: "public_response",
           boundaryLabel: "Final reply",
-          outputNodeIds: ["final_reply_output"],
+          outputNodeIds: ["public_response_output"],
           status: "completed",
           startedAtMs: now - 2400,
           completedAtMs: now,
           durationMs: 2400,
           records: [
             {
-              recordId: "boundary:final_reply:activity:6:execute_page_operation:1",
+              recordId: "boundary:public_response:activity:6:execute_page_operation:1",
               runtimeKey: "activity:6:execute_page_operation",
               kind: "activity",
               label: "Execute page operation / Virtual template run",

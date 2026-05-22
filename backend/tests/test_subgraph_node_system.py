@@ -84,11 +84,11 @@ def _dynamic_passthrough_template() -> dict:
     return {
         "template_id": "simple_dynamic_subgraph",
         "label": "Simple Dynamic Subgraph",
-        "description": "Returns the public input as the final reply.",
+        "description": "Returns the public input as the public response.",
         "default_graph_name": "Simple Dynamic Subgraph",
         "state_schema": {
-            "final_reply": {
-                "name": "Final Reply",
+            "public_response": {
+                "name": "Public Response",
                 "description": "The final subgraph output.",
                 "type": "markdown",
                 "value": "",
@@ -102,7 +102,7 @@ def _dynamic_passthrough_template() -> dict:
                 "description": "",
                 "ui": {"position": {"x": 0, "y": 0}},
                 "reads": [],
-                "writes": [{"state": "final_reply", "mode": "replace"}],
+                "writes": [{"state": "public_response", "mode": "replace"}],
                 "config": {"value": ""},
             },
             "inner_output": {
@@ -110,7 +110,7 @@ def _dynamic_passthrough_template() -> dict:
                 "name": "Inner Output",
                 "description": "",
                 "ui": {"position": {"x": 240, "y": 0}},
-                "reads": [{"state": "final_reply", "required": True}],
+                "reads": [{"state": "public_response", "required": True}],
                 "writes": [],
                 "config": {
                     "displayMode": "markdown",
@@ -137,8 +137,8 @@ def _dynamic_breakpoint_template() -> dict:
         "name": "Inner Agent",
         "description": "",
         "ui": {"position": {"x": 120, "y": 0}},
-        "reads": [{"state": "final_reply", "required": True}],
-        "writes": [{"state": "final_reply", "mode": "replace"}],
+        "reads": [{"state": "public_response", "required": True}],
+        "writes": [{"state": "public_response", "mode": "replace"}],
         "config": {
             "actionKey": "",
             "taskInstruction": "",
@@ -476,8 +476,8 @@ def test_langgraph_runtime_pauses_parent_when_dynamic_subgraph_hits_inner_breakp
     def execute_node_without_llm(graph, node_name, node, input_values, state, **kwargs):
         if node_name == "inner_agent":
             return {
-                "outputs": {"final_reply": input_values["final_reply"]},
-                "final_result": input_values["final_reply"],
+                "outputs": {"public_response": input_values["public_response"]},
+                "final_result": input_values["public_response"],
             }
         return original_execute_node(graph, node_name, node, input_values, state, **kwargs)
 
@@ -490,7 +490,7 @@ def test_langgraph_runtime_pauses_parent_when_dynamic_subgraph_hits_inner_breakp
         executor_module,
         "_generate_agent_subgraph_inputs",
         lambda **kwargs: (
-            {"dynamic_breakpoint_subgraph": {"final_reply": "dynamic pause input"}},
+            {"dynamic_breakpoint_subgraph": {"public_response": "dynamic pause input"}},
             "planned subgraph inputs",
             [],
             kwargs["runtime_config"],
@@ -553,7 +553,7 @@ def test_langgraph_runtime_pauses_parent_when_dynamic_subgraph_hits_inner_breakp
     assert pending["capability_key"] == "dynamic_breakpoint_subgraph"
     assert pending["inner_node_id"] == "inner_agent"
     assert pending["subgraph_path"] == ["run_selected_subgraph"]
-    assert pending["state_values"]["final_reply"] == "dynamic pause input"
+    assert pending["state_values"]["public_response"] == "dynamic pause input"
     assert pending["graph_snapshot"]["nodes"]["inner_agent"]["kind"] == "agent"
 
 
@@ -567,8 +567,8 @@ def test_langgraph_runtime_resumes_parent_after_dynamic_subgraph_breakpoint(monk
     def execute_node_without_llm(graph, node_name, node, input_values, state, **kwargs):
         if node_name == "inner_agent":
             return {
-                "outputs": {"final_reply": input_values["final_reply"]},
-                "final_result": input_values["final_reply"],
+                "outputs": {"public_response": input_values["public_response"]},
+                "final_result": input_values["public_response"],
             }
         return original_execute_node(graph, node_name, node, input_values, state, **kwargs)
 
@@ -576,7 +576,7 @@ def test_langgraph_runtime_resumes_parent_after_dynamic_subgraph_breakpoint(monk
         nonlocal planned_inputs_calls
         planned_inputs_calls += 1
         return (
-            {"dynamic_breakpoint_subgraph": {"final_reply": "dynamic pause input"}},
+            {"dynamic_breakpoint_subgraph": {"public_response": "dynamic pause input"}},
             "planned subgraph inputs",
             [],
             kwargs["runtime_config"],
@@ -650,8 +650,8 @@ def test_langgraph_runtime_resumes_parent_after_dynamic_subgraph_breakpoint(monk
     assert package["kind"] == "result_package"
     assert package["sourceType"] == "subgraph"
     assert package["sourceKey"] == "dynamic_breakpoint_subgraph"
-    assert package["inputs"] == {"final_reply": "dynamic pause input"}
-    assert package["outputs"]["final_reply"]["value"] == "dynamic pause input"
+    assert package["inputs"] == {"public_response": "dynamic pause input"}
+    assert package["outputs"]["public_response"]["value"] == "dynamic pause input"
 
 
 def test_langgraph_runtime_resumes_dynamic_subgraph_against_original_child_run(monkeypatch, tmp_path) -> None:
@@ -672,8 +672,8 @@ def test_langgraph_runtime_resumes_dynamic_subgraph_against_original_child_run(m
     def execute_node_without_llm(graph, node_name, node, input_values, state, **kwargs):
         if node_name == "inner_agent":
             return {
-                "outputs": {"final_reply": input_values["final_reply"]},
-                "final_result": input_values["final_reply"],
+                "outputs": {"public_response": input_values["public_response"]},
+                "final_result": input_values["public_response"],
             }
         return original_execute_node(graph, node_name, node, input_values, state, **kwargs)
 
@@ -681,7 +681,7 @@ def test_langgraph_runtime_resumes_dynamic_subgraph_against_original_child_run(m
         nonlocal planned_inputs_calls
         planned_inputs_calls += 1
         return (
-            {"dynamic_breakpoint_subgraph": {"final_reply": "dynamic pause input"}},
+            {"dynamic_breakpoint_subgraph": {"public_response": "dynamic pause input"}},
             "planned subgraph inputs",
             [],
             kwargs["runtime_config"],
@@ -796,7 +796,7 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
         executor_module,
         "_generate_agent_subgraph_inputs",
         lambda **kwargs: (
-            {"simple_dynamic_subgraph": {"final_reply": "子图最终回复"}},
+            {"simple_dynamic_subgraph": {"public_response": "子图最终回复"}},
             "planned subgraph inputs",
             [],
             kwargs["runtime_config"],
@@ -806,7 +806,7 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
         executor_module,
         "_generate_agent_response",
         lambda _node, _input_values, _action_context, runtime_config, **_kwargs: (
-            {"final_reply": "子图最终回复"},
+            {"public_response": "子图最终回复"},
             "",
             [],
             runtime_config,
@@ -872,15 +872,15 @@ def test_langgraph_runtime_runs_dynamic_subgraph_capability_and_packages_outputs
     assert package["childRunId"] == child_runs[-1]["run_id"]
     assert package["child_run_id"] == child_runs[-1]["run_id"]
     assert package["triggered_run_id"] == child_runs[-1]["run_id"]
-    assert package["inputs"] == {"final_reply": "子图最终回复"}
-    assert package["outputs"]["final_reply"] == {
-        "name": "Final Reply",
+    assert package["inputs"] == {"public_response": "子图最终回复"}
+    assert package["outputs"]["public_response"] == {
+        "name": "Public Response",
         "description": "The final subgraph output.",
         "type": "markdown",
         "value": "子图最终回复",
     }
     execution = next(item for item in result["node_executions"] if item["node_id"] == "run_selected_subgraph")
-    assert execution["artifacts"]["capability_outputs"][0]["inputs"] == {"final_reply": "子图最终回复"}
+    assert execution["artifacts"]["capability_outputs"][0]["inputs"] == {"public_response": "子图最终回复"}
 
     child_run_id = child_runs[-1]["run_id"]
     parent_activity_events = [

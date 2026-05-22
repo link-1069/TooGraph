@@ -325,7 +325,7 @@ class TemplateLayoutTests(unittest.TestCase):
 
         self.assertEqual(states["artifact_paths"]["type"], "file")
         self.assertEqual(states["source_urls"]["type"], "json")
-        self.assertEqual(states["final_reply"]["type"], "markdown")
+        self.assertEqual(states["public_response"]["type"], "markdown")
         self.assertFalse(any("promptVisible" in definition for definition in states.values()))
 
         search_node = nodes["run_web_search"]
@@ -392,7 +392,7 @@ class TemplateLayoutTests(unittest.TestCase):
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
             ["output_final"],
         )
-        self.assertEqual(_read_contracts(nodes["output_final"]["reads"]), [{"state": "final_reply", "required": True}])
+        self.assertEqual(_read_contracts(nodes["output_final"]["reads"]), [{"state": "public_response", "required": True}])
         self.assertNotIn("output_evidence", nodes)
         self.assertNotIn("output_documents", nodes)
         self.assertNotIn({"source": "final_answer", "target": "output_evidence"}, template["edges"])
@@ -1603,7 +1603,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["written_template_revision_id"]["type"], "text")
         self.assertEqual(states["test_run_decision"]["type"], "json")
         self.assertEqual(states["template_test_goal"]["type"], "text")
-        self.assertEqual(states["test_run_final_reply"]["type"], "markdown")
+        self.assertEqual(states["test_run_public_response"]["type"], "markdown")
         self.assertEqual(states["test_run_report"]["type"], "json")
         self.assertEqual(states["final_summary"]["type"], "markdown")
 
@@ -1658,7 +1658,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(
             test_run_node["writes"],
             [
-                {"state": "test_run_final_reply", "mode": "replace"},
+                {"state": "test_run_public_response", "mode": "replace"},
                 {"state": "test_run_report", "mode": "replace"},
             ],
         )
@@ -1732,7 +1732,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["capability_trace"]["type"], "json")
         self.assertNotIn("visible_page_operation_capability", states)
         self.assertEqual(states["visible_reply"]["type"], "markdown")
-        self.assertEqual(states["final_reply"]["type"], "markdown")
+        self.assertEqual(states["public_response"]["type"], "markdown")
         self.assertNotIn("buddy_mode", states)
         self.assertNotIn("approval_prompt", states)
         self.assertNotIn("capability_requires_approval", states)
@@ -1754,7 +1754,7 @@ class TemplateLayoutTests(unittest.TestCase):
         )
         self.assertNotIn("buddy_context_recall", nodes)
         self.assertEqual(nodes["buddy_task_plan"]["kind"], "agent")
-        self.assertEqual(nodes["buddy_final_reply"]["kind"], "agent")
+        self.assertEqual(nodes["buddy_public_response"]["kind"], "agent")
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
             ["output_capability_passthrough", "output_final"],
@@ -1770,7 +1770,7 @@ class TemplateLayoutTests(unittest.TestCase):
             [{"state": "capability_result", "required": True}],
         )
         self.assertEqual(nodes["output_capability_passthrough"]["config"]["displayMode"], "markdown")
-        self.assertEqual(_read_contracts(nodes["output_final"]["reads"]), [{"state": "final_reply", "required": True}])
+        self.assertEqual(_read_contracts(nodes["output_final"]["reads"]), [{"state": "public_response", "required": True}])
         expected_positions = {
             "input_user_message": {"x": 80, "y": 100},
             "input_conversation_history": {"x": 80, "y": 516},
@@ -1784,7 +1784,7 @@ class TemplateLayoutTests(unittest.TestCase):
             "buddy_capability_loop": {"x": 3132, "y": 360},
             "should_pass_through_capability_result": {"x": 3740, "y": 260},
             "output_capability_passthrough": {"x": 4396, "y": 120},
-            "buddy_final_reply": {"x": 4396, "y": 556},
+            "buddy_public_response": {"x": 4396, "y": 556},
             "output_final": {"x": 5000, "y": 520},
         }
         for node_id, expected_position in expected_positions.items():
@@ -1807,9 +1807,9 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "buddy_turn_intake", "target": "needs_task_plan"}, template["edges"])
         self.assertIn({"source": "buddy_task_plan", "target": "needs_capability"}, template["edges"])
         self.assertIn({"source": "buddy_capability_loop", "target": "should_pass_through_capability_result"}, template["edges"])
-        self.assertNotIn({"source": "buddy_capability_loop", "target": "buddy_final_reply"}, template["edges"])
-        self.assertIn({"source": "buddy_final_reply", "target": "output_final"}, template["edges"])
-        self.assertNotIn({"source": "buddy_final_reply", "target": "review_buddy_memory"}, template["edges"])
+        self.assertNotIn({"source": "buddy_capability_loop", "target": "buddy_public_response"}, template["edges"])
+        self.assertIn({"source": "buddy_public_response", "target": "output_final"}, template["edges"])
+        self.assertNotIn({"source": "buddy_public_response", "target": "review_buddy_memory"}, template["edges"])
         self.assertNotIn("review_buddy_memory", nodes)
         self.assertNotIn("intake_request", nodes)
         self.assertNotIn("run_capability_cycle", nodes)
@@ -1829,16 +1829,16 @@ class TemplateLayoutTests(unittest.TestCase):
                     "source": "needs_capability",
                     "branches": {
                         "true": "buddy_capability_loop",
-                        "false": "buddy_final_reply",
-                        "exhausted": "buddy_final_reply",
+                        "false": "buddy_public_response",
+                        "exhausted": "buddy_public_response",
                     },
                 },
                 {
                     "source": "should_pass_through_capability_result",
                     "branches": {
                         "true": "output_capability_passthrough",
-                        "false": "buddy_final_reply",
-                        "exhausted": "buddy_final_reply",
+                        "false": "buddy_public_response",
+                        "exhausted": "buddy_public_response",
                     },
                 },
             ],
@@ -2014,7 +2014,7 @@ class TemplateLayoutTests(unittest.TestCase):
             "operation_result",
             "page_operation_context",
             "operation_report",
-            "visible_page_operation_final_reply",
+            "visible_page_operation_public_response",
             "visible_page_operation_report",
             "visible_template_operation_ok",
             "visible_template_operation_request_id",
@@ -2085,17 +2085,17 @@ class TemplateLayoutTests(unittest.TestCase):
         ]:
             self.assertIn({"source": input_node_id, "target": "select_capability"}, cycle_graph["edges"])
 
-        final_reply_node = nodes["buddy_final_reply"]
-        self.assertEqual(final_reply_node["config"]["actionKey"], "")
-        self.assertEqual(final_reply_node["config"]["thinkingMode"], "low")
-        self.assertEqual(final_reply_node["writes"], [{"state": "final_reply", "mode": "replace"}])
-        self.assertIn({"state": "capability_result", "required": False}, _read_contracts(final_reply_node["reads"]))
-        self.assertIn({"state": "capability_review", "required": False}, _read_contracts(final_reply_node["reads"]))
-        self.assertIn({"state": "capability_builder_handoff", "required": False}, _read_contracts(final_reply_node["reads"]))
-        self.assertIn({"state": "visible_reply", "required": False}, _read_contracts(final_reply_node["reads"]))
-        self.assertIn("不要暴露内部 state 名称", final_reply_node["config"]["taskInstruction"])
-        self.assertIn("needs_clarification", final_reply_node["config"]["taskInstruction"])
-        self.assertIn("capability_builder_handoff", final_reply_node["config"]["taskInstruction"])
+        public_response_node = nodes["buddy_public_response"]
+        self.assertEqual(public_response_node["config"]["actionKey"], "")
+        self.assertEqual(public_response_node["config"]["thinkingMode"], "low")
+        self.assertEqual(public_response_node["writes"], [{"state": "public_response", "mode": "replace"}])
+        self.assertIn({"state": "capability_result", "required": False}, _read_contracts(public_response_node["reads"]))
+        self.assertIn({"state": "capability_review", "required": False}, _read_contracts(public_response_node["reads"]))
+        self.assertIn({"state": "capability_builder_handoff", "required": False}, _read_contracts(public_response_node["reads"]))
+        self.assertIn({"state": "visible_reply", "required": False}, _read_contracts(public_response_node["reads"]))
+        self.assertIn("不要暴露内部 state 名称", public_response_node["config"]["taskInstruction"])
+        self.assertIn("needs_clarification", public_response_node["config"]["taskInstruction"])
+        self.assertIn("capability_builder_handoff", public_response_node["config"]["taskInstruction"])
 
     def test_buddy_internal_templates_are_hidden_but_loadable(self) -> None:
         public_template_ids = {record["template_id"] for record in _official_template_records()}
@@ -2163,7 +2163,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "page_snapshot",
                 "goal_review",
                 "loop_trace",
-                "final_reply",
+                "public_response",
                 "operation_report",
             },
         )
@@ -2190,12 +2190,12 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual([node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"], ["operation_loop"])
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
-            ["output_final_reply", "output_operation_report"],
+            ["output_public_response", "output_operation_report"],
         )
-        self.assertEqual(_read_contracts(nodes["output_final_reply"]["reads"]), [{"state": "final_reply", "required": True}])
+        self.assertEqual(_read_contracts(nodes["output_public_response"]["reads"]), [{"state": "public_response", "required": True}])
         self.assertEqual(_read_contracts(nodes["output_operation_report"]["reads"]), [{"state": "operation_report", "required": False}])
         self.assertIn({"source": "classify_goal", "target": "operation_loop"}, template["edges"])
-        self.assertIn({"source": "operation_loop", "target": "draft_final_reply"}, template["edges"])
+        self.assertIn({"source": "operation_loop", "target": "draft_public_response"}, template["edges"])
 
         loop_graph = nodes["operation_loop"]["config"]["graph"]
         self.assertEqual(loop_graph["metadata"]["role"], "page_operation_loop")
@@ -2370,7 +2370,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(template["metadata"]["requiredActions"], ["buddy_session_recall", "buddy_home_writer"])
         self.assertEqual(template["metadata"]["permissions"], ["buddy_session_read", "buddy_home_write"])
         self.assertEqual(states["current_session_id"]["type"], "text")
-        self.assertEqual(states["final_reply"]["type"], "markdown")
+        self.assertEqual(states["public_response"]["type"], "markdown")
         self.assertEqual(states["recall_request"]["type"], "json")
         self.assertEqual(states["buddy_session_recall_success"]["type"], "boolean")
         self.assertEqual(states["session_recall_context"]["type"], "json")

@@ -17,6 +17,7 @@ export type BuddyPublicOutputMessageStatus = "streaming" | "completed" | "failed
 
 export type BuddyPublicOutputMessage = {
   outputNodeId: string;
+  sourceOutputNodeId: string;
   outputNodeName: string;
   stateKey: string;
   stateName: string;
@@ -37,6 +38,10 @@ export type BuddyPublicOutputRuntimeState = {
 };
 
 type RunEventPayload = Record<string, unknown>;
+
+type BuddyPublicOutputMessageBinding = BuddyPublicOutputBinding & {
+  sourceOutputNodeId?: string;
+};
 
 export function buildBuddyPublicOutputBindings(
   graph: Pick<GraphPayload, "state_schema" | "nodes" | "edges" | "conditional_edges">,
@@ -90,6 +95,34 @@ export function isBuddyPublicOutputMessageVisible(output: BuddyPublicOutputMessa
     return false;
   }
   return hasVisibleOutputContent(output.content);
+}
+
+export function listBuddyPublicOutputMessageIdsForOutputNode(
+  state: BuddyPublicOutputRuntimeState,
+  outputNodeId: string,
+) {
+  return state.order.filter((messageId) => {
+    const message = state.messagesByOutputNodeId[messageId];
+    return resolveBuddyPublicOutputSourceNodeId(message) === outputNodeId;
+  });
+}
+
+export function listVisibleBuddyPublicOutputNodeIds(state: BuddyPublicOutputRuntimeState) {
+  const result: string[] = [];
+  const seen = new Set<string>();
+  for (const messageId of state.order) {
+    const message = state.messagesByOutputNodeId[messageId];
+    if (!isBuddyPublicOutputMessageVisible(message)) {
+      continue;
+    }
+    const outputNodeId = resolveBuddyPublicOutputSourceNodeId(message);
+    if (!outputNodeId || seen.has(outputNodeId)) {
+      continue;
+    }
+    seen.add(outputNodeId);
+    result.push(outputNodeId);
+  }
+  return result;
 }
 
 export function createBuddyPublicOutputRuntimeState(): BuddyPublicOutputRuntimeState {
@@ -269,11 +302,30 @@ function failOutputsForNode(
     if (!binding.upstreamNodeIds.includes(nodeId)) {
       continue;
     }
-    const existing = nextState.messagesByOutputNodeId[binding.outputNodeId];
-    if (!existing || existing.status !== "streaming") {
-      continue;
+    for (const messageId of listBuddyPublicOutputMessageIdsForOutputNode(nextState, binding.outputNodeId)) {
+      const existing = nextState.messagesByOutputNodeId[messageId];
+      if (!existing || existing.status !== "streaming") {
+        continue;
+      }
+      nextState = upsertMessage(nextState, { ...binding, ...existing }, existing.content, "failed", nowMs);
     }
-    nextState = upsertMessage(nextState, binding, existing.content, "failed", nowMs);
+  }
+  return nextState;
+}
+
+export function upsertBuddyPublicOutputMessagesForState(
+  state: BuddyPublicOutputRuntimeState,
+  bindings: BuddyPublicOutputBinding[],
+  stateKey: string,
+  content: unknown,
+  status: BuddyPublicOutputMessageStatus,
+  nowMs: number,
+) {
+  let nextState = state;
+  for (const binding of bindings) {
+    if (binding.stateKey === stateKey) {
+      nextState = upsertBuddyPublicOutputMessagesForBinding(nextState, binding, content, status, nowMs);
+    }
   }
   return nextState;
 }
@@ -286,26 +338,42 @@ function upsertMessagesForState(
   status: BuddyPublicOutputMessageStatus,
   nowMs: number,
 ) {
-  let nextState = state;
-  for (const binding of bindings) {
-    if (binding.stateKey === stateKey) {
-      nextState = upsertMessage(nextState, binding, content, status, nowMs);
-    }
-  }
-  return nextState;
+  return upsertBuddyPublicOutputMessagesForState(state, bindings, stateKey, content, status, nowMs);
 }
 
-function upsertMessage(
+export function upsertBuddyPublicOutputMessagesForBinding(
   state: BuddyPublicOutputRuntimeState,
   binding: BuddyPublicOutputBinding,
   content: unknown,
   status: BuddyPublicOutputMessageStatus,
   nowMs: number,
 ): BuddyPublicOutputRuntimeState {
-  const startedAtMs = state.startedAtByOutputNodeId[binding.outputNodeId] ?? null;
+  const packageOutputs = listResultPackageOutputMessages(binding, content);
+  if (packageOutputs.length === 0) {
+    return upsertMessage(state, binding, content, status, nowMs);
+  }
+
+  const packageMessageIds = new Set(packageOutputs.map((output) => output.binding.outputNodeId));
+  let nextState = removeOutputMessagesForSource(state, binding.outputNodeId, packageMessageIds);
+  for (const output of packageOutputs) {
+    nextState = upsertMessage(nextState, output.binding, output.content, status, nowMs);
+  }
+  return nextState;
+}
+
+function upsertMessage(
+  state: BuddyPublicOutputRuntimeState,
+  binding: BuddyPublicOutputMessageBinding,
+  content: unknown,
+  status: BuddyPublicOutputMessageStatus,
+  nowMs: number,
+): BuddyPublicOutputRuntimeState {
+  const sourceOutputNodeId = binding.sourceOutputNodeId || binding.outputNodeId;
+  const startedAtMs = state.startedAtByOutputNodeId[sourceOutputNodeId] ?? state.startedAtByOutputNodeId[binding.outputNodeId] ?? null;
   const existing = state.messagesByOutputNodeId[binding.outputNodeId];
   const message: BuddyPublicOutputMessage = {
     outputNodeId: binding.outputNodeId,
+    sourceOutputNodeId,
     outputNodeName: binding.outputNodeName,
     stateKey: binding.stateKey,
     stateName: binding.stateName,
@@ -325,6 +393,121 @@ function upsertMessage(
       [binding.outputNodeId]: message,
     },
   };
+}
+
+function listResultPackageOutputMessages(
+  binding: BuddyPublicOutputBinding,
+  content: unknown,
+): Array<{ binding: BuddyPublicOutputMessageBinding; content: unknown }> {
+  if (!isResultPackageValue(content)) {
+    return [];
+  }
+  const outputs = content.outputs as Record<string, unknown>;
+  return Object.entries(outputs).flatMap(([key, rawOutput]) => {
+    const outputKey = key.trim();
+    if (!outputKey) {
+      return [];
+    }
+    const outputRecord = isRecord(rawOutput) ? rawOutput : null;
+    const outputValue = outputRecord && Object.prototype.hasOwnProperty.call(outputRecord, "value") ? outputRecord.value : rawOutput;
+    const stateType = normalizeString(outputRecord?.type) || inferResultPackageOutputStateType(outputValue);
+    const displayMode = resolveResultPackageOutputDisplayMode(binding.displayMode, stateType, outputValue);
+    return [
+      {
+        binding: {
+          ...binding,
+          outputNodeId: buildResultPackageOutputMessageId(binding.outputNodeId, outputKey),
+          sourceOutputNodeId: binding.outputNodeId,
+          stateKey: `${binding.stateKey}.${outputKey}`,
+          stateName: normalizeString(outputRecord?.name) || outputKey,
+          stateType: stateType || binding.stateType,
+          displayMode,
+        },
+        content: outputValue,
+      },
+    ];
+  });
+}
+
+function removeOutputMessagesForSource(
+  state: BuddyPublicOutputRuntimeState,
+  sourceOutputNodeId: string,
+  keepMessageIds: Set<string>,
+): BuddyPublicOutputRuntimeState {
+  let changed = false;
+  const nextMessages = { ...state.messagesByOutputNodeId };
+  const nextOrder = state.order.filter((messageId) => {
+    const message = state.messagesByOutputNodeId[messageId];
+    if (resolveBuddyPublicOutputSourceNodeId(message) !== sourceOutputNodeId || keepMessageIds.has(messageId)) {
+      return true;
+    }
+    changed = true;
+    delete nextMessages[messageId];
+    return false;
+  });
+  return changed ? { ...state, order: nextOrder, messagesByOutputNodeId: nextMessages } : state;
+}
+
+function buildResultPackageOutputMessageId(outputNodeId: string, outputKey: string) {
+  return `${outputNodeId}:${outputKey}`;
+}
+
+function isResultPackageValue(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && value.kind === "result_package" && isRecord(value.outputs);
+}
+
+function resolveResultPackageOutputDisplayMode(
+  configuredDisplayMode: string,
+  stateType: string,
+  outputValue: unknown,
+) {
+  const normalizedType = stateType.trim().toLowerCase();
+  if (normalizedType === "markdown") {
+    return "markdown";
+  }
+  if (normalizedType === "html") {
+    return "html";
+  }
+  if (normalizedType === "json" || normalizedType === "capability" || normalizedType === "result_package") {
+    return "json";
+  }
+  if (normalizedType === "file" || normalizedType === "image" || normalizedType === "audio" || normalizedType === "video") {
+    return "documents";
+  }
+  if (normalizedType === "text" || normalizedType === "number" || normalizedType === "boolean") {
+    return "plain";
+  }
+  if (configuredDisplayMode && configuredDisplayMode !== "auto") {
+    return configuredDisplayMode;
+  }
+  if (Array.isArray(outputValue) || isRecord(outputValue)) {
+    return "json";
+  }
+  return "auto";
+}
+
+function inferResultPackageOutputStateType(value: unknown) {
+  if (typeof value === "string") {
+    return "text";
+  }
+  if (typeof value === "number") {
+    return "number";
+  }
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  if (Array.isArray(value) || isRecord(value)) {
+    return "json";
+  }
+  return "";
+}
+
+function resolveBuddyPublicOutputSourceNodeId(output: BuddyPublicOutputMessage | null | undefined) {
+  return output?.sourceOutputNodeId || output?.outputNodeId || "";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function resolveOutputDurationMs(startedAtMs: number | null, nowMs: number) {

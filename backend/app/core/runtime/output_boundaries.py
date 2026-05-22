@@ -18,9 +18,10 @@ def execute_output_node(
     state: dict[str, Any],
 ) -> dict[str, Any]:
     binding = node.reads[0]
+    raw_value = input_values.get(binding.state)
     resolved = resolve_output_preview_value(
         binding.state,
-        input_values.get(binding.state),
+        raw_value,
         configured_display_mode=node.config.display_mode.value,
     )
     value = resolved["value"]
@@ -35,23 +36,86 @@ def execute_output_node(
         "value": value,
     }
     saved_outputs: list[dict[str, Any]] = []
-    if node.config.persist_enabled and value not in (None, "", [], {}):
-        saved_outputs.append(
-            save_output_value(
-                run_id=str(state.get("run_id", "")),
-                node_id=node_name,
-                source_key=resolved["source_key"],
-                value=value,
-                persist_format=node.config.persist_format.value,
-                file_name_template=node.config.file_name_template or resolved["file_name_template"],
-            )
+    if node.config.persist_enabled:
+        fallback_file_name_template = node.config.file_name_template or (
+            "" if is_result_package_value(raw_value) else resolved["file_name_template"]
         )
+        for persist_item in list_output_persistence_values(
+            binding.state,
+            raw_value,
+            fallback_source_key=resolved["source_key"],
+            fallback_file_name_template=fallback_file_name_template,
+            fallback_value=value,
+        ):
+            if persist_item["value"] in (None, "", [], {}):
+                continue
+            saved_outputs.append(
+                save_output_value(
+                    run_id=str(state.get("run_id", "")),
+                    node_id=node_name,
+                    source_key=persist_item["source_key"],
+                    value=persist_item["value"],
+                    persist_format=node.config.persist_format.value,
+                    file_name_template=persist_item["file_name_template"],
+                )
+            )
     return {
         "outputs": {binding.state: value},
         "output_previews": [preview],
         "saved_outputs": saved_outputs,
         "final_result": "" if value is None else str(value),
     }
+
+
+def list_output_persistence_values(
+    state_key: str,
+    value: Any,
+    *,
+    fallback_source_key: str,
+    fallback_file_name_template: str,
+    fallback_value: Any,
+) -> list[dict[str, Any]]:
+    if not is_result_package_value(value):
+        return [
+            {
+                "source_key": fallback_source_key,
+                "file_name_template": fallback_file_name_template,
+                "value": fallback_value,
+            }
+        ]
+
+    outputs = value.get("outputs")
+    if not isinstance(outputs, dict):
+        return []
+
+    items: list[dict[str, Any]] = []
+    for output_key, raw_output in outputs.items():
+        output_key_text = str(output_key or "").strip()
+        if not output_key_text:
+            continue
+        output_value = raw_output.get("value") if isinstance(raw_output, dict) else raw_output
+        items.append(
+            {
+                "source_key": f"{state_key}.{output_key_text}",
+                "file_name_template": resolve_result_package_file_name_template(
+                    fallback_file_name_template,
+                    output_key_text,
+                ),
+                "value": output_value,
+            }
+        )
+    return items
+
+
+def resolve_result_package_file_name_template(file_name_template: str, output_key: str) -> str:
+    template = str(file_name_template or "").strip()
+    if not template or template == output_key:
+        return output_key
+    return f"{template}_{output_key}"
+
+
+def is_result_package_value(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("kind") == "result_package" and isinstance(value.get("outputs"), dict)
 
 
 def resolve_output_preview_value(
@@ -67,76 +131,7 @@ def resolve_output_preview_value(
         "file_name_template": state_key,
         "value": value,
     }
-    if not isinstance(value, dict) or value.get("kind") != "result_package":
-        return fallback
-
-    outputs = value.get("outputs")
-    if not isinstance(outputs, dict):
-        return fallback
-
-    if len(outputs) == 1:
-        output_key, raw_output = next(iter(outputs.items()))
-    else:
-        if configured_display_mode not in {"auto", "plain", "markdown"}:
-            return fallback
-        output_key = resolve_preferred_result_package_output_key(outputs)
-        if output_key is None:
-            return fallback
-        raw_output = outputs[output_key]
-    output_key_text = str(output_key or "").strip()
-    if not output_key_text:
-        return fallback
-
-    if isinstance(raw_output, dict):
-        output_value = raw_output.get("value")
-        output_name = str(raw_output.get("name") or output_key_text).strip()
-        output_type = str(raw_output.get("type") or "").strip()
-    else:
-        output_value = raw_output
-        output_name = output_key_text
-        output_type = ""
-
-    return {
-        "label": output_name or output_key_text,
-        "source_key": f"{state_key}.{output_key_text}",
-        "display_mode": resolve_result_package_output_display_mode(configured_display_mode, output_type, output_value),
-        "file_name_template": output_key_text,
-        "value": output_value,
-    }
-
-
-def resolve_preferred_result_package_output_key(outputs: dict[str, Any]) -> str | None:
-    if "final_reply" not in outputs:
-        return None
-    raw_output = outputs.get("final_reply")
-    if isinstance(raw_output, dict):
-        output_value = raw_output.get("value")
-    else:
-        output_value = raw_output
-    return "final_reply" if output_value not in (None, "", [], {}) else None
-
-
-def resolve_result_package_output_display_mode(
-    configured_display_mode: str,
-    output_type: str,
-    output_value: Any,
-) -> str:
-    if configured_display_mode != "auto":
-        return configured_display_mode
-    normalized_type = output_type.strip().lower()
-    if normalized_type == "markdown":
-        return "markdown"
-    if normalized_type == "html":
-        return "html"
-    if normalized_type in {"json", "capability", "result_package"}:
-        return "json"
-    if normalized_type in {"file", "image", "audio", "video"}:
-        return "documents"
-    if normalized_type in {"text", "number", "boolean"}:
-        return "plain"
-    if isinstance(output_value, (dict, list)):
-        return "json"
-    return "auto"
+    return fallback
 
 
 def collect_output_boundaries(

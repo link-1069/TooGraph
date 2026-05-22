@@ -78,8 +78,8 @@
       "color": "#0f766e",
       "binding": null
     },
-    "final_reply": {
-      "name": "final_reply",
+    "public_response": {
+      "name": "public_response",
       "description": "展示给用户的最终伙伴回复。",
       "type": "markdown",
       "value": "",
@@ -505,7 +505,7 @@
         "boundaryType": "json"
       }
     },
-    "input_final_reply": {
+    "input_public_response": {
       "kind": "input",
       "name": "最终回复",
       "description": "",
@@ -519,7 +519,7 @@
       "reads": [],
       "writes": [
         {
-          "state": "final_reply",
+          "state": "public_response",
           "mode": "replace"
         }
       ],
@@ -565,7 +565,7 @@
           "required": true
         },
         {
-          "state": "final_reply",
+          "state": "public_response",
           "required": true
         }
       ],
@@ -708,7 +708,7 @@
           "required": false
         },
         {
-          "state": "final_reply",
+          "state": "public_response",
           "required": true
         },
         {
@@ -816,7 +816,7 @@
           "required": true
         },
         {
-          "state": "final_reply",
+          "state": "public_response",
           "required": true
         },
         {
@@ -1176,7 +1176,7 @@
       "target": "prepare_session_recall_request"
     },
     {
-      "source": "input_final_reply",
+      "source": "input_public_response",
       "target": "prepare_session_recall_request"
     },
     {

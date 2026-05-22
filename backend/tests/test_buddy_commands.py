@@ -171,7 +171,7 @@ class BuddyCommandRouteTests(unittest.TestCase):
                                     "input_source_run_id": "source_run_id",
                                     "input_current_session_id": "current_session_id",
                                     "input_user_message": "user_message",
-                                    "input_final_reply": "final_reply",
+                                    "input_public_response": "public_response",
                                     "input_buddy_context": "buddy_home_context",
                                 },
                             },

@@ -12,17 +12,17 @@
       },
       "expected": {
         "required": [
-          "final_reply"
+          "public_response"
         ],
         "min_citations": 1
       },
       "checks": [
         {
           "kind": "schema",
-          "name": "final_reply_present",
+          "name": "public_response_present",
           "target": "final_output",
           "required": [
-            "final_reply"
+            "public_response"
           ]
         },
         {

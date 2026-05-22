@@ -47,7 +47,7 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
         self.assertEqual(body["saved_outputs"], [{"path": "runs/run_1/answer.md"}])
         self.assertEqual(body["final_result"], "# Done")
 
-    def test_execute_output_node_unwraps_single_result_package_output_for_preview_and_persistence(self) -> None:
+    def test_execute_output_node_keeps_result_package_for_preview_and_splits_persistence(self) -> None:
         node = NodeSystemOutputNode.model_validate(
             {
                 "ui": {"position": {"x": 0, "y": 0}},
@@ -65,35 +65,59 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
             "sourceType": "subgraph",
             "sourceKey": "advanced_web_research_loop",
             "outputs": {
-                "final_reply": {
-                    "name": "最终回复",
-                    "description": "面向用户展示的最终整理结果。",
+                "summary": {
+                    "name": "整理结果",
+                    "description": "面向用户展示的整理结果。",
                     "type": "markdown",
                     "value": "# Done",
-                }
+                },
+                "source_documents": {
+                    "name": "来源文档",
+                    "description": "联网搜索下载到本地的原文。",
+                    "type": "file",
+                    "value": [{"title": "Article One", "local_path": "runs/run_1/doc.md"}],
+                },
             },
         }
 
         with patch(
             "app.core.runtime.output_boundaries.save_output_value",
-            return_value={"path": "runs/run_1/final_reply.md"},
+            side_effect=[
+                {"path": "runs/run_1/summary.md"},
+                {"path": "runs/run_1/source_documents.md"},
+            ],
         ) as save_output:
             body = execute_output_node("output_answer", node, {"dynamic_result": package}, {"run_id": "run_1"})
 
-        save_output.assert_called_once_with(
-            run_id="run_1",
-            node_id="output_answer",
-            source_key="dynamic_result.final_reply",
-            value="# Done",
-            persist_format="md",
-            file_name_template="final_reply",
+        self.assertEqual(save_output.call_count, 2)
+        self.assertEqual(
+            save_output.call_args_list[0].kwargs,
+            {
+                "run_id": "run_1",
+                "node_id": "output_answer",
+                "source_key": "dynamic_result.summary",
+                "value": "# Done",
+                "persist_format": "md",
+                "file_name_template": "summary",
+            },
         )
-        self.assertEqual(body["outputs"], {"dynamic_result": "# Done"})
-        self.assertEqual(body["output_previews"][0]["label"], "最终回复")
-        self.assertEqual(body["output_previews"][0]["source_key"], "dynamic_result.final_reply")
-        self.assertEqual(body["output_previews"][0]["display_mode"], "markdown")
-        self.assertEqual(body["output_previews"][0]["value"], "# Done")
-        self.assertEqual(body["final_result"], "# Done")
+        self.assertEqual(
+            save_output.call_args_list[1].kwargs,
+            {
+                "run_id": "run_1",
+                "node_id": "output_answer",
+                "source_key": "dynamic_result.source_documents",
+                "value": [{"title": "Article One", "local_path": "runs/run_1/doc.md"}],
+                "persist_format": "md",
+                "file_name_template": "source_documents",
+            },
+        )
+        self.assertEqual(body["outputs"], {"dynamic_result": package})
+        self.assertEqual(body["output_previews"][0]["label"], "dynamic_result")
+        self.assertEqual(body["output_previews"][0]["source_key"], "dynamic_result")
+        self.assertEqual(body["output_previews"][0]["display_mode"], "auto")
+        self.assertEqual(body["output_previews"][0]["value"], package)
+        self.assertEqual(body["saved_outputs"], [{"path": "runs/run_1/summary.md"}, {"path": "runs/run_1/source_documents.md"}])
 
     def test_execute_output_node_resolves_single_html_result_package_output(self) -> None:
         node = NodeSystemOutputNode.model_validate(
@@ -117,9 +141,11 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
 
         body = execute_output_node("output_page", node, {"dynamic_result": package}, {"run_id": "run_1"})
 
-        self.assertEqual(body["output_previews"][0]["display_mode"], "html")
-        self.assertEqual(body["output_previews"][0]["label"], "Rendered Page")
-        self.assertEqual(body["output_previews"][0]["source_key"], "dynamic_result.page")
+        self.assertEqual(body["outputs"], {"dynamic_result": package})
+        self.assertEqual(body["output_previews"][0]["display_mode"], "auto")
+        self.assertEqual(body["output_previews"][0]["label"], "dynamic_result")
+        self.assertEqual(body["output_previews"][0]["source_key"], "dynamic_result")
+        self.assertEqual(body["output_previews"][0]["value"], package)
 
     def test_execute_output_node_keeps_multi_output_result_package_wrapped(self) -> None:
         node = NodeSystemOutputNode.model_validate(
@@ -144,7 +170,7 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
         self.assertEqual(body["output_previews"][0]["display_mode"], "auto")
         self.assertEqual(body["output_previews"][0]["value"], package)
 
-    def test_execute_output_node_prefers_final_reply_from_multi_output_result_package(self) -> None:
+    def test_execute_output_node_does_not_prefer_public_response_from_multi_output_result_package(self) -> None:
         node = NodeSystemOutputNode.model_validate(
             {
                 "ui": {"position": {"x": 0, "y": 0}},
@@ -157,7 +183,7 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
             "sourceType": "subgraph",
             "sourceKey": "advanced_web_research_loop",
             "outputs": {
-                "final_reply": {
+                "public_response": {
                     "name": "最终回复",
                     "description": "子图已经生成的用户可见答案。",
                     "type": "markdown",
@@ -174,11 +200,11 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
 
         body = execute_output_node("output_capability_passthrough", node, {"capability_result": package}, {"run_id": "run_1"})
 
-        self.assertEqual(body["outputs"], {"capability_result": "# Done"})
-        self.assertEqual(body["output_previews"][0]["label"], "最终回复")
-        self.assertEqual(body["output_previews"][0]["source_key"], "capability_result.final_reply")
+        self.assertEqual(body["outputs"], {"capability_result": package})
+        self.assertEqual(body["output_previews"][0]["label"], "capability_result")
+        self.assertEqual(body["output_previews"][0]["source_key"], "capability_result")
         self.assertEqual(body["output_previews"][0]["display_mode"], "markdown")
-        self.assertEqual(body["final_result"], "# Done")
+        self.assertEqual(body["output_previews"][0]["value"], package)
 
     def test_collect_output_boundaries_refreshes_only_active_outputs(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(

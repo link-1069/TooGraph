@@ -55,7 +55,7 @@ class AgentSubgraphInputGenerationTests(unittest.TestCase):
                     ],
                     output_schema=[
                         SubgraphCapabilityField(
-                            key="final_reply",
+                            key="public_response",
                             name="最终回复",
                             value_type="markdown",
                             required=True,
@@ -86,7 +86,7 @@ class AgentSubgraphInputGenerationTests(unittest.TestCase):
         self.assertIn("inputSchema:", system_prompt)
         self.assertIn("user_question", system_prompt)
         self.assertIn("outputSchema:", system_prompt)
-        self.assertIn("final_reply", system_prompt)
+        self.assertIn("public_response", system_prompt)
         self.assertNotIn("== Bound Skills ==", system_prompt)
         self.assertEqual(captured["user_prompt"], "Prepare the graph template inputs.")
         self.assertEqual(

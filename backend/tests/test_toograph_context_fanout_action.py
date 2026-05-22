@@ -72,15 +72,15 @@ def _write_template(repo_root: Path) -> None:
             "default_graph_name": "Policy Navigator",
             "state_schema": {
                 "user_question": {"name": "Question", "type": "text", "value": ""},
-                "final_reply": {"name": "Final Reply", "type": "markdown", "value": ""},
+                "public_response": {"name": "Public Response", "type": "markdown", "value": ""},
             },
             "nodes": {
                 "output_final": {
                     "kind": "output",
-                    "name": "Final Reply",
+                    "name": "Public Response",
                     "description": "",
                     "ui": {"position": {"x": 0, "y": 0}},
-                    "reads": [{"state": "final_reply", "required": True}],
+                    "reads": [{"state": "public_response", "required": True}],
                     "writes": [],
                     "config": {
                         "displayMode": "markdown",
@@ -97,8 +97,8 @@ def _write_template(repo_root: Path) -> None:
                 "capabilityDiscoverableDefault": True,
                 "outputContract": [
                     {
-                        "key": "final_reply",
-                        "name": "Final Reply",
+                        "key": "public_response",
+                        "name": "Public Response",
                         "type": "markdown",
                         "role": "final_response",
                         "passThrough": True,

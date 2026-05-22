@@ -336,8 +336,8 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
                         "raw_page_snapshot": "SNAPSHOT-START " + ("node-state " * 500) + "SNAPSHOT-END",
                     },
                     "outputs": {
-                        "final_reply": {
-                            "name": "Final Reply",
+                        "public_response": {
+                            "name": "Public Response",
                             "description": "User-facing final answer.",
                             "type": "markdown",
                             "value": long_reply,
@@ -356,7 +356,7 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
                                         "summary": "Concise evidence summary.",
                                         "path": "runs/run_search/final.md",
                                         "url": "https://example.test/source",
-                                        "source_key": "final_reply",
+                                        "source_key": "public_response",
                                         "content_type": "text/markdown",
                                         "size": 2048,
                                         "char_count": 9182,
@@ -419,7 +419,7 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
             try:
                 with patch.dict(os.environ, {"TOOGRAPH_LOCAL_INPUT_READ_ROOTS": str(workspace)}):
                     report = agent_prompt.build_context_assembly_report(
-                        node_id="buddy_final_reply",
+                        node_id="buddy_public_response",
                         node_type="agent",
                         input_values={
                             "buddy_context": {
@@ -434,8 +434,8 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
                                 "sourceName": "Advanced Web Research",
                                 "status": "succeeded",
                                 "outputs": {
-                                    "final_reply": {
-                                        "name": "Final Reply",
+                                    "public_response": {
+                                        "name": "Public Response",
                                         "description": "User-facing answer.",
                                         "type": "markdown",
                                         "value": "Capability answer text.",
@@ -477,7 +477,7 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
             finally:
                 resolve_capability_artifact_path(artifact["local_path"]).unlink(missing_ok=True)
 
-        self.assertEqual(report["node_id"], "buddy_final_reply")
+        self.assertEqual(report["node_id"], "buddy_public_response")
         self.assertEqual(report["llm_phases"], ["agent_response"])
         self.assertGreater(report["totals"]["prompt_chars"], 0)
         self.assertGreater(report["totals"]["token_estimate"], 0)
@@ -486,7 +486,7 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
             "capability_result",
             "knowledge_context",
         ])
-        self.assertIn("final_reply", [item["output_key"] for item in report["result_outputs"]])
+        self.assertIn("public_response", [item["output_key"] for item in report["result_outputs"]])
         self.assertIn("source_document", [item["output_key"] for item in report["result_outputs"]])
         self.assertIn("MEMORY.md", [item["name"] for item in report["files"]])
         self.assertIn(Path(artifact["local_path"]).name, [item["name"] for item in report["files"]])

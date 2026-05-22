@@ -250,7 +250,7 @@
         "managed": true
       }
     },
-    "test_run_final_reply": {
+    "test_run_public_response": {
       "name": "试运行回复",
       "description": "可选页面操作试运行的最终回复。",
       "type": "markdown",
@@ -990,7 +990,7 @@
       ],
       "writes": [
         {
-          "state": "test_run_final_reply",
+          "state": "test_run_public_response",
           "mode": "replace"
         },
         {
@@ -1129,7 +1129,7 @@
               "color": "#9333ea",
               "binding": null
             },
-            "final_reply": {
+            "public_response": {
               "name": "最终回复",
               "description": "面向用户展示的页面操作结果。",
               "type": "markdown",
@@ -2032,7 +2032,7 @@
                 }
               }
             },
-            "draft_final_reply": {
+            "draft_public_response": {
               "kind": "agent",
               "name": "起草最终回复",
               "description": "根据目标验证和操作报告生成用户可见结果。",
@@ -2071,7 +2071,7 @@
               ],
               "writes": [
                 {
-                  "state": "final_reply",
+                  "state": "public_response",
                   "mode": "replace"
                 }
               ],
@@ -2086,7 +2086,7 @@
                 "temperature": 0.2
               }
             },
-            "output_final_reply": {
+            "output_public_response": {
               "kind": "output",
               "name": "输出最终回复",
               "description": "展示页面操作工作流的最终回复。",
@@ -2099,7 +2099,7 @@
               },
               "reads": [
                 {
-                  "state": "final_reply",
+                  "state": "public_response",
                   "required": true
                 }
               ],
@@ -2148,11 +2148,11 @@
             },
             {
               "source": "operation_loop",
-              "target": "draft_final_reply"
+              "target": "draft_public_response"
             },
             {
-              "source": "draft_final_reply",
-              "target": "output_final_reply"
+              "source": "draft_public_response",
+              "target": "output_public_response"
             },
             {
               "source": "operation_loop",
@@ -2166,7 +2166,7 @@
             "pageOperationTemplate": true,
             "outputContract": [
               {
-                "key": "final_reply",
+                "key": "public_response",
                 "name": "最终回复",
                 "description": "页面操作目标完成或终态失败后的用户可见回复。",
                 "type": "markdown",
@@ -2413,7 +2413,7 @@
           "required": false
         },
         {
-          "state": "test_run_final_reply",
+          "state": "test_run_public_response",
           "required": false
         },
         {

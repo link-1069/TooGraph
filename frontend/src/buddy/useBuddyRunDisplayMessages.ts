@@ -12,7 +12,9 @@ import {
   buildBuddyPublicOutputBindings,
   createBuddyPublicOutputRuntimeState,
   isBuddyPublicOutputMessageVisible,
-  resolveBuddyPublicOutputMessageKind,
+  listBuddyPublicOutputMessageIdsForOutputNode,
+  listVisibleBuddyPublicOutputNodeIds,
+  upsertBuddyPublicOutputMessagesForBinding,
 } from "./buddyPublicOutput.ts";
 import type { BuddyPublicOutputMetadata } from "./buddyMessageMetadata.ts";
 import type { BuddyOutputTraceRuntimeState, BuddyOutputTraceSegment } from "./buddyOutputTrace.ts";
@@ -50,7 +52,6 @@ type BuddyRunDisplayOptions<Message extends BuddyRunDisplayMessage> = {
 };
 
 const BUDDY_CAPABILITY_PASSTHROUGH_OUTPUT_NODE_ID = "output_capability_passthrough";
-const BUDDY_CAPABILITY_PASSTHROUGH_STATE_KEY = "capability_result.final_reply";
 
 export function useBuddyRunDisplayMessages<Message extends BuddyRunDisplayMessage>({
   messages,
@@ -254,7 +255,7 @@ export function useBuddyRunDisplayMessages<Message extends BuddyRunDisplayMessag
     const outputTraceMessages: Message[] = [];
     const publicOutputMessages: Message[] = [];
     const displayMessages: Message[] = [];
-    const handledOutputNodeIds = new Set<string>();
+    const handledOutputMessageIds = new Set<string>();
     const visibleOutputNodeIds = buildVisibleOutputNodeIdSet(outputState);
 
     for (const segment of listBuddyOutputTraceSegmentsForDisplay(outputTraceState, { visibleOutputNodeIds })) {
@@ -262,22 +263,25 @@ export function useBuddyRunDisplayMessages<Message extends BuddyRunDisplayMessag
       displayMessages.push(traceMessage);
       outputTraceMessages.push(traceMessage);
       for (const outputNodeId of segment.outputNodeIds) {
-        const output = outputState.messagesByOutputNodeId[outputNodeId];
-        handledOutputNodeIds.add(outputNodeId);
-        if (!output || !isBuddyPublicOutputMessageVisible(output)) {
-          continue;
+        const outputMessageIds = listBuddyPublicOutputMessageIdsForOutputNode(outputState, outputNodeId);
+        for (const outputMessageId of outputMessageIds) {
+          const output = outputState.messagesByOutputNodeId[outputMessageId];
+          handledOutputMessageIds.add(outputMessageId);
+          if (!output || !isBuddyPublicOutputMessageVisible(output)) {
+            continue;
+          }
+          const outputMessage = buildPublicOutputMessage(controllerMessageId, runId, output, existingMessages);
+          displayMessages.push(outputMessage);
+          publicOutputMessages.push(outputMessage);
         }
-        const outputMessage = buildPublicOutputMessage(controllerMessageId, runId, output, existingMessages);
-        displayMessages.push(outputMessage);
-        publicOutputMessages.push(outputMessage);
       }
     }
 
-    for (const outputNodeId of outputState.order) {
-      if (handledOutputNodeIds.has(outputNodeId)) {
+    for (const outputMessageId of outputState.order) {
+      if (handledOutputMessageIds.has(outputMessageId)) {
         continue;
       }
-      const output = outputState.messagesByOutputNodeId[outputNodeId];
+      const output = outputState.messagesByOutputNodeId[outputMessageId];
       if (!output || !isBuddyPublicOutputMessageVisible(output)) {
         continue;
       }
@@ -378,14 +382,7 @@ function createEmptyBuddyOutputTraceRuntimeState(): BuddyOutputTraceRuntimeState
 }
 
 function buildVisibleOutputNodeIdSet(outputState: BuddyPublicOutputRuntimeState) {
-  const result = new Set<string>();
-  for (const outputNodeId of outputState.order) {
-    const output = outputState.messagesByOutputNodeId[outputNodeId];
-    if (isBuddyPublicOutputMessageVisible(output)) {
-      result.add(outputNodeId);
-    }
-  }
-  return result;
+  return new Set(listVisibleBuddyPublicOutputNodeIds(outputState));
 }
 
 function findPrimaryCompletedTextPublicOutput(
@@ -403,13 +400,9 @@ function findPrimaryCompletedTextPublicOutput(
 function buildPromotedCapabilityPassthroughOutput(output: BuddyPublicOutputMessage): BuddyPublicOutputMessage {
   return {
     ...output,
-    outputNodeId: BUDDY_CAPABILITY_PASSTHROUGH_OUTPUT_NODE_ID,
+    outputNodeId: `${BUDDY_CAPABILITY_PASSTHROUGH_OUTPUT_NODE_ID}:${output.outputNodeId}`,
+    sourceOutputNodeId: BUDDY_CAPABILITY_PASSTHROUGH_OUTPUT_NODE_ID,
     outputNodeName: "能力结果",
-    stateKey: BUDDY_CAPABILITY_PASSTHROUGH_STATE_KEY,
-    stateName: "final_reply",
-    stateType: "markdown",
-    displayMode: "markdown",
-    kind: "text",
   };
 }
 
@@ -424,6 +417,7 @@ function buildPublicOutputMessageId(controllerMessageId: string, outputNodeId: s
 function toBuddyPublicOutputMetadata(output: BuddyPublicOutputMessage): BuddyPublicOutputMetadata {
   return {
     outputNodeId: output.outputNodeId,
+    sourceOutputNodeId: output.sourceOutputNodeId,
     stateKey: output.stateKey,
     stateName: output.stateName,
     stateType: output.stateType,
@@ -443,7 +437,7 @@ function buildPublicOutputRuntimeStateFromRunDetail(
   bindings: BuddyPublicOutputBinding[],
   graph: GraphPayload,
 ): BuddyPublicOutputRuntimeState {
-  const outputState = createBuddyPublicOutputRuntimeState();
+  let outputState = createBuddyPublicOutputRuntimeState();
   const seenOutputNodeIds = new Set<string>();
   const outputTimingByNodeId = buildRunNodeTimingByNodeIdFromRun(
     {
@@ -459,20 +453,20 @@ function buildPublicOutputRuntimeStateFromRunDetail(
     }
     seenOutputNodeIds.add(binding.outputNodeId);
     const timing = outputTimingByNodeId[binding.outputNodeId] ?? null;
-    outputState.order.push(binding.outputNodeId);
-    outputState.messagesByOutputNodeId[binding.outputNodeId] = {
-      outputNodeId: binding.outputNodeId,
-      outputNodeName: binding.outputNodeName,
-      stateKey: binding.stateKey,
-      stateName: binding.stateName,
-      stateType: binding.stateType,
-      displayMode: binding.displayMode,
-      kind: resolveBuddyPublicOutputMessageKind(binding),
-      content: preview.value,
-      startedAtMs: timing?.startedAtEpochMs ?? null,
-      durationMs: timing?.durationMs ?? null,
-      status: runDetail.status === "failed" ? "failed" : "completed",
-    };
+    const startedAtMs = timing?.startedAtEpochMs ?? null;
+    if (startedAtMs !== null) {
+      outputState.startedAtByOutputNodeId[binding.outputNodeId] = startedAtMs;
+    }
+    const completedAtMs = startedAtMs !== null && timing?.durationMs !== null && timing?.durationMs !== undefined
+      ? startedAtMs + timing.durationMs
+      : nowPublicOutputMs();
+    outputState = upsertBuddyPublicOutputMessagesForBinding(
+      outputState,
+      binding,
+      preview.value,
+      runDetail.status === "failed" ? "failed" : "completed",
+      completedAtMs,
+    );
   }
   return outputState;
 }

@@ -81,7 +81,7 @@ function memoryReviewTemplate(): TemplateRecord {
       source_run_id: { name: "source_run_id", description: "", type: "text", value: "", color: "#475569" },
       current_session_id: { name: "current_session_id", description: "", type: "text", value: "", color: "#475569" },
       user_message: { name: "user_message", description: "", type: "text", value: "", color: "#d97706" },
-      final_reply: { name: "final_reply", description: "", type: "markdown", value: "", color: "#16a34a" },
+      public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#16a34a" },
       buddy_context: { name: "buddy_context", description: "", type: "file", value: "", color: "#0f766e" },
       memory_update_plan: { name: "memory_update_plan", description: "", type: "json", value: {}, color: "#22c55e" },
     },
@@ -113,13 +113,13 @@ function memoryReviewTemplate(): TemplateRecord {
         writes: [{ state: "user_message", mode: "replace" }],
         config: { value: "" },
       },
-      input_final_reply: {
+      input_public_response: {
         kind: "input",
-        name: "Final Reply",
+        name: "Public Response",
         description: "",
         ui: { position: { x: 0, y: 360 } },
         reads: [],
-        writes: [{ state: "final_reply", mode: "replace" }],
+        writes: [{ state: "public_response", mode: "replace" }],
         config: { value: "" },
       },
       input_buddy_context: {
@@ -291,7 +291,7 @@ test("memory review binding model exposes required automatic source rows", () =>
     ["source_run_id", true, "input_source_run_id"],
     ["current_session_id", true, "input_current_session_id"],
     ["user_message", true, "input_user_message"],
-    ["final_reply", true, "input_final_reply"],
+    ["public_response", true, "input_public_response"],
     ["buddy_home_context", true, "input_buddy_context"],
     ["conversation_history", false, "input_conversation_history"],
     ["page_context", false, "input_page_context"],
@@ -308,7 +308,7 @@ test("memory review binding validation requires core sources and rejects interna
       input_source_run_id: "source_run_id",
       input_current_session_id: "current_session_id",
       input_user_message: "user_message",
-      input_final_reply: "final_reply",
+      input_public_response: "public_response",
       input_buddy_context: "buddy_home_context",
     },
   });
@@ -319,7 +319,7 @@ test("memory review binding validation requires core sources and rejects interna
     input_bindings: {
       input_source_run_id: "source_run_id",
       input_user_message: "user_message",
-      input_final_reply: "final_reply",
+      input_public_response: "public_response",
       input_buddy_context: "buddy_home_context",
     },
   });
@@ -332,7 +332,7 @@ test("memory review binding validation requires core sources and rejects interna
       input_source_run_id: "source_run_id",
       input_current_session_id: "current_session_id",
       input_user_message: "user_message",
-      input_final_reply: "final_reply",
+      input_public_response: "public_response",
       input_buddy_context: "buddy_home_context",
       input_memory_update_plan: "memory_update_plan",
     },
@@ -353,7 +353,7 @@ test("memory review binding model updates source rows without duplication", () =
     ["input_source_run_id", true, "Already bound to source_run_id."],
     ["input_current_session_id", false, ""],
     ["input_user_message", true, "Already bound to current_session_id."],
-    ["input_final_reply", true, "Already bound to final_reply."],
+    ["input_public_response", true, "Already bound to public_response."],
     ["input_buddy_context", true, "Already bound to buddy_home_context."],
     ["input_memory_update_plan", true, "State is produced inside the memory review graph."],
   ]);

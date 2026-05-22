@@ -28,7 +28,7 @@
       },
       "expected": {
         "required": [
-          "final_reply",
+          "public_response",
           "operation_report"
         ]
       },
@@ -38,7 +38,7 @@
           "name": "reply_and_operation_report_present",
           "target": "final_output",
           "required": [
-            "final_reply",
+            "public_response",
             "operation_report"
           ]
         },
