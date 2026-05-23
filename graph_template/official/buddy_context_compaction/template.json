@@ -1,0 +1,910 @@
+{
+  "template_id": "buddy_context_compaction",
+  "label": "上下文压缩",
+  "description": "Hermes 风格 Buddy 上下文压缩模板：保护最近原文，把中间历史压成会话摘要，并通过 Buddy Home Writer 更新 session_summary。",
+  "default_graph_name": "上下文压缩",
+  "state_schema": {
+    "trigger": {
+      "name": "trigger",
+      "description": "触发压缩的来源：preflight、capability_result、overflow_recovery 或 background。",
+      "type": "text",
+      "value": "",
+      "color": "#475569",
+      "binding": null
+    },
+    "source_run_id": {
+      "name": "source_run_id",
+      "description": "触发本次压缩的可见 Buddy run ID；preflight 可能为空。",
+      "type": "text",
+      "value": "",
+      "color": "#475569",
+      "binding": null
+    },
+    "current_session_id": {
+      "name": "current_session_id",
+      "description": "当前 Buddy 会话 ID，用于标记摘要来源。",
+      "type": "text",
+      "value": "",
+      "color": "#475569",
+      "binding": null
+    },
+    "user_message": {
+      "name": "user_message",
+      "description": "本轮用户消息。",
+      "type": "text",
+      "value": "",
+      "color": "#d97706",
+      "binding": null
+    },
+    "conversation_history": {
+      "name": "conversation_history",
+      "description": "压缩前可见的完整或尽量完整的会话历史原文。",
+      "type": "markdown",
+      "value": "",
+      "color": "#64748b",
+      "binding": null
+    },
+    "existing_session_summary": {
+      "name": "existing_session_summary",
+      "description": "已有会话摘要；压缩时应迭代更新而不是从零替换。",
+      "type": "markdown",
+      "value": "",
+      "color": "#4f46e5",
+      "binding": null
+    },
+    "page_context": {
+      "name": "page_context",
+      "description": "当前页面上下文，只用于理解正在发生的任务，不写入长期事实。",
+      "type": "markdown",
+      "value": "",
+      "color": "#0891b2",
+      "binding": null
+    },
+    "buddy_context": {
+      "name": "buddy_context",
+      "description": "从 Buddy Home 文件夹注入的长期上下文文件。",
+      "type": "file",
+      "value": {
+        "kind": "local_folder",
+        "root": "buddy_home",
+        "selected": [
+          "AGENTS.md",
+          "SOUL.md",
+          "USER.md",
+          "MEMORY.md",
+          "policy.json"
+        ]
+      },
+      "color": "#0f766e",
+      "binding": null
+    },
+    "context_budget_report": {
+      "name": "context_budget_report",
+      "description": "运行时生成的上下文预算与触发原因报告。",
+      "type": "json",
+      "value": {},
+      "color": "#0e7490",
+      "binding": null
+    },
+    "capability_result": {
+      "name": "capability_result",
+      "description": "能力执行后的结果包；只提取对会话连续性有帮助的摘要线索。",
+      "type": "result_package",
+      "value": {},
+      "color": "#0284c7",
+      "binding": null
+    },
+    "public_response": {
+      "name": "public_response",
+      "description": "本轮已展示或将展示给用户的公开回复。",
+      "type": "markdown",
+      "value": "",
+      "color": "#16a34a",
+      "binding": null
+    },
+    "compaction_plan": {
+      "name": "compaction_plan",
+      "description": "压缩计划，包含保护头尾、摘要范围、预算和跳过理由。",
+      "type": "json",
+      "value": {},
+      "color": "#9333ea",
+      "binding": null
+    },
+    "protected_recent_history": {
+      "name": "protected_recent_history",
+      "description": "需要在后续 prompt 中继续保留原文的最近会话片段。",
+      "type": "markdown",
+      "value": "",
+      "color": "#0f766e",
+      "binding": null
+    },
+    "session_summary_candidate": {
+      "name": "session_summary_candidate",
+      "description": "新的会话摘要候选，面向后续 Buddy 回复上下文。",
+      "type": "markdown",
+      "value": "",
+      "color": "#4f46e5",
+      "binding": null
+    },
+    "compaction_report": {
+      "name": "compaction_report",
+      "description": "压缩审计报告：触发原因、保留/省略数量、风险和写入决定。",
+      "type": "json",
+      "value": {},
+      "color": "#7c3aed",
+      "binding": null
+    },
+    "should_write_summary": {
+      "name": "should_write_summary",
+      "description": "是否应该通过 Buddy Home Writer 更新 session_summary。",
+      "type": "boolean",
+      "value": false,
+      "color": "#16a34a",
+      "binding": null
+    },
+    "writer_input": {
+      "name": "writer_input",
+      "description": "交给 Buddy Home Writer 的低风险 session_summary.update 命令计划。",
+      "type": "json",
+      "value": {
+        "commands": []
+      },
+      "color": "#22c55e",
+      "binding": null
+    },
+    "session_summary_write_success": {
+      "name": "session_summary_write_success",
+      "description": "Buddy Home Writer 是否成功应用 session_summary.update。",
+      "type": "boolean",
+      "value": false,
+      "color": "#16a34a",
+      "binding": {
+        "kind": "action_output",
+        "actionKey": "buddy_home_writer",
+        "nodeId": "write_session_summary",
+        "fieldKey": "success",
+        "managed": true
+      }
+    },
+    "applied_session_summary_commands": {
+      "name": "applied_session_summary_commands",
+      "description": "已应用的 session summary 写回命令和 revision 信息。",
+      "type": "json",
+      "value": [],
+      "color": "#059669",
+      "binding": {
+        "kind": "action_output",
+        "actionKey": "buddy_home_writer",
+        "nodeId": "write_session_summary",
+        "fieldKey": "applied_commands",
+        "managed": true
+      }
+    },
+    "skipped_session_summary_commands": {
+      "name": "skipped_session_summary_commands",
+      "description": "被跳过的 session summary 写回命令。",
+      "type": "json",
+      "value": [],
+      "color": "#dc2626",
+      "binding": {
+        "kind": "action_output",
+        "actionKey": "buddy_home_writer",
+        "nodeId": "write_session_summary",
+        "fieldKey": "skipped_commands",
+        "managed": true
+      }
+    },
+    "session_summary_write_result": {
+      "name": "session_summary_write_result",
+      "description": "Buddy Home Writer 写回摘要。",
+      "type": "markdown",
+      "value": "",
+      "color": "#0369a1",
+      "binding": {
+        "kind": "action_output",
+        "actionKey": "buddy_home_writer",
+        "nodeId": "write_session_summary",
+        "fieldKey": "result",
+        "managed": true
+      }
+    }
+  },
+  "nodes": {
+    "input_trigger": {
+      "kind": "input",
+      "name": "触发来源",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 80
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "trigger",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_source_run_id": {
+      "kind": "input",
+      "name": "来源 Run ID",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 460
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "source_run_id",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_current_session_id": {
+      "kind": "input",
+      "name": "当前会话 ID",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 840
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "current_session_id",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_user_message": {
+      "kind": "input",
+      "name": "用户消息",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 1220
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "user_message",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_conversation_history": {
+      "kind": "input",
+      "name": "会话历史",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 1600
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "conversation_history",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_existing_session_summary": {
+      "kind": "input",
+      "name": "已有摘要",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 1980
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "existing_session_summary",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_page_context": {
+      "kind": "input",
+      "name": "页面上下文",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 2360
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "page_context",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "input_buddy_context": {
+      "kind": "input",
+      "name": "Buddy Home",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 2740
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "buddy_context",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": {
+          "kind": "local_folder",
+          "root": "buddy_home",
+          "selected": [
+            "AGENTS.md",
+            "SOUL.md",
+            "USER.md",
+            "MEMORY.md",
+            "policy.json"
+          ]
+        },
+        "boundaryType": "file"
+      }
+    },
+    "input_context_budget_report": {
+      "kind": "input",
+      "name": "预算报告",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 3120
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "context_budget_report",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": {},
+        "boundaryType": "text"
+      }
+    },
+    "input_capability_result": {
+      "kind": "input",
+      "name": "能力结果",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 3500
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "capability_result",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": {},
+        "boundaryType": "text"
+      }
+    },
+    "input_public_response": {
+      "kind": "input",
+      "name": "公开回复",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 3880
+        },
+        "collapsed": false
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "public_response",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": "",
+        "boundaryType": "text"
+      }
+    },
+    "plan_compaction": {
+      "kind": "agent",
+      "name": "规划压缩范围",
+      "description": "根据预算报告确定保护头尾、最近原文和中间摘要范围。",
+      "ui": {
+        "position": {
+          "x": 680,
+          "y": 1220
+        },
+        "collapsed": false,
+        "size": {
+          "width": 500,
+          "height": 340
+        }
+      },
+      "reads": [
+        {
+          "state": "trigger",
+          "required": true
+        },
+        {
+          "state": "conversation_history",
+          "required": true
+        },
+        {
+          "state": "existing_session_summary",
+          "required": false
+        },
+        {
+          "state": "context_budget_report",
+          "required": true
+        },
+        {
+          "state": "capability_result",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "compaction_plan",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "actionKey": "",
+        "actionBindings": [],
+        "actionInstructionBlocks": {},
+        "taskInstruction": "根据 trigger、conversation_history、existing_session_summary、context_budget_report 和可选 capability_result 制定 Hermes 风格压缩计划，写 compaction_plan JSON。必须包含 trigger、reason、protect_first、protect_last、summary_scope、estimated_omitted_messages、should_summarize、risk_notes、anti_thrashing_notes。默认保护开头少量任务设定和最近 12 到 20 条原文；中间历史才进入摘要。不要写入 session_summary.update 命令。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "low",
+        "temperature": 0.1
+      }
+    },
+    "summarize_context": {
+      "kind": "agent",
+      "name": "生成会话摘要",
+      "description": "迭代更新 session_summary，并准备可审计写回命令。",
+      "ui": {
+        "position": {
+          "x": 1260,
+          "y": 1200
+        },
+        "collapsed": false,
+        "size": {
+          "width": 540,
+          "height": 400
+        }
+      },
+      "reads": [
+        {
+          "state": "trigger",
+          "required": true
+        },
+        {
+          "state": "source_run_id",
+          "required": false
+        },
+        {
+          "state": "current_session_id",
+          "required": false
+        },
+        {
+          "state": "user_message",
+          "required": false
+        },
+        {
+          "state": "conversation_history",
+          "required": true
+        },
+        {
+          "state": "existing_session_summary",
+          "required": false
+        },
+        {
+          "state": "page_context",
+          "required": false
+        },
+        {
+          "state": "buddy_context",
+          "required": true
+        },
+        {
+          "state": "context_budget_report",
+          "required": true
+        },
+        {
+          "state": "capability_result",
+          "required": false
+        },
+        {
+          "state": "public_response",
+          "required": false
+        },
+        {
+          "state": "compaction_plan",
+          "required": true
+        }
+      ],
+      "writes": [
+        {
+          "state": "session_summary_candidate",
+          "mode": "replace"
+        },
+        {
+          "state": "protected_recent_history",
+          "mode": "replace"
+        },
+        {
+          "state": "compaction_report",
+          "mode": "replace"
+        },
+        {
+          "state": "should_write_summary",
+          "mode": "replace"
+        },
+        {
+          "state": "writer_input",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "actionKey": "",
+        "actionBindings": [],
+        "actionInstructionBlocks": {},
+        "taskInstruction": "执行 Hermes 风格上下文压缩。基于 existing_session_summary 迭代更新，不要从零抹掉已有摘要；保护最近原文，写入 protected_recent_history Markdown；把中间历史、用户明确决策、当前任务进展、未完成事项、能力调用结论压成 session_summary_candidate Markdown。不要保存原始日志、完整错误、敏感信息、临时路径、base64 或可从当前图重读的巨大内容。必须同时输出：compaction_report JSON（trigger、source_run_id、current_session_id、omitted_count、protected_count、summary_changed、risk_notes、anti_thrashing_notes）、should_write_summary boolean、writer_input JSON。writer_input.commands 只允许一个 session_summary.update 命令，payload.content 必须等于 session_summary_candidate；change_reason 写明触发来源和压缩理由。若摘要无实质变化或风险过高，should_write_summary=false 且 commands=[]。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "low",
+        "temperature": 0.1
+      }
+    },
+    "has_summary_update": {
+      "kind": "condition",
+      "name": "需要写入摘要?",
+      "description": "只有摘要发生实质更新时才调用 Buddy Home Writer。",
+      "ui": {
+        "position": {
+          "x": 1880,
+          "y": 1260
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 250
+        }
+      },
+      "reads": [
+        {
+          "state": "should_write_summary",
+          "required": true
+        }
+      ],
+      "writes": [],
+      "config": {
+        "branches": [
+          "true",
+          "false",
+          "exhausted"
+        ],
+        "loopLimit": 1,
+        "branchMapping": {
+          "true": "true",
+          "false": "false"
+        },
+        "rule": {
+          "source": "$state.should_write_summary",
+          "operator": "==",
+          "value": true
+        }
+      }
+    },
+    "write_session_summary": {
+      "kind": "agent",
+      "name": "写入会话摘要",
+      "description": "通过 Buddy Home Writer 应用 session_summary.update，并留下 revision。",
+      "ui": {
+        "position": {
+          "x": 2380,
+          "y": 1180
+        },
+        "collapsed": false,
+        "size": {
+          "width": 480,
+          "height": 340
+        }
+      },
+      "reads": [
+        {
+          "state": "writer_input",
+          "required": true,
+          "binding": {
+            "kind": "action_input",
+            "actionKey": "buddy_home_writer",
+            "fieldKey": "autonomous_review",
+            "managed": true
+          }
+        },
+        {
+          "state": "source_run_id",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "session_summary_write_success",
+          "mode": "replace"
+        },
+        {
+          "state": "applied_session_summary_commands",
+          "mode": "replace"
+        },
+        {
+          "state": "skipped_session_summary_commands",
+          "mode": "replace"
+        },
+        {
+          "state": "session_summary_write_result",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "actionKey": "buddy_home_writer",
+        "actionBindings": [
+          {
+            "actionKey": "buddy_home_writer",
+            "outputMapping": {
+              "success": "session_summary_write_success",
+              "applied_commands": "applied_session_summary_commands",
+              "skipped_commands": "skipped_session_summary_commands",
+              "result": "session_summary_write_result"
+            }
+          }
+        ],
+        "actionInstructionBlocks": {
+          "buddy_home_writer": {
+            "actionKey": "buddy_home_writer",
+            "title": "session_summary writeback instruction",
+            "content": "你已绑定 Buddy Home Writer。只把 writer_input.commands 原样作为 commands 输入；每条命令必须是 session_summary.update，payload.content 必须是完整的新会话摘要。run_id 使用 source_run_id；不要新增命令、不要写 MEMORY.md、不要修改 profile/policy/report。",
+            "source": "node.override"
+          }
+        },
+        "taskInstruction": "本节点只负责调用 buddy_home_writer。commands 必须来自 writer_input.commands；run_id 必须来自 source_run_id。不要总结、扩展、重写或伪造写回结果。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "low",
+        "temperature": 0
+      }
+    },
+    "output_compaction_report": {
+      "kind": "output",
+      "name": "压缩报告",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 2960,
+          "y": 760
+        },
+        "collapsed": false
+      },
+      "reads": [
+        {
+          "state": "compaction_report",
+          "required": true
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    },
+    "output_session_summary_candidate": {
+      "kind": "output",
+      "name": "摘要候选",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 2960,
+          "y": 1160
+        },
+        "collapsed": false
+      },
+      "reads": [
+        {
+          "state": "session_summary_candidate",
+          "required": true
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "markdown",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    },
+    "output_session_summary_write_result": {
+      "kind": "output",
+      "name": "写入结果",
+      "description": "",
+      "ui": {
+        "position": {
+          "x": 2960,
+          "y": 1560
+        },
+        "collapsed": false
+      },
+      "reads": [
+        {
+          "state": "session_summary_write_result",
+          "required": false
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "markdown",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "input_trigger",
+      "target": "plan_compaction"
+    },
+    {
+      "source": "input_conversation_history",
+      "target": "plan_compaction"
+    },
+    {
+      "source": "input_existing_session_summary",
+      "target": "plan_compaction"
+    },
+    {
+      "source": "input_context_budget_report",
+      "target": "plan_compaction"
+    },
+    {
+      "source": "input_capability_result",
+      "target": "plan_compaction"
+    },
+    {
+      "source": "input_source_run_id",
+      "target": "summarize_context"
+    },
+    {
+      "source": "input_current_session_id",
+      "target": "summarize_context"
+    },
+    {
+      "source": "input_user_message",
+      "target": "summarize_context"
+    },
+    {
+      "source": "input_page_context",
+      "target": "summarize_context"
+    },
+    {
+      "source": "input_buddy_context",
+      "target": "summarize_context"
+    },
+    {
+      "source": "input_public_response",
+      "target": "summarize_context"
+    },
+    {
+      "source": "plan_compaction",
+      "target": "summarize_context"
+    },
+    {
+      "source": "summarize_context",
+      "target": "has_summary_update"
+    },
+    {
+      "source": "summarize_context",
+      "target": "output_session_summary_candidate"
+    },
+    {
+      "source": "summarize_context",
+      "target": "output_compaction_report"
+    },
+    {
+      "source": "write_session_summary",
+      "target": "output_session_summary_write_result"
+    }
+  ],
+  "conditional_edges": [
+    {
+      "source": "has_summary_update",
+      "branches": {
+        "true": "write_session_summary",
+        "false": "output_compaction_report",
+        "exhausted": "output_compaction_report"
+      }
+    }
+  ],
+  "metadata": {
+    "origin": "buddy",
+    "role": "buddy_context_compaction",
+    "internal": true,
+    "graphProtocol": "node_system",
+    "capabilityDiscoverableDefault": false,
+    "requiredActions": [
+      "buddy_home_writer"
+    ],
+    "permissions": [
+      "buddy_home_write"
+    ]
+  }
+}

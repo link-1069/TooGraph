@@ -671,6 +671,33 @@ class BuddyStoreTests(unittest.TestCase):
 
         self.assertEqual(binding["template_id"], store.DEFAULT_RUN_TEMPLATE_BINDING["template_id"])
         self.assertEqual(binding["input_bindings"], store.DEFAULT_RUN_TEMPLATE_BINDING["input_bindings"])
+        self.assertEqual(binding["input_bindings"]["input_current_session_id"], "current_session_id")
+
+    def test_official_run_template_binding_migrates_context_compaction_inputs(self) -> None:
+        legacy_binding = {
+            "version": store.RUN_TEMPLATE_BINDING_VERSION,
+            "template_id": "buddy_autonomous_loop",
+            "input_bindings": {
+                "input_user_message": "current_message",
+                "input_conversation_history": "conversation_history",
+                "input_page_context": "page_context",
+                "input_buddy_context": "buddy_home_context",
+                "input_current_session_id": "current_session_id",
+            },
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"), patch.object(
+                store, "_ensure_run_template_can_be_bound", lambda _template_id: None
+            ):
+                store._write_kv(store.RUN_TEMPLATE_BINDING_KEY, legacy_binding, "2026-01-01T00:00:00Z")
+
+                binding = store.load_run_template_binding()
+
+        self.assertEqual(binding["template_id"], "buddy_autonomous_loop")
+        self.assertEqual(binding["input_bindings"]["input_raw_conversation_history"], "raw_conversation_history")
+        self.assertEqual(binding["input_bindings"]["input_existing_session_summary"], "session_summary")
 
     def test_memory_review_template_binding_defaults_and_revision_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

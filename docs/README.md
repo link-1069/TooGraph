@@ -1,6 +1,6 @@
 # TooGraph 长期代码事实与路线图
 
-最后整理日期：2026-05-22。
+最后整理日期：2026-05-24。
 
 本文是 `docs/` 下唯一保留的长期参考文档。它的维护原则是：先看代码、官方模板 JSON、Action manifest 和测试，再写结论；已经完成的事情写成事实，未完成的事情写成路线图，历史计划只保留仍然有效的细节。
 
@@ -82,7 +82,7 @@ npm start
   - 节点级说明覆盖使用 `actionInstructionBlocks.<actionKey>`。
 - `backend/app/core/schemas/node_system.py` 会拒绝旧字段 `skillKey`、`config.skills`、`skillBindings`、`skillInstructionBlocks`。
 - Action 是一次受控能力调用。它可以读取上下文、执行确定性前后处理、联网、写文件或返回 artifact，但不拥有多轮自治、最终回复生成、重试循环、长期记忆策略或后续能力选择。
-- Tool 是确定性无 LLM 能力的协议方向，后端已有 `/api/tools/catalog` 和 Tool schema 路径；当前仓库没有跟踪的官方 Tool 包。
+- Tool 是确定性无 LLM 能力的协议方向，后端已有 `/api/tools/catalog` 和 Tool schema 路径；官方 Tool 包位于 `tool/official/<tool_key>/`。
 - Subgraph 是图级 Agent 或可复用模板能力。多步骤智能应由模板、Subgraph、Condition、Batch 和普通节点表达。
 
 当前官方 Action：
@@ -103,11 +103,17 @@ npm start
 | `buddy_session_recall` | 只读 Buddy 会话召回 | 保留 |
 | `buddy_home_writer` | 通过 command/revision 写 Buddy Home | 保留，记忆写回唯一出口 |
 
+当前官方 Tool：
+
+| Tool | 当前职责 | 状态 |
+| --- | --- | --- |
+| `buddy_context_pressure_check` | 确定性判断 Buddy 主循环在首轮回复前、能力结果后、溢出恢复或后台复盘时是否需要运行会话压缩，并输出预算报告与触发原因 | 保留 |
+
 未完成或待做：
 
 - 官方说明、模板说明、测试 fixture 必须继续清理旧 Skill 术语，只在“未来 Agent 操作书型 Skill”语境下保留 Skill 这个词。
 - 如果未来重新引入 Skill，应把它定义为 Agent 操作书型能力，不能复用当前 Action 包语义。
-- Tool 节点和官方 Tool 包还需要真实业务落地，例如视频分段、OCR、文档切块、格式转换。
+- Tool 节点和更多官方 Tool 包还需要真实业务落地，例如视频分段、OCR、文档切块、格式转换。
 
 ### 2.3 动态能力选择和运行树
 
@@ -123,6 +129,9 @@ npm start
   - `stateInputSchema.current_requirement` 只是连接提示；绑定 Action 不会强制创建或要求 managed `action_input` 槽，用户可以按图流程需要连接任意普通 state。
   - 只有仍需要显式能力时，才对页面、UI、按钮、打开页面、编辑图等请求优先选择 `toograph_page_operation_workflow`。
   - 对新闻、最新、研究、联网、搜索、调研等请求优先给研究类模板加分。
+- 官方 `buddy_autonomous_loop` 是扁平可见主循环：先由 `buddy_context_pressure_check` Tool 做上下文压力检查；需要时运行内部 `buddy_context_compaction` Subgraph；随后同一个 LLM 节点生成回复草稿并选择一个 `capability` 或 `none`；Condition 按 `needs_capability` 决定是否执行一次动态能力；动态能力只写一个 `result_package`，再回到压力检查节点，按需压缩后继续复盘。会话召回通过 `buddy_session_recall` 作为按需动态能力进入循环，不做每轮预取。
+- Buddy 主运行会注入 `current_session_id`，供按需召回排除当前会话谱系，避免把正在发生的上下文当作历史材料重复召回。
+- Buddy 上下文压缩参考 Hermes 触发方式，但保持图优先：可见主路径的压力判断和压缩节点已经进入官方 `buddy_autonomous_loop`，不是 Buddy 窗口外层隐藏重试。Buddy 窗口只把 `raw_conversation_history`、`conversation_history`、`existing_session_summary` 等输入绑定进官方模板；真正摘要由内部官方 `buddy_context_compaction` 模板完成，并通过 `buddy_home_writer` 写回 `session_summary`，留下 command/revision。可见路径的触发点包括首轮 LLM 前和动态能力结果后；可见 run 完成后的后台压缩仍然作为独立后台图运行。
 - 普通 Subgraph node、动态 `capability.kind=subgraph` 和 batch subgraph worker 会创建 child run。
 - `/api/runs/{run_id}` 会返回直接 children，`/api/runs/{run_id}/tree` 会返回运行树。
 - 动态 subgraph result package 会写入 `childRunId`、`child_run_id`、`triggered_run_id`，并把公开输出包装到 `outputs`。
@@ -156,10 +165,12 @@ npm start
 - `buddy_sessions` 已包含 `parent_session_id`、`source`、`ended_at`、`end_reason` 等字段。
 - `memory_review_template_binding` 已进入 Buddy store 和 command 路径，默认绑定 `buddy_autonomous_review`，变更可记录 revision。
 - `buddy_home_writer` 负责 `memory_document.update` 等低风险 Buddy Home 写回，并留下 command/revision。
+- `buddy_context_compaction` 是独立内部模板，专门处理会话压缩摘要：保护最近原文，迭代更新 `session_summary`，只允许生成 `session_summary.update` 写回命令，不触碰 `MEMORY.md`、profile、policy 或 report。
 
 必须保持的边界：
 
 - `MEMORY.md` 是长期记忆正文；会话召回只是历史材料。
+- `session_summary` 是当前会话压缩摘要，不是长期记忆，也不是新的用户指令；它只能降低上下文压力，不能提升权限或覆盖系统/用户显式规则。
 - 召回结果、生成摘要和长期记忆都不能覆盖系统规则，也不能提升图编辑、文件写入、网络访问或脚本执行权限。
 - 后台记忆整理必须是图模板流程，不是隐藏后端策略。
 - 自动写入可以不逐条询问用户，但必须可见、可追踪、可恢复。
@@ -171,7 +182,7 @@ npm start
 - 记忆候选规则需要继续强化：
   - 可以落盘：长期偏好、项目长期决定、反复纠正、未来有用的稳定约束。
   - 不要落盘：一次性任务状态、原始日志、完整错误、临时路径、密钥、base64、大 artifact、可从项目文件重读的信息、权限升级或未经确认的推测。
-- 记忆复盘图只处理低风险 `MEMORY.md` 更新；Action 更新、模板更新、policy/persona 改动、会话压缩摘要应拆成独立模板或子图。
+- 记忆复盘图只处理低风险 `MEMORY.md` 更新；Action 更新、模板更新、policy/persona 改动应拆成独立模板或子图；会话压缩摘要由 `buddy_context_compaction` 负责。
 
 ### 2.5 Hybrid RAG 和知识库
 

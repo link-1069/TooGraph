@@ -26,29 +26,8 @@ BUDDY_INTERNAL_TEMPLATE_IDS = {
     "buddy_context_fanout",
     "buddy_request_intake",
     "buddy_autonomous_review",
+    "buddy_context_compaction",
 }
-
-BUDDY_MAIN_LOOP_SUBGRAPH_TEMPLATE_IDS = {
-    "buddy_context_fanout": "buddy_context_fanout",
-    "buddy_turn_intake": "buddy_request_intake",
-}
-
-
-def _template_core(record: dict) -> dict:
-    return {
-        "state_schema": record["state_schema"],
-        "nodes": record["nodes"],
-        "edges": record["edges"],
-        "conditional_edges": record["conditional_edges"],
-        "metadata": record["metadata"],
-    }
-
-
-def _without_internal_metadata(core: dict) -> dict:
-    metadata = dict(core["metadata"])
-    metadata.pop("internal", None)
-    return {**core, "metadata": metadata}
-
 
 FORBIDDEN_TEMPLATE_BREAKPOINT_KEYS = {
     "interrupt_after",
@@ -135,7 +114,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(buddy_template["source"], "official")
         self.assertEqual(buddy_template["label"], "伙伴自主循环")
         self.assertEqual(buddy_template["default_graph_name"], "伙伴自主循环")
-        self.assertIn("完整 Buddy 对话主流程", buddy_template["description"])
+        self.assertIn("官方 Buddy 可见回复主流程", buddy_template["description"])
         self.assertIs(buddy_template["capabilityDiscoverable"], False)
         self.assertNotIn("hideFromCapabilitySelector", buddy_template["metadata"])
 
@@ -1718,128 +1697,258 @@ class TemplateLayoutTests(unittest.TestCase):
 
         self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
         self.assertEqual(template["metadata"]["origin"], "buddy")
-        self.assertEqual(states["buddy_context"]["type"], "file")
-        self.assertEqual(states["context_brief"]["type"], "json")
-        self.assertEqual(states["fanout_context"]["type"], "json")
-        self.assertEqual(states["fanout_assembly_report"]["type"], "json")
-        self.assertEqual(states["task_plan"]["type"], "json")
-        self.assertEqual(states["selected_capability"]["type"], "capability")
-        self.assertEqual(states["should_call_capability"]["type"], "boolean")
-        self.assertNotIn("capability_found", states)
-        self.assertEqual(states["capability_result"]["type"], "result_package")
-        self.assertNotIn("capability_selection_audit", states)
-        self.assertEqual(states["capability_gap"]["type"], "json")
-        self.assertEqual(states["capability_builder_handoff"]["type"], "json")
-        self.assertEqual(states["capability_trace"]["type"], "json")
-        self.assertNotIn("visible_page_operation_capability", states)
-        self.assertEqual(states["visible_reply"]["type"], "markdown")
-        self.assertEqual(states["public_response"]["type"], "markdown")
-        self.assertNotIn("buddy_mode", states)
-        self.assertNotIn("approval_prompt", states)
-        self.assertNotIn("capability_requires_approval", states)
-        self.assertNotIn("input_buddy_mode", nodes)
-        for node in nodes.values():
-            for read in node.get("reads", []):
-                self.assertNotEqual(read.get("state"), "buddy_mode")
-        for edge in template["edges"]:
-            self.assertNotEqual(edge.get("source"), "input_buddy_mode")
-            self.assertNotEqual(edge.get("target"), "input_buddy_mode")
-
+        self.assertEqual(template["metadata"]["role"], "buddy_autonomous_loop")
+        self.assertEqual(template["metadata"]["requiredActions"], ["toograph_capability_selector", "buddy_session_recall"])
+        self.assertEqual(template["metadata"]["requiredTools"], ["buddy_context_pressure_check"])
         self.assertEqual(
-            [node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"],
-            [
-                "buddy_context_fanout",
-                "buddy_turn_intake",
-                "buddy_capability_loop",
-            ],
+            set(states),
+            {
+                "user_message",
+                "conversation_history",
+                "raw_conversation_history",
+                "page_context",
+                "buddy_context",
+                "current_session_id",
+                "existing_session_summary",
+                "source_run_id",
+                "context_budget_report",
+                "needs_context_compaction",
+                "context_compaction_trigger",
+                "context_compaction_report",
+                "context_compaction_summary",
+                "context_compaction_write_result",
+                "selected_capability",
+                "needs_capability",
+                "capability_result",
+                "capability_trace",
+                "public_response",
+            },
         )
-        self.assertNotIn("buddy_context_recall", nodes)
-        self.assertEqual(nodes["buddy_task_plan"]["kind"], "agent")
-        self.assertEqual(nodes["buddy_public_response"]["kind"], "agent")
+        expected_state_types = {
+            "user_message": "text",
+            "conversation_history": "markdown",
+            "raw_conversation_history": "markdown",
+            "page_context": "markdown",
+            "buddy_context": "file",
+            "current_session_id": "text",
+            "existing_session_summary": "markdown",
+            "source_run_id": "text",
+            "context_budget_report": "json",
+            "needs_context_compaction": "boolean",
+            "context_compaction_trigger": "text",
+            "context_compaction_report": "markdown",
+            "context_compaction_summary": "markdown",
+            "context_compaction_write_result": "json",
+            "selected_capability": "capability",
+            "needs_capability": "boolean",
+            "capability_result": "result_package",
+            "capability_trace": "json",
+            "public_response": "markdown",
+        }
+        for state_key, expected_type in expected_state_types.items():
+            with self.subTest(state_key=state_key):
+                self.assertEqual(states[state_key]["type"], expected_type)
+        self.assertEqual(states["selected_capability"]["binding"]["fieldKey"], "capability")
+        self.assertEqual(states["needs_capability"]["binding"]["fieldKey"], "needs_capability")
+        self.assertEqual(states["context_budget_report"]["binding"]["kind"], "tool_output")
+        self.assertEqual(states["context_budget_report"]["binding"]["toolKey"], "buddy_context_pressure_check")
+        self.assertEqual(states["context_budget_report"]["binding"]["nodeId"], "check_context_pressure")
+        self.assertEqual(states["needs_context_compaction"]["binding"]["fieldKey"], "needs_context_compaction")
+        self.assertEqual(states["capability_result"]["name"], "结果包")
+        for removed_state_key in [
+            "context_brief",
+            "fanout_context",
+            "fanout_assembly_report",
+            "request_understanding",
+            "task_plan",
+            "should_call_capability",
+            "capability_found",
+            "capability_gap",
+            "capability_builder_handoff",
+            "capability_review",
+            "visible_reply",
+        ]:
+            self.assertNotIn(removed_state_key, states)
+
+        self.assertEqual(states["buddy_context"]["type"], "file")
+        self.assertEqual(
+            set(nodes),
+            {
+                "input_user_message",
+                "input_conversation_history",
+                "input_raw_conversation_history",
+                "input_page_context",
+                "input_buddy_context",
+                "input_current_session_id",
+                "input_existing_session_summary",
+                "check_context_pressure",
+                "context_pressure_condition",
+                "run_context_compaction",
+                "reply_and_select_capability",
+                "needs_capability_condition",
+                "execute_capability",
+                "output_final",
+            },
+        )
+        self.assertEqual([node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"], ["run_context_compaction"])
+        self.assertEqual(nodes["check_context_pressure"]["kind"], "tool")
+        self.assertEqual(nodes["check_context_pressure"]["config"]["toolKey"], "buddy_context_pressure_check")
+        self.assertEqual(nodes["run_context_compaction"]["config"]["graph"]["metadata"]["role"], "buddy_context_compaction")
+        self.assertEqual(nodes["reply_and_select_capability"]["kind"], "agent")
+        self.assertEqual(nodes["execute_capability"]["kind"], "agent")
+        self.assertEqual(nodes["context_pressure_condition"]["kind"], "condition")
+        self.assertEqual(nodes["needs_capability_condition"]["kind"], "condition")
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
-            ["output_capability_passthrough", "output_final"],
+            ["output_final"],
         )
-        self.assertIn("should_pass_through_capability_result", nodes)
-        self.assertEqual(nodes["should_pass_through_capability_result"]["kind"], "condition")
-        self.assertEqual(
-            nodes["should_pass_through_capability_result"]["config"]["rule"],
-            {"source": "$state.capability_review.final_response_strategy", "operator": "==", "value": "pass_through"},
-        )
-        self.assertEqual(
-            _read_contracts(nodes["output_capability_passthrough"]["reads"]),
-            [{"state": "capability_result", "required": True}],
-        )
-        self.assertEqual(nodes["output_capability_passthrough"]["config"]["displayMode"], "markdown")
         self.assertEqual(_read_contracts(nodes["output_final"]["reads"]), [{"state": "public_response", "required": True}])
         expected_positions = {
             "input_user_message": {"x": 80, "y": 100},
             "input_conversation_history": {"x": 80, "y": 516},
-            "input_page_context": {"x": 80, "y": 932},
-            "input_buddy_context": {"x": 80, "y": 1348},
-            "buddy_context_fanout": {"x": 660, "y": 360},
-            "buddy_turn_intake": {"x": 1240, "y": 360},
-            "needs_task_plan": {"x": 1820, "y": 360},
-            "buddy_task_plan": {"x": 2476, "y": 120},
-            "needs_capability": {"x": 2476, "y": 660},
-            "buddy_capability_loop": {"x": 3132, "y": 360},
-            "should_pass_through_capability_result": {"x": 3740, "y": 260},
-            "output_capability_passthrough": {"x": 4396, "y": 120},
-            "buddy_public_response": {"x": 4396, "y": 556},
-            "output_final": {"x": 5000, "y": 520},
+            "input_raw_conversation_history": {"x": 80, "y": 932},
+            "input_page_context": {"x": 80, "y": 1348},
+            "input_buddy_context": {"x": 80, "y": 1764},
+            "input_current_session_id": {"x": 80, "y": 2180},
+            "input_existing_session_summary": {"x": 80, "y": 2596},
+            "check_context_pressure": {"x": 720, "y": 760},
+            "context_pressure_condition": {"x": 1340, "y": 760},
+            "run_context_compaction": {"x": 1960, "y": 360},
+            "reply_and_select_capability": {"x": 2580, "y": 760},
+            "needs_capability_condition": {"x": 3200, "y": 760},
+            "execute_capability": {"x": 3820, "y": 760},
+            "output_final": {"x": 3820, "y": 1180},
         }
         for node_id, expected_position in expected_positions.items():
             with self.subTest(layout_node=node_id):
                 self.assertEqual(nodes[node_id]["ui"]["position"], expected_position)
-        self.assertIn("needs_task_plan", nodes)
-        self.assertEqual(nodes["needs_task_plan"]["kind"], "condition")
+
+        selector_node = nodes["reply_and_select_capability"]
+        self.assertEqual(selector_node["config"]["actionKey"], "toograph_capability_selector")
         self.assertEqual(
-            nodes["needs_task_plan"]["config"]["rule"],
-            {"source": "$state.request_understanding.needs_task_plan", "operator": "==", "value": True},
+            selector_node["config"]["actionBindings"],
+            [
+                {
+                    "actionKey": "toograph_capability_selector",
+                    "outputMapping": {
+                        "capability": "selected_capability",
+                        "needs_capability": "needs_capability",
+                    },
+                }
+            ],
         )
-        self.assertIn("needs_capability", nodes)
-        self.assertEqual(nodes["needs_capability"]["kind"], "condition")
+        selector_action_inputs = [
+            read
+            for read in selector_node["reads"]
+            if isinstance(read.get("binding"), dict) and read["binding"].get("kind") == "action_input"
+        ]
+        self.assertEqual(selector_action_inputs, [])
+        self.assertIn({"state": "user_message", "required": True}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "conversation_history", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "existing_session_summary", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "context_compaction_summary", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "page_context", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "buddy_context", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "current_session_id", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "capability_result", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "capability_trace", "required": False}, _read_contracts(selector_node["reads"]))
         self.assertEqual(
-            nodes["needs_capability"]["config"]["rule"],
-            {"source": "$state.request_understanding.requires_capability", "operator": "==", "value": True},
+            selector_node["writes"],
+            [
+                {"state": "public_response", "mode": "replace"},
+                {"state": "capability_trace", "mode": "replace"},
+                {"state": "selected_capability", "mode": "replace"},
+                {"state": "needs_capability", "mode": "replace"},
+            ],
         )
-        self.assertIn({"source": "input_buddy_context", "target": "buddy_context_fanout"}, template["edges"])
-        self.assertIn({"source": "buddy_context_fanout", "target": "buddy_turn_intake"}, template["edges"])
-        self.assertIn({"source": "buddy_turn_intake", "target": "needs_task_plan"}, template["edges"])
-        self.assertIn({"source": "buddy_task_plan", "target": "needs_capability"}, template["edges"])
-        self.assertIn({"source": "buddy_capability_loop", "target": "should_pass_through_capability_result"}, template["edges"])
-        self.assertNotIn({"source": "buddy_capability_loop", "target": "buddy_public_response"}, template["edges"])
-        self.assertIn({"source": "buddy_public_response", "target": "output_final"}, template["edges"])
-        self.assertNotIn({"source": "buddy_public_response", "target": "review_buddy_memory"}, template["edges"])
-        self.assertNotIn("review_buddy_memory", nodes)
-        self.assertNotIn("intake_request", nodes)
-        self.assertNotIn("run_capability_cycle", nodes)
-        self.assertNotIn("draft_final_response", nodes)
+        self.assertIn("capability.kind=none", selector_node["config"]["taskInstruction"])
+        self.assertIn("buddy_session_recall", selector_node["config"]["taskInstruction"])
+        self.assertIn("current_session_id", selector_node["config"]["taskInstruction"])
+        self.assertIn(
+            "buddy_session_recall",
+            selector_node["config"]["actionInstructionBlocks"]["toograph_capability_selector"]["content"],
+        )
+
+        execute_node = nodes["execute_capability"]
+        self.assertEqual(execute_node["config"]["actionKey"], "")
+        self.assertIn({"state": "selected_capability", "required": True}, _read_contracts(execute_node["reads"]))
+        self.assertIn({"state": "user_message", "required": True}, _read_contracts(execute_node["reads"]))
+        self.assertIn({"state": "current_session_id", "required": False}, _read_contracts(execute_node["reads"]))
+        self.assertIn({"state": "capability_trace", "required": False}, _read_contracts(execute_node["reads"]))
+        self.assertEqual(execute_node["writes"], [{"state": "capability_result", "mode": "replace"}])
+        self.assertIn("selected_capability.kind=action/subgraph/tool", execute_node["config"]["taskInstruction"])
+        self.assertIn("buddy_session_recall", execute_node["config"]["taskInstruction"])
+        self.assertIn("result_package", execute_node["config"]["taskInstruction"])
+
+        condition_node = nodes["needs_capability_condition"]
+        self.assertEqual(condition_node["config"]["loopLimit"], 5)
+        self.assertEqual(
+            condition_node["config"]["rule"],
+            {"source": "$state.needs_capability", "operator": "==", "value": True},
+        )
+        self.assertIn({"state": "needs_capability", "required": True}, _read_contracts(condition_node["reads"]))
+        pressure_node = nodes["context_pressure_condition"]
+        self.assertEqual(pressure_node["config"]["loopLimit"], 10)
+        self.assertEqual(
+            pressure_node["config"]["rule"],
+            {"source": "$state.needs_context_compaction", "operator": "==", "value": True},
+        )
+        self.assertIn({"state": "needs_context_compaction", "required": True}, _read_contracts(pressure_node["reads"]))
+        self.assertIn(
+            {
+                "state": "raw_conversation_history",
+                "required": False,
+                "binding": {
+                    "kind": "tool_input",
+                    "actionKey": "",
+                    "toolKey": "buddy_context_pressure_check",
+                    "fieldKey": "raw_conversation_history",
+                    "managed": True,
+                },
+            },
+            nodes["check_context_pressure"]["reads"],
+        )
+        self.assertEqual(
+            nodes["run_context_compaction"]["writes"],
+            [
+                {"state": "context_compaction_report", "mode": "replace"},
+                {"state": "context_compaction_summary", "mode": "replace"},
+                {"state": "context_compaction_write_result", "mode": "replace"},
+            ],
+        )
+        self.assertEqual(
+            template["edges"],
+            [
+                {"source": "input_user_message", "target": "check_context_pressure"},
+                {"source": "input_conversation_history", "target": "check_context_pressure"},
+                {"source": "input_raw_conversation_history", "target": "check_context_pressure"},
+                {"source": "input_page_context", "target": "check_context_pressure"},
+                {"source": "input_buddy_context", "target": "check_context_pressure"},
+                {"source": "input_current_session_id", "target": "check_context_pressure"},
+                {"source": "input_existing_session_summary", "target": "check_context_pressure"},
+                {"source": "check_context_pressure", "target": "context_pressure_condition"},
+                {"source": "run_context_compaction", "target": "reply_and_select_capability"},
+                {"source": "reply_and_select_capability", "target": "needs_capability_condition"},
+                {"source": "execute_capability", "target": "check_context_pressure"},
+            ],
+        )
         self.assertEqual(
             template["conditional_edges"],
             [
                 {
-                    "source": "needs_task_plan",
+                    "source": "context_pressure_condition",
                     "branches": {
-                        "true": "buddy_task_plan",
-                        "false": "needs_capability",
-                        "exhausted": "needs_capability",
+                        "true": "run_context_compaction",
+                        "false": "reply_and_select_capability",
+                        "exhausted": "reply_and_select_capability",
                     },
                 },
                 {
-                    "source": "needs_capability",
+                    "source": "needs_capability_condition",
                     "branches": {
-                        "true": "buddy_capability_loop",
-                        "false": "buddy_public_response",
-                        "exhausted": "buddy_public_response",
-                    },
-                },
-                {
-                    "source": "should_pass_through_capability_result",
-                    "branches": {
-                        "true": "output_capability_passthrough",
-                        "false": "buddy_public_response",
-                        "exhausted": "buddy_public_response",
+                        "true": "execute_capability",
+                        "false": "output_final",
+                        "exhausted": "output_final",
                     },
                 },
             ],
@@ -1858,245 +1967,6 @@ class TemplateLayoutTests(unittest.TestCase):
             buddy_context_node["config"]["value"]["selected"],
             ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
         )
-        context_node = nodes["buddy_context_fanout"]
-        self.assertEqual(context_node["kind"], "subgraph")
-        self.assertEqual(context_node["config"]["graph"]["metadata"]["role"], "buddy_context_fanout")
-        self.assertIn({"state": "buddy_context", "required": True}, _read_contracts(context_node["reads"]))
-        self.assertIn({"state": "context_brief", "mode": "replace"}, context_node["writes"])
-        self.assertIn({"state": "fanout_context", "mode": "replace"}, context_node["writes"])
-        self.assertIn({"state": "fanout_assembly_report", "mode": "replace"}, context_node["writes"])
-
-        fanout_graph = context_node["config"]["graph"]
-        self.assertNotIn("internal", fanout_graph["metadata"])
-        self.assertEqual(fanout_graph["state_schema"]["context_brief"]["type"], "json")
-        self.assertEqual(fanout_graph["state_schema"]["fanout_context"]["type"], "json")
-        self.assertEqual(fanout_graph["nodes"]["assemble_context_fanout"]["config"]["actionKey"], "toograph_context_fanout")
-        self.assertEqual(
-            fanout_graph["nodes"]["assemble_context_fanout"]["config"]["actionBindings"],
-            [
-                {
-                    "actionKey": "toograph_context_fanout",
-                    "outputMapping": {
-                        "success": "fanout_success",
-                        "context_brief": "context_brief",
-                        "fanout_context": "fanout_context",
-                        "memory_context": "fanout_memory_context",
-                        "knowledge_context": "fanout_knowledge_context",
-                        "page_context_summary": "fanout_page_context_summary",
-                        "capability_candidates": "fanout_capability_candidates",
-                        "assembly_report": "fanout_assembly_report",
-                        "result": "fanout_result",
-                    },
-                }
-            ],
-        )
-        self.assertIn({"source": "input_user_message", "target": "assemble_context_fanout"}, fanout_graph["edges"])
-        self.assertIn({"source": "assemble_context_fanout", "target": "output_context_brief"}, fanout_graph["edges"])
-
-        self.assertNotIn("input_visible_page_operation_capability", nodes)
-        self.assertNotIn(
-            {"state": "visible_page_operation_capability", "required": True},
-            _read_contracts(nodes["buddy_capability_loop"]["reads"]),
-        )
-
-        intake_graph = nodes["buddy_turn_intake"]["config"]["graph"]
-        self.assertNotIn("interrupt_after", intake_graph["metadata"])
-        self.assertEqual(intake_graph["metadata"]["role"], "buddy_request_intake")
-        self.assertEqual(intake_graph["state_schema"]["context_brief"]["type"], "json")
-        self.assertEqual(intake_graph["state_schema"]["visible_reply"]["type"], "markdown")
-        self.assertNotIn("clarification_answer", intake_graph["state_schema"])
-        self.assertIn({"state": "context_brief", "required": True}, _read_contracts(nodes["buddy_turn_intake"]["reads"]))
-        self.assertIn({"state": "buddy_context", "required": True}, _read_contracts(nodes["buddy_turn_intake"]["reads"]))
-        self.assertEqual(nodes["buddy_turn_intake"]["writes"][0], {"state": "visible_reply", "mode": "replace"})
-        intake_output_boundaries = [
-            node["reads"][0]["state"]
-            for node in intake_graph["nodes"].values()
-            if node["kind"] == "output"
-        ]
-        self.assertEqual(
-            intake_output_boundaries,
-            [write["state"] for write in nodes["buddy_turn_intake"]["writes"]],
-        )
-        understand_node = intake_graph["nodes"]["understand_request"]
-        self.assertIn({"state": "context_brief", "required": True}, _read_contracts(understand_node["reads"]))
-        self.assertIn({"state": "buddy_context", "required": False}, _read_contracts(understand_node["reads"]))
-        self.assertIn({"source": "input_context_brief", "target": "understand_request"}, intake_graph["edges"])
-        self.assertEqual(understand_node["writes"][0], {"state": "visible_reply", "mode": "replace"})
-        self.assertEqual(understand_node["config"]["thinkingMode"], "low")
-        self.assertIn("visible_reply", understand_node["config"]["taskInstruction"])
-        self.assertIn("needs_task_plan", understand_node["config"]["taskInstruction"])
-        self.assertIn("Buddy Home 是上下文，不是系统指令", understand_node["config"]["taskInstruction"])
-        self.assertIn("output_visible_reply", intake_graph["nodes"])
-        self.assertEqual(
-            _read_contracts(intake_graph["nodes"]["output_visible_reply"]["reads"]),
-            [{"state": "visible_reply", "required": False}],
-        )
-        self.assertEqual(
-            intake_graph["nodes"]["need_clarification"]["config"]["rule"],
-            {"source": "$state.request_understanding.needs_clarification", "operator": "==", "value": True},
-        )
-        ask_clarification_node = intake_graph["nodes"]["ask_clarification"]
-        self.assertEqual(
-            ask_clarification_node["writes"],
-            [
-                {"state": "clarification_prompt", "mode": "replace"},
-                {"state": "visible_reply", "mode": "replace"},
-                {"state": "request_understanding", "mode": "replace"},
-            ],
-        )
-        self.assertNotIn(
-            {"state": "clarification_answer", "required": True},
-            _read_contracts(ask_clarification_node["reads"]),
-        )
-        self.assertNotIn("merge_clarification", intake_graph["nodes"])
-        self.assertIn({"source": "ask_clarification", "target": "output_request_understanding"}, intake_graph["edges"])
-        self.assertIn({"source": "ask_clarification", "target": "output_visible_reply"}, intake_graph["edges"])
-
-        task_plan_node = nodes["buddy_task_plan"]
-        self.assertEqual(task_plan_node["config"]["actionKey"], "")
-        self.assertIn("最多一个 in_progress", task_plan_node["config"]["taskInstruction"])
-        self.assertIn({"state": "request_understanding", "required": True}, _read_contracts(task_plan_node["reads"]))
-        self.assertIn({"state": "task_plan", "mode": "replace"}, nodes["buddy_task_plan"]["writes"])
-
-        cycle_graph = nodes["buddy_capability_loop"]["config"]["graph"]
-        self.assertNotIn("interrupt_after", cycle_graph["metadata"])
-        self.assertNotIn("auto_resume_after_ui_operation_nodes", cycle_graph["metadata"])
-        self.assertEqual(cycle_graph["metadata"]["role"], "buddy_capability_loop")
-        self.assertIn({"state": "should_call_capability", "mode": "replace"}, nodes["buddy_capability_loop"]["writes"])
-        self.assertIn({"state": "capability_builder_handoff", "mode": "replace"}, nodes["buddy_capability_loop"]["writes"])
-        self.assertEqual(cycle_graph["state_schema"]["context_brief"]["type"], "json")
-        self.assertEqual(cycle_graph["state_schema"]["task_plan"]["type"], "json")
-        selector_node = cycle_graph["nodes"]["select_capability"]
-        self.assertIn({"state": "context_brief", "required": True}, _read_contracts(selector_node["reads"]))
-        self.assertIn({"state": "task_plan", "required": False}, _read_contracts(selector_node["reads"]))
-        self.assertEqual(selector_node["config"]["actionKey"], "toograph_capability_selector")
-        selector_action_inputs = [
-            read
-            for read in selector_node["reads"]
-            if isinstance(read.get("binding"), dict) and read["binding"].get("kind") == "action_input"
-        ]
-        self.assertEqual(selector_action_inputs, [])
-        self.assertIn({"state": "user_message", "required": True}, _read_contracts(selector_node["reads"]))
-        self.assertIn({"state": "capability_review", "required": False}, _read_contracts(selector_node["reads"]))
-        self.assertEqual(
-            selector_node["config"]["actionBindings"],
-            [
-                {
-                    "actionKey": "toograph_capability_selector",
-                    "outputMapping": {
-                        "capability": "selected_capability",
-                        "needs_capability": "should_call_capability",
-                    },
-                }
-            ],
-        )
-        self.assertNotIn({"state": "capability_selection_audit", "mode": "replace"}, selector_node["writes"])
-        for removed_node_id in [
-            "review_capability_permission",
-            "needs_capability_approval",
-            "request_capability_approval",
-            "review_approval_decision",
-            "approval_granted",
-            "review_denied_capability",
-        ]:
-            self.assertNotIn(removed_node_id, cycle_graph["nodes"])
-        execute_node = cycle_graph["nodes"]["execute_capability"]
-        self.assertEqual(execute_node["config"]["actionKey"], "")
-        self.assertIn({"state": "selected_capability", "required": True}, _read_contracts(execute_node["reads"]))
-        self.assertEqual(execute_node["writes"], [{"state": "capability_result", "mode": "replace"}])
-        self.assertEqual(cycle_graph["state_schema"]["capability_result"]["type"], "result_package")
-        self.assertNotIn("capability_selection_audit", cycle_graph["state_schema"])
-        self.assertEqual(cycle_graph["state_schema"]["capability_gap"]["type"], "json")
-        self.assertEqual(cycle_graph["state_schema"]["capability_builder_handoff"]["type"], "json")
-        self.assertEqual(cycle_graph["state_schema"]["capability_trace"]["type"], "json")
-        self.assertNotIn("visible_page_operation_capability", cycle_graph["state_schema"])
-        self.assertNotIn("visible_subgraph_operation_result", cycle_graph["state_schema"])
-        for removed_state_key in [
-            "operation_result",
-            "page_operation_context",
-            "operation_report",
-            "visible_page_operation_public_response",
-            "visible_page_operation_report",
-            "visible_template_operation_ok",
-            "visible_template_operation_request_id",
-            "visible_template_operation_journal",
-            "visible_template_operation_error",
-        ]:
-            self.assertNotIn(removed_state_key, cycle_graph["state_schema"])
-        self.assertNotIn("input_visible_page_operation_capability", cycle_graph["nodes"])
-        for edge in cycle_graph["edges"]:
-            self.assertNotEqual(edge.get("source"), "input_visible_page_operation_capability")
-            self.assertNotEqual(edge.get("target"), "input_visible_page_operation_capability")
-        self.assertNotIn("固定返回", selector_node["config"]["taskInstruction"])
-        self.assertNotIn("页面操作 workflow", selector_node["config"]["taskInstruction"])
-        self.assertIn("action/subgraph/tool/none", selector_node["config"]["taskInstruction"])
-        self.assertIn("selected_capability.kind=action/subgraph/tool", execute_node["config"]["taskInstruction"])
-        self.assertNotIn("run_visible_template_operation", execute_node["config"]["taskInstruction"])
-        routed_targets = [
-            target
-            for conditional_edge in cycle_graph["conditional_edges"]
-            for target in conditional_edge["branches"].values()
-        ]
-        self.assertNotIn("run_visible_template_operation", routed_targets)
-        self.assertNotIn("adapt_visible_subgraph_result", routed_targets)
-        self.assertNotIn("output_capability_selection_audit", cycle_graph["nodes"])
-        self.assertEqual(
-            _read_contracts(cycle_graph["nodes"]["output_capability_builder_handoff"]["reads"]),
-            [{"state": "capability_builder_handoff", "required": False}],
-        )
-        missing_node = cycle_graph["nodes"]["review_missing_capability"]
-        self.assertIn({"state": "capability_gap", "mode": "replace"}, missing_node["writes"])
-        self.assertIn({"state": "capability_builder_handoff", "mode": "replace"}, missing_node["writes"])
-        self.assertIn("should_offer_build", missing_node["config"]["taskInstruction"])
-        self.assertIn("capability_builder_handoff", missing_node["config"]["taskInstruction"])
-        self.assertIn("toograph_action_creation_workflow", missing_node["config"]["taskInstruction"])
-        self.assertIn("toograph_graph_template_creation_workflow", missing_node["config"]["taskInstruction"])
-        review_node = cycle_graph["nodes"]["review_capability_result"]
-        self.assertIn({"state": "capability_trace", "mode": "append"}, review_node["writes"])
-        self.assertIn("capability_result.outputs.validation_report.value", review_node["config"]["taskInstruction"])
-        self.assertIn("capability_result.outputContract", review_node["config"]["taskInstruction"])
-        self.assertIn("validation_report.repair_options", review_node["config"]["taskInstruction"])
-        self.assertEqual(cycle_graph["nodes"]["continue_capability_loop"]["config"]["loopLimit"], 3)
-        self.assertEqual(
-            cycle_graph["conditional_edges"][0],
-            {
-                "source": "should_call_capability_condition",
-                "branches": {
-                    "true": "execute_capability",
-                    "false": "review_missing_capability",
-                    "exhausted": "review_missing_capability",
-                },
-            },
-        )
-        self.assertIn({"source": "execute_capability", "target": "review_capability_result"}, cycle_graph["edges"])
-        self.assertNotIn("output_approval_prompt", cycle_graph["nodes"])
-        self.assertLessEqual(
-            max(node["ui"]["position"]["x"] for node in cycle_graph["nodes"].values())
-            - min(node["ui"]["position"]["x"] for node in cycle_graph["nodes"].values()),
-            6200,
-        )
-        for input_node_id in [
-            "input_user_message",
-            "input_conversation_history",
-            "input_page_context",
-            "input_buddy_context",
-            "input_request_understanding",
-            "input_context_brief",
-            "input_task_plan",
-        ]:
-            self.assertIn({"source": input_node_id, "target": "select_capability"}, cycle_graph["edges"])
-
-        public_response_node = nodes["buddy_public_response"]
-        self.assertEqual(public_response_node["config"]["actionKey"], "")
-        self.assertEqual(public_response_node["config"]["thinkingMode"], "low")
-        self.assertEqual(public_response_node["writes"], [{"state": "public_response", "mode": "replace"}])
-        self.assertIn({"state": "capability_result", "required": False}, _read_contracts(public_response_node["reads"]))
-        self.assertIn({"state": "capability_review", "required": False}, _read_contracts(public_response_node["reads"]))
-        self.assertIn({"state": "capability_builder_handoff", "required": False}, _read_contracts(public_response_node["reads"]))
-        self.assertIn({"state": "visible_reply", "required": False}, _read_contracts(public_response_node["reads"]))
-        self.assertIn("不要暴露内部 state 名称", public_response_node["config"]["taskInstruction"])
-        self.assertIn("needs_clarification", public_response_node["config"]["taskInstruction"])
-        self.assertIn("capability_builder_handoff", public_response_node["config"]["taskInstruction"])
 
     def test_buddy_internal_templates_are_hidden_but_loadable(self) -> None:
         public_template_ids = {record["template_id"] for record in _official_template_records()}
@@ -2124,17 +1994,17 @@ class TemplateLayoutTests(unittest.TestCase):
                 self.assertEqual([issue.model_dump() for issue in validation.issues], [])
                 self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
 
-    def test_buddy_main_loop_embeds_internal_subgraph_template_sources(self) -> None:
+    def test_buddy_main_loop_is_a_flat_visible_capability_loop(self) -> None:
         template = load_template_record("buddy_autonomous_loop")
 
-        for node_id, template_id in BUDDY_MAIN_LOOP_SUBGRAPH_TEMPLATE_IDS.items():
-            with self.subTest(node_id=node_id, template_id=template_id):
-                embedded_graph = template["nodes"][node_id]["config"]["graph"]
-                source_template = load_template_record(template_id)
-                self.assertEqual(
-                    embedded_graph,
-                    _without_internal_metadata(_template_core(source_template)),
-                )
+        self.assertEqual(
+            [node_id for node_id, node in template["nodes"].items() if node["kind"] == "subgraph"],
+            ["run_context_compaction"],
+        )
+        self.assertEqual(template["nodes"]["run_context_compaction"]["config"]["graph"]["metadata"]["role"], "buddy_context_compaction")
+        self.assertNotIn("buddy_context_fanout", template["nodes"])
+        self.assertNotIn("buddy_turn_intake", template["nodes"])
+        self.assertNotIn("buddy_capability_loop", template["nodes"])
 
     def test_toograph_page_operation_workflow_contract(self) -> None:
         template = next(
@@ -2525,6 +2395,107 @@ class TemplateLayoutTests(unittest.TestCase):
                     if key not in {"template_id", "label", "description", "default_graph_name", "source"}
                 },
                 "graph_id": "test_buddy_autonomous_review",
+                "name": template["default_graph_name"],
+            }
+        )
+        validation = validate_graph(graph)
+        self.assertEqual([issue.model_dump() for issue in validation.issues], [])
+        self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
+
+    def test_buddy_context_compaction_template_contract(self) -> None:
+        template = load_template_record("buddy_context_compaction")
+        states = template["state_schema"]
+        nodes = template["nodes"]
+
+        self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
+        self.assertEqual(template["metadata"]["origin"], "buddy")
+        self.assertEqual(template["metadata"]["role"], "buddy_context_compaction")
+        self.assertIs(template["metadata"]["internal"], True)
+        self.assertEqual(template["label"], "上下文压缩")
+        self.assertEqual(template["metadata"]["requiredActions"], ["buddy_home_writer"])
+        self.assertEqual(template["metadata"]["permissions"], ["buddy_home_write"])
+        self.assertEqual(states["trigger"]["type"], "text")
+        self.assertEqual(states["current_session_id"]["type"], "text")
+        self.assertEqual(states["conversation_history"]["type"], "markdown")
+        self.assertEqual(states["existing_session_summary"]["type"], "markdown")
+        self.assertEqual(states["context_budget_report"]["type"], "json")
+        self.assertEqual(states["capability_result"]["type"], "result_package")
+        self.assertEqual(states["compaction_plan"]["type"], "json")
+        self.assertEqual(states["protected_recent_history"]["type"], "markdown")
+        self.assertEqual(states["session_summary_candidate"]["type"], "markdown")
+        self.assertEqual(states["compaction_report"]["type"], "json")
+        self.assertEqual(states["should_write_summary"]["type"], "boolean")
+        self.assertEqual(states["writer_input"]["type"], "json")
+        self.assertEqual(states["session_summary_write_success"]["type"], "boolean")
+        self.assertEqual(states["session_summary_write_result"]["type"], "markdown")
+
+        self.assertEqual(
+            [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
+            [
+                "output_compaction_report",
+                "output_session_summary_candidate",
+                "output_session_summary_write_result",
+            ],
+        )
+        self.assertEqual(nodes["plan_compaction"]["writes"], [{"state": "compaction_plan", "mode": "replace"}])
+        self.assertIn("protect_first", nodes["plan_compaction"]["config"]["taskInstruction"])
+        self.assertEqual(
+            nodes["summarize_context"]["writes"],
+            [
+                {"state": "session_summary_candidate", "mode": "replace"},
+                {"state": "protected_recent_history", "mode": "replace"},
+                {"state": "compaction_report", "mode": "replace"},
+                {"state": "should_write_summary", "mode": "replace"},
+                {"state": "writer_input", "mode": "replace"},
+            ],
+        )
+        self.assertIn("session_summary.update", nodes["summarize_context"]["config"]["taskInstruction"])
+        self.assertEqual(
+            nodes["has_summary_update"]["config"]["rule"],
+            {"source": "$state.should_write_summary", "operator": "==", "value": True},
+        )
+        writer_node = nodes["write_session_summary"]
+        self.assertEqual(writer_node["kind"], "agent")
+        self.assertEqual(writer_node["config"]["actionKey"], "buddy_home_writer")
+        self.assertEqual(
+            writer_node["config"]["actionBindings"],
+            [
+                {
+                    "actionKey": "buddy_home_writer",
+                    "outputMapping": {
+                        "success": "session_summary_write_success",
+                        "applied_commands": "applied_session_summary_commands",
+                        "skipped_commands": "skipped_session_summary_commands",
+                        "result": "session_summary_write_result",
+                    },
+                }
+            ],
+        )
+        self.assertIn({"source": "plan_compaction", "target": "summarize_context"}, template["edges"])
+        self.assertIn({"source": "summarize_context", "target": "has_summary_update"}, template["edges"])
+        self.assertIn({"source": "write_session_summary", "target": "output_session_summary_write_result"}, template["edges"])
+        self.assertEqual(
+            template["conditional_edges"],
+            [
+                {
+                    "source": "has_summary_update",
+                    "branches": {
+                        "true": "write_session_summary",
+                        "false": "output_compaction_report",
+                        "exhausted": "output_compaction_report",
+                    },
+                }
+            ],
+        )
+
+        graph = NodeSystemGraphPayload.model_validate(
+            {
+                **{
+                    key: value
+                    for key, value in template.items()
+                    if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+                },
+                "graph_id": "test_buddy_context_compaction",
                 "name": template["default_graph_name"],
             }
         )

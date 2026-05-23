@@ -52,17 +52,24 @@ DEFAULT_SESSION_SUMMARY = {
     "updated_at": "",
 }
 _BUDDY_DATABASE_LOCKS_GUARD = threading.Lock()
-_BUDDY_DATABASE_LOCKS: dict[Path, threading.RLock] = {}
+_BUDDY_DATABASE_LOCKS: dict[str, threading.RLock] = {}
 
 
 def _buddy_database_lock(db_path: Path) -> threading.RLock:
-    resolved_path = db_path.resolve()
+    resolved_path = _buddy_database_lock_key(db_path)
     with _BUDDY_DATABASE_LOCKS_GUARD:
         lock = _BUDDY_DATABASE_LOCKS.get(resolved_path)
         if lock is None:
             lock = threading.RLock()
             _BUDDY_DATABASE_LOCKS[resolved_path] = lock
         return lock
+
+
+def _buddy_database_lock_key(db_path: Path) -> str:
+    resolved = str(db_path.resolve())
+    if resolved.startswith("\\\\?\\"):
+        resolved = resolved[4:]
+    return os.path.normcase(os.path.normpath(resolved))
 
 
 CAPABILITY_USAGE_STATS_KEY = "capability_usage_stats"

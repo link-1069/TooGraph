@@ -23,7 +23,14 @@ export type BuddySessionSummary = {
   updated_at: string;
 };
 
-export type BuddyRunInputSource = "current_message" | "conversation_history" | "page_context" | "buddy_home_context";
+export type BuddyRunInputSource =
+  | "current_message"
+  | "conversation_history"
+  | "raw_conversation_history"
+  | "session_summary"
+  | "page_context"
+  | "buddy_home_context"
+  | "current_session_id";
 
 export type BuddyRunTemplateBinding = {
   version?: number;

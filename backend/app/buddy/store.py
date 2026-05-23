@@ -50,8 +50,11 @@ MAX_CAPABILITY_USAGE_RECENT_RUNS = 5
 ALLOWED_RUN_TEMPLATE_INPUT_SOURCES = {
     "current_message",
     "conversation_history",
+    "raw_conversation_history",
+    "session_summary",
     "page_context",
     "buddy_home_context",
+    "current_session_id",
 }
 ALLOWED_MEMORY_REVIEW_TEMPLATE_INPUT_SOURCES = {
     "source_run_id",
@@ -78,8 +81,11 @@ DEFAULT_RUN_TEMPLATE_BINDING = {
     "input_bindings": {
         "input_user_message": "current_message",
         "input_conversation_history": "conversation_history",
+        "input_raw_conversation_history": "raw_conversation_history",
+        "input_existing_session_summary": "session_summary",
         "input_page_context": "page_context",
         "input_buddy_context": "buddy_home_context",
+        "input_current_session_id": "current_session_id",
     },
 }
 DEFAULT_MEMORY_REVIEW_TEMPLATE_BINDING = {
@@ -1448,6 +1454,9 @@ def _normalize_run_template_binding(payload: dict[str, Any]) -> dict[str, Any]:
         if normalized_source not in ALLOWED_RUN_TEMPLATE_INPUT_SOURCES:
             raise ValueError(f"Unsupported Buddy input source: {normalized_source}")
         input_bindings[normalized_node_id] = normalized_source
+    if template_id == DEFAULT_RUN_TEMPLATE_BINDING["template_id"]:
+        for node_id, source in DEFAULT_RUN_TEMPLATE_BINDING["input_bindings"].items():
+            input_bindings.setdefault(node_id, source)
     current_message_count = sum(1 for source in input_bindings.values() if source == "current_message")
     if current_message_count != 1:
         raise ValueError("current_message must be bound exactly once.")

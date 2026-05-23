@@ -14,7 +14,19 @@ const runTraceSource = readFileSync(resolve(currentDirectory, "BuddyRunTrace.vue
 const runTraceDisplaySource = readFileSync(resolve(currentDirectory, "useBuddyRunTraceDisplay.ts"), "utf8");
 const runDisplayMessagesSource = readFileSync(resolve(currentDirectory, "useBuddyRunDisplayMessages.ts"), "utf8");
 const runEventStreamSource = readFileSync(resolve(currentDirectory, "useBuddyRunEventStream.ts"), "utf8");
+const boundRunTemplateSourcePath = resolve(currentDirectory, "useBuddyBoundRunTemplate.ts");
+const boundRunTemplateSource = existsSync(boundRunTemplateSourcePath)
+  ? readFileSync(boundRunTemplateSourcePath, "utf8")
+  : "";
+const visibleRunTemplateEffectsSourcePath = resolve(currentDirectory, "useBuddyVisibleRunTemplateEffects.ts");
+const visibleRunTemplateEffectsSource = existsSync(visibleRunTemplateEffectsSourcePath)
+  ? readFileSync(visibleRunTemplateEffectsSourcePath, "utf8")
+  : "";
 const autonomousReviewRunSource = readFileSync(resolve(currentDirectory, "useBuddyAutonomousReviewRun.ts"), "utf8");
+const contextCompactionRunPath = resolve(currentDirectory, "useBuddyContextCompactionRun.ts");
+const contextCompactionRunSource = existsSync(contextCompactionRunPath)
+  ? readFileSync(contextCompactionRunPath, "utf8")
+  : "";
 const messagesSource = readFileSync(resolve(currentDirectory, "useBuddyMessages.ts"), "utf8");
 const pageOperationContextSource = readFileSync(resolve(currentDirectory, "useBuddyPageOperationContext.ts"), "utf8");
 const graphEditPlaybackBridgeSource = readFileSync(resolve(currentDirectory, "buddyGraphEditPlaybackBridge.ts"), "utf8");
@@ -324,7 +336,7 @@ test("BuddyWidget lets the buddy runtime choose its own model", () => {
   assert.doesNotMatch(componentSource, /function buildBuddyModelOptions/);
   assert.doesNotMatch(componentSource, /fetchSettings/);
   assert.doesNotMatch(componentSource, /BUDDY_MODEL_STORAGE_KEY/);
-  assert.match(componentSource, /buddyModel:\s*buddyModelRef\.value/);
+  assert.match(boundRunTemplateSource, /buddyModel:\s*buddyModelRef\.value/);
 });
 
 test("BuddyWidget builds page context from the shared editor snapshot", () => {
@@ -335,7 +347,8 @@ test("BuddyWidget builds page context from the shared editor snapshot", () => {
   assert.match(componentSource, /import \{ useBuddyContextStore \} from "\.\.\/stores\/buddyContext\.ts";/);
   assert.match(componentSource, /const buddyContextStore = useBuddyContextStore\(\);/);
   assert.match(componentSource, /useBuddyPageOperationContext\(\{[\s\S]*routePath: computed\(\(\) => route\.fullPath\),[\s\S]*activeRunId,[\s\S]*getEditorSnapshot: \(\) => buddyContextStore\.editorSnapshot,[\s\S]*\}\)/);
-  assert.match(componentSource, /const pageOperationContext = buildPageOperationRuntimeContext\(\);[\s\S]*pageContext: pageOperationContext\.pageContext,[\s\S]*pageOperationContext: pageOperationContext\.actionRuntimeContext/);
+  assert.match(componentSource, /buildPageOperationRuntimeContext,/);
+  assert.match(boundRunTemplateSource, /const pageOperationContext = buildPageOperationRuntimeContext\(\);[\s\S]*pageContext: pageOperationContext\.pageContext,[\s\S]*pageOperationContext: pageOperationContext\.actionRuntimeContext/);
   assert.match(pageOperationContextSource, /const snapshot = collectPageOperationSnapshot\(\{[\s\S]*routePath: routePath\.value,[\s\S]*root,[\s\S]*\}\);/);
   assert.match(pageOperationContextSource, /const actionRuntimeContext = buildPageOperationActionRuntimeContext\(\{[\s\S]*snapshot,[\s\S]*editor: buildBuddyPageOperationEditorFacts\(editorSnapshot\),[\s\S]*latestForegroundRun: options\.latestForegroundRun \?\? null,[\s\S]*latestOperationReport: options\.latestOperationReport \?\? null,[\s\S]*\}\);/);
   assert.match(pageOperationContextSource, /pageContext: buildBuddyPageContext\(\{[\s\S]*routePath: routePath\.value,[\s\S]*editor: editorSnapshot,[\s\S]*activeBuddyRunId: activeRunId\.value,[\s\S]*pageOperationBook: actionRuntimeContext\.page_operation_book,[\s\S]*pageFacts: actionRuntimeContext\.page_facts,[\s\S]*\}\)/);
@@ -503,7 +516,8 @@ test("BuddyWidget renders output-segment run trace capsules instead of per-messa
   assert.doesNotMatch(componentSource, /class="buddy-widget__run-trace-summary"/);
   assert.doesNotMatch(componentSource, /class="buddy-widget__run-trace-row-open"/);
   assert.doesNotMatch(componentSource, /\.buddy-widget__run-trace\s*\{/);
-  assert.match(componentSource, /import \{ fetchTemplate, runGraph \} from "\.\.\/api\/graphs\.ts";/);
+  assert.doesNotMatch(componentSource, /import \{ fetchTemplate, runGraph \} from "\.\.\/api\/graphs\.ts";/);
+  assert.match(boundRunTemplateSource, /import \{ fetchTemplate, runGraph \} from "\.\.\/api\/graphs\.ts";/);
   assert.match(virtualOperationExecutorSource, /import \{ fetchTemplate, fetchTemplates, runGraph \} from "\.\.\/api\/graphs\.ts";/);
   assert.match(runTraceDisplaySource, /import \{ restoreGraphRevision \} from "\.\.\/api\/graphs\.ts";/);
   assert.match(runTraceDisplaySource, /function openTraceEvidenceRun\(runId: string \| null \| undefined\)/);
@@ -583,8 +597,9 @@ test("BuddyWidget shows a pending run trace capsule immediately after sending", 
   assert.match(runDisplayMessagesSource, /boundaryLabel:\s*t\("buddy\.activity\.preparing"\)/);
   assert.match(
     componentSource,
-    /const publicOutputBindings = buildBuddyPublicOutputBindings\(graph\);[\s\S]*showBuddyGraphPendingTrace\(assistantMessage\.id, graph, publicOutputBindings\);[\s\S]*const run = await runGraph\(graph\);/,
+    /const boundRun = await startBuddyBoundRunTemplate\(\{[\s\S]*showBuddyGraphPendingTrace\(assistantMessage\.id, boundRun\.graph, boundRun\.publicOutputBindings\);/,
   );
+  assert.match(boundRunTemplateSource, /const publicOutputBindings = buildBuddyPublicOutputBindings\(graph\);[\s\S]*const run = await runGraph\(graph\);/);
   assert.match(runDisplayMessagesSource, /function showBuddyGraphPendingTrace\(/);
   assert.match(runDisplayMessagesSource, /createBuddyPendingOutputTraceRuntimeState\(outputTracePlan, nowPublicOutputMs\(\)\)/);
   assert.match(runDisplayMessagesSource, /function hasVisibleBuddyRunDisplaySnapshot\(/);
@@ -601,7 +616,9 @@ test("BuddyWidget groups consecutive visible messages by role label", () => {
 });
 
 test("BuddyWidget stores buddy chat in backend sessions and exposes a compact history dropdown", () => {
-  assert.match(componentSource, /import \{[\s\S]*appendBuddyChatMessage,[\s\S]*fetchBuddyRunTemplateBinding,[\s\S]*\} from "\.\.\/api\/buddy\.ts";/);
+  assert.match(componentSource, /import \{[\s\S]*appendBuddyChatMessage,[\s\S]*\} from "\.\.\/api\/buddy\.ts";/);
+  assert.doesNotMatch(componentSource, /fetchBuddyRunTemplateBinding/);
+  assert.match(boundRunTemplateSource, /import \{[\s\S]*fetchBuddyRunTemplateBinding,[\s\S]*fetchBuddySessionSummary,[\s\S]*\} from "\.\.\/api\/buddy\.ts";/);
   assert.match(autonomousReviewRunSource, /import \{ fetchBuddyMemoryReviewTemplateBinding \} from "\.\.\/api\/buddy\.ts";/);
   assert.match(chatSessionsSource, /import \{[\s\S]*createBuddyChatSession,[\s\S]*deleteBuddyChatSession,[\s\S]*fetchBuddyChatMessages,[\s\S]*fetchBuddyChatSessions,[\s\S]*\} from "\.\.\/api\/buddy\.ts";/);
   assert.match(componentSource, /import \{ Close, FullScreen, Plus, SemiSelect \} from "@element-plus\/icons-vue";/);
@@ -676,19 +693,32 @@ test("BuddyWidget leaves buddy self config loading and memory curation to the ch
 });
 
 test("BuddyWidget starts visible runs from the saved template binding", () => {
-  assert.match(componentSource, /fetchBuddyRunTemplateBinding/);
-  assert.match(componentSource, /const binding = await fetchBuddyRunTemplateBinding\(\);/);
-  assert.match(componentSource, /fetchTemplate\(binding\.template_id\)/);
-  assert.match(componentSource, /buildBuddyChatGraph\([\s\S]*template,[\s\S]*binding,[\s\S]*\);/);
+  assert.notEqual(boundRunTemplateSource, "");
+  assert.match(componentSource, /import \{ useBuddyBoundRunTemplate \} from "\.\/useBuddyBoundRunTemplate\.ts";/);
+  assert.match(componentSource, /const \{[\s\S]*startBuddyBoundRunTemplate,[\s\S]*\} = useBuddyBoundRunTemplate\(\{/);
+  assert.match(componentSource, /const boundRun = await startBuddyBoundRunTemplate\(\{/);
+  assert.match(boundRunTemplateSource, /fetchBuddyRunTemplateBinding/);
+  assert.match(boundRunTemplateSource, /const binding = await fetchBuddyRunTemplateBinding\(\);/);
+  assert.match(boundRunTemplateSource, /fetchTemplate\(binding\.template_id\)/);
+  assert.match(boundRunTemplateSource, /buildBuddyChatGraph\([\s\S]*template,[\s\S]*binding,[\s\S]*\);/);
+  assert.match(boundRunTemplateSource, /const run = await runGraph\(graph\);/);
+  assert.doesNotMatch(componentSource, /fetchBuddyRunTemplateBinding/);
+  assert.doesNotMatch(componentSource, /fetchTemplate\(binding\.template_id\)/);
+  assert.doesNotMatch(componentSource, /buildBuddyChatGraph\(/);
+  assert.doesNotMatch(componentSource, /runGraph\(/);
   assert.doesNotMatch(componentSource, /fetchTemplate\("buddy_autonomous_loop"\)/);
 });
 
 test("BuddyWidget starts autonomous review as a separate background run after the visible reply", () => {
+  assert.notEqual(visibleRunTemplateEffectsSource, "");
   assert.match(autonomousReviewRunSource, /buildBuddyReviewGraph/);
   assert.match(autonomousReviewRunSource, /fetchBuddyMemoryReviewTemplateBinding/);
-  assert.match(componentSource, /import \{ useBuddyAutonomousReviewRun \} from "\.\/useBuddyAutonomousReviewRun\.ts";/);
-  assert.match(componentSource, /const \{[\s\S]*startBuddyAutonomousReviewRun,[\s\S]*abortBackgroundReviewRuns,[\s\S]*\} = useBuddyAutonomousReviewRun\(\{[\s\S]*currentSessionId,[\s\S]*buddyModelRef,[\s\S]*pollRunUntilFinished,[\s\S]*notifyBuddyDataChanged: buddyContextStore\.notifyBuddyDataChanged,[\s\S]*\}\);/);
-  assert.match(componentSource, /void startBuddyAutonomousReviewRun\(runDetail\);/);
+  assert.match(visibleRunTemplateEffectsSource, /useBuddyAutonomousReviewRun/);
+  assert.match(visibleRunTemplateEffectsSource, /useBuddyContextCompactionRun/);
+  assert.match(componentSource, /import \{ useBuddyVisibleRunTemplateEffects \} from "\.\/useBuddyVisibleRunTemplateEffects\.ts";/);
+  assert.match(componentSource, /const \{[\s\S]*startBuddyVisibleRunTemplateEffects,[\s\S]*abortBuddyVisibleRunTemplateEffects,[\s\S]*\} = useBuddyVisibleRunTemplateEffects\(\{[\s\S]*currentSessionId,[\s\S]*buddyModelRef,[\s\S]*pollRunUntilFinished,[\s\S]*notifyBuddyDataChanged: buddyContextStore\.notifyBuddyDataChanged,[\s\S]*\}\);/);
+  assert.match(componentSource, /void startBuddyVisibleRunTemplateEffects\(\{/);
+  assert.match(visibleRunTemplateEffectsSource, /void startBuddyAutonomousReviewRun\(request\.runDetail\);/);
   assert.match(autonomousReviewRunSource, /async function startBuddyAutonomousReviewRun\(mainRun: RunDetail\)/);
   assert.match(autonomousReviewRunSource, /const binding = await fetchBuddyMemoryReviewTemplateBinding\(\);/);
   assert.match(autonomousReviewRunSource, /fetchTemplate\(binding\.template_id\)/);
@@ -698,11 +728,37 @@ test("BuddyWidget starts autonomous review as a separate background run after th
   assert.match(autonomousReviewRunSource, /const reviewRun = await runGraph\(graph\);/);
   assert.match(autonomousReviewRunSource, /void pollBuddyAutonomousReviewRun\(reviewRun\.run_id\);/);
   assert.match(autonomousReviewRunSource, /const backgroundReviewAbortControllers = new Set<AbortController>\(\);/);
-  assert.match(componentSource, /abortBackgroundReviewRuns\(\);/);
+  assert.match(componentSource, /abortBuddyVisibleRunTemplateEffects\(\);/);
+  assert.doesNotMatch(componentSource, /import \{ useBuddyAutonomousReviewRun \} from "\.\/useBuddyAutonomousReviewRun\.ts";/);
+  assert.doesNotMatch(componentSource, /startBuddyAutonomousReviewRun/);
+  assert.doesNotMatch(componentSource, /abortBackgroundReviewRuns/);
   assert.doesNotMatch(componentSource, /async function startBuddyAutonomousReviewRun\(mainRun: RunDetail\)/);
   assert.doesNotMatch(componentSource, /async function pollBuddyAutonomousReviewRun\(runId: string\)/);
   assert.doesNotMatch(componentSource, /const backgroundReviewAbortControllers = new Set<AbortController>\(\);/);
   assert.doesNotMatch(componentSource, /activeRunId\.value = reviewRun\.run_id/);
+});
+
+test("BuddyWidget leaves visible context compaction inside the official run template", () => {
+  assert.notEqual(boundRunTemplateSource, "");
+  assert.notEqual(visibleRunTemplateEffectsSource, "");
+  assert.match(boundRunTemplateSource, /fetchBuddySessionSummary/);
+  assert.match(boundRunTemplateSource, /const sessionSummary = await fetchBuddySessionSummary\(\);/);
+  assert.match(boundRunTemplateSource, /sessionSummary: sessionSummary\.content,/);
+  assert.match(visibleRunTemplateEffectsSource, /startBuddyContextCompactionRun/);
+  assert.match(visibleRunTemplateEffectsSource, /trigger: "background"/);
+  assert.doesNotMatch(componentSource, /import \{ useBuddyContextCompactionRun \} from "\.\/useBuddyContextCompactionRun\.ts";/);
+  assert.doesNotMatch(componentSource, /fetchBuddySessionSummary/);
+  assert.doesNotMatch(componentSource, /startBuddyContextCompactionRun/);
+  assert.doesNotMatch(componentSource, /abortContextCompactionRuns/);
+  assert.doesNotMatch(componentSource, /maybeRunPreflightContextCompaction/);
+  assert.doesNotMatch(componentSource, /isContextOverflowError/);
+  assert.doesNotMatch(componentSource, /contextCompactionRetried/);
+  assert.doesNotMatch(componentSource, /trigger: "preflight"/);
+  assert.doesNotMatch(componentSource, /trigger: "overflow_recovery"/);
+  assert.match(contextCompactionRunSource, /buildBuddyContextCompactionGraph/);
+  assert.match(contextCompactionRunSource, /BUDDY_CONTEXT_COMPACTION_TEMPLATE_ID/);
+  assert.match(contextCompactionRunSource, /shouldRunBuddyContextCompaction/);
+  assert.doesNotMatch(componentSource, /async function startBuddyContextCompactionRun/);
 });
 
 test("BuddyWidget keeps awaiting-human runs out of the normal chat resume flow", () => {

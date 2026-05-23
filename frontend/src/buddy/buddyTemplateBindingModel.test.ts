@@ -215,8 +215,11 @@ test("binding model exposes Buddy input rows with current message required", () 
   assert.deepEqual(rows.map((row) => [row.source, row.required, row.selectedNodeId]), [
     ["current_message", true, "input_prompt"],
     ["conversation_history", false, "input_history"],
+    ["raw_conversation_history", false, ""],
+    ["session_summary", false, ""],
     ["page_context", false, ""],
     ["buddy_home_context", false, ""],
+    ["current_session_id", false, ""],
   ]);
 });
 
@@ -271,8 +274,11 @@ test("binding model exposes source options and Buddy Home folder package", () =>
     "",
     "current_message",
     "conversation_history",
+    "raw_conversation_history",
+    "session_summary",
     "page_context",
     "buddy_home_context",
+    "current_session_id",
   ]);
   assert.deepEqual(buildBuddyHomeContextValue(), {
     kind: "local_folder",
@@ -280,6 +286,9 @@ test("binding model exposes source options and Buddy Home folder package", () =>
     selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
   });
   assert.deepEqual(buildDefaultBuddyRunTemplateBinding().input_bindings.input_user_message, "current_message");
+  assert.deepEqual(buildDefaultBuddyRunTemplateBinding().input_bindings.input_raw_conversation_history, "raw_conversation_history");
+  assert.deepEqual(buildDefaultBuddyRunTemplateBinding().input_bindings.input_existing_session_summary, "session_summary");
+  assert.deepEqual(buildDefaultBuddyRunTemplateBinding().input_bindings.input_current_session_id, "current_session_id");
 });
 
 test("memory review binding model exposes required automatic source rows", () => {

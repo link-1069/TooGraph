@@ -317,9 +317,7 @@ import { useRoute, useRouter } from "vue-router";
 
 import {
   appendBuddyChatMessage,
-  fetchBuddyRunTemplateBinding,
 } from "../api/buddy.ts";
-import { fetchTemplate, runGraph } from "../api/graphs.ts";
 import SandboxedHtmlFrame from "../components/SandboxedHtmlFrame.vue";
 import { useBuddyContextStore } from "../stores/buddyContext.ts";
 import {
@@ -334,7 +332,8 @@ import BuddyComposer from "./BuddyComposer.vue";
 import BuddyRunTrace from "./BuddyRunTrace.vue";
 import BuddySessionHistory from "./BuddySessionHistory.vue";
 import BuddyVirtualOperationBanner from "./BuddyVirtualOperationBanner.vue";
-import { useBuddyAutonomousReviewRun } from "./useBuddyAutonomousReviewRun.ts";
+import { useBuddyBoundRunTemplate } from "./useBuddyBoundRunTemplate.ts";
+import { useBuddyVisibleRunTemplateEffects } from "./useBuddyVisibleRunTemplateEffects.ts";
 import { useBuddyChatSessions } from "./useBuddyChatSessions.ts";
 import { useBuddyGraphEditPlaybackExecutor } from "./useBuddyGraphEditPlaybackExecutor.ts";
 import { useBuddyMessages, type BuddyMessage, type BuddyQueuedTurn } from "./useBuddyMessages.ts";
@@ -359,7 +358,6 @@ import {
 import {
   BUDDY_MODE_OPTIONS,
   DEFAULT_BUDDY_MODE,
-  buildBuddyChatGraph,
   resolveBuddyMode,
   type BuddyMode,
 } from "./buddyChatGraph.ts";
@@ -392,6 +390,9 @@ type BuddyAutoResumedPageOperationFinishOptions = {
 };
 type BuddyFinishVisibleRunOptions = {
   includeOutputTrace?: boolean;
+  sourceTurn?: BuddyQueuedTurn;
+  pageContext?: string;
+  sessionSummary?: string;
 };
 
 const DRAG_THRESHOLD_PX = 4;
@@ -645,7 +646,7 @@ onBeforeUnmount(() => {
   disposeBuddyMascotMotionController();
   closeEventSource();
   activeAbortController?.abort();
-  abortBackgroundReviewRuns();
+  abortBuddyVisibleRunTemplateEffects();
 });
 
 watch(buddyMode, (nextMode) => {
@@ -878,33 +879,25 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
 
   try {
     activeAbortController = new AbortController();
-    const binding = await fetchBuddyRunTemplateBinding();
-    const template = await fetchTemplate(binding.template_id);
-    const pageOperationContext = buildPageOperationRuntimeContext();
-    const graph = buildBuddyChatGraph(
-      template,
-      {
-        userMessage: turn.userMessage,
-        history,
-        pageContext: pageOperationContext.pageContext,
-        pageOperationContext: pageOperationContext.actionRuntimeContext,
-        buddyMode: buddyMode.value,
-        buddyModel: buddyModelRef.value,
-      },
-      binding,
-    );
-    const publicOutputBindings = buildBuddyPublicOutputBindings(graph);
-    showBuddyGraphPendingTrace(assistantMessage.id, graph, publicOutputBindings);
+    const boundRun = await startBuddyBoundRunTemplate({
+      userMessage: turn.userMessage,
+      history,
+      sessionId: turn.sessionId,
+    });
+    showBuddyGraphPendingTrace(assistantMessage.id, boundRun.graph, boundRun.publicOutputBindings);
     setAssistantActivityText(assistantMessage.id, t("buddy.activity.starting"));
-    const run = await runGraph(graph);
-    activeRunId.value = run.run_id;
-    startRunEventStream(run.run_id, assistantMessage.id, graph, publicOutputBindings);
-    const runDetail = await pollRunUntilFinished(run.run_id, activeAbortController.signal);
+    activeRunId.value = boundRun.runId;
+    startRunEventStream(boundRun.runId, assistantMessage.id, boundRun.graph, boundRun.publicOutputBindings);
+    const runDetail = await pollRunUntilFinished(boundRun.runId, activeAbortController.signal);
     if (runDetail.status === "awaiting_human") {
       handleBuddyRunAwaitingHuman(runDetail, assistantMessage.id, { persist: true });
       return;
     }
-    finishBuddyVisibleRun(runDetail, assistantMessage.id, turn.sessionId, run.run_id);
+    finishBuddyVisibleRun(runDetail, assistantMessage.id, turn.sessionId, boundRun.runId, {
+      sourceTurn: turn,
+      pageContext: boundRun.pageContext,
+      sessionSummary: boundRun.sessionSummary,
+    });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return;
@@ -1061,7 +1054,13 @@ function finishBuddyVisibleRun(
       });
     }
   }
-  void startBuddyAutonomousReviewRun(runDetail);
+  void startBuddyVisibleRunTemplateEffects({
+    runDetail,
+    runId,
+    sourceTurn: options.sourceTurn,
+    pageContext: options.pageContext,
+    sessionSummary: options.sessionSummary,
+  });
   mood.value = runDetail.status === "failed" ? "error" : runDetail.status === "cancelled" ? "idle" : "speaking";
   if (runDetail.status === "completed") {
     buddyContextStore.notifyBuddyDataChanged();
@@ -1209,9 +1208,17 @@ const {
 });
 
 const {
-  startBuddyAutonomousReviewRun,
-  abortBackgroundReviewRuns,
-} = useBuddyAutonomousReviewRun({
+  startBuddyBoundRunTemplate,
+} = useBuddyBoundRunTemplate({
+  buddyMode,
+  buddyModelRef,
+  buildPageOperationRuntimeContext,
+});
+
+const {
+  startBuddyVisibleRunTemplateEffects,
+  abortBuddyVisibleRunTemplateEffects,
+} = useBuddyVisibleRunTemplateEffects({
   currentSessionId,
   buddyModelRef,
   pollRunUntilFinished,

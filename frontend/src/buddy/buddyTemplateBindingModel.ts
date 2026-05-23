@@ -83,8 +83,11 @@ export const BUDDY_RUN_INPUT_SOURCE_OPTIONS: BuddyRunInputSourceOption[] = [
   { value: "", labelKey: "buddyPage.binding.sources.none" },
   { value: "current_message", labelKey: "buddyPage.binding.sources.currentMessage" },
   { value: "conversation_history", labelKey: "buddyPage.binding.sources.conversationHistory" },
+  { value: "raw_conversation_history", labelKey: "buddyPage.binding.sources.rawConversationHistory" },
+  { value: "session_summary", labelKey: "buddyPage.binding.sources.sessionSummary" },
   { value: "page_context", labelKey: "buddyPage.binding.sources.pageContext" },
   { value: "buddy_home_context", labelKey: "buddyPage.binding.sources.buddyHomeContext" },
+  { value: "current_session_id", labelKey: "buddyPage.binding.memoryReviewSources.currentSessionId" },
 ];
 
 export const BUDDY_MEMORY_REVIEW_INPUT_SOURCE_OPTIONS: BuddyMemoryReviewInputSourceOption[] = [
@@ -108,8 +111,11 @@ export function buildDefaultBuddyRunTemplateBinding(): BuddyRunTemplateBinding {
     input_bindings: {
       input_user_message: "current_message",
       input_conversation_history: "conversation_history",
+      input_raw_conversation_history: "raw_conversation_history",
+      input_existing_session_summary: "session_summary",
       input_page_context: "page_context",
       input_buddy_context: "buddy_home_context",
+      input_current_session_id: "current_session_id",
     },
   };
 }
@@ -410,8 +416,11 @@ export function buildBuddyHomeContextValue() {
 export function isBuddyRunInputSource(value: unknown): value is BuddyRunInputSource {
   return value === "current_message"
     || value === "conversation_history"
+    || value === "raw_conversation_history"
+    || value === "session_summary"
     || value === "page_context"
-    || value === "buddy_home_context";
+    || value === "buddy_home_context"
+    || value === "current_session_id";
 }
 
 export function isBuddyMemoryReviewInputSource(value: unknown): value is BuddyMemoryReviewInputSource {

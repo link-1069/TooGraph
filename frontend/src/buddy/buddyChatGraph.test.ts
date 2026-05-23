@@ -507,6 +507,11 @@ function createBuddyRunTemplateBinding(
       bindings.input_buddy_context = "buddy_home_context";
     }
   }
+  if (!Object.values(bindings).includes("current_session_id")) {
+    if (isBindableInputNodeId(template, "input_current_session_id")) {
+      bindings.input_current_session_id = "current_session_id";
+    }
+  }
   return {
     template_id: template.template_id,
     input_bindings: bindings,
@@ -744,6 +749,112 @@ test("buildBuddyChatGraph injects only configured input-node bindings", () => {
   assertAgentNode(graph.nodes.buddy_reply_agent);
   assert.equal(graph.nodes.buddy_reply_agent.config.actionKey, "graph_editor");
   assert.deepEqual(graph.nodes.buddy_reply_agent.config.actionBindings, [{ actionKey: "graph_editor", enabled: true }]);
+});
+
+test("buildBuddyChatGraph injects the current session id when the template binds it", () => {
+  const template = createTemplate();
+  template.state_schema.current_session_id = {
+    name: "current_session_id",
+    description: "",
+    type: "text",
+    value: "",
+    color: "#475569",
+  };
+  template.nodes.input_current_session_id = {
+    kind: "input",
+    name: "input_current_session_id",
+    description: "",
+    ui: { position: { x: 80, y: 1280 }, collapsed: false },
+    reads: [],
+    writes: [{ state: "current_session_id", mode: "replace" }],
+    config: { value: "" },
+  };
+
+  const graph = buildBuddyChatGraph(
+    template,
+    {
+      userMessage: "帮我找上次聊过的记忆策略",
+      history: [],
+      pageContext: "当前路径: /buddy",
+      currentSessionId: "session_live_1",
+    },
+    {
+      template_id: "basic_buddy_loop",
+      input_bindings: {
+        input_user_message: "current_message",
+        input_current_session_id: "current_session_id",
+      },
+    },
+  );
+
+  assert.equal(graph.state_schema.current_session_id.value, "session_live_1");
+  assertInputNode(graph.nodes.input_current_session_id);
+  assert.equal(graph.nodes.input_current_session_id.config.value, "session_live_1");
+});
+
+test("buildBuddyChatGraph feeds official loop raw history and session summary inputs", () => {
+  const template = createTemplate();
+  template.state_schema.raw_conversation_history = {
+    name: "raw_conversation_history",
+    description: "",
+    type: "markdown",
+    value: "",
+    color: "#64748b",
+  };
+  template.state_schema.existing_session_summary = {
+    name: "existing_session_summary",
+    description: "",
+    type: "markdown",
+    value: "",
+    color: "#4f46e5",
+  };
+  template.nodes.input_raw_conversation_history = {
+    kind: "input",
+    name: "input_raw_conversation_history",
+    description: "",
+    ui: { position: { x: 80, y: 1600 }, collapsed: false },
+    reads: [],
+    writes: [{ state: "raw_conversation_history", mode: "replace" }],
+    config: { value: "" },
+  };
+  template.nodes.input_existing_session_summary = {
+    kind: "input",
+    name: "input_existing_session_summary",
+    description: "",
+    ui: { position: { x: 80, y: 1920 }, collapsed: false },
+    reads: [],
+    writes: [{ state: "existing_session_summary", mode: "replace" }],
+    config: { value: "" },
+  };
+  const history = Array.from({ length: 18 }, (_, index) => ({
+    role: index % 2 === 0 ? "user" as const : "assistant" as const,
+    content: `turn-${index}`,
+  }));
+
+  const graph = buildBuddyChatGraph(
+    template,
+    {
+      userMessage: "continue",
+      history,
+      pageContext: "",
+      sessionSummary: "summary-so-far",
+    },
+    {
+      template_id: "basic_buddy_loop",
+      input_bindings: {
+        input_user_message: "current_message",
+        input_conversation_history: "conversation_history",
+        input_raw_conversation_history: "raw_conversation_history",
+        input_existing_session_summary: "session_summary",
+      },
+    },
+  );
+
+  assert.equal(graph.state_schema.existing_session_summary.value, "summary-so-far");
+  assert.match(String(graph.nodes.input_conversation_history.config.value), /summary-so-far/);
+  assert.match(String(graph.state_schema.raw_conversation_history.value), /turn-0/);
+  assert.match(String(graph.state_schema.raw_conversation_history.value), /turn-17/);
+  assert.doesNotMatch(String(graph.state_schema.raw_conversation_history.value), /summary-so-far/);
 });
 
 test("buildBuddyChatGraph marks ask-first mode without a blanket reply breakpoint", () => {
