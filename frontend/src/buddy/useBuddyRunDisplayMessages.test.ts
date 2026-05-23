@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ref } from "vue";
 
 import type { GraphPayload } from "../types/node-system.ts";
 import type { RunDetail } from "../types/run.ts";
 import { buildBuddyPublicOutputBindings } from "./buddyPublicOutput.ts";
 import { buildPublicOutputRuntimeStateFromRunDetail } from "./useBuddyRunDisplayMessages.ts";
+import { useBuddyRunDisplayMessages } from "./useBuddyRunDisplayMessages.ts";
 
 function outputTimelineGraph(): GraphPayload {
   return {
@@ -39,7 +41,7 @@ function outputTimelineGraph(): GraphPayload {
   };
 }
 
-test("buildPublicOutputRuntimeStateFromRunDetail preserves repeated output state writes from run history", () => {
+test("buildPublicOutputRuntimeStateFromRunDetail uses reached output previews instead of raw state events", () => {
   const graph = outputTimelineGraph();
   const bindings = buildBuddyPublicOutputBindings(graph);
   const run = {
@@ -80,7 +82,136 @@ test("buildPublicOutputRuntimeStateFromRunDetail preserves repeated output state
 
   const state = buildPublicOutputRuntimeStateFromRunDetail(run, bindings, graph);
 
-  assert.deepEqual(state.order, ["output_answer", "output_answer:2"]);
-  assert.equal(state.messagesByOutputNodeId.output_answer.content, "progress");
-  assert.equal(state.messagesByOutputNodeId["output_answer:2"].content, "final");
+  assert.deepEqual(state.order, ["output_answer"]);
+  assert.equal(state.messagesByOutputNodeId.output_answer.content, "final");
+  assert.equal(state.messagesByOutputNodeId["output_answer:2"], undefined);
+});
+
+type DisplayTestMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  clientOrder?: number | null;
+  includeInContext?: boolean;
+  runId?: string | null;
+  activityText?: string;
+  publicOutput?: unknown;
+  outputTrace?: unknown;
+};
+
+function createDisplayHarness() {
+  const messages = ref<DisplayTestMessage[]>([
+    { id: "controller", role: "assistant", content: "", clientOrder: 0 },
+  ]);
+  let nextOrder = 1;
+  const display = useBuddyRunDisplayMessages<DisplayTestMessage>({
+    messages,
+    mood: ref("thinking"),
+    t: (key) => key,
+    createMessage: (role, content, id, clientOrder) => ({ id: id ?? `message_${nextOrder}`, role, content, clientOrder }),
+    allocateBuddyMessageClientOrder: () => nextOrder++,
+    scrollMessagesToBottom: async () => {},
+    clearAutoResumingPageOperationPlaceholder: () => {},
+  });
+  return { display, messages };
+}
+
+function repeatedLoopTraceState() {
+  return {
+    order: ["segment_1", "segment_2"],
+    activeSegmentId: "segment_2",
+    nextSegmentIndex: 1,
+    segmentsById: {
+      segment_1: {
+        segmentId: "segment_1",
+        boundaryNodeId: "gate",
+        boundaryLabel: "Gate",
+        outputNodeIds: ["output_answer"],
+        status: "completed",
+        startedAtMs: 1000,
+        completedAtMs: 2000,
+        durationMs: 1000,
+        records: [],
+      },
+      segment_2: {
+        segmentId: "segment_2",
+        boundaryNodeId: "gate",
+        boundaryLabel: "Gate",
+        outputNodeIds: ["output_answer"],
+        status: "running",
+        startedAtMs: 3000,
+        completedAtMs: null,
+        durationMs: null,
+        records: [],
+      },
+    },
+  } as const;
+}
+
+function completedOutput(outputNodeId: string, content: string) {
+  return {
+    outputNodeId,
+    sourceOutputNodeId: "output_answer",
+    outputNodeName: "Answer",
+    stateKey: "answer",
+    stateName: "answer",
+    stateType: "markdown",
+    displayMode: "markdown",
+    kind: "text" as const,
+    content,
+    startedAtMs: null,
+    durationMs: null,
+    status: "completed" as const,
+  };
+}
+
+test("syncBuddyRunDisplayMessages does not attach a previous output to a later loop capsule", () => {
+  const { display, messages } = createDisplayHarness();
+
+  display.syncBuddyRunDisplayMessages(
+    "controller",
+    "run_1",
+    repeatedLoopTraceState(),
+    {
+      order: ["output_answer"],
+      startedAtByOutputNodeId: {},
+      messagesByOutputNodeId: {
+        output_answer: completedOutput("output_answer", "progress"),
+      },
+    },
+  );
+
+  assert.deepEqual(
+    messages.value.map((message) => message.id),
+    ["controller", "controller:trace:segment_1", "controller:output:output_answer", "controller:trace:segment_2"],
+  );
+});
+
+test("syncBuddyRunDisplayMessages attaches the next repeated output to the next loop capsule", () => {
+  const { display, messages } = createDisplayHarness();
+
+  display.syncBuddyRunDisplayMessages(
+    "controller",
+    "run_1",
+    repeatedLoopTraceState(),
+    {
+      order: ["output_answer", "output_answer:2"],
+      startedAtByOutputNodeId: {},
+      messagesByOutputNodeId: {
+        output_answer: completedOutput("output_answer", "progress"),
+        "output_answer:2": completedOutput("output_answer:2", "final"),
+      },
+    },
+  );
+
+  assert.deepEqual(
+    messages.value.map((message) => message.id),
+    [
+      "controller",
+      "controller:trace:segment_1",
+      "controller:output:output_answer",
+      "controller:trace:segment_2",
+      "controller:output:output_answer:2",
+    ],
+  );
 });

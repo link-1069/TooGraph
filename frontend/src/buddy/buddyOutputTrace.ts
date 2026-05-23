@@ -41,6 +41,11 @@ export type BuddyOutputTraceRecord = {
   treeDepth?: number | null;
   dynamicCapabilityRunId?: string | null;
   graphRevision?: VirtualOperationGraphRevision;
+  activityId?: string;
+  parentActivityId?: string;
+  invocationId?: string;
+  capabilityKey?: string | null;
+  activityKind?: string;
 };
 
 export type BuddyOutputTraceSegment = {
@@ -328,6 +333,7 @@ function applyActivityEvent(
   const virtualOperation = summarizeVirtualOperationActivity(payload);
   const runEvidence = summarizeActivityRunEvidence(payload);
   const dynamicSubgraphActivity = isDynamicSubgraphActivity(payload);
+  const activityIdentity = resolveActivityIdentity(payload);
   return upsertRecordInSegment(state, segmentId, {
     runtimeKey,
     kind: "activity",
@@ -345,6 +351,7 @@ function applyActivityEvent(
     treeDepth: dynamicSubgraphActivity ? 1 : undefined,
     dynamicCapabilityRunId: dynamicSubgraphActivity ? runEvidence.triggeredRunId ?? null : null,
     graphRevision: virtualOperation?.graphRevision,
+    ...activityIdentity,
   });
 }
 
@@ -368,6 +375,23 @@ function summarizeActivityRunEvidence(payload: RunEventPayload): { triggeredRunI
   return {
     triggeredRunId,
     artifactLabels: [`run: ${triggeredRunId}${status ? ` ${status}` : ""}`],
+  };
+}
+
+function resolveActivityIdentity(payload: RunEventPayload) {
+  const detail = recordFromUnknown(payload.detail) ?? {};
+  return {
+    activityId: normalizeText(payload.activity_id ?? detail.activity_id) || undefined,
+    parentActivityId: normalizeText(payload.parent_activity_id ?? detail.parent_activity_id) || undefined,
+    invocationId: normalizeText(payload.invocation_id ?? detail.invocation_id) || undefined,
+    capabilityKey: (
+      normalizeText(detail.action_key)
+      || normalizeText(detail.tool_key)
+      || normalizeText(detail.capability_key)
+      || normalizeText(detail.subgraph_key)
+      || null
+    ),
+    activityKind: normalizeText(payload.kind) || "activity",
   };
 }
 
@@ -707,6 +731,10 @@ function buildActivityRecordRuntimeKey(payload: RunEventPayload, nodeId: string,
   if (dynamicSubgraphRuntimeKey) {
     return dynamicSubgraphRuntimeKey;
   }
+  const activityId = normalizeText(payload.activity_id);
+  if (activityId) {
+    return `activity:${activityId}:${subgraphNodeId ? `${subgraphNodeId}/` : ""}${nodeId}`;
+  }
   const sequence = normalizePositiveInteger(payload.sequence);
   const kind = normalizeText(payload.kind) || "activity";
   return `activity:${sequence ?? kind}:${subgraphNodeId ? `${subgraphNodeId}/` : ""}${nodeId}`;
@@ -793,7 +821,23 @@ function resolveTraceActivityLabel(
     return `${nodeLabel} / ${virtualOperation.label}`;
   }
   const capabilityLabel = resolveActivityCapabilityLabel(payload);
-  return `${nodeLabel} / ${capabilityLabel}`;
+  return `${nodeLabel} / ${resolveActivityDisplayLabel(payload, capabilityLabel)}`;
+}
+
+function resolveActivityDisplayLabel(payload: RunEventPayload, capabilityLabel: string) {
+  const activityKind = normalizeText(payload.kind);
+  if (
+    activityKind
+    && !isCapabilityInvocationActivityKind(activityKind)
+    && activityKind !== capabilityLabel
+  ) {
+    return activityKind;
+  }
+  return capabilityLabel;
+}
+
+function isCapabilityInvocationActivityKind(kind: string) {
+  return kind === "action_invocation" || kind === "tool_invocation" || kind === "subgraph_invocation";
 }
 
 function resolveActivityCapabilityLabel(payload: RunEventPayload) {

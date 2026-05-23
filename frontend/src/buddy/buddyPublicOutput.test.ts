@@ -99,6 +99,7 @@ test("buildBuddyPublicOutputBindings scans only root output nodes", () => {
       stateType: "markdown",
       displayMode: "markdown",
       upstreamNodeIds: ["writer"],
+      upstreamEdges: [{ kind: "regular", source: "writer" }],
     },
   ]);
 });
@@ -145,6 +146,7 @@ test("reduceBuddyPublicOutputEvent appends repeated completed output states as t
       stateType: "markdown",
       displayMode: "markdown",
       upstreamNodeIds: ["gate"],
+      upstreamEdges: [{ kind: "regular", source: "writer" }],
     },
   ];
   let state = createBuddyPublicOutputRuntimeState();
@@ -168,6 +170,166 @@ test("reduceBuddyPublicOutputEvent appends repeated completed output states as t
   assert.equal(state.messagesByOutputNodeId.output_answer.content, "progress");
   assert.equal(state.messagesByOutputNodeId["output_answer:2"].content, "final");
   assert.equal(state.messagesByOutputNodeId["output_answer:2"].sourceOutputNodeId, "output_answer");
+});
+
+test("reduceBuddyPublicOutputEvent displays only the output branch reached by the run path", () => {
+  const graph = {
+    state_schema: {
+      capability_result: { name: "Capability Result", description: "", type: "result_package", value: {}, color: "#000" },
+      public_response: { name: "Public Response", description: "", type: "markdown", value: "", color: "#000" },
+    },
+    nodes: {
+      execute_capability: {
+        kind: "agent",
+        name: "Execute Capability",
+        description: "",
+        reads: [],
+        writes: [{ state: "capability_result", mode: "replace" }],
+        config: {
+          actionKey: "",
+          actionBindings: [],
+          taskInstruction: "",
+          modelSource: "global",
+          model: "",
+          thinkingMode: "low",
+          temperature: 0,
+        },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      can_direct_output_condition: {
+        kind: "condition",
+        name: "Can Direct Output?",
+        description: "",
+        reads: [{ state: "can_direct_output", required: true }],
+        writes: [],
+        config: { rule: { source: "$state.can_direct_output", operator: "==", value: true }, loopLimit: 1 },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      output_capability_result: {
+        kind: "output",
+        name: "Capability Result",
+        description: "",
+        reads: [{ state: "capability_result", required: true }],
+        writes: [],
+        config: { displayMode: "auto", persistEnabled: false, persistFormat: "auto", fileNameTemplate: "" },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      output_final: {
+        kind: "output",
+        name: "Final",
+        description: "",
+        reads: [{ state: "public_response", required: true }],
+        writes: [],
+        config: { displayMode: "markdown", persistEnabled: false, persistFormat: "auto", fileNameTemplate: "" },
+        ui: { position: { x: 0, y: 0 } },
+      },
+    },
+    edges: [],
+    conditional_edges: [
+      {
+        source: "can_direct_output_condition",
+        branches: {
+          true: "output_capability_result",
+          false: "output_final",
+        },
+      },
+    ],
+    metadata: {},
+    graph_id: null,
+    name: "Buddy",
+  };
+  const packageValue = {
+    kind: "result_package",
+    outputs: {
+      summary: { name: "Summary", type: "markdown", value: "# Done" },
+    },
+  };
+  const bindings = buildBuddyPublicOutputBindings(graph);
+  let state = createBuddyPublicOutputRuntimeState();
+
+  state = reduceBuddyPublicOutputEvent(
+    state,
+    bindings,
+    "state.updated",
+    { node_id: "execute_capability", state_key: "capability_result", value: packageValue },
+    1000,
+  );
+  assert.deepEqual(state.order, []);
+
+  state = reduceBuddyPublicOutputEvent(
+    state,
+    bindings,
+    "node.completed",
+    { node_id: "can_direct_output_condition", selected_branch: "true" },
+    1500,
+  );
+
+  assert.deepEqual(state.order, ["output_capability_result:summary"]);
+  assert.equal(state.messagesByOutputNodeId["output_capability_result:summary"].content, "# Done");
+  assert.equal(state.messagesByOutputNodeId["output_capability_result:summary"].sourceOutputNodeId, "output_capability_result");
+});
+
+test("reduceBuddyPublicOutputEvent does not duplicate direct regular outputs when the upstream node completes", () => {
+  const bindings = [
+    {
+      outputNodeId: "output_answer",
+      outputNodeName: "Answer",
+      stateKey: "answer",
+      stateName: "answer",
+      stateType: "markdown",
+      displayMode: "markdown",
+      upstreamNodeIds: ["writer"],
+      upstreamEdges: [{ kind: "regular" as const, source: "writer" }],
+    },
+  ];
+  let state = createBuddyPublicOutputRuntimeState();
+
+  state = reduceBuddyPublicOutputEvent(state, bindings, "node.started", { node_id: "writer" }, 1000);
+  state = reduceBuddyPublicOutputEvent(
+    state,
+    bindings,
+    "state.updated",
+    { node_id: "writer", state_key: "answer", value: "final" },
+    1400,
+  );
+  state = reduceBuddyPublicOutputEvent(state, bindings, "node.completed", { node_id: "writer" }, 1500);
+
+  assert.deepEqual(state.order, ["output_answer"]);
+  assert.equal(state.messagesByOutputNodeId.output_answer.content, "final");
+});
+
+test("reduceBuddyPublicOutputEvent does not display an output from an unselected branch", () => {
+  const bindings = [
+    {
+      outputNodeId: "output_capability_result",
+      outputNodeName: "Capability Result",
+      stateKey: "capability_result",
+      stateName: "Capability Result",
+      stateType: "result_package",
+      displayMode: "auto",
+      upstreamNodeIds: ["can_direct_output_condition"],
+      upstreamEdges: [{ kind: "conditional" as const, source: "can_direct_output_condition", branch: "true" }],
+    },
+  ];
+  let state = createBuddyPublicOutputRuntimeState();
+
+  state = reduceBuddyPublicOutputEvent(
+    state,
+    bindings,
+    "state.updated",
+    { node_id: "execute_capability", state_key: "capability_result", value: { kind: "result_package", outputs: {} } },
+    1000,
+  );
+  state = reduceBuddyPublicOutputEvent(
+    state,
+    bindings,
+    "node.completed",
+    { node_id: "can_direct_output_condition", selected_branch: "false" },
+    1500,
+  );
+
+  assert.deepEqual(state.order, []);
+  assert.deepEqual(state.messagesByOutputNodeId, {});
 });
 
 test("reduceBuddyPublicOutputEvent splits completed result packages into independent output messages", () => {

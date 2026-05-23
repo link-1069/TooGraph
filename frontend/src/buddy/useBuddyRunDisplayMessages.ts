@@ -2,7 +2,7 @@ import type { Ref } from "vue";
 
 import { buildRunNodeTimingByNodeIdFromRun } from "../lib/runTelemetryProjection.ts";
 import type { GraphPayload } from "../types/node-system.ts";
-import type { RunDetail, StateEvent } from "../types/run.ts";
+import type { RunDetail } from "../types/run.ts";
 import type {
   BuddyPublicOutputBinding,
   BuddyPublicOutputMessage,
@@ -14,7 +14,6 @@ import {
   isBuddyPublicOutputMessageVisible,
   listBuddyPublicOutputMessageIdsForOutputNode,
   listVisibleBuddyPublicOutputNodeIds,
-  upsertBuddyPublicOutputMessagesForState,
   upsertBuddyPublicOutputMessagesForBinding,
 } from "./buddyPublicOutput.ts";
 import type { BuddyPublicOutputMetadata } from "./buddyMessageMetadata.ts";
@@ -258,13 +257,24 @@ export function useBuddyRunDisplayMessages<Message extends BuddyRunDisplayMessag
     const displayMessages: Message[] = [];
     const handledOutputMessageIds = new Set<string>();
     const visibleOutputNodeIds = buildVisibleOutputNodeIdSet(outputState);
+    const visibleSegments = listBuddyOutputTraceSegmentsForDisplay(outputTraceState, { visibleOutputNodeIds });
+    const outputNodeOccurrenceTotals = countSegmentOutputNodeOccurrences(visibleSegments);
+    const outputNodeOccurrenceIndexes = new Map<string, number>();
 
-    for (const segment of listBuddyOutputTraceSegmentsForDisplay(outputTraceState, { visibleOutputNodeIds })) {
+    for (const segment of visibleSegments) {
       const traceMessage = buildOutputTraceMessage(controllerMessageId, runId, segment, existingMessages);
       displayMessages.push(traceMessage);
       outputTraceMessages.push(traceMessage);
       for (const outputNodeId of segment.outputNodeIds) {
-        const outputMessageIds = listBuddyPublicOutputMessageIdsForOutputNode(outputState, outputNodeId);
+        const occurrenceIndex = outputNodeOccurrenceIndexes.get(outputNodeId) ?? 0;
+        outputNodeOccurrenceIndexes.set(outputNodeId, occurrenceIndex + 1);
+        const outputMessageIds = listBuddyPublicOutputMessageIdsForSegment(
+          outputState,
+          outputNodeId,
+          segment,
+          occurrenceIndex,
+          outputNodeOccurrenceTotals.get(outputNodeId) ?? 1,
+        );
         for (const outputMessageId of outputMessageIds) {
           const output = outputState.messagesByOutputNodeId[outputMessageId];
           handledOutputMessageIds.add(outputMessageId);
@@ -386,6 +396,82 @@ function buildVisibleOutputNodeIdSet(outputState: BuddyPublicOutputRuntimeState)
   return new Set(listVisibleBuddyPublicOutputNodeIds(outputState));
 }
 
+function countSegmentOutputNodeOccurrences(segments: BuddyOutputTraceSegment[]) {
+  const totals = new Map<string, number>();
+  for (const segment of segments) {
+    for (const outputNodeId of segment.outputNodeIds) {
+      totals.set(outputNodeId, (totals.get(outputNodeId) ?? 0) + 1);
+    }
+  }
+  return totals;
+}
+
+function listBuddyPublicOutputMessageIdsForSegment(
+  outputState: BuddyPublicOutputRuntimeState,
+  outputNodeId: string,
+  segment: BuddyOutputTraceSegment,
+  occurrenceIndex: number,
+  occurrenceTotal: number,
+) {
+  const outputMessageIds = listBuddyPublicOutputMessageIdsForOutputNode(outputState, outputNodeId);
+  if (occurrenceTotal <= 1) {
+    return outputMessageIds;
+  }
+
+  const timedOutputMessageIds = outputMessageIds.filter((outputMessageId) => {
+    const output = outputState.messagesByOutputNodeId[outputMessageId];
+    return resolvePublicOutputEventMs(output) !== null;
+  });
+  if (timedOutputMessageIds.length > 0) {
+    const matchingOutputMessageIds = timedOutputMessageIds.filter((outputMessageId) => {
+      const output = outputState.messagesByOutputNodeId[outputMessageId];
+      return isPublicOutputInTraceSegment(output, segment);
+    });
+    if (matchingOutputMessageIds.length > 0 || timedOutputMessageIds.length === outputMessageIds.length) {
+      return matchingOutputMessageIds;
+    }
+  }
+
+  const outputMessageId = outputMessageIds[occurrenceIndex];
+  return outputMessageId ? [outputMessageId] : [];
+}
+
+function isPublicOutputInTraceSegment(
+  output: BuddyPublicOutputMessage | null | undefined,
+  segment: BuddyOutputTraceSegment,
+) {
+  const outputMs = resolvePublicOutputEventMs(output);
+  if (outputMs === null) {
+    return false;
+  }
+  if (segment.startedAtMs !== null && outputMs < segment.startedAtMs) {
+    return false;
+  }
+  if (segment.completedAtMs !== null && outputMs > segment.completedAtMs) {
+    return false;
+  }
+  return true;
+}
+
+function resolvePublicOutputEventMs(output: BuddyPublicOutputMessage | null | undefined) {
+  if (!output) {
+    return null;
+  }
+  if (typeof output.completedAtMs === "number" && Number.isFinite(output.completedAtMs)) {
+    return output.completedAtMs;
+  }
+  if (typeof output.updatedAtMs === "number" && Number.isFinite(output.updatedAtMs)) {
+    return output.updatedAtMs;
+  }
+  if (output.status === "streaming" && output.startedAtMs !== null) {
+    return output.startedAtMs;
+  }
+  if (output.startedAtMs !== null && output.durationMs !== null) {
+    return output.startedAtMs + output.durationMs;
+  }
+  return null;
+}
+
 function findPrimaryCompletedTextPublicOutput(
   outputState: BuddyPublicOutputRuntimeState,
 ): BuddyPublicOutputMessage | null {
@@ -439,22 +525,6 @@ export function buildPublicOutputRuntimeStateFromRunDetail(
   graph: GraphPayload,
 ): BuddyPublicOutputRuntimeState {
   let outputState = createBuddyPublicOutputRuntimeState();
-  const outputStateEvents = listRunDetailOutputStateEvents(runDetail, bindings);
-  if (outputStateEvents.length > 0) {
-    const status = runDetail.status === "failed" ? "failed" : "completed";
-    for (const event of outputStateEvents) {
-      outputState = upsertBuddyPublicOutputMessagesForState(
-        outputState,
-        bindings,
-        event.state_key,
-        event.value,
-        status,
-        parseRunDetailEventMs(event.created_at) ?? nowPublicOutputMs(),
-      );
-    }
-    return outputState;
-  }
-
   const seenOutputNodeIds = new Set<string>();
   const outputTimingByNodeId = buildRunNodeTimingByNodeIdFromRun(
     {
@@ -486,23 +556,6 @@ export function buildPublicOutputRuntimeStateFromRunDetail(
     );
   }
   return outputState;
-}
-
-function listRunDetailOutputStateEvents(
-  runDetail: RunDetail,
-  bindings: BuddyPublicOutputBinding[],
-) {
-  const outputStateKeys = new Set(bindings.map((binding) => binding.stateKey));
-  const artifactEvents = runDetail.artifacts?.state_events ?? [];
-  const rootEvents = ((runDetail as RunDetail & { state_events?: StateEvent[] }).state_events) ?? [];
-  const events = artifactEvents.length > 0 ? artifactEvents : rootEvents;
-  return events
-    .filter((event) => outputStateKeys.has(event.state_key))
-    .sort((left, right) => {
-      const leftMs = parseRunDetailEventMs(left.created_at) ?? Number.MAX_SAFE_INTEGER;
-      const rightMs = parseRunDetailEventMs(right.created_at) ?? Number.MAX_SAFE_INTEGER;
-      return leftMs - rightMs || (left.sequence ?? 0) - (right.sequence ?? 0);
-    });
 }
 
 function parseRunDetailEventMs(value: string | null | undefined) {

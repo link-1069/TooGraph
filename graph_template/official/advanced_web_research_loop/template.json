@@ -537,6 +537,12 @@
     "templateVersion": "2026-05-07",
     "maxSearchRounds": 5,
     "graphProtocol": "node_system",
+    "capability": {
+      "granularity": "workflow",
+      "covers": ["web_research", "search", "evidence_check", "latest_information"],
+      "produces": ["final_response", "sources", "artifacts"],
+      "taskTags": ["web", "news", "public_sources", "multi_source_synthesis"]
+    },
     "outputContract": [
       {
         "key": "public_response",

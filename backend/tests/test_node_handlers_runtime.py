@@ -331,8 +331,12 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         recorded_events: list[dict[str, Any]] = []
 
         def record_activity_event_func(state: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-            recorded_events.append(kwargs)
-            return {"sequence": len(recorded_events), **kwargs}
+            event = {"sequence": len(recorded_events) + 1, **kwargs}
+            if kwargs.get("kind") == "action_invocation":
+                event["activity_id"] = "activity_parent"
+                event["invocation_id"] = "activity_parent"
+            recorded_events.append(event)
+            return event
 
         execute_agent_node(
             state_schema,
@@ -387,8 +391,12 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         recorded_events: list[dict[str, Any]] = []
 
         def record_activity_event_func(state: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-            recorded_events.append(kwargs)
-            return {"sequence": len(recorded_events), **kwargs}
+            event = {"sequence": len(recorded_events) + 1, **kwargs}
+            if kwargs.get("kind") == "action_invocation":
+                event["activity_id"] = "activity_parent"
+                event["invocation_id"] = "activity_parent"
+            recorded_events.append(event)
+            return event
 
         execute_agent_node(
             state_schema,
@@ -428,6 +436,8 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         self.assertEqual(recorded_events[1]["kind"], "file_read")
         self.assertEqual(recorded_events[1]["node_id"], "writer")
         self.assertEqual(recorded_events[1]["summary"], "Read docs/a.md")
+        self.assertEqual(recorded_events[1]["parent_activity_id"], "activity_parent")
+        self.assertEqual(recorded_events[1]["invocation_id"], "activity_parent")
         self.assertEqual(recorded_events[1]["detail"]["action_key"], "custom")
         self.assertEqual(recorded_events[1]["detail"]["binding_source"], "node_config")
         self.assertEqual(recorded_events[1]["detail"]["path"], "docs/a.md")

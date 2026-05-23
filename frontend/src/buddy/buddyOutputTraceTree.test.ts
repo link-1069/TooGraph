@@ -149,6 +149,193 @@ test("buildBuddyOutputTraceTreeRows exposes activity evidence labels", () => {
   assert.equal(rows[0].evidenceRunId, "run_report");
 });
 
+test("buildBuddyOutputTraceTreeRows nests activity rows under their owning node", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "Final",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 1800,
+    durationMs: 800,
+    records: [
+      {
+        ...baseRecord,
+        recordId: "record_agent",
+        runtimeKey: "node:agent_a",
+        label: "Agent A",
+        nodeId: "agent_a",
+        subgraphNodeId: null,
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_activity",
+        runtimeKey: "activity:1:agent_a",
+        label: "Agent A / web_search",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+      },
+    ],
+  };
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "Main graph" });
+
+  assert.deepEqual(
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind })),
+    [
+      { label: "Agent A", depth: 0, kind: "node" },
+      { label: "web_search", depth: 1, kind: "activity" },
+    ],
+  );
+});
+
+test("buildBuddyOutputTraceTreeRows nests raw activity rows under their invocation parent", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "Final",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 2200,
+    durationMs: 1200,
+    records: [
+      {
+        ...baseRecord,
+        recordId: "record_agent",
+        runtimeKey: "node:agent_a",
+        label: "Agent A",
+        nodeId: "agent_a",
+        subgraphNodeId: null,
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_invocation",
+        runtimeKey: "activity:1:agent_a",
+        label: "Agent A / web_search",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        activityId: "activity_0002",
+        invocationId: "activity_0002",
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_search",
+        runtimeKey: "activity:2:agent_a",
+        label: "Agent A / web_search",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        activityId: "activity_0003",
+        parentActivityId: "activity_0002",
+        invocationId: "activity_0002",
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_download",
+        runtimeKey: "activity:3:agent_a",
+        label: "Agent A / web_download",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        activityId: "activity_0004",
+        parentActivityId: "activity_0002",
+        invocationId: "activity_0002",
+      },
+    ],
+  };
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "Main graph" });
+
+  assert.deepEqual(
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind })),
+    [
+      { label: "Agent A", depth: 0, kind: "node" },
+      { label: "web_search", depth: 1, kind: "activity" },
+      { label: "web_search", depth: 2, kind: "activity" },
+      { label: "web_download", depth: 2, kind: "activity" },
+    ],
+  );
+});
+
+test("buildBuddyOutputTraceTreeRows groups legacy raw activity rows by capability key", () => {
+  const segment: BuddyOutputTraceSegment = {
+    segmentId: "boundary:final",
+    boundaryNodeId: "final",
+    boundaryLabel: "Final",
+    outputNodeIds: ["output_final"],
+    status: "completed",
+    startedAtMs: 1000,
+    completedAtMs: 2200,
+    durationMs: 1200,
+    records: [
+      {
+        ...baseRecord,
+        recordId: "record_agent",
+        runtimeKey: "node:agent_a",
+        label: "Agent A",
+        nodeId: "agent_a",
+        subgraphNodeId: null,
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_invocation",
+        runtimeKey: "activity:1:agent_a",
+        label: "Agent A / web_search",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        activityKind: "action_invocation",
+        capabilityKey: "web_search",
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_search",
+        runtimeKey: "activity:2:agent_a",
+        label: "Agent A / web_search",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        activityKind: "web_search",
+        capabilityKey: "web_search",
+      },
+      {
+        ...baseRecord,
+        kind: "activity",
+        recordId: "record_download",
+        runtimeKey: "activity:3:agent_a",
+        label: "Agent A / web_download",
+        nodeId: "agent_a",
+        nodeType: "activity",
+        subgraphNodeId: null,
+        activityKind: "web_download",
+        capabilityKey: "web_search",
+      },
+    ],
+  };
+
+  const rows = buildBuddyOutputTraceTreeRows(segment, { rootLabel: "Main graph" });
+
+  assert.deepEqual(
+    rows.map((row) => ({ label: row.label, depth: row.depth, kind: row.kind })),
+    [
+      { label: "Agent A", depth: 0, kind: "node" },
+      { label: "web_search", depth: 1, kind: "activity" },
+      { label: "web_search", depth: 2, kind: "activity" },
+      { label: "web_download", depth: 2, kind: "activity" },
+    ],
+  );
+});
+
 test("buildBuddyOutputTraceTreeRows hides internal child run artifact labels", () => {
   const segment: BuddyOutputTraceSegment = {
     segmentId: "boundary:final",

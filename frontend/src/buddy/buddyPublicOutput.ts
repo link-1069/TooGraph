@@ -9,7 +9,12 @@ export type BuddyPublicOutputBinding = {
   stateType: string;
   displayMode: string;
   upstreamNodeIds: string[];
+  upstreamEdges?: BuddyPublicOutputUpstreamEdge[];
 };
+
+export type BuddyPublicOutputUpstreamEdge =
+  | { kind: "regular"; source: string }
+  | { kind: "conditional"; source: string; branch: string };
 
 export type BuddyPublicOutputMessageKind = "text" | "card";
 
@@ -27,6 +32,8 @@ export type BuddyPublicOutputMessage = {
   content: unknown;
   // Epoch milliseconds. The field name is kept for persisted Buddy message compatibility.
   startedAtMs: number | null;
+  updatedAtMs?: number | null;
+  completedAtMs?: number | null;
   durationMs: number | null;
   status: BuddyPublicOutputMessageStatus;
 };
@@ -35,6 +42,8 @@ export type BuddyPublicOutputRuntimeState = {
   order: string[];
   messagesByOutputNodeId: Record<string, BuddyPublicOutputMessage>;
   startedAtByOutputNodeId: Record<string, number>;
+  latestValuesByStateKey: Record<string, unknown>;
+  activatedOutputNodeIds: Record<string, true>;
 };
 
 type RunEventPayload = Record<string, unknown>;
@@ -66,6 +75,7 @@ export function buildBuddyPublicOutputBindings(
           stateType: stateDefinition?.type?.trim() || "text",
           displayMode: normalizeDisplayMode(node.config?.displayMode),
           upstreamNodeIds: resolveDirectUpstreamNodeIds(graph, outputNodeId),
+          upstreamEdges: resolveDirectUpstreamEdges(graph, outputNodeId),
         },
       ];
     });
@@ -130,6 +140,8 @@ export function createBuddyPublicOutputRuntimeState(): BuddyPublicOutputRuntimeS
     order: [],
     messagesByOutputNodeId: {},
     startedAtByOutputNodeId: {},
+    latestValuesByStateKey: {},
+    activatedOutputNodeIds: {},
   };
 }
 
@@ -171,8 +183,18 @@ export function reduceBuddyPublicOutputEvent(
     return completeStateOutput(
       state,
       bindings,
+      normalizeString(payload.node_id),
       normalizeString(payload.state_key),
       payload.value,
+      parseEventEpochMs(payload.created_at) ?? nowEpochMs,
+    );
+  }
+  if (eventType === "node.completed") {
+    return activateCompletedOutputBranches(
+      state,
+      bindings,
+      normalizeString(payload.node_id),
+      normalizeString(payload.selected_branch),
       parseEventEpochMs(payload.created_at) ?? nowEpochMs,
     );
   }
@@ -190,20 +212,27 @@ function resolveDirectUpstreamNodeIds(
   graph: { edges?: GraphEdge[]; conditional_edges?: ConditionalEdge[] },
   outputNodeId: string,
 ) {
-  const upstream = new Set<string>();
+  return Array.from(new Set(resolveDirectUpstreamEdges(graph, outputNodeId).map((edge) => edge.source)));
+}
+
+function resolveDirectUpstreamEdges(
+  graph: { edges?: GraphEdge[]; conditional_edges?: ConditionalEdge[] },
+  outputNodeId: string,
+): BuddyPublicOutputUpstreamEdge[] {
+  const upstream: BuddyPublicOutputUpstreamEdge[] = [];
   for (const edge of graph.edges ?? []) {
     if (edge.target === outputNodeId && edge.source) {
-      upstream.add(edge.source);
+      upstream.push({ kind: "regular", source: edge.source });
     }
   }
   for (const route of graph.conditional_edges ?? []) {
-    for (const target of Object.values(route.branches ?? {})) {
+    for (const [branch, target] of Object.entries(route.branches ?? {})) {
       if (target === outputNodeId && route.source) {
-        upstream.add(route.source);
+        upstream.push({ kind: "conditional", source: route.source, branch });
       }
     }
   }
-  return Array.from(upstream);
+  return upstream;
 }
 
 function startOutputTimersForNode(
@@ -238,6 +267,7 @@ function applyStreamingDelta(
   nowMs: number,
 ): BuddyPublicOutputRuntimeState {
   const text = typeof payload.text === "string" ? payload.text : "";
+  const nodeId = normalizeString(payload.node_id);
   if (!text) {
     return state;
   }
@@ -253,7 +283,15 @@ function applyStreamingDelta(
     for (const stateKey of targetStateKeys) {
       const projection = projectStreamingJsonStateText(text, stateKey);
       if (projection.kind === "projected") {
-        nextState = upsertMessagesForState(nextState, bindings, stateKey, projection.text, "streaming", nowMs);
+        nextState = upsertMessagesForState(
+          nextState,
+          bindings,
+          stateKey,
+          projection.text,
+          "streaming",
+          nowMs,
+          (binding) => isDirectRegularOutputUpdate(binding, nodeId),
+        );
       }
     }
     return nextState;
@@ -270,12 +308,14 @@ function applyStreamingDelta(
     singleStateProjection.kind === "projected" ? singleStateProjection.text : text,
     "streaming",
     nowMs,
+    (binding) => isDirectRegularOutputUpdate(binding, nodeId),
   );
 }
 
 function completeStateOutput(
   state: BuddyPublicOutputRuntimeState,
   bindings: BuddyPublicOutputBinding[],
+  nodeId: string,
   stateKey: string,
   value: unknown,
   nowMs: number,
@@ -283,7 +323,87 @@ function completeStateOutput(
   if (!stateKey) {
     return state;
   }
-  return upsertMessagesForState(state, bindings, stateKey, value, "completed", nowMs);
+  const nextState = {
+    ...state,
+    latestValuesByStateKey: {
+      ...state.latestValuesByStateKey,
+      [stateKey]: value,
+    },
+  };
+  return upsertMessagesForState(
+    nextState,
+    bindings,
+    stateKey,
+    value,
+    "completed",
+    nowMs,
+    (binding) => Boolean(nextState.activatedOutputNodeIds[binding.outputNodeId]) || isDirectRegularOutputUpdate(binding, nodeId),
+  );
+}
+
+function activateCompletedOutputBranches(
+  state: BuddyPublicOutputRuntimeState,
+  bindings: BuddyPublicOutputBinding[],
+  nodeId: string,
+  selectedBranch: string,
+  nowMs: number,
+): BuddyPublicOutputRuntimeState {
+  if (!nodeId) {
+    return state;
+  }
+  let nextState = state;
+  let nextActivated: Record<string, true> | null = null;
+  for (const binding of bindings) {
+    const activationEdges = listOutputActivationEdges(binding, nodeId, selectedBranch);
+    if (activationEdges.length === 0) {
+      continue;
+    }
+    nextActivated ??= { ...nextState.activatedOutputNodeIds };
+    nextActivated[binding.outputNodeId] = true;
+    if (
+      activationEdges.some((edge) => edge.kind === "conditional") &&
+      Object.prototype.hasOwnProperty.call(nextState.latestValuesByStateKey, binding.stateKey)
+    ) {
+      nextState = upsertBuddyPublicOutputMessagesForBinding(
+        nextState,
+        binding,
+        nextState.latestValuesByStateKey[binding.stateKey],
+        "completed",
+        nowMs,
+      );
+    }
+  }
+  return nextActivated ? { ...nextState, activatedOutputNodeIds: nextActivated } : nextState;
+}
+
+function isDirectRegularOutputUpdate(binding: BuddyPublicOutputBinding, nodeId: string) {
+  if (!nodeId) {
+    return false;
+  }
+  return listUpstreamEdges(binding).some((edge) => edge.kind === "regular" && edge.source === nodeId);
+}
+
+function listOutputActivationEdges(
+  binding: BuddyPublicOutputBinding,
+  nodeId: string,
+  selectedBranch: string,
+) {
+  return listUpstreamEdges(binding).filter((edge) => {
+    if (edge.source !== nodeId) {
+      return false;
+    }
+    if (edge.kind === "regular") {
+      return true;
+    }
+    return selectedBranch ? edge.branch === selectedBranch : false;
+  });
+}
+
+function listUpstreamEdges(binding: BuddyPublicOutputBinding): BuddyPublicOutputUpstreamEdge[] {
+  if (binding.upstreamEdges && binding.upstreamEdges.length > 0) {
+    return binding.upstreamEdges;
+  }
+  return binding.upstreamNodeIds.map((source) => ({ kind: "regular", source }));
 }
 
 function failOutputsForNode(
@@ -335,8 +455,15 @@ function upsertMessagesForState(
   content: unknown,
   status: BuddyPublicOutputMessageStatus,
   nowMs: number,
+  shouldUpsert: (binding: BuddyPublicOutputBinding) => boolean = () => true,
 ) {
-  return upsertBuddyPublicOutputMessagesForState(state, bindings, stateKey, content, status, nowMs);
+  let nextState = state;
+  for (const binding of bindings) {
+    if (binding.stateKey === stateKey && shouldUpsert(binding)) {
+      nextState = upsertBuddyPublicOutputMessagesForBinding(nextState, binding, content, status, nowMs);
+    }
+  }
+  return nextState;
 }
 
 export function upsertBuddyPublicOutputMessagesForBinding(
@@ -381,6 +508,8 @@ function upsertMessage(
     kind: resolveBuddyPublicOutputMessageKind(binding),
     content,
     startedAtMs,
+    updatedAtMs: nowMs,
+    completedAtMs: status === "completed" || status === "failed" ? nowMs : existing?.completedAtMs ?? null,
     durationMs: status === "completed" || status === "failed" ? resolveOutputDurationMs(startedAtMs, nowMs) : existing?.durationMs ?? null,
     status,
   };

@@ -20,6 +20,9 @@ def record_activity_event(
     *,
     kind: str,
     summary: str,
+    activity_id: str | None = None,
+    parent_activity_id: str | None = None,
+    invocation_id: str | None = None,
     node_id: str | None = None,
     status: str | None = None,
     duration_ms: int | None = None,
@@ -34,12 +37,24 @@ def record_activity_event(
         root_state["activity_events"] = events
 
     context = _subgraph_context(state)
+    sequence = _next_activity_event_sequence(events)
+    normalized_kind = _compact_text(kind)
+    normalized_activity_id = _compact_text(activity_id) or f"activity_{sequence:04d}"
+    normalized_parent_activity_id = _compact_text(parent_activity_id)
+    normalized_invocation_id = _compact_text(invocation_id)
+    if not normalized_invocation_id and normalized_kind.endswith("_invocation"):
+        normalized_invocation_id = normalized_activity_id
     event: dict[str, Any] = {
-        "sequence": _next_activity_event_sequence(events),
-        "kind": _compact_text(kind),
+        "sequence": sequence,
+        "activity_id": normalized_activity_id,
+        "kind": normalized_kind,
         "summary": _compact_text(summary),
         "created_at": utc_now_iso(),
     }
+    if normalized_parent_activity_id:
+        event["parent_activity_id"] = normalized_parent_activity_id
+    if normalized_invocation_id:
+        event["invocation_id"] = normalized_invocation_id
     normalized_node_id = _compact_text(node_id)
     if normalized_node_id:
         event["node_id"] = normalized_node_id
@@ -79,6 +94,8 @@ def record_action_activity_events(
     action_key: str,
     binding_source: str,
     raw_events: Any,
+    parent_activity_id: str | None = None,
+    invocation_id: str | None = None,
     publish_run_event_func: Callable[[str | None, str, dict[str, Any] | None], None] | None = None,
     record_activity_event_func: Callable[..., dict[str, Any]] = record_activity_event,
 ) -> list[dict[str, Any]]:
@@ -110,6 +127,8 @@ def record_action_activity_events(
             state,
             kind=kind,
             summary=summary,
+            parent_activity_id=_compact_text(parent_activity_id) or None,
+            invocation_id=_compact_text(invocation_id) or None,
             node_id=_compact_text(raw_event.get("node_id")) or node_id,
             status=_compact_text(raw_event.get("status")) or None,
             duration_ms=_optional_int(raw_event.get("duration_ms")),

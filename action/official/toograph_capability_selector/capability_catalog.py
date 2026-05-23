@@ -14,6 +14,19 @@ BREAKPOINT_METADATA_KEYS = {
 }
 SUPPORTED_KINDS = {"action", "subgraph", "tool"}
 SELF_ACTION_KEY = "toograph_capability_selector"
+KIND_PRIORITY = {"tool": 0, "action": 1, "subgraph": 2}
+GRANULARITY_PRIORITY = {
+    "atomic": 0,
+    "primitive": 0,
+    "single_call": 0,
+    "tool": 0,
+    "action": 1,
+    "workflow": 2,
+    "loop": 2,
+    "template": 2,
+    "agentic_workflow": 3,
+}
+FINAL_RESULT_OUTPUTS = {"final_response", "public_response", "answer", "response"}
 
 
 def discover_capability_catalog(repo_root: Path | None = None) -> dict[str, Any]:
@@ -40,6 +53,10 @@ def discover_capability_catalog(repo_root: Path | None = None) -> dict[str, Any]
 def format_capability_catalog_context(catalog: dict[str, Any]) -> str:
     lines = [
         "Available TooGraph capabilities:",
+        "",
+        "Selection guidance:",
+        "- Prefer subgraph over action over tool when a higher-level item covers the same task and produces a more complete result.",
+        "- Select none when the current LLM turn can answer directly without one listed capability.",
         "",
         "Subgraphs:",
     ]
@@ -79,6 +96,9 @@ def normalize_selected_capability(
     candidate = indexed.get((kind, key))
     if candidate is None:
         return _none_capability(f"Selected capability '{kind}:{key}' is not enabled or discoverable.")
+    candidate = _prefer_higher_level_capability(candidate, resolved_catalog)
+    kind = _text(candidate.get("kind")).lower()
+    key = _text(candidate.get("key"))
 
     normalized = {
         "kind": kind,
@@ -114,11 +134,14 @@ def _discover_subgraphs(repo_root: Path, *, errors: list[dict[str, str]]) -> lis
         if not _template_capability_discoverable(payload, settings.get(key)):
             continue
         items.append(
-            {
-                "kind": "subgraph",
-                "key": key,
-                "description": _text(payload.get("description")),
-            }
+            _with_capability_metadata(
+                {
+                    "kind": "subgraph",
+                    "key": key,
+                    "description": _text(payload.get("description")),
+                },
+                payload,
+            )
         )
     return _sort_items(items)
 
@@ -140,11 +163,14 @@ def _discover_actions(repo_root: Path, *, errors: list[dict[str, str]]) -> list[
         if not _settings_enabled(settings, key):
             continue
         items.append(
-            {
-                "kind": "action",
-                "key": key,
-                "description": _text(payload.get("description")),
-            }
+            _with_capability_metadata(
+                {
+                    "kind": "action",
+                    "key": key,
+                    "description": _text(payload.get("description")),
+                },
+                payload,
+            )
         )
     return _sort_items(items)
 
@@ -166,11 +192,14 @@ def _discover_tools(repo_root: Path, *, errors: list[dict[str, str]]) -> list[di
         if not _settings_enabled(settings, key):
             continue
         items.append(
-            {
-                "kind": "tool",
-                "key": key,
-                "description": _text(payload.get("description")),
-            }
+            _with_capability_metadata(
+                {
+                    "kind": "tool",
+                    "key": key,
+                    "description": _text(payload.get("description")),
+                },
+                payload,
+            )
         )
     return _sort_items(items)
 
@@ -182,7 +211,122 @@ def _format_capability_items(items: list[dict[str, Any]]) -> list[str]:
     for item in items:
         lines.append(f"- key: {item.get('key')}")
         lines.append(f"  description: {_text(item.get('description'))}")
+        granularity = _text(item.get("granularity"))
+        if granularity:
+            lines.append(f"  granularity: {granularity}")
+        covers = _list_text(item.get("covers"))
+        if covers:
+            lines.append(f"  covers: {', '.join(covers)}")
+        produces = _list_text(item.get("produces"))
+        if produces:
+            lines.append(f"  produces: {', '.join(produces)}")
+        task_tags = _list_text(item.get("taskTags"))
+        if task_tags:
+            lines.append(f"  taskTags: {', '.join(task_tags)}")
     return lines
+
+
+def _with_capability_metadata(item: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(item)
+    enriched.update(_capability_metadata(payload))
+    return enriched
+
+
+def _capability_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    capability = payload.get("capability") if isinstance(payload.get("capability"), dict) else None
+    if capability is None:
+        capability = metadata.get("capability") if isinstance(metadata.get("capability"), dict) else {}
+    result: dict[str, Any] = {}
+    granularity = _text(capability.get("granularity") or metadata.get("capabilityGranularity"))
+    if granularity:
+        result["granularity"] = granularity
+    covers = _dedupe_text_list(capability.get("covers"))
+    if covers:
+        result["covers"] = covers
+    produces = _dedupe_text_list(capability.get("produces"))
+    if produces:
+        result["produces"] = produces
+    task_tags = _dedupe_text_list(capability.get("taskTags") or capability.get("task_tags"))
+    if task_tags:
+        result["taskTags"] = task_tags
+    return result
+
+
+def _prefer_higher_level_capability(candidate: dict[str, Any], catalog: dict[str, Any]) -> dict[str, Any]:
+    candidate_kind = _text(candidate.get("kind")).lower()
+    candidate_rank = KIND_PRIORITY.get(candidate_kind, -1)
+    candidate_covers = _term_set(candidate.get("covers"))
+    candidate_terms = candidate_covers or _capability_terms(candidate)
+    if candidate_rank < 0 or not candidate_terms:
+        return candidate
+
+    eligible: list[dict[str, Any]] = []
+    for item in _iter_catalog_items(catalog):
+        item_kind = _text(item.get("kind")).lower()
+        if KIND_PRIORITY.get(item_kind, -1) <= candidate_rank:
+            continue
+        if item.get("kind") == candidate.get("kind") and item.get("key") == candidate.get("key"):
+            continue
+        item_covers = _term_set(item.get("covers"))
+        item_terms = item_covers or _capability_terms(item)
+        if not item_terms:
+            continue
+        required_terms = candidate_covers if candidate_covers else candidate_terms
+        offered_terms = item_covers if candidate_covers else item_terms
+        if not required_terms.issubset(offered_terms):
+            continue
+        if not _produces_more_complete_result(item, candidate):
+            continue
+        eligible.append(item)
+    if not eligible:
+        return candidate
+    return max(eligible, key=_capability_preference_score)
+
+
+def _produces_more_complete_result(item: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    item_produces = _term_set(item.get("produces"))
+    candidate_produces = _term_set(candidate.get("produces"))
+    if not item_produces.difference(candidate_produces):
+        return False
+    if _granularity_rank(item) > _granularity_rank(candidate):
+        return True
+    return bool(item_produces.intersection(FINAL_RESULT_OUTPUTS) - candidate_produces)
+
+
+def _capability_preference_score(item: dict[str, Any]) -> tuple[int, int, int, int, str]:
+    produces = _term_set(item.get("produces"))
+    return (
+        KIND_PRIORITY.get(_text(item.get("kind")).lower(), -1),
+        _granularity_rank(item),
+        1 if produces.intersection(FINAL_RESULT_OUTPUTS) else 0,
+        len(produces),
+        _text(item.get("key")),
+    )
+
+
+def _granularity_rank(item: dict[str, Any]) -> int:
+    return GRANULARITY_PRIORITY.get(_text(item.get("granularity")).lower(), 0)
+
+
+def _capability_terms(item: dict[str, Any]) -> set[str]:
+    return _term_set(item.get("covers")) | _term_set(item.get("taskTags"))
+
+
+def _term_set(value: Any) -> set[str]:
+    return {text.lower() for text in _list_text(value)}
+
+
+def _dedupe_text_list(value: Any) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for text in _list_text(value):
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(text)
+    return result
 
 
 def _iter_catalog_items(catalog: dict[str, Any]):

@@ -56,6 +56,7 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
 
         context = result["context"]
         self.assertIn("Available TooGraph capabilities:", context)
+        self.assertIn("Selection guidance:", context)
         self.assertIn("Subgraphs:", context)
         self.assertIn("Actions:", context)
         self.assertIn("Tools:", context)
@@ -63,8 +64,10 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
         self.assertIn("web_search", context)
         self.assertIn("video_segmenter", context)
         self.assertIn("description:", context)
+        self.assertIn("granularity:", context)
+        self.assertIn("covers:", context)
+        self.assertIn("produces:", context)
         self.assertNotIn("Invocation origin:", context)
-        self.assertNotIn("Selection rules:", context)
         self.assertNotIn("kind:", context)
         self.assertNotIn("name:", context)
         self.assertNotIn("inputs:", context)
@@ -74,11 +77,18 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
         self.assertNotIn("Counts:", context)
         allowed_prefixes = (
             "Available TooGraph capabilities:",
+            "Selection guidance:",
+            "- Prefer",
+            "- Select",
             "Subgraphs:",
             "Actions:",
             "Tools:",
             "- key:",
             "  description:",
+            "  granularity:",
+            "  covers:",
+            "  produces:",
+            "  taskTags:",
         )
         for line in context.splitlines():
             if line:
@@ -93,7 +103,56 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
         self.assertNotIn("toograph_capability_selector", action_keys)
         for section in ("subgraphs", "actions", "tools"):
             for item in catalog[section]:
-                self.assertEqual(set(item), {"kind", "key", "description"})
+                self.assertTrue({"kind", "key", "description"}.issubset(set(item)))
+
+    def test_capability_catalog_exposes_generic_selection_metadata(self) -> None:
+        selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_metadata_test")
+
+        catalog = selector.discover_capability_catalog()
+        research_loop = next(item for item in catalog["subgraphs"] if item["key"] == "advanced_web_research_loop")
+        web_search = next(item for item in catalog["actions"] if item["key"] == "web_search")
+
+        self.assertEqual(research_loop["granularity"], "workflow")
+        self.assertIn("web_research", research_loop["covers"])
+        self.assertIn("final_response", research_loop["produces"])
+        self.assertEqual(web_search["granularity"], "atomic")
+        self.assertIn("web_research", web_search["covers"])
+        self.assertIn("raw_results", web_search["produces"])
+
+    def test_after_llm_prefers_higher_level_capability_with_matching_coverage(self) -> None:
+        selector = _load_selector_module(SELECTOR_AFTER_LLM_PATH, "toograph_capability_selector_after_arbitration_test")
+
+        result = selector.normalize_selected_capability(
+            {"kind": "action", "key": "raw_search", "reason": "Need current public sources."},
+            catalog={
+                "subgraphs": [
+                    {
+                        "kind": "subgraph",
+                        "key": "research_workflow",
+                        "description": "Search, verify, and produce a final answer.",
+                        "granularity": "workflow",
+                        "covers": ["web_research", "evidence_check"],
+                        "produces": ["sources", "final_response"],
+                    }
+                ],
+                "actions": [
+                    {
+                        "kind": "action",
+                        "key": "raw_search",
+                        "description": "Search raw public sources.",
+                        "granularity": "atomic",
+                        "covers": ["web_research", "evidence_check"],
+                        "produces": ["sources", "raw_results"],
+                    }
+                ],
+                "tools": [],
+            },
+        )
+
+        self.assertEqual(result["capability"]["kind"], "subgraph")
+        self.assertEqual(result["capability"]["key"], "research_workflow")
+        self.assertEqual(result["capability"]["description"], "Search, verify, and produce a final answer.")
+        self.assertTrue(result["needs_capability"])
 
     def test_after_llm_validates_and_normalizes_selected_capability(self) -> None:
         selector = _load_selector_module(SELECTOR_AFTER_LLM_PATH, "toograph_capability_selector_after_validate_test")

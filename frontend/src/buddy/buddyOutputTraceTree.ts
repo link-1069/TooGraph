@@ -42,6 +42,9 @@ export function buildBuddyOutputTraceTreeRows(
   const childRunIdByParentNodeId = buildChildRunIdByParentNodeId(options.runTree);
   const dynamicRunNodeByRunId = buildDynamicRunNodeByRunId(options.runTree);
   const dynamicRunIdsWithRecordedChildren = buildDynamicRunIdsWithRecordedChildren(segment.records);
+  const nodeDepthByKey: Record<string, number> = {};
+  const activityDepthById: Record<string, number> = {};
+  const latestInvocationDepthByKey: Record<string, number> = {};
   const rows: BuddyOutputTraceTreeRow[] = [];
 
   for (const record of segment.records) {
@@ -49,14 +52,27 @@ export function buildBuddyOutputTraceTreeRows(
     const isSubgraphHeader = Boolean(subgraphHeaderId);
     const dynamicRunNode = resolveDynamicRunNodeForRecord(record, dynamicRunNodeByRunId);
     const dynamicDepth = dynamicRunNode ? 1 : null;
-    const depth = normalizeTreeDepth(record.treeDepth) ?? dynamicDepth ?? (isSubgraphHeader ? 0 : record.subgraphNodeId ? 1 : 0);
+    const inferredActivityDepth = inferActivityTreeDepth(
+      record,
+      nodeDepthByKey,
+      activityDepthById,
+      latestInvocationDepthByKey,
+    );
+    const depth = normalizeTreeDepth(record.treeDepth) ?? dynamicDepth ?? inferredActivityDepth ?? (isSubgraphHeader ? 0 : record.subgraphNodeId ? 1 : 0);
     const evidenceRunId = isSubgraphHeader
       ? childRunIdByParentNodeId[subgraphHeaderId || ""] ?? normalizeText(record.triggeredRunId)
       : normalizeText(record.triggeredRunId);
+    const label = resolveTreeRecordLabel(
+      record,
+      subgraphLabelById,
+      options.childRunDetailsByRunId ?? {},
+      dynamicRunNode,
+      { stripPathLabel: inferredActivityDepth !== null },
+    );
     rows.push({
       rowId: record.recordId,
       kind: resolveTreeRowKind(record, isSubgraphHeader, dynamicRunNode),
-      label: resolveTreeRecordLabel(record, subgraphLabelById, options.childRunDetailsByRunId ?? {}, dynamicRunNode),
+      label,
       depth,
       status: record.status,
       startedAtMs: record.startedAtMs,
@@ -71,9 +87,72 @@ export function buildBuddyOutputTraceTreeRows(
     if (dynamicRunNode && evidenceRunId && !dynamicRunIdsWithRecordedChildren.has(evidenceRunId)) {
       rows.push(...buildDynamicRunDetailChildRows(record, options.childRunDetailsByRunId?.[evidenceRunId], depth + 1));
     }
+    if (record.kind === "node" && record.nodeId) {
+      nodeDepthByKey[buildRecordNodeDepthKey(record)] = depth;
+    }
+    if (record.kind === "activity") {
+      const activityId = normalizeText(record.activityId);
+      if (activityId) {
+        activityDepthById[activityId] = depth;
+      }
+      const invocationId = normalizeText(record.invocationId);
+      if (invocationId && !normalizeText(record.parentActivityId)) {
+        activityDepthById[invocationId] = depth;
+      }
+      const invocationKey = buildActivityInvocationDepthKey(record);
+      if (invocationKey && isCapabilityInvocationActivity(record)) {
+        latestInvocationDepthByKey[invocationKey] = depth;
+      }
+    }
   }
 
   return rows;
+}
+
+function inferActivityTreeDepth(
+  record: BuddyOutputTraceRecord,
+  nodeDepthByKey: Record<string, number>,
+  activityDepthById: Record<string, number>,
+  latestInvocationDepthByKey: Record<string, number>,
+) {
+  if (record.kind !== "activity" || !record.nodeId) {
+    return null;
+  }
+  const parentActivityId = normalizeText(record.parentActivityId);
+  if (parentActivityId && typeof activityDepthById[parentActivityId] === "number") {
+    return activityDepthById[parentActivityId] + 1;
+  }
+  const invocationKey = buildActivityInvocationDepthKey(record);
+  if (
+    invocationKey
+    && !isCapabilityInvocationActivity(record)
+    && typeof latestInvocationDepthByKey[invocationKey] === "number"
+  ) {
+    return latestInvocationDepthByKey[invocationKey] + 1;
+  }
+  const parentDepth = nodeDepthByKey[buildRecordNodeDepthKey(record)];
+  return typeof parentDepth === "number" ? parentDepth + 1 : null;
+}
+
+function buildRecordNodeDepthKey(record: Pick<BuddyOutputTraceRecord, "nodeId" | "subgraphNodeId" | "dynamicCapabilityRunId">) {
+  const nodeId = normalizeText(record.nodeId);
+  if (!nodeId) {
+    return "";
+  }
+  const dynamicRunId = normalizeText(record.dynamicCapabilityRunId);
+  const scopeId = dynamicRunId || normalizeText(record.subgraphNodeId);
+  return `${scopeId}:${nodeId}`;
+}
+
+function buildActivityInvocationDepthKey(record: BuddyOutputTraceRecord) {
+  const nodeKey = buildRecordNodeDepthKey(record);
+  const capabilityKey = normalizeText(record.capabilityKey);
+  return nodeKey && capabilityKey ? `${nodeKey}:${capabilityKey}` : "";
+}
+
+function isCapabilityInvocationActivity(record: BuddyOutputTraceRecord) {
+  const kind = normalizeText(record.activityKind);
+  return kind === "action_invocation" || kind === "tool_invocation" || kind === "subgraph_invocation";
 }
 
 function filterVisibleArtifactLabels(labels: string[]) {
@@ -96,6 +175,7 @@ function resolveTreeRecordLabel(
   subgraphLabelById: Record<string, string>,
   childRunDetailsByRunId: Record<string, RunDetail | undefined>,
   dynamicRunNode: RunTreeNode | null = null,
+  options: { stripPathLabel?: boolean } = {},
 ) {
   if (dynamicRunNode && record.kind === "activity") {
     return normalizeText(dynamicRunNode.graph_name) || resolveLastPathPart(record.label.trim());
@@ -108,7 +188,7 @@ function resolveTreeRecordLabel(
     return dynamicNodeLabel;
   }
   const label = record.label.trim();
-  if (normalizeTreeDepth(record.treeDepth) !== null) {
+  if (options.stripPathLabel || normalizeTreeDepth(record.treeDepth) !== null) {
     return resolveLastPathPart(label);
   }
   if (!record.subgraphNodeId) {

@@ -262,7 +262,7 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
         self.assertEqual(state["node_status_map"], {"output_active": "success"})
         self.assertEqual(state["final_result"], "fresh")
 
-    def test_collect_output_boundaries_includes_formal_outputs_for_written_states(self) -> None:
+    def test_collect_output_boundaries_ignores_written_states_for_inactive_output_branches(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(
             {
                 "graph_id": "graph_1",
@@ -322,15 +322,9 @@ class RuntimeOutputBoundariesTests(unittest.TestCase):
 
         self.assertEqual(
             [(preview["node_id"], preview["value"]) for preview in state["output_previews"]],
-            [
-                ("output_intro", "我会先帮你联网调研。"),
-                ("output_final", "这是最终整理结果。"),
-            ],
+            [("output_final", "这是最终整理结果。")],
         )
-        self.assertEqual(
-            state["node_status_map"],
-            {"output_intro": "success", "output_final": "success"},
-        )
+        self.assertEqual(state["node_status_map"], {"output_final": "success"})
         self.assertEqual(state["final_result"], "这是最终整理结果。")
 
 

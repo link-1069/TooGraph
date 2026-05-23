@@ -139,15 +139,14 @@ def collect_output_boundaries(
     state: dict[str, Any],
     active_edge_ids: set[str] | None = None,
 ) -> None:
-    active_output_nodes = resolve_active_output_nodes(graph, active_edge_ids or set())
-    formal_output_nodes = resolve_written_state_output_nodes(graph, state)
-    selected_output_nodes = active_output_nodes | formal_output_nodes
+    edge_ids = set(active_edge_ids or set())
+    selected_output_nodes = resolve_active_output_nodes(graph, edge_ids)
     output_node_names = {
         node_name
         for node_name, node in graph.nodes.items()
         if isinstance(node, NodeSystemOutputNode)
     }
-    refreshed_output_nodes = selected_output_nodes or output_node_names
+    refreshed_output_nodes = selected_output_nodes if edge_ids else output_node_names
     state["output_previews"] = [
         preview
         for preview in state.get("output_previews", [])
@@ -163,7 +162,7 @@ def collect_output_boundaries(
     for node_name, node in graph.nodes.items():
         if not isinstance(node, NodeSystemOutputNode) or not node.reads:
             continue
-        if selected_output_nodes and node_name not in selected_output_nodes:
+        if edge_ids and node_name not in selected_output_nodes:
             continue
 
         binding = node.reads[0]
@@ -183,33 +182,3 @@ def collect_output_boundaries(
 
     if final_results:
         state["final_result"] = str(final_results[-1])
-
-
-def resolve_written_state_output_nodes(
-    graph: NodeSystemGraphDocument,
-    state: dict[str, Any],
-) -> set[str]:
-    written_state_keys = set()
-    raw_last_writers = state.get("state_last_writers")
-    if isinstance(raw_last_writers, dict):
-        written_state_keys.update(str(state_key) for state_key, writer in raw_last_writers.items() if writer)
-
-    raw_state_events = state.get("state_events")
-    if isinstance(raw_state_events, list):
-        for event in raw_state_events:
-            if not isinstance(event, dict):
-                continue
-            state_key = str(event.get("state_key") or "").strip()
-            if state_key:
-                written_state_keys.add(state_key)
-
-    if not written_state_keys:
-        return set()
-
-    output_nodes: set[str] = set()
-    for node_name, node in graph.nodes.items():
-        if not isinstance(node, NodeSystemOutputNode) or not node.reads:
-            continue
-        if node.reads[0].state in written_state_keys:
-            output_nodes.add(node_name)
-    return output_nodes

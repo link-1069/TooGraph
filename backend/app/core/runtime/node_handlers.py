@@ -728,7 +728,7 @@ def execute_agent_node(
                 "error_type": action_error_type,
             }
         )
-        record_activity_event_func(
+        invocation_event = record_activity_event_func(
             state,
             kind="action_invocation",
             summary=_action_invocation_activity_summary(action_key, action_status),
@@ -744,12 +744,21 @@ def execute_agent_node(
             },
             error=action_error,
         )
+        parent_activity_id = _compact_text(
+            invocation_event.get("activity_id") if isinstance(invocation_event, dict) else ""
+        )
+        invocation_id = (
+            _compact_text(invocation_event.get("invocation_id") if isinstance(invocation_event, dict) else "")
+            or parent_activity_id
+        )
         record_action_activity_events(
             state,
             node_id=node_name,
             action_key=action_key,
             binding_source=resolved_binding.source,
             raw_events=action_result.get("activity_events"),
+            parent_activity_id=parent_activity_id or None,
+            invocation_id=invocation_id or None,
             record_activity_event_func=record_activity_event_func,
         )
 

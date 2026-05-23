@@ -141,6 +141,49 @@ class RuntimeActivityEventsTests(unittest.TestCase):
         self.assertEqual(event["detail"]["removed"], 0)
         self.assertEqual(published[0][1], "activity.event")
 
+    def test_record_action_activity_events_links_raw_events_to_invocation_parent(self) -> None:
+        state = {"run_id": "run-activity"}
+
+        from app.core.runtime.activity_events import record_action_activity_events
+
+        parent_event = record_activity_event(
+            state,
+            kind="action_invocation",
+            summary="Action 'web_search' succeeded.",
+            node_id="execute_capability",
+            status="succeeded",
+            detail={"action_key": "web_search"},
+            publish_run_event_func=lambda *_args, **_kwargs: None,
+        )
+        events = record_action_activity_events(
+            state,
+            node_id="execute_capability",
+            action_key="web_search",
+            binding_source="capability_state",
+            raw_events=[
+                {
+                    "kind": "web_search",
+                    "summary": "Collected candidate sources.",
+                    "status": "succeeded",
+                },
+                {
+                    "kind": "web_download",
+                    "summary": "Downloaded readable pages.",
+                    "status": "succeeded",
+                },
+            ],
+            parent_activity_id=parent_event["activity_id"],
+            invocation_id=parent_event["invocation_id"],
+            publish_run_event_func=lambda *_args, **_kwargs: None,
+        )
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["parent_activity_id"], parent_event["activity_id"])
+        self.assertEqual(events[1]["parent_activity_id"], parent_event["activity_id"])
+        self.assertEqual(events[0]["invocation_id"], parent_event["invocation_id"])
+        self.assertEqual(events[1]["invocation_id"], parent_event["invocation_id"])
+        self.assertNotEqual(events[0]["activity_id"], events[1]["activity_id"])
+
     def test_record_action_activity_events_enriches_virtual_operation_continuation_context(self) -> None:
         state = {
             "run_id": "run-activity",
