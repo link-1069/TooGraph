@@ -3,6 +3,7 @@ import type {
   BuddyChatSession,
   BuddyCommandRecord,
   BuddyCommandResponse,
+  BuddyHomeFiles,
   BuddyMemoryReviewTemplateBinding,
   BuddyMemoryDocument,
   BuddyPolicy,
@@ -46,6 +47,10 @@ export function updateBuddyPolicy(payload: Partial<BuddyPolicy>, changeReason: s
 
 export function fetchBuddyMemoryDocument() {
   return apiGet<BuddyMemoryDocument>("/api/buddy/memory-document");
+}
+
+export function fetchBuddyHomeFiles() {
+  return apiGet<BuddyHomeFiles>("/api/buddy/home-files");
 }
 
 export function updateBuddyMemoryDocument(payload: Pick<BuddyMemoryDocument, "content">, changeReason: string) {

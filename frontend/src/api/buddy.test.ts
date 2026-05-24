@@ -9,6 +9,7 @@ import {
   fetchBuddyMemoryReviewTemplateBinding,
   fetchBuddyRunTemplateBinding,
   fetchBuddyCommands,
+  fetchBuddyHomeFiles,
   fetchBuddyChatMessages,
   fetchBuddyChatSessions,
   fetchBuddyProfile,
@@ -84,6 +85,22 @@ test("buddy API reads command audit records", async () => {
   await fetchBuddyCommands();
 
   assert.deepEqual(requests, ["/api/buddy/commands"]);
+  globalThis.fetch = originalFetch;
+});
+
+test("buddy API reads Buddy Home file inventory", async () => {
+  const requests: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requests.push(String(input));
+    return new Response(JSON.stringify({ root: "buddy_home", files: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await fetchBuddyHomeFiles();
+
+  assert.deepEqual(requests, ["/api/buddy/home-files"]);
   globalThis.fetch = originalFetch;
 });
 

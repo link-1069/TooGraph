@@ -18,6 +18,27 @@ ALLOWED_ACTIONS = {
 }
 POLICY_PERMISSION_FIELDS = {"behavior_boundaries", "graph_permission_mode"}
 POLICY_AUTONOMOUS_ALLOWED_FIELDS = {"communication_preferences"}
+PROFILE_RENAME_INTENT_MARKERS = (
+    "call yourself",
+    "rename yourself",
+    "your name",
+    "profile name",
+    "visible profile name",
+    "\u4ee5\u540e\u5c31\u53eb",
+    "\u4ee5\u540e\u53eb",
+    "\u6539\u540d",
+    "\u540d\u5b57",
+    "\u540d\u79f0",
+    "\u79f0\u547c",
+    "\u81ea\u79f0",
+)
+DISPLAY_NAME_ONLY_MARKERS = (
+    "display name",
+    "display label",
+    "display_preferences.display_name",
+    "\u663e\u793a\u540d",
+    "\u663e\u793a\u6807\u7b7e",
+)
 
 
 def buddy_home_writer(**action_inputs: Any) -> dict[str, Any]:
@@ -127,6 +148,13 @@ def _normalize_command(
         }
     payload = deepcopy(value.get("payload")) if isinstance(value.get("payload"), dict) else {}
     payload_change_reason = _as_text(payload.pop("change_reason", "")).strip()
+    command_change_reason = (
+        _as_text(value.get("change_reason")).strip()
+        or payload_change_reason
+        or "Buddy autonomous review applied a safe Buddy Home writeback."
+    )
+    if action == "profile.update":
+        payload = _normalize_profile_update_payload(payload, change_reason=command_change_reason)
     if action == "policy.update":
         policy_error = _validate_policy_update_payload(payload)
         if policy_error:
@@ -135,9 +163,7 @@ def _normalize_command(
     normalized = {
         "action": action,
         "payload": payload,
-        "change_reason": _as_text(value.get("change_reason")).strip()
-        or payload_change_reason
-        or "Buddy autonomous review applied a safe Buddy Home writeback.",
+        "change_reason": command_change_reason,
     }
     target_id = _as_text(value.get("target_id")).strip()
     if target_id:
@@ -146,6 +172,29 @@ def _normalize_command(
     if run_id:
         normalized["run_id"] = run_id
     return normalized, None
+
+
+def _normalize_profile_update_payload(payload: dict[str, Any], *, change_reason: str) -> dict[str, Any]:
+    normalized = deepcopy(payload)
+    if "name" in normalized or _looks_like_display_name_only_intent(change_reason):
+        return normalized
+    display_preferences = normalized.get("display_preferences")
+    if not isinstance(display_preferences, dict):
+        return normalized
+    display_name = _as_text(display_preferences.get("display_name")).strip()
+    if display_name and _looks_like_profile_rename_intent(change_reason):
+        normalized["name"] = display_name
+    return normalized
+
+
+def _looks_like_profile_rename_intent(value: str) -> bool:
+    text = value.lower()
+    return any(marker in text for marker in PROFILE_RENAME_INTENT_MARKERS)
+
+
+def _looks_like_display_name_only_intent(value: str) -> bool:
+    text = value.lower()
+    return any(marker in text for marker in DISPLAY_NAME_ONLY_MARKERS)
 
 
 def _contains_permission_boundary_change(payload: dict[str, Any]) -> bool:

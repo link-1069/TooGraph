@@ -415,6 +415,59 @@
           </article>
         </ElTabPane>
 
+        <ElTabPane :label="t('buddyPage.tabs.files')" name="files">
+          <article class="buddy-page__panel buddy-page__panel--files">
+            <div class="buddy-page__panel-heading">
+              <div>
+                <h3>{{ t("buddyPage.files.title") }}</h3>
+                <p>{{ t("buddyPage.files.body") }}</p>
+              </div>
+              <span class="buddy-page__meta">{{ homeFiles.root || "buddy_home" }}</span>
+            </div>
+            <div v-if="homeFiles.files.length > 0" class="buddy-page__file-browser">
+              <nav class="buddy-page__file-list" :aria-label="t('buddyPage.files.listLabel')">
+                <button
+                  v-for="file in homeFiles.files"
+                  :key="file.path"
+                  type="button"
+                  class="buddy-page__file-row"
+                  :class="{ 'buddy-page__file-row--active': selectedHomeFile?.path === file.path }"
+                  @click="selectHomeFile(file.path)"
+                >
+                  <span class="buddy-page__file-row-name">{{ file.path }}</span>
+                  <span class="buddy-page__file-row-meta">
+                    {{ homeFileKindLabel(file) }} · {{ formatHomeFileSize(file.size_bytes) }}
+                  </span>
+                </button>
+              </nav>
+              <section v-if="selectedHomeFile" class="buddy-page__file-preview">
+                <header class="buddy-page__file-preview-header">
+                  <div>
+                    <h4>{{ selectedHomeFile.path }}</h4>
+                    <p>{{ selectedHomeFile.summary || t("buddyPage.files.noSummary") }}</p>
+                  </div>
+                  <div class="buddy-page__file-preview-meta">
+                    <ElTag :type="homeFileTagType(selectedHomeFile)" effect="plain">
+                      {{ homeFileKindLabel(selectedHomeFile) }}
+                    </ElTag>
+                    <span>{{ formatHomeFileSize(selectedHomeFile.size_bytes) }}</span>
+                    <span>{{ formatDate(selectedHomeFile.updated_at) }}</span>
+                  </div>
+                </header>
+                <pre v-if="selectedHomeFile.readable" class="buddy-page__file-content">{{ selectedHomeFile.content || t("buddyPage.files.emptyContent") }}</pre>
+                <div v-else class="buddy-page__file-unreadable">
+                  <strong>{{ t("buddyPage.files.metadataOnly") }}</strong>
+                  <p>{{ selectedHomeFile.error || selectedHomeFile.summary || t("buddyPage.files.unreadable") }}</p>
+                </div>
+                <p v-if="selectedHomeFile.truncated" class="buddy-page__file-truncated">
+                  {{ t("buddyPage.files.truncated") }}
+                </p>
+              </section>
+            </div>
+            <ElEmpty v-else :description="t('buddyPage.files.empty')" />
+          </article>
+        </ElTabPane>
+
         <ElTabPane :label="t('buddyPage.tabs.summary')" name="summary">
           <article class="buddy-page__panel">
             <div class="buddy-page__panel-heading">
@@ -741,6 +794,7 @@ import { useI18n } from "vue-i18n";
 import { BUDDY_DEBUG_ACTION_GROUPS } from "@/buddy/buddyMascotDebug";
 import {
   fetchBuddyCommands,
+  fetchBuddyHomeFiles,
   fetchBuddyMemoryDocument,
   fetchBuddyMemoryReviewTemplateBinding,
   fetchBuddyPolicy,
@@ -782,6 +836,8 @@ import { useBuddyMascotDebugStore } from "@/stores/buddyMascotDebug";
 import type {
   BuddyCommandRecord,
   BuddyCommandResponse,
+  BuddyHomeFileEntry,
+  BuddyHomeFiles,
   BuddyMemoryDocument,
   BuddyMemoryReviewInputSource,
   BuddyMemoryReviewTemplateBinding,
@@ -832,6 +888,8 @@ const errorMessage = ref("");
 const profileDraft = ref<BuddyProfile>(defaultProfileDraft());
 const policyDraft = ref<BuddyPolicy>(defaultPolicyDraft());
 const memoryDocumentDraft = ref<BuddyMemoryDocument>(defaultMemoryDocumentDraft());
+const homeFiles = ref<BuddyHomeFiles>(defaultHomeFiles());
+const selectedHomeFilePath = ref("");
 const summaryDraft = ref<BuddySessionSummary>(defaultSummaryDraft());
 const availableTemplates = ref<TemplateRecord[]>([]);
 const selectedBindingTemplate = ref<TemplateRecord | null>(null);
@@ -868,6 +926,9 @@ const policyPreferenceText = computed({
 });
 const canSaveMemory = computed(() => {
   return Boolean(memoryDocumentDraft.value.content.trim() && !isSavingMemory.value);
+});
+const selectedHomeFile = computed(() => {
+  return homeFiles.value.files.find((file) => file.path === selectedHomeFilePath.value) ?? homeFiles.value.files[0] ?? null;
 });
 const orderedRevisionRows = computed(() => buildBuddyRevisionHistoryRows(revisions.value, commands.value));
 const filteredRevisionRows = computed(() => filterBuddyRevisionHistoryRows(orderedRevisionRows.value, historyTargetFilter.value));
@@ -972,6 +1033,13 @@ function defaultMemoryDocumentDraft(): BuddyMemoryDocument {
   };
 }
 
+function defaultHomeFiles(): BuddyHomeFiles {
+  return {
+    root: "",
+    files: [],
+  };
+}
+
 function defaultSummaryDraft(): BuddySessionSummary {
   return {
     content: "",
@@ -1005,6 +1073,47 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatHomeFileSize(value: number) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
+  if (value < 1024) {
+    return `${value} B`;
+  }
+  if (value < 1024 * 1024) {
+    return `${(value / 1024).toFixed(1)} KB`;
+  }
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function homeFileKindLabel(file: BuddyHomeFileEntry) {
+  return t(`buddyPage.files.kinds.${file.kind}`);
+}
+
+function homeFileTagType(file: BuddyHomeFileEntry) {
+  if (file.kind === "database") {
+    return "warning";
+  }
+  if (file.kind === "directory") {
+    return "info";
+  }
+  if (file.kind === "json") {
+    return "success";
+  }
+  return undefined;
+}
+
+function selectHomeFile(path: string) {
+  selectedHomeFilePath.value = path;
+}
+
+function syncSelectedHomeFile() {
+  if (homeFiles.value.files.some((file) => file.path === selectedHomeFilePath.value)) {
+    return;
+  }
+  selectedHomeFilePath.value = homeFiles.value.files[0]?.path ?? "";
 }
 
 function historyDiffTagType(kind: BuddyRevisionDiffChangeKind) {
@@ -1171,6 +1280,7 @@ async function loadAll(options: LoadAllOptions = {}) {
       profile,
       policy,
       memoryDocument,
+      homeFileList,
       summary,
       revisionList,
       commandList,
@@ -1181,6 +1291,7 @@ async function loadAll(options: LoadAllOptions = {}) {
       fetchBuddyProfile(),
       fetchBuddyPolicy(),
       fetchBuddyMemoryDocument(),
+      fetchBuddyHomeFiles(),
       fetchBuddySessionSummary(),
       fetchBuddyRevisions(),
       fetchBuddyCommands(),
@@ -1191,6 +1302,8 @@ async function loadAll(options: LoadAllOptions = {}) {
     profileDraft.value = profile;
     policyDraft.value = normalizeBuddyPolicy(policy);
     memoryDocumentDraft.value = memoryDocument;
+    homeFiles.value = homeFileList;
+    syncSelectedHomeFile();
     summaryDraft.value = summary;
     revisions.value = revisionList;
     commands.value = commandList;
@@ -1323,6 +1436,11 @@ async function refreshAuditTrail() {
   commands.value = commandList;
 }
 
+async function refreshHomeFiles() {
+  homeFiles.value = await fetchBuddyHomeFiles();
+  syncSelectedHomeFile();
+}
+
 async function saveProfile() {
   try {
     isSavingProfile.value = true;
@@ -1330,6 +1448,7 @@ async function saveProfile() {
       await updateBuddyProfile(profileDraft.value, t("buddyPage.changeReasons.profile")),
     );
     await refreshAuditTrail();
+    await refreshHomeFiles();
     errorMessage.value = "";
     ElMessage.success(t("buddyPage.saved"));
   } catch (error) {
@@ -1349,6 +1468,7 @@ async function savePolicy() {
       ),
     );
     await refreshAuditTrail();
+    await refreshHomeFiles();
     errorMessage.value = "";
     ElMessage.success(t("buddyPage.saved"));
   } catch (error) {
@@ -1371,6 +1491,7 @@ async function saveMemoryDocument() {
       ),
     );
     await refreshAuditTrail();
+    await refreshHomeFiles();
     errorMessage.value = "";
     ElMessage.success(t("buddyPage.saved"));
   } catch (error) {
@@ -1387,6 +1508,7 @@ async function saveSummary() {
       await updateBuddySessionSummary(summaryDraft.value, t("buddyPage.changeReasons.summary")),
     );
     await refreshAuditTrail();
+    await refreshHomeFiles();
     errorMessage.value = "";
     ElMessage.success(t("buddyPage.saved"));
   } catch (error) {
@@ -1452,6 +1574,7 @@ async function saveBinding() {
       acceptCommandResult(await updateBuddyRunTemplateBinding(bindingDraft.value, t("buddyPage.changeReasons.binding"))),
     );
     await refreshAuditTrail();
+    await refreshHomeFiles();
     errorMessage.value = "";
     ElMessage.success(t("buddyPage.saved"));
   } catch (error) {
@@ -1476,6 +1599,7 @@ async function saveMemoryReviewBinding() {
       ),
     );
     await refreshAuditTrail();
+    await refreshHomeFiles();
     errorMessage.value = "";
     ElMessage.success(t("buddyPage.saved"));
   } catch (error) {
@@ -1729,6 +1853,133 @@ onMounted(loadAll);
 
 .buddy-page__table {
   width: 100%;
+}
+
+.buddy-page__file-browser {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 520px;
+}
+
+.buddy-page__file-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  max-height: 640px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.buddy-page__file-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 58px;
+  border: 1px solid rgba(154, 52, 18, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.42);
+  color: rgba(60, 41, 20, 0.76);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.buddy-page__file-row:hover,
+.buddy-page__file-row:focus-visible,
+.buddy-page__file-row--active {
+  border-color: rgba(154, 52, 18, 0.24);
+  background: rgba(255, 248, 240, 0.84);
+  box-shadow: 0 8px 18px rgba(61, 43, 24, 0.055);
+  outline: none;
+}
+
+.buddy-page__file-row-name {
+  color: var(--toograph-text-strong);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.86rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.buddy-page__file-row-meta,
+.buddy-page__file-preview-header p,
+.buddy-page__file-preview-meta,
+.buddy-page__file-truncated,
+.buddy-page__file-unreadable p {
+  color: rgba(60, 41, 20, 0.62);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.buddy-page__file-preview {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.38);
+  overflow: hidden;
+}
+
+.buddy-page__file-preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(154, 52, 18, 0.1);
+}
+
+.buddy-page__file-preview-header h4 {
+  margin: 0 0 4px;
+  color: var(--toograph-text-strong);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.98rem;
+  overflow-wrap: anywhere;
+}
+
+.buddy-page__file-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.buddy-page__file-content {
+  min-height: 0;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  background: rgba(38, 26, 14, 0.035);
+  color: rgba(38, 26, 14, 0.88);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.buddy-page__file-unreadable {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 18px;
+}
+
+.buddy-page__file-unreadable strong {
+  color: var(--toograph-text-strong);
+}
+
+.buddy-page__file-truncated {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid rgba(154, 52, 18, 0.1);
+  background: rgba(255, 248, 240, 0.72);
 }
 
 .buddy-page__binding-grid {
@@ -2260,6 +2511,27 @@ onMounted(loadAll);
 
   .buddy-page__split {
     grid-template-columns: 1fr;
+  }
+
+  .buddy-page__file-browser {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .buddy-page__file-list {
+    max-height: 280px;
+  }
+
+  .buddy-page__file-preview {
+    min-height: 420px;
+  }
+
+  .buddy-page__file-preview-header {
+    display: grid;
+  }
+
+  .buddy-page__file-preview-meta {
+    justify-content: flex-start;
   }
 
   .buddy-page__history-diff {

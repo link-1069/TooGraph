@@ -582,7 +582,7 @@ operation:
 本文长期保持有效需要满足：
 
 - `docs/` 下只保留本文。
-- README、AGENTS、AGENT_ZH、CLAUDE、模板 metadata、测试和知识库导入不再指向已删除 docs 路径。
+- README、AGENTS、CLAUDE、模板 metadata、测试和知识库导入不再指向已删除 docs 路径。
 - 仓库当前说明不再把 `toograph_capability_selector` 描述为固定返回页面操作。
 - 当前协议说明统一为 Action / Tool / Subgraph / Capability；旧 Skill 字段只作为历史迁移或未来 Agent 操作书型 Skill 被提及。
 - RAG、记忆、运行树、本地工作区、结构化输出的未来事项都能从本文找到，不需要回看已删除计划。

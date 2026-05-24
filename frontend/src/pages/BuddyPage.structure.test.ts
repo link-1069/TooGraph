@@ -13,6 +13,7 @@ test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () 
   assert.match(source, /updateBuddyPolicy/);
   assert.match(source, /fetchBuddyMemoryDocument/);
   assert.match(source, /updateBuddyMemoryDocument/);
+  assert.match(source, /fetchBuddyHomeFiles/);
   assert.match(source, /fetchBuddySessionSummary/);
   assert.match(source, /fetchBuddyRevisions/);
   assert.match(source, /fetchBuddyRunTemplateBinding/);
@@ -27,6 +28,7 @@ test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () 
   assert.match(source, /name="profile"/);
   assert.match(source, /name="policy"/);
   assert.match(source, /name="memory"/);
+  assert.match(source, /name="files"/);
   assert.match(source, /name="summary"/);
   assert.match(source, /name="binding"/);
   assert.match(source, /name="confirmation"/);
@@ -37,6 +39,9 @@ test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () 
   assert.match(source, /buildBuddyMemoryReviewTemplateInputRows/);
   assert.match(source, /validateBuddyMemoryReviewTemplateBinding/);
   assert.match(source, /memoryDocumentDraft/);
+  assert.match(source, /homeFiles/);
+  assert.match(source, /selectedHomeFile/);
+  assert.match(source, /buddy-page__file-browser/);
   assert.match(source, /saveMemoryDocument/);
   assert.doesNotMatch(source, /fetchPlatformMemories/);
   assert.doesNotMatch(source, /platformMemoryCandidates/);

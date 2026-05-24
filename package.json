@@ -3,5 +3,8 @@
   "private": true,
   "scripts": {
     "start": "node scripts/start.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
   }
 }

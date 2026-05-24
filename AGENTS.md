@@ -1,145 +1,153 @@
-# TooGraph Agent Instructions
+# TooGraph Agent 说明
 
-These instructions apply to all work in this repository and should persist across new Codex sessions.
+这些说明适用于本仓库中的所有工作，并应在新的 Codex 会话中持续生效。
 
-## Commit Messages
+## 分支工作流
 
-- When creating git commits for this project, always write the commit message in Chinese.
-- After making repository changes, commit and push the changes unless the user explicitly asks not to.
+- 所有开发工作都应在本地 `dev` 分支上进行。
+- `dev` 分支只保留在本地，不设置 upstream，不同步远端，也不要创建远端 `dev` 分支，除非用户明确改变这条规则。
+- `main` 用作与 `origin/main` 对齐的远端基线分支。开始开发前，如果当前不在 `dev`，应从当前 `main` 创建或切换到本地 `dev`。
+- 仓库改动和本地提交默认落在 `dev` 分支；不要把日常开发提交直接放到 `main`。
 
-## Start Workflow
+## 提交信息
 
-- After making code changes, restart TooGraph with the repository's standard cross-platform command: `npm start`.
-- Treat `node scripts/start.mjs` as the underlying standard start command for this repository; `npm start` should resolve to it.
-- TooGraph uses a single-port start model. The default public URL is `http://127.0.0.1:3477`, and the port can be overridden with `PORT=<port> npm start`.
-- For local verification and screenshots, prefer the default `http://127.0.0.1:3477`; do not switch to another port just because 3477 is occupied.
-- `npm start` / `scripts/start.mjs` / `scripts/start.sh` should release existing TooGraph processes that occupy the configured port before starting the new service. If startup reports that 3477 is occupied by a process it cannot safely identify as TooGraph, stop and report the PID/command instead of starting TooGraph on a second port.
-- Use `PORT=<port> npm start` only when the user explicitly asks for an alternate port, or when the user approves a temporary fallback after seeing why 3477 cannot be reused. Do not leave alternate-port TooGraph instances running after verification.
-- `npm start` should reuse `frontend/dist` when its build manifest hash matches the current frontend inputs instead of rebuilding every launch. Use `TOOGRAPH_FORCE_FRONTEND_BUILD=1 npm start` when a forced frontend rebuild is needed.
-- `npm run dev` is intentionally not a supported project command.
-- On Windows PowerShell, if execution policy blocks `npm.ps1`, use `npm.cmd start`.
-- `scripts/start.sh` remains the standard Bash wrapper for Linux, macOS, Git Bash, and WSL, and should stay behaviorally aligned with `scripts/start.mjs`.
-- If a task only involves documentation or other non-runtime changes, use judgment; for code changes, default to restarting with the standard start flow above.
+- 为本项目创建 git commit 时，提交信息必须使用中文。
+- 修改仓库后，除非用户明确要求不要提交，否则应提交到本地 git。
+- 除非用户明确要求推送或批准推送，否则不要把 commit 推送到远端。
 
-## Local LLM Runtime
+## 启动流程
 
-- Standardize local LLM/runtime guidance on the Model Providers page.
-- Preferred local or private gateway flow:
-  - Start the OpenAI-compatible gateway you want to use.
-  - Configure the `local` / Custom OpenAI-compatible Provider in the Model Providers page; the current local default base URL is `http://127.0.0.1:8888/v1`.
-  - Save or discover the model list in the UI, then choose the default text model there.
-- Model execution reads only the saved Model Providers configuration and the default model selections from the UI. Do not document or reintroduce model provider setup through startup environment variables.
-- Keep TooGraph's own startup guidance on `npm start` and `node scripts/start.mjs`; those commands are not replaced by local runtime instructions.
+- 修改代码后，使用仓库标准跨平台命令 `npm start` 重启 TooGraph。
+- `node scripts/start.mjs` 是仓库底层标准启动命令；`npm start` 应解析到它。
+- TooGraph 使用单端口启动模型。默认公开地址是 `http://127.0.0.1:3477`，可用 `PORT=<port> npm start` 覆盖端口。
+- 本地验证和截图优先使用默认地址 `http://127.0.0.1:3477`；不要仅因为 3477 被占用就换到其他端口。
+- `npm start`、`scripts/start.mjs`、`scripts/start.sh` 应在启动前释放占用配置端口的既有 TooGraph 进程。如果启动报告 3477 被一个无法安全识别为 TooGraph 的进程占用，应停止并报告 PID/命令，而不是在第二个端口启动 TooGraph。
+- 只有当用户明确要求使用备用端口，或在看到 3477 无法复用的原因后批准临时 fallback 时，才使用 `PORT=<port> npm start`。验证结束后不要留下备用端口上的 TooGraph 实例。
+- 当 `frontend/dist` 的构建 manifest hash 与当前前端输入一致时，`npm start` 应复用已有构建而不是每次启动都重新构建。需要强制重新构建时使用 `TOOGRAPH_FORCE_FRONTEND_BUILD=1 npm start`。
+- `npm run dev` 不是受支持的项目命令。
+- 在 Windows PowerShell 中，如果执行策略阻止 `npm.ps1`，使用 `npm.cmd start`。
+- `scripts/start.sh` 仍是 Linux、macOS、Git Bash 和 WSL 的标准 Bash 包装脚本，并应与 `scripts/start.mjs` 保持行为一致。
+- 如果任务只涉及文档或其他非运行时代码变更，可以按实际情况判断；对代码变更，默认使用上述标准启动流程重启。
 
-## UI Implementation Policy
+## 本地 LLM 运行时
 
-- For UI work, always prefer existing component libraries already used by the project before building custom components or controls.
-- Only hand-roll UI when the current libraries cannot reasonably satisfy the requirement or when custom behavior is clearly unavoidable.
-- When custom UI is necessary, keep the custom layer as small as possible and build on top of existing library primitives where practical.
+- 本地 LLM 和运行时说明应统一放在 Model Providers 页面。
+- 首选本地或私有网关流程：
+  - 启动要使用的 OpenAI-compatible gateway。
+  - 在 Model Providers 页面配置 `local` / Custom OpenAI-compatible Provider；当前本地默认 base URL 是 `http://127.0.0.1:8888/v1`。
+  - 在 UI 中保存或发现模型列表，然后在那里选择默认文本模型。
+- 模型执行只读取已保存的 Model Providers 配置和 UI 中的默认模型选择。不要重新文档化或恢复通过启动环境变量配置模型 provider 的方式。
+- TooGraph 自身启动说明仍然是 `npm start` 和 `node scripts/start.mjs`；这些命令不会被本地运行时说明替代。
 
-## User Experience and Visual Quality
+## UI 实现策略
 
-- User experience and visual quality are required parts of every user-facing change, not optional polish.
-- Before changing UI, inspect nearby screens/components and follow the existing art direction, spacing rhythm, colors, typography, icon style, motion, and interaction language.
-- Do not ship raw browser-default controls, crowded layouts, unclear labels, accidental visual regressions, or flows that only work because the implementer already knows what to do.
-- Every user-facing flow should include clear affordances, loading/saving/success/error feedback where relevant, and avoid surprising state changes.
-- For significant UI changes, verify the result visually in a browser screenshot in addition to running tests.
+- UI 工作应始终优先使用项目已经采用的组件库，再考虑自定义组件或控件。
+- 只有当现有库无法合理满足需求，或确实需要自定义行为时，才手写 UI。
+- 必须自定义 UI 时，应尽量缩小自定义层，并尽可能构建在现有库 primitives 之上。
 
-## Product and Engineering Quality
+## 用户体验与视觉质量
 
-- Keep changes scoped to the request, but leave the touched area coherent: remove confusing duplication, stale UI states, and obvious footguns introduced or exposed by the work.
-- Before adding any feature, inspect the existing architecture, data flow, and nearby implementations first. Prefer reusing established interfaces, protocol paths, storage APIs, validators, command buses, graph/runtime primitives, and UI patterns. Do not add product-specific special-case code or bypasses just to satisfy one feature; architectural consistency and a reasonable data/control path are more important than isolated feature completion. A feature that works but violates repository architecture, duplicates an existing interface, or creates an incoherent execution chain is not acceptable.
-- Protect user data and local configuration. Do not commit local runtime state, logs, generated build output, credentials, or machine-specific settings unless explicitly requested.
-- Treat `backend/data/settings`, `.toograph_*`, `.dev_*` logs, `dist`, and `.worktrees` as local/runtime artifacts unless a task explicitly targets them.
-- Prefer automatic, discoverable behavior over hidden manual steps when it improves the user's workflow, but make side effects visible and reversible.
-- Before finishing, run the smallest meaningful verification set for the changed surface; for UI work, include a visual check when practical. Clearly report any skipped or failing verification.
+- 用户体验和视觉质量是每个用户可见改动的必需部分，不是可选润色。
+- 修改 UI 前，检查附近页面和组件，遵循现有美术方向、间距节奏、颜色、字体、图标风格、动效和交互语言。
+- 不要交付原始浏览器默认控件、拥挤布局、不清晰标签、意外视觉退化，或只有实现者自己知道怎么用的流程。
+- 每个用户可见流程都应包含清晰 affordance、必要的加载/保存/成功/错误反馈，并避免令人意外的状态变化。
+- 对重要 UI 改动，除运行测试外，也应尽量通过浏览器截图进行视觉验证。
 
-## Graph-First Product Architecture
+## 产品与工程质量
 
-- TooGraph product behavior should be framed by graph templates whenever practical. Persistent operations, local file edits, memory updates, buddy self-configuration, and other side effects should happen because a designated graph/template ran, not because hidden product-specific imperative code made the decision.
-- Keep node responsibilities clear:
-  - A whole graph is the Agent. Do not treat a single node as an autonomous multi-step agent.
-  - LLM nodes perform one model turn. They reason, classify, plan, generate structured state, or prepare one capability call.
-  - One LLM node may use at most one explicit capability source: no capability, one selected Action, or one incoming `capability` state. A `capability` state is a single mutually exclusive object whose `kind` is `action`, `subgraph`, `tool`, or `none`; it must not be a list. If a workflow needs multiple capabilities, express the sequence with multiple nodes and edges.
-  - A manually selected LLM-node Action must be stored as scalar `config.actionKey`, never as `config.skills` or any other array. Arrays here imply multi-capability semantics and are considered legacy-invalid protocol.
-  - When an LLM node uses an Action or dynamic Subgraph, the LLM prepares invocation inputs before execution. The runtime executes the capability and writes raw structured outputs to state; the same LLM node should not summarize, repackage, or make follow-up capability calls.
-  - Static manually selected Actions use `config.actionKey` plus protocol-owned `actionBindings.outputMapping`. That mapping is created by the graph/editor/runtime, is visible in run audit details, and must not be exposed as something the LLM chooses or rewrites.
-  - Action instruction capsules are only the node-level override surface. The default capsule is derived from the selected Action manifest `llmInstruction`; only user-edited text is persisted as `actionInstructionBlocks.<actionKey>` with `source: "node.override"`. At runtime there is one effective Action-use instruction: node override when present, otherwise manifest `llmInstruction`, injected into the Action-input planning system prompt and not duplicated in user prompts.
-  - Action lifecycle scripts use fixed filenames instead of manifest entrypoint configuration. If `before_llm.py` exists, runtime executes it before Action-input planning and injects its auditable context into the LLM prompt. If `after_llm.py` exists, runtime executes it after the LLM has produced structured Action arguments and treats its JSON result as the Action output. State binding remains runtime-owned through `stateOutputSchema` and `actionBindings.outputMapping`; lifecycle scripts must not write graph state directly.
-  - Dynamic capability execution from an incoming `capability` state must write exactly one `result_package` state. The package wraps outputs as `outputs.<outputKey> = { name, description, type, value }`; do not add a redundant `fieldKey` property. Downstream LLM prompt assembly unpacks those virtual outputs and then uses the same state rendering rules as static states.
-  - Manual reusable graph embedding belongs to Subgraph nodes. `capability.kind=subgraph` exists for dynamic graph capability selection inside templates such as the buddy loop, not as a normal card-level dropdown on LLM nodes.
-  - Large buddy or automation templates should factor stable phases into Subgraph nodes where practical. Prefer readable top-level graph flow with inspectable subgraphs for context packing, capability loops, and final response generation over a single crowded graph canvas. Reply-after self-review should run as a separate auditable background graph/template from the completed run snapshot, not extend the visible reply path and block the next user turn.
-  - Action nodes execute controlled capabilities and side effects, such as writing local files, updating memory stores, downloading resources, or creating revisions.
-  - Output nodes display, preview, export, or link results. They should not own persistent mutation logic.
-- Buddy chat run capsules must be segmented only by output boundaries. The boundary is the non-output node directly connected to one or more `output` nodes, and one capsule represents the run progress from the previous output boundary up to and including that boundary node. All output nodes directly attached to the same boundary node belong to that same capsule and are displayed immediately after it. Do not create extra Buddy capsules for parent-loop decision branches, internal capability-selection nodes, or other graph internals that are not output boundaries. For example, in a linear flow `A -> B -> C -> D -> E`, if `C` connects to two `output` nodes and `E` connects to one `output` node, display one capsule for `A, B, C` followed by C's two outputs, then one capsule for `D, E` followed by E's output.
-- Backend code should provide reusable primitives, storage APIs, validators, revision mechanisms, and Action runtimes. Avoid burying product behavior such as buddy memory policy, persona update rules, or workflow decisions directly in backend endpoints when the behavior can be expressed as a graph/template.
-- Buddy behavior, memory management, persona updates, and file-edit workflows should be modeled as auditable graph flows: input/context -> LLM planning -> optional validation/approval -> Action/subgraph execution -> output display.
-- Low-level operations should remain visible and replayable through graph runs. When a feature needs to modify local documents, profile data, policy data, memories, templates, or other local state, prefer adding or reusing an Action plus a template that performs the operation and returns clear artifacts such as local file paths, diffs, revision IDs, and status messages.
+- 变更范围应贴合请求，但被触及的区域要保持一致和清晰：移除令人困惑的重复、过时 UI 状态，以及本次工作引入或暴露出的明显隐患。
+- 添加任何功能前，必须先查看原有架构、数据链路和附近实现。优先复用既有接口、协议路径、存储 API、校验器、命令总线、图/运行时 primitives 和 UI 模式。不能为了单独完成功能需求而添加产品特化的特殊代码、旁路或不符合架构设计的链路；架构一致性和清晰的数据/控制流比单个功能“能跑”更重要。一个功能即使表面完成，但违反仓库架构、重复已有接口，或形成不合理的执行链路，也不能接受。
+- 保护用户数据和本地配置。除非明确要求，不要提交本地运行状态、日志、生成构建产物、凭据或机器特定设置。
+- 将 `backend/data/settings`、`.toograph_*`、`.dev_*` 日志、`dist` 和 `.worktrees` 视为本地/运行时产物，除非任务明确针对它们。
+- 当自动化、可发现的行为能改善用户工作流时，优先采用它，但副作用必须可见且可逆。
+- 完成前，为改动面运行最小但有意义的验证集；UI 工作在可行时包含视觉检查。清楚说明跳过或失败的验证。
 
-## Buddy Autonomous Agent Direction
+## 图优先产品架构
 
-- Treat code, official template JSON, Action manifests, Tool manifests, and tests as the source of current implementation truth. Treat `docs/README.md` as the durable remaining-work roadmap for Buddy autonomy and self-evolution. Do not recreate `docs/current_project_status.md` or any parallel current-state snapshot unless the user explicitly asks for one.
-- The `demo/hermes-agent/` project is a capability reference, not an architecture to copy. TooGraph should translate Hermes-style abilities into graph templates, explicit Action calls, state, approvals, run records, revisions, and artifacts.
-- Hermes-style autonomy means more than tool use: multi-step capability loops, memory/session recall, Action creation and improvement, scheduled or triggered runs, delegation, safety guardrails, result budgeting, and self-improvement from execution traces. In TooGraph these must be expressed as auditable graph flows rather than a hidden agent loop.
-- Action in TooGraph means a single controlled capability call for one LLM-node turn. An Action can read context, prepare deterministic data, run a script, search, write one controlled output, or return artifacts. It must not own multi-step autonomy, retry loops, result review, final response generation, long-term memory policy, or follow-up capability selection.
-- Multi-step intelligence belongs to graph templates: LLM node -> condition -> one Action, Tool, or dynamic subgraph execution -> `result_package` or mapped Action outputs -> LLM review -> condition loop, pause, approval, failure handling, or final output.
-- Do not create a monolithic `self_evolve` Action or Buddy-specific hidden runtime. Buddy self-evolution should be a graph-template pipeline that turns run traces, user corrections, failures, successes, and Buddy Home context into structured improvement candidates, validates or tests them, asks for human review when needed, and only then applies changes through controlled commands or Actions.
-- Existing Buddy templates are the starting point, not throwaway scaffolding:
-  - `buddy_autonomous_loop` is the visible Buddy run path: context input, request intake, capability loop, optional direct capability-result output, and final response.
-  - `buddy_autonomous_review` is the background review path: it should produce memory and evolution plans, not silently mutate Buddy Home or graph assets.
-  - `toograph_action_creation_workflow` is the reference pattern for graph-expressed Action creation workflows: clarify, confirm examples, generate files, test, review, approve, then write through controlled capability calls.
-- Buddy clarification and capability-review gaps should end the current run through a normal final reply, not through a user-visible `interrupt_after` breakpoint. Official Buddy ability templates must not contain breakpoint-like metadata such as `interrupt_after`, `interrupt_before`, `agent_breakpoint_timing`, or `auto_resume_after_ui_operation_nodes`. Page-operation auto-resume is a runtime-derived waitpoint for LLM nodes using the `toograph_page_operator` Action, carried by activity-event continuation metadata such as `pending_page_operation_continuation`, not by template JSON.
-- Buddy graph orchestration has two target modes:
-  - Modify the current graph through app-native virtual UI playback or a validated command draft, with diff/preview, human approval when needed, graph revision, and undo/redo.
-  - Create a new graph template or reusable subgraph from a user goal, validate it, optionally test-run it, preview it, ask for approval, then save it as a user template that later capability selection can discover.
-- The established Buddy baseline now includes dynamic subgraph breakpoint propagation as a runtime primitive, Buddy Home writeback through command/revision paths, app-native virtual graph replay, and Buddy chat capsules segmented only by output boundaries. Buddy chat should not turn `awaiting_human` into an in-chat resume card or consume the next chat message as a hidden resume payload; non-page-operation pauses remain background runs that can be inspected through standard review surfaces. The remaining highest-priority Buddy infrastructure is virtual UI operation journals/activity events, graph diff/revision/undo/redo plumbing, editing existing graphs, run/result validation, context budgeting, and richer low-level operation summaries.
-- Buddy self-evolution should prefer narrow, reversible improvements first: memory updates, session summaries, Action revisions, reusable subgraph/template proposals, and policy suggestions. Riskier changes such as graph edits, file writes, script execution, network access, automation creation, or persona/policy changes require explicit approval and recoverable revisions.
+- TooGraph 产品行为应在可行时由图模板表达。持久化操作、本地文件编辑、记忆更新、伙伴自配置和其他副作用，应因为指定图/模板运行而发生，而不是由隐藏的产品特化命令式代码决定。
+- 保持节点职责清晰：
+  - 整张图才是 Agent。不要把单个节点当成自治的多步骤 agent。
+  - LLM 节点执行一次模型回合。它们负责推理、分类、规划、生成结构化 state，或准备一次 capability 调用。
+  - 一个 LLM 节点最多只能使用一个显式 capability 来源：无 capability、一个已选 Action，或一个输入的 `capability` state。`capability` state 是单个互斥对象，其 `kind` 为 `action`、`subgraph`、`tool` 或 `none`；不能是列表。如果工作流需要多个 capability，用多个节点和边表达顺序。
+  - 手动选择的 LLM-node Action 必须存储为标量 `config.actionKey`，绝不能存为 `config.skills` 或任何数组。数组意味着多 capability 语义，属于旧的无效协议。
+  - 当 LLM 节点使用 Action 或动态 Subgraph 时，LLM 只在执行前准备调用输入。运行时执行 capability，并把原始结构化输出写入 state；同一个 LLM 节点不应总结、重包或继续发起后续 capability 调用。
+  - 静态手动选择的 Action 使用 `config.actionKey` 和协议拥有的 `actionBindings.outputMapping`。该映射由图/编辑器/运行时创建，在运行审计详情中可见，不应暴露为由 LLM 选择或重写的内容。
+  - Action instruction capsule 只是节点级 override 面。默认 capsule 来自选中 Action manifest 的 `llmInstruction`；只有用户编辑后的文本才持久化为 `actionInstructionBlocks.<actionKey>`，并带有 `source: "node.override"`。运行时只有一份有效 Action-use instruction：节点 override 优先，否则使用 manifest `llmInstruction`，注入到 Action-input planning system prompt 中，不在用户 prompt 中重复。
+  - Action lifecycle scripts 使用固定文件名，而不是 manifest entrypoint 配置。如果存在 `before_llm.py`，运行时在 Action-input planning 前执行它，并把可审计上下文注入 LLM prompt。如果存在 `after_llm.py`，运行时在 LLM 产出结构化 Action 参数后执行它，并将其 JSON 结果视为 Action 输出。State binding 仍由运行时通过 `stateOutputSchema` 和 `actionBindings.outputMapping` 拥有；lifecycle scripts 不得直接写图 state。
+  - 来自输入 `capability` state 的动态 capability 执行必须准确写入一个 `result_package` state。该包将输出包装为 `outputs.<outputKey> = { name, description, type, value }`；不要添加冗余的 `fieldKey` 字段。下游 LLM prompt assembly 解包这些虚拟输出后，使用与静态 state 相同的渲染规则。
+  - 手动复用图嵌入属于 Subgraph 节点。`capability.kind=subgraph` 用于 Buddy loop 等模板内部的动态图 capability 选择，不应作为普通 LLM 节点卡片上的下拉选项。
+  - 大型 Buddy 或自动化模板应在可行时把稳定阶段拆为 Subgraph 节点。优先使用可读的顶层图流，并通过可检查子图表达上下文打包、capability loop 和最终回复生成，而不是把所有逻辑塞进一张拥挤画布。回复后的 self-review 应作为一个独立、可审计的后台图/模板，从已完成 run snapshot 运行，不要延长可见回复路径并阻塞下一轮用户输入。
+  - Action 节点执行受控 capability 和副作用，例如写本地文件、更新记忆存储、下载资源或创建 revision。
+  - Output 节点负责显示、预览、导出或链接结果。它们不应拥有持久化 mutation 逻辑。
+- Buddy 聊天运行胶囊必须只按 output 边界分段。边界是直接连接一个或多个 `output` 节点的上游非 output 节点；一个胶囊展示从上一个 output 边界之后到当前边界节点为止的运行过程，所有连接到同一个边界节点的 output 都跟在这个胶囊后展示。不要为父图决策分支、内部能力选择节点或其他没有连接 output 的图内部节点创建额外 Buddy 胶囊。例如线性流程 `A -> B -> C -> D -> E` 中，如果 `C` 连接两个 output 节点，`E` 连接一个 output 节点，应展示一个 `A, B, C` 胶囊和 C 的两个输出，再展示一个 `D, E` 胶囊和 E 的一个输出。
+- 后端代码应提供可复用 primitives、存储 API、校验器、revision 机制和 Action runtime。避免把 Buddy memory policy、persona 更新规则或工作流决策等产品行为埋进后端 endpoint；当行为可以表达为图/模板时，应通过图/模板表达。
+- Buddy 行为、记忆管理、persona 更新和文件编辑工作流应建模为可审计图流：input/context -> LLM planning -> optional validation/approval -> Action/subgraph execution -> output display。
+- 低层操作应通过图运行保持可见和可回放。当功能需要修改本地文档、profile 数据、policy 数据、memories、templates 或其他本地状态时，优先添加或复用一个 Action 加一个模板来执行操作，并返回清晰 artifacts，如本地文件路径、diff、revision ID 和状态消息。
 
-## Action Package Boundaries
+## Buddy 自治 Agent 方向
 
-- An Action package should contain all resources needed by that Action: code, prompts, schemas, helper scripts, assets, examples, and local instructions.
-- Do not require unrelated backend modifications, global side files, or external assets for an Action to work unless the user explicitly approves that dependency.
-- If an Action needs persistent outputs, return local file paths or structured artifact references so downstream graph nodes and output nodes can display them.
+- 将代码、官方模板 JSON、Action manifest、Tool manifest 和测试视为当前实现事实来源。将 `docs/README.md` 视为 Buddy 自治与自演化的长期剩余路线图。除非用户明确要求，不要恢复 `docs/current_project_status.md` 或创建平行的当前状态快照。
+- `demo/hermes-agent/` 项目是 capability 参考，不是要照搬的架构。TooGraph 应把 Hermes 风格能力翻译为图模板、显式 Action 调用、state、approval、run record、revision 和 artifact。
+- Hermes 风格自治不只是工具调用：它包括多步骤 capability loop、memory/session recall、Action 创建和改进、计划或触发运行、delegation、安全 guardrail、结果预算，以及从执行 trace 中自我改进。在 TooGraph 中，这些必须表达为可审计图流，而不是隐藏 agent loop。
+- TooGraph 中的 Action 表示一个 LLM-node turn 中的一次受控 capability 调用。Action 可以读取上下文、准备确定性数据、运行脚本、搜索、写入一个受控输出，或返回 artifact。它不应拥有多步骤自治、retry loop、结果复盘、最终回复生成、长期记忆策略或后续 capability 选择。
+- 多步骤智能属于图模板：LLM node -> condition -> one Action, Tool, or dynamic subgraph execution -> `result_package` or mapped Action outputs -> LLM review -> condition loop, pause, approval, failure handling, or final output。
+- 不要创建单体 `self_evolve` Action 或 Buddy 专用隐藏 runtime。Buddy 自演化应是图模板 pipeline：把 run trace、用户修正、失败、成功和 Buddy Home context 转成结构化改进候选，验证或测试它们，必要时请求人工 review，然后才通过受控 command 或 Action 应用改动。
+- 现有 Buddy 模板是起点，不是可丢弃脚手架：
+  - `buddy_autonomous_loop` 是可见 Buddy 运行路径：context input、request intake、capability loop、可选的直接能力结果输出和 final response。
+  - `buddy_autonomous_review` 是后台复盘路径：它应产生 memory 和 evolution plan，而不是静默修改 Buddy Home 或图资产。
+  - `toograph_action_creation_workflow` 是图表达 Action 创建工作流的参考模式：clarify、confirm examples、generate files、test、review、approve，然后通过受控 capability calls 写入。
+- Buddy clarification 和 capability-review gaps 应通过普通最终回复结束当前 run，而不是通过用户可见的 `interrupt_after` breakpoint。官方 Buddy 能力模板不能包含 `interrupt_after`、`interrupt_before`、`agent_breakpoint_timing` 或 `auto_resume_after_ui_operation_nodes` 这类 breakpoint-like metadata。页面操作自动恢复是运行时根据使用 `toograph_page_operator` Action 的 LLM 节点派生的等待点，通过 `pending_page_operation_continuation` 等 activity-event continuation metadata 表达，不写入模板 JSON。
+- Buddy 图编排有两个目标模式：
+  - 通过应用内虚拟 UI playback 或已验证 command draft 修改当前图，并保留 diff/preview、必要的 human approval、graph revision 和 undo/redo。
+  - 根据用户目标创建新的图模板或可复用子图，验证它，可选试运行它，预览它，请求批准，然后保存为用户模板，供后续 capability selection 发现。
+- 当前 Buddy baseline 已包括动态 subgraph breakpoint 传播作为运行时原语、Buddy Home 通过 command/revision 写回、应用内虚拟图回放，以及只按 output 边界分段的 Buddy 聊天胶囊。Buddy 聊天不应把 `awaiting_human` 转成聊天内 resume 卡片，也不应把下一条聊天消息消费为隐藏 resume payload；非页面操作暂停保持为可通过标准 review surface 检查的后台 run。剩余最高优先级 Buddy 基础设施包括虚拟 UI operation journal / activity events、graph diff / revision / undo / redo plumbing、编辑已有图、运行/结果校验、上下文预算，以及更完整的低层操作摘要。
+- Buddy 自演化应优先选择窄且可逆的改进：memory updates、session summaries、Action revisions、reusable subgraph/template proposals 和 policy suggestions。更高风险改动，如 graph edits、file writes、script execution、network access、automation creation 或 persona/policy changes，需要显式 approval 和可恢复 revisions。
 
-## Graph Protocol and State Schema Invariants
+## Action 包边界
 
-- Treat `node_system` as the only formal graph protocol. Do not introduce parallel graph formats, hidden node contracts, or product-specific execution paths that bypass the protocol.
-- Treat `state_schema` as the single source of truth for graph node inputs and outputs. Node data that must flow between nodes should be represented in schema-backed state, not passed through ad hoc side channels.
-- Do not keep compatibility shims for old graph protocols such as `config.skills`, binding-only `skillBindings`, `promptVisible`, static `inputMapping`, or dynamic skill output mapping inference. Old graphs should be rebuilt or deleted instead of silently repaired.
-- Graph validation, graph execution, run records, and UI previews should all derive from the same protocol shape. If a feature needs new node I/O, update the protocol/schema path instead of special-casing one screen or endpoint.
+- 一个 Action package 应包含该 Action 所需的全部资源：code、prompts、schemas、helper scripts、assets、examples 和本地说明。
+- 除非用户明确批准依赖，不要要求无关后端修改、全局 side files 或外部 assets 才能让 Action 工作。
+- 如果 Action 需要持久化输出，应返回本地文件路径或结构化 artifact references，让下游图节点和 output 节点可以显示它们。
 
-## Explicit Capabilities and Permissions
+## 图协议与 State Schema 不变量
 
-- Capabilities should be explicit and inspectable. Retrieval, web access, media download, local file edits, memory writes, graph edits, and model/tool calls should appear as Actions, Tools, graph templates, commands, or permissioned runtime primitives rather than hidden convenience behavior.
-- Installing an Action is not the same as granting every usage permission. Action target, kind, mode, scope, network access, file access, graph access, and buddy access should remain visible near the place where the capability is used.
-- Destructive, overwrite, run, network, cost-incurring, sensitive-file, and graph-write operations need a clear permission path. Do not rely on prompt text alone for safety boundaries.
+- 将 `node_system` 视为唯一正式图协议。不要引入并行图格式、隐藏节点 contract，或绕过协议的产品特化执行路径。
+- 将 `state_schema` 视为图节点输入输出的唯一事实来源。需要在节点之间流动的数据应表示为 schema-backed state，而不是通过 ad hoc side channel 传递。
+- 不要为旧图协议保留兼容 shim，例如 `config.skills`、binding-only `skillBindings`、`promptVisible`、static `inputMapping` 或 dynamic skill output mapping inference。旧图应重建或删除，而不是静默修复。
+- 图校验、图执行、run records 和 UI previews 都应来自同一协议形状。如果一个功能需要新的节点 I/O，应更新 protocol/schema 路径，而不是对某一个页面或 endpoint 做特殊处理。
 
-## Artifact and Output Contract
+## 显式 Capability 与权限
 
-- Actions, Tools, and graph runs should return structured results and local artifact paths for generated or downloaded resources.
-- Input nodes may expose local files or folders as explicit graph state. Folder inputs must store an inspectable selection package such as `kind=local_folder`, list selected files in the graph, and use the shared file-state prompt expansion path instead of adding LLM-only context assembly nodes.
-- Output nodes are responsible for displaying, previewing, exporting, or linking artifacts such as local documents, images, and videos. Output nodes should not own persistent mutation policy or hidden product decisions.
-- Avoid base64 for normal artifact flow. Large media and downloaded resources should be represented by local paths or artifact references, not embedded into node state, memory, or long-lived documents.
+- Capabilities 应显式且可检查。检索、web 访问、媒体下载、本地文件编辑、memory writes、graph edits 和 model/tool calls 应表现为 Actions、Tools、graph templates、commands 或 permissioned runtime primitives，而不是隐藏便利行为。
+- 安装 Action 不等于授予每次使用权限。Action target、kind、mode、scope、network access、file access、graph access 和 buddy access 应在使用 capability 的位置附近保持可见。
+- 破坏性、覆盖、运行、网络、产生成本、敏感文件和图写入操作都需要清晰权限路径。不要只依赖 prompt 文本作为安全边界。
 
-## Auditability and Human Review
+## Artifact 与 Output Contract
 
-- Automatic behavior should be visible, reversible, and auditable. Important side effects should leave run detail entries, artifact records, warnings/errors, buddy action logs, revision IDs, diffs, or undo records as appropriate.
-- Human review should be part of the graph/template/command flow when required, not a hidden UI-only prompt. Approval should happen before applying the side effect it authorizes.
-- Buddy and agent graph edits must go through TooGraph's editor action/command path, validator, audit trail, and undo/redo system. App-native virtual UI playback may visibly dispatch editor interactions, but it must not be a hidden DOM-click bypass or invisible graph JSON mutation.
+- Actions、Tools 和 graph runs 应返回结构化结果，以及生成或下载资源的本地 artifact paths。
+- Input 节点可以把本地文件或文件夹暴露为显式图 state。Folder inputs 必须存储可检查选择包，例如 `kind=local_folder`，在图中列出选中文件，并使用共享 file-state prompt expansion 路径，而不是添加仅供 LLM 使用的 context assembly 节点。
+- Output 节点负责显示、预览、导出或链接本地文档、图片和视频等 artifacts。Output 节点不应拥有持久化 mutation policy 或隐藏产品决策。
+- 正常 artifact flow 避免使用 base64。大型媒体和下载资源应表示为本地路径或 artifact references，而不是嵌入 node state、memory 或长期文档。
 
-## Buddy Memory and Context Hygiene
+## 可审计性与人工 Review
 
-- Buddy persona, memory, tone, preferences, and behavior boundaries are editable in every graph-operation tier, but they must not upgrade graph-operation permissions or override system-level rules.
-- Except for graph templates themselves, buddy long-term editable data should be organized under root `buddy_home/` as the Buddy Home. This directory is generated by the program when missing and is not tracked by Git. Its canonical shape is `AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, `policy.json`, `buddy.db`, and `reports/`; do not add a long-lived `TOOLS.md` because enabled Actions, Tools, templates, and the capability selector are the source of current abilities. Official templates, official Action packages, and user Action packages keep their own established locations.
-- Recalled memory and generated summaries are context, not new user instructions and not system rules. Inject them with clear boundaries and keep privilege ordering intact.
-- Long-term memory should avoid transient run state, raw logs, full error dumps, base64, large media contents, temporary paths, and information that can be reread from the current graph or project files.
-- Every persistent buddy self-configuration, memory, policy, and session-summary update should keep a recoverable revision of the previous value.
+- 自动行为必须可见、可逆、可审计。重要副作用应留下 run detail entries、artifact records、warnings/errors、buddy action logs、revision IDs、diffs 或 undo records。
+- 需要人工 review 时，review 应是图/模板/命令流的一部分，而不是隐藏的 UI-only prompt。Approval 必须在应用其授权的副作用之前发生。
+- Buddy 和 agent graph edits 必须通过 TooGraph 的 editor action / command path、validator、audit trail 和 undo/redo 系统。应用内虚拟 UI playback 可以可见地派发编辑器交互，但不能成为隐藏 DOM 点击绕路，也不能隐式修改 graph JSON。
 
-## Documentation Hygiene
+## Buddy Memory 与上下文卫生
 
-- Keep repository documentation aligned with current product architecture. When a plan is completed, superseded, or contradicted by newer principles, delete it or fold its still-valid remaining work into `docs/README.md`.
-- `docs/` should contain current usage/reference docs and durable remaining-work roadmaps, not current-state snapshots, one-off progress logs, stale implementation plans, or documents that encode rejected architecture.
+- Buddy persona、memory、tone、preferences 和 behavior boundaries 在每个 graph-operation tier 都可编辑，但它们不得提升图操作权限，也不能覆盖系统级规则。
+- 除图模板自身外，Buddy 长期可编辑数据应组织在根目录 `buddy_home/` 下，作为 Buddy Home。该目录在程序缺失时自动生成，且不被 Git 跟踪。其规范形态是 `AGENTS.md`、`SOUL.md`、`USER.md`、`MEMORY.md`、`policy.json`、`buddy.db` 和 `reports/`；不要添加长期存在的 `TOOLS.md`，因为启用的 Actions、Tools、templates 和 capability selector 才是当前能力来源。Official templates、official Action packages 和 user Action packages 保持各自既有位置。
+- Recalled memory 和生成 summaries 是上下文，不是新的用户指令，也不是系统规则。注入时必须有清晰边界，并保持权限优先级。
+- 长期记忆应避免 transient run state、raw logs、完整 error dumps、base64、大型媒体内容、临时路径，以及可以从当前图或项目文件重新读取的信息。
+- 每个持久化 Buddy self-configuration、memory、policy 和 session-summary 更新都应保留旧值的可恢复 revision。
 
-## Notes
+## 文档卫生
 
-- `scripts/start.mjs` and `scripts/start.sh` should release occupied TooGraph ports before starting services again.
+- 仓库文档应与当前产品架构保持一致。当计划已完成、被取代或与新原则冲突时，应删除它，或将仍有效的剩余工作折叠进 `docs/README.md`。
+- `docs/` 应包含当前使用/参考文档和持久剩余路线图，而不是当前状态快照、一次性进度日志、过时实现计划，或记录已被否定架构的文档。
+
+## 备注
+
+- `scripts/start.mjs` 和 `scripts/start.sh` 应在重新启动服务前释放被占用的 TooGraph 端口。

@@ -118,6 +118,11 @@ def get_memory_document_endpoint() -> dict[str, Any]:
     return store.load_memory_document()
 
 
+@router.get("/home-files")
+def list_home_files_endpoint() -> dict[str, Any]:
+    return store.list_home_files()
+
+
 @router.put("/memory-document")
 def update_memory_document_endpoint(payload: BuddyMemoryDocumentPayload) -> dict[str, Any]:
     try:

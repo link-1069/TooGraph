@@ -18,6 +18,24 @@ export type BuddyMemoryDocument = {
   updated_at: string;
 };
 
+export type BuddyHomeFileEntry = {
+  path: string;
+  kind: "markdown" | "json" | "database" | "directory" | "text";
+  exists: boolean;
+  readable: boolean;
+  size_bytes: number;
+  updated_at: string;
+  content: string;
+  truncated: boolean;
+  summary: string;
+  error: string;
+};
+
+export type BuddyHomeFiles = {
+  root: string;
+  files: BuddyHomeFileEntry[];
+};
+
 export type BuddySessionSummary = {
   content: string;
   updated_at: string;

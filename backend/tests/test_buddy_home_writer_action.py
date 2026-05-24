@@ -120,6 +120,32 @@ class BuddyHomeWriterActionTests(unittest.TestCase):
         self.assertEqual(applied["result"]["display_preferences"]["display_name"], "图图")
         self.assertTrue(applied["command"]["revision_id"].startswith("rev_"))
 
+    def test_writer_maps_rename_display_name_to_visible_profile_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home_dir = Path(temp_dir) / "buddy_home"
+            result = _run_writer(
+                {
+                    "run_id": "run_review_profile_rename",
+                    "commands": [
+                        {
+                            "action": "profile.update",
+                            "payload": {
+                                "display_preferences": {"display_name": "\u56fe\u56fe"},
+                            },
+                            "change_reason": "\u7528\u6237\u660e\u786e\u8981\u6c42\u4f19\u4f34\u4ee5\u540e\u5c31\u53eb\u56fe\u56fe\u3002",
+                        }
+                    ],
+                },
+                buddy_home_dir=buddy_home_dir,
+            )
+
+        self.assertEqual(result["success"], True)
+        applied = result["applied_commands"][0]
+        self.assertEqual(applied["command"]["payload"]["name"], "\u56fe\u56fe")
+        self.assertEqual(applied["command"]["payload"]["display_preferences"]["display_name"], "\u56fe\u56fe")
+        self.assertEqual(applied["result"]["name"], "\u56fe\u56fe")
+        self.assertEqual(applied["result"]["display_preferences"]["display_name"], "\u56fe\u56fe")
+
     def test_writer_rejects_permission_escalating_policy_updates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             buddy_home_dir = Path(temp_dir) / "buddy_home"

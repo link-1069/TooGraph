@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -9,6 +10,8 @@ from typing import Any, Iterator
 from uuid import uuid4
 
 from app.buddy.home import (
+    AGENTS_PATH,
+    BUDDY_DB_PATH,
     CAPABILITY_USAGE_STATS_KEY,
     DEFAULT_CAPABILITY_USAGE_STATS,
     DEFAULT_POLICY,
@@ -18,6 +21,7 @@ from app.buddy.home import (
     POLICY_PATH,
     REPORTS_DIR,
     SOUL_PATH,
+    USER_PATH,
     ensure_buddy_home,
     get_default_buddy_home_dir,
     open_buddy_database,
@@ -35,6 +39,7 @@ DEFAULT_RECALL_BOOKEND = 3
 DEFAULT_RECALL_WINDOW = 5
 MAX_RECALL_LIMIT = 50
 MAX_RECALL_WINDOW = 20
+MAX_BUDDY_HOME_FILE_CONTENT_CHARS = 200_000
 HIDDEN_SESSION_SOURCES = {"tool"}
 DEPRECATED_BUDDY_INPUT_SOURCES = {"page_context", "raw_conversation_history"}
 RUN_TEMPLATE_BINDING_KEY = "run_template_binding"
@@ -217,6 +222,36 @@ def create_report(payload: dict[str, Any], *, changed_by: str, change_reason: st
     _write_with_revision("report", report_id, "create", {}, report, changed_by, change_reason)
     _write_report_file(report)
     return report
+
+
+def list_home_files() -> dict[str, Any]:
+    initialize_buddy_home()
+    report_dir = BUDDY_HOME_DIR / REPORTS_DIR
+    files = [
+        _home_file_entry(BUDDY_HOME_DIR / AGENTS_PATH, AGENTS_PATH),
+        _home_file_entry(BUDDY_HOME_DIR / SOUL_PATH, SOUL_PATH),
+        _home_file_entry(BUDDY_HOME_DIR / USER_PATH, USER_PATH),
+        _home_file_entry(BUDDY_HOME_DIR / MEMORY_PATH, MEMORY_PATH),
+        _home_file_entry(BUDDY_HOME_DIR / POLICY_PATH, POLICY_PATH),
+        _home_file_entry(
+            BUDDY_HOME_DIR / BUDDY_DB_PATH,
+            BUDDY_DB_PATH,
+            kind="database",
+            readable=False,
+            summary="SQLite database backing Buddy chat sessions, messages, command audit records, revisions, and recall indexes.",
+        ),
+        _home_file_entry(
+            report_dir,
+            REPORTS_DIR,
+            kind="directory",
+            readable=False,
+            summary="Folder containing Markdown reports created by Buddy review and writeback workflows.",
+        ),
+    ]
+    if report_dir.exists():
+        for report_path in sorted(report_dir.glob("*.md"), key=lambda candidate: candidate.name.lower()):
+            files.append(_home_file_entry(report_path, f"{REPORTS_DIR}/{report_path.name}"))
+    return {"root": str(BUDDY_HOME_DIR), "files": files}
 
 
 def load_capability_usage_stats() -> dict[str, Any]:
@@ -1636,6 +1671,74 @@ def _report_relative_path(report_id: str) -> str:
 def _report_path(report_id: str) -> Path:
     initialize_buddy_home()
     return BUDDY_HOME_DIR / REPORTS_DIR / f"{report_id}.md"
+
+
+def _home_file_entry(
+    path: Path,
+    relative_path: str,
+    *,
+    kind: str | None = None,
+    readable: bool | None = None,
+    summary: str = "",
+) -> dict[str, Any]:
+    exists = path.exists()
+    is_directory = path.is_dir()
+    resolved_kind = kind or _home_file_kind(relative_path, is_directory=is_directory)
+    can_read = (not is_directory and resolved_kind in {"markdown", "json", "text"}) if readable is None else readable
+    content = ""
+    truncated = False
+    error = ""
+    if exists and can_read:
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception as exc:
+            can_read = False
+            error = str(exc)
+        if len(content) > MAX_BUDDY_HOME_FILE_CONTENT_CHARS:
+            content = content[:MAX_BUDDY_HOME_FILE_CONTENT_CHARS]
+            truncated = True
+    stat = path.stat() if exists else None
+    return {
+        "path": relative_path,
+        "kind": resolved_kind,
+        "exists": exists,
+        "readable": can_read,
+        "size_bytes": stat.st_size if stat else 0,
+        "updated_at": _format_file_timestamp(stat.st_mtime) if stat else "",
+        "content": content,
+        "truncated": truncated,
+        "summary": summary or _home_file_summary(relative_path, resolved_kind),
+        "error": error,
+    }
+
+
+def _home_file_kind(relative_path: str, *, is_directory: bool) -> str:
+    if is_directory:
+        return "directory"
+    if relative_path.endswith(".md"):
+        return "markdown"
+    if relative_path.endswith(".json"):
+        return "json"
+    return "text"
+
+
+def _home_file_summary(relative_path: str, kind: str) -> str:
+    summaries = {
+        AGENTS_PATH: "Buddy Home operating instructions.",
+        SOUL_PATH: "Buddy profile, persona, tone, and display preferences.",
+        USER_PATH: "Durable context about the human Buddy helps.",
+        MEMORY_PATH: "Curated long-term memory.",
+        POLICY_PATH: "Behavior and communication policy.",
+    }
+    if relative_path in summaries:
+        return summaries[relative_path]
+    if kind == "markdown":
+        return "Markdown report or note in Buddy Home."
+    return ""
+
+
+def _format_file_timestamp(value: float) -> str:
+    return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
 
 
 def _write_report_file(report: dict[str, Any]) -> None:

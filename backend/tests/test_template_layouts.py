@@ -2368,6 +2368,10 @@ class TemplateLayoutTests(unittest.TestCase):
         )
         self.assertIn("session_recall_context", extract_node["config"]["taskInstruction"])
         self.assertIn("profile_candidates", extract_node["config"]["taskInstruction"])
+        self.assertIn(
+            'Map "call yourself X from now on" and "rename yourself to X" to field=name',
+            extract_node["config"]["taskInstruction"],
+        )
         self.assertEqual(nodes["filter_memory_candidates"]["writes"], [{"state": "memory_filter_report", "mode": "replace"}])
         self.assertEqual(
             nodes["merge_memory_document"]["writes"],
@@ -2386,6 +2390,10 @@ class TemplateLayoutTests(unittest.TestCase):
         )
         self.assertIn("profile.update", nodes["merge_profile_update"]["config"]["taskInstruction"])
         self.assertIn("requires_confirmation", nodes["merge_profile_update"]["config"]["taskInstruction"])
+        self.assertIn(
+            "A rename/call-yourself request must update payload.name",
+            nodes["merge_profile_update"]["config"]["taskInstruction"],
+        )
         self.assertEqual(nodes["has_memory_updates"]["kind"], "condition")
         self.assertEqual(
             nodes["has_memory_updates"]["config"]["rule"],
@@ -2431,6 +2439,7 @@ class TemplateLayoutTests(unittest.TestCase):
             ],
         )
         self.assertIn("profile.update", profile_writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
+        self.assertIn("For rename/call-yourself writebacks, the planned payload must use name", profile_writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
         self.assertIn({"source": "prepare_session_recall_request", "target": "recall_related_sessions"}, template["edges"])
         self.assertIn({"source": "recall_related_sessions", "target": "extract_memory_candidates"}, template["edges"])
         self.assertIn({"source": "recall_related_sessions", "target": "output_session_recall_result"}, template["edges"])
