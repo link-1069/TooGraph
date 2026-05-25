@@ -93,6 +93,7 @@ TooGraph 的推荐模型配置入口是 Model Providers 页面。你可以在界
 - `toograph_action_builder` 生成 Action 包文件内容；它不负责写入、测试、修复或启用生成的 Action。
 - `toograph_script_tester` 接收脚本内容和测试目标，由 LLM 生成临时测试工作区并运行允许的测试命令；执行前仍受当前图或 Buddy 权限模式约束。
 - `local_workspace_executor` 会在 Action 入参规划前预读节点任务或 state 中提到的仓库文件；运行时支持 `read` / `list` / `search` / `edit` / `write` / `execute`，并对 `.git`、`.env`、`backend/data/settings` 做硬拒绝；它涉及本地写入和进程执行，是否暂停确认由当前图或 Buddy 的权限模式决定。
+- Buddy 的“需确认 / 完全访问”是全局运行时设置，保存在应用 settings 中。每次 Buddy run 会把当前模式写入 graph metadata，由后端权限暂停逻辑和 Action manifest permissions 决定是否需要人工确认；该模式不来自 Buddy Home，也不注入 LLM 上下文。
 - Output 节点可以读取 `local_path` 指向的本地 artifact，按类型预览文档、图片和视频。
 
 ## 快速开始

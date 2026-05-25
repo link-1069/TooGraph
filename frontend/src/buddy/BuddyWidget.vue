@@ -159,7 +159,8 @@
                 popper-class="toograph-select-popper buddy-widget__select-popper"
                 size="small"
                 :aria-label="t('buddy.modeLabel')"
-                :title="buddyModeLabel"
+                :title="buddyModeError || buddyModeLabel"
+                :disabled="buddyModeDisabled"
               >
                 <ElOption
                   v-for="option in BUDDY_MODE_OPTIONS"
@@ -357,10 +358,8 @@ import {
 } from "./buddyPauseQueuePolicy.ts";
 import {
   BUDDY_MODE_OPTIONS,
-  DEFAULT_BUDDY_MODE,
-  resolveBuddyMode,
-  type BuddyMode,
 } from "./buddyChatGraph.ts";
+import { useBuddyPermissionMode } from "./useBuddyPermissionMode.ts";
 import {
   buildBuddyPublicOutputBindings,
 } from "./buddyPublicOutput.ts";
@@ -412,7 +411,6 @@ const viewport = ref(resolveViewport());
 const position = ref(resolveDefaultBuddyPosition(viewport.value));
 const isPanelOpen = ref(false);
 const draft = ref("");
-const buddyMode = ref<BuddyMode>(DEFAULT_BUDDY_MODE);
 const isPanelFullscreen = ref(false);
 const queuedTurns = ref<BuddyQueuedTurn[]>([]);
 const errorMessage = ref("");
@@ -577,6 +575,12 @@ const buddyModeLabel = computed(() => {
   return option ? `${t(option.labelKey)} - ${t(option.descriptionKey)}` : t("buddy.modes.askFirst");
 });
 const {
+  buddyMode,
+  buddyModeDisabled,
+  buddyModeError,
+  hydrateBuddyPermissionMode,
+} = useBuddyPermissionMode();
+const {
   buddyModelRef,
   buddyModelOptions,
   buddyModelLabel,
@@ -627,6 +631,7 @@ onMounted(() => {
   hydratePosition();
   void startChatSessionInitialization();
   hydrateBuddyModel();
+  void hydrateBuddyPermissionMode();
   void loadBuddyModelOptions();
   window.addEventListener("resize", handleResize);
   window.addEventListener("pointermove", handleMascotLookPointerMove, { passive: true });
@@ -646,13 +651,6 @@ onBeforeUnmount(() => {
   closeEventSource();
   activeAbortController?.abort();
   abortBuddyVisibleRunTemplateEffects();
-});
-
-watch(buddyMode, (nextMode) => {
-  const safeMode = resolveBuddyMode(nextMode);
-  if (safeMode !== nextMode) {
-    buddyMode.value = safeMode;
-  }
 });
 
 watch(canBuddyRoam, (canRoam) => {

@@ -2001,10 +2001,16 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(buddy_context_node["config"]["value"]["root"], "buddy_home")
         self.assertEqual(
             buddy_context_node["config"]["value"]["selected"],
-            ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
+            ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"],
         )
         self.assertNotIn("page_context", json.dumps(template, ensure_ascii=False))
         self.assertNotIn("raw_conversation_history", json.dumps(template, ensure_ascii=False))
+
+    def test_buddy_support_templates_do_not_inject_policy_json(self) -> None:
+        for template_id in ["buddy_autonomous_loop", "buddy_autonomous_review", "buddy_context_compaction"]:
+            with self.subTest(template_id=template_id):
+                template = load_template_record(template_id)
+                self.assertNotIn("policy.json", json.dumps(template, ensure_ascii=False))
 
     def test_buddy_support_templates_are_visible_and_loadable(self) -> None:
         public_template_ids = {record["template_id"] for record in _visible_official_template_records()}

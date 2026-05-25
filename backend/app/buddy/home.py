@@ -9,9 +9,6 @@ import threading
 from typing import Any
 
 from app.core.storage.database import BASE_DIR
-from app.core.storage.json_file_utils import write_json_file
-
-
 REPO_ROOT = BASE_DIR.parent
 BUDDY_HOME_DIR_NAME = "buddy_home"
 
@@ -85,7 +82,7 @@ This folder is TooGraph Buddy's local home. Treat these files as durable context
 ## Startup
 
 - Runtime-provided context is the first source of truth.
-- Read `SOUL.md`, `USER.md`, `MEMORY.md`, and `policy.json` when a buddy graph needs durable context.
+- Read `SOUL.md`, `USER.md`, and `MEMORY.md` when a buddy graph needs durable context.
 - Do not create or maintain `TOOLS.md`; current abilities come from enabled Actions, enabled graph templates, and the capability selector Action.
 
 ## Operating Rules
@@ -156,7 +153,6 @@ def ensure_buddy_home(home_dir: Path | None = None) -> Path:
     _write_text_if_missing(resolved_home / SOUL_PATH, render_profile_markdown(DEFAULT_PROFILE))
     _write_text_if_missing(resolved_home / USER_PATH, DEFAULT_USER_MD)
     _write_text_if_missing(resolved_home / MEMORY_PATH, DEFAULT_MEMORY_MD)
-    _write_json_if_missing(resolved_home / POLICY_PATH, DEFAULT_POLICY)
     ensure_buddy_database(resolved_home)
     return resolved_home
 
@@ -385,16 +381,9 @@ def build_buddy_home_context_pack(home_dir: Path | None = None) -> dict[str, Any
     buddy_home = ensure_buddy_home(home_dir)
     warnings: list[str] = []
     profile = read_profile_markdown(buddy_home / SOUL_PATH, warnings=warnings)
-    policy = _read_json_object(
-        buddy_home / POLICY_PATH,
-        default=DEFAULT_POLICY,
-        label="policy",
-        warnings=warnings,
-    )
     session_summary = _read_session_summary_from_db(buddy_home, warnings=warnings)
     return {
         "profile": profile,
-        "policy": policy,
         "home_instructions": _read_markdown(buddy_home / AGENTS_PATH, warnings=warnings, label="AGENTS.md"),
         "user_profile": _read_markdown(buddy_home / USER_PATH, warnings=warnings, label="USER.md"),
         "memory_markdown": _read_markdown(buddy_home / MEMORY_PATH, warnings=warnings, label="MEMORY.md"),
@@ -476,12 +465,6 @@ This file defines Buddy's durable identity, voice, and baseline behavior. It is 
 - Important writes must leave an auditable command, revision, or run record.
 - If this file changes, the user should be able to inspect and restore the previous version.
 """
-
-
-def _write_json_if_missing(path: Path, payload: Any) -> None:
-    if path.exists():
-        return
-    write_json_file(path, deepcopy(payload))
 
 
 def _write_text_if_missing(path: Path, content: str) -> None:

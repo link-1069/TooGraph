@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   discoverModelProviderModels,
+  fetchBuddyRuntimeSettings,
   fetchOpenAICodexAuthStatus,
   importOpenAICodexCliAuth,
   logoutOpenAICodexAuth,
@@ -10,6 +11,7 @@ import {
   pollOpenAICodexBrowserAuth,
   startOpenAICodexBrowserAuth,
   startOpenAICodexAuth,
+  updateBuddyRuntimeSettings,
   updateSettings,
 } from "./settings.ts";
 
@@ -33,6 +35,9 @@ test("updateSettings posts through the frontend api proxy", async () => {
           thinking_enabled: true,
           thinking_level: "medium",
           temperature: 0.2,
+        },
+        buddy_runtime: {
+          permission_mode: "full_access",
         },
       }),
       {
@@ -73,6 +78,9 @@ test("updateSettings posts through the frontend api proxy", async () => {
         ],
       },
     },
+    buddy_runtime: {
+      permission_mode: "full_access",
+    },
   });
 
   assert.equal(requestedUrl, "/api/settings");
@@ -105,7 +113,36 @@ test("updateSettings posts through the frontend api proxy", async () => {
         ],
       },
     },
+    buddy_runtime: {
+      permission_mode: "full_access",
+    },
   });
+
+  globalThis.fetch = originalFetch;
+});
+
+test("buddy runtime settings api uses dedicated settings endpoints", async () => {
+  const requests: Array<{ url: string; payload: unknown }> = [];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    const payload = init?.body ? JSON.parse(String(init.body)) : null;
+    requests.push({ url, payload });
+    return new Response(JSON.stringify({ permission_mode: "full_access" }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }) as typeof fetch;
+
+  assert.deepEqual(await fetchBuddyRuntimeSettings(), { permission_mode: "full_access" });
+  assert.deepEqual(await updateBuddyRuntimeSettings({ permission_mode: "ask_first" }), { permission_mode: "full_access" });
+
+  assert.deepEqual(requests, [
+    { url: "/api/settings/buddy-runtime", payload: null },
+    { url: "/api/settings/buddy-runtime", payload: { permission_mode: "ask_first" } },
+  ]);
 
   globalThis.fetch = originalFetch;
 });

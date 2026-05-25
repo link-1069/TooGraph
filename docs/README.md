@@ -1,6 +1,6 @@
 # TooGraph 长期代码事实与路线图
 
-最后整理日期：2026-05-24。
+最后整理日期：2026-05-25。
 
 本文是 `docs/` 下唯一保留的长期参考文档。它的维护原则是：先看代码、官方模板 JSON、Action manifest 和测试，再写结论；已经完成的事情写成事实，未完成的事情写成路线图，历史计划只保留仍然有效的细节。
 
@@ -156,7 +156,7 @@ npm start
 - Buddy 长期记忆采用两层模型：
   - `buddy_home/MEMORY.md` 是唯一长期记忆权威。
   - `buddy_home/buddy.db` 保存会话、消息、索引、命令、revision 和少量状态。
-- `buddy_home/` 规范形态是 `AGENTS.md`、`SOUL.md`、`USER.md`、`MEMORY.md`、`policy.json`、`buddy.db`。
+- `buddy_home/` 规范形态是 `AGENTS.md`、`SOUL.md`、`USER.md`、`MEMORY.md`、`buddy.db`。旧的 `policy.json` 只作为兼容遗留文件存在，不再作为权限配置来源，也不再注入 Buddy LLM context。
 - 平台 `memories` 体系和旧候选记忆体验不再是目标架构。
 - `buddy_session_recall` 只读真实 `buddy_messages`，支持 `browse`、`discover`、`scroll`。
 - `buddy_messages_fts` 和 `buddy_messages_fts_trigram` 已建立，并由触发器维护。
@@ -164,7 +164,7 @@ npm start
 - `buddy_sessions` 已包含 `parent_session_id`、`source`、`ended_at`、`end_reason` 等字段。
 - `memory_review_template_binding` 已进入 Buddy store 和 command 路径，默认绑定 `buddy_autonomous_review`，变更可记录 revision。
 - `buddy_home_writer` 负责 `memory_document.update` 等低风险 Buddy Home 写回，并留下 command/revision。
-- `buddy_context_compaction` 是独立内部模板，专门处理会话压缩摘要：保护最近原文，迭代更新 `session_summary`，只允许生成 `session_summary.update` 写回命令，不触碰 `MEMORY.md`、profile 或 policy。
+- `buddy_context_compaction` 是独立内部模板，专门处理会话压缩摘要：保护最近原文，迭代更新 `session_summary`，只允许生成 `session_summary.update` 写回命令，不触碰 `MEMORY.md`、profile 或全局运行权限设置。
 
 必须保持的边界：
 
@@ -181,7 +181,7 @@ npm start
 - 记忆候选规则需要继续强化：
   - 可以落盘：长期偏好、项目长期决定、反复纠正、未来有用的稳定约束。
   - 不要落盘：一次性任务状态、原始日志、完整错误、临时路径、密钥、base64、大 artifact、可从项目文件重读的信息、权限升级或未经确认的推测。
-- 记忆复盘图只处理低风险 `MEMORY.md` 更新；Action 更新、模板更新、policy/persona 改动应拆成独立模板或子图；会话压缩摘要由 `buddy_context_compaction` 负责。
+- 记忆复盘图只处理低风险 `MEMORY.md` 更新；Action 更新、模板更新、persona 或全局运行权限设置改动应拆成独立模板或子图；会话压缩摘要由 `buddy_context_compaction` 负责。
 
 ### 2.5 Hybrid RAG 和知识库
 
@@ -570,8 +570,8 @@ operation:
 
 ### P3：更高级的自治和 RAG
 
-1. Buddy 自演化优先做窄且可逆的改进：记忆更新、会话总结、Action 修订建议、模板建议和 policy 建议。
-2. 风险更高的图编辑、文件写入、脚本执行、网络访问、自动化创建或 persona/policy 改动必须显式审批和可恢复 revision。
+1. Buddy 自演化优先做窄且可逆的改进：记忆更新、会话总结、Action 修订建议、模板建议和全局运行权限设置建议。
+2. 风险更高的图编辑、文件写入、脚本执行、网络访问、自动化创建或 persona / 全局运行权限设置改动必须显式审批和可恢复 revision。
 3. 在基础检索、引用和 eval 稳定后，再探索 GraphRAG、RAPTOR、多模态 RAG 和 Agentic RAG。
 
 ## 5. 验收标准

@@ -72,12 +72,12 @@ class BuddyRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         files = {entry["path"]: entry for entry in payload["files"]}
-        for path in ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json", "buddy.db"]:
+        for path in ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "buddy.db"]:
             self.assertIn(path, files)
+        self.assertNotIn("policy.json", files)
         self.assertNotIn("reports", files)
         self.assertTrue(files["AGENTS.md"]["readable"])
         self.assertIn("Buddy Workspace", files["AGENTS.md"]["content"])
-        self.assertEqual(files["policy.json"]["kind"], "json")
         self.assertFalse(files["buddy.db"]["readable"])
         self.assertEqual(files["buddy.db"]["kind"], "database")
         self.assertIn("SQLite", files["buddy.db"]["summary"])

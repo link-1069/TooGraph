@@ -39,8 +39,7 @@
           "AGENTS.md",
           "SOUL.md",
           "USER.md",
-          "MEMORY.md",
-          "policy.json"
+          "MEMORY.md"
         ]
       },
       "color": "#0f766e",
@@ -482,8 +481,7 @@
             "AGENTS.md",
             "SOUL.md",
             "USER.md",
-            "MEMORY.md",
-            "policy.json"
+            "MEMORY.md"
           ]
         },
         "boundaryType": "file"

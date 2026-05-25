@@ -12,6 +12,8 @@ from app.core.model_catalog import (
     resolve_runtime_model_name,
 )
 from app.core.model_provider_templates import get_provider_template, normalize_transport
+from app.buddy.home import POLICY_PATH, get_default_buddy_home_dir
+from app.core.storage.json_file_utils import read_json_file
 from app.core.storage.settings_store import load_app_settings, save_app_settings
 from app.tools.local_llm import (
     get_default_agent_temperature,
@@ -84,10 +86,26 @@ class SettingsModelProviderPayload(BaseModel):
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
 
+BUDDY_PERMISSION_MODE_ASK_FIRST = "ask_first"
+BUDDY_PERMISSION_MODE_FULL_ACCESS = "full_access"
+BUDDY_PERMISSION_MODE_DEFAULT = BUDDY_PERMISSION_MODE_ASK_FIRST
+
+
+class BuddyRuntimeSettingsPayload(BaseModel):
+    permission_mode: str = Field(default=BUDDY_PERMISSION_MODE_DEFAULT, alias="permission_mode")
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+    @property
+    def normalized_permission_mode(self) -> str:
+        return normalize_buddy_permission_mode(self.permission_mode)
+
+
 class SettingsUpdatePayload(BaseModel):
     model: SettingsModelPayload
     agent_runtime_defaults: AgentRuntimeDefaultsPayload = Field(alias="agent_runtime_defaults")
     model_providers: dict[str, SettingsModelProviderPayload] | None = Field(default=None, alias="model_providers")
+    buddy_runtime: BuddyRuntimeSettingsPayload | None = Field(default=None, alias="buddy_runtime")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -114,6 +132,47 @@ class CodexBrowserAuthPollPayload(BaseModel):
     state: str = Field(min_length=1)
 
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+
+def normalize_buddy_permission_mode(value: object) -> str:
+    mode = str(value or "").strip()
+    if mode in {BUDDY_PERMISSION_MODE_FULL_ACCESS, "unrestricted"}:
+        return BUDDY_PERMISSION_MODE_FULL_ACCESS
+    return BUDDY_PERMISSION_MODE_ASK_FIRST
+
+
+def _normalize_buddy_runtime_settings(value: object) -> dict[str, str]:
+    payload = value if isinstance(value, dict) else {}
+    return {
+        "permission_mode": normalize_buddy_permission_mode(payload.get("permission_mode")),
+    }
+
+
+def _read_legacy_buddy_policy_permission_mode() -> str:
+    policy_path = get_default_buddy_home_dir() / POLICY_PATH
+    policy = read_json_file(policy_path, default={})
+    if not isinstance(policy, dict):
+        return BUDDY_PERMISSION_MODE_DEFAULT
+    return normalize_buddy_permission_mode(policy.get("graph_permission_mode"))
+
+
+def get_saved_buddy_runtime_settings(settings: dict | None = None) -> dict[str, str]:
+    source = settings if isinstance(settings, dict) else load_app_settings()
+    raw_runtime = source.get("buddy_runtime")
+    if isinstance(raw_runtime, dict) and "permission_mode" in raw_runtime:
+        return _normalize_buddy_runtime_settings(raw_runtime)
+    if "buddy_permission_mode" in source:
+        return {"permission_mode": normalize_buddy_permission_mode(source.get("buddy_permission_mode"))}
+    return {"permission_mode": _read_legacy_buddy_policy_permission_mode()}
+
+
+def save_buddy_runtime_settings(payload: BuddyRuntimeSettingsPayload) -> dict[str, str]:
+    existing_settings = load_app_settings()
+    next_settings = dict(existing_settings)
+    next_settings.pop("buddy_permission_mode", None)
+    next_settings["buddy_runtime"] = {"permission_mode": payload.normalized_permission_mode}
+    save_app_settings(next_settings)
+    return get_saved_buddy_runtime_settings(next_settings)
 
 
 def _merge_model_providers(
@@ -208,6 +267,7 @@ def _build_settings_payload(*, force_refresh_models: bool = False) -> dict:
             "routes": ["pass", "revise", "fail"],
         },
         "tools": sorted(get_tool_registry().keys()),
+        "buddy_runtime": get_saved_buddy_runtime_settings(),
     }
 
 
@@ -245,8 +305,25 @@ def update_settings_endpoint(payload: SettingsUpdatePayload) -> dict:
             },
         }
     )
+    existing_buddy_runtime = get_saved_buddy_runtime_settings(existing_settings)
+    next_settings["buddy_runtime"] = (
+        {"permission_mode": payload.buddy_runtime.normalized_permission_mode}
+        if payload.buddy_runtime is not None
+        else existing_buddy_runtime
+    )
+    next_settings.pop("buddy_permission_mode", None)
     save_app_settings(next_settings)
     return _build_settings_payload(force_refresh_models=False)
+
+
+@router.get("/buddy-runtime")
+def get_buddy_runtime_settings_endpoint() -> dict[str, str]:
+    return get_saved_buddy_runtime_settings()
+
+
+@router.post("/buddy-runtime")
+def update_buddy_runtime_settings_endpoint(payload: BuddyRuntimeSettingsPayload) -> dict[str, str]:
+    return save_buddy_runtime_settings(payload)
 
 
 @router.post("/model-providers/discover")

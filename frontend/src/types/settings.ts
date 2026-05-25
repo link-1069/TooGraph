@@ -7,6 +7,12 @@ export type ModelProviderTransport =
 
 export type AgentThinkingLevel = "off" | "low" | "medium" | "high" | "xhigh";
 
+export type BuddyPermissionMode = "ask_first" | "full_access";
+
+export type BuddyRuntimeSettings = {
+  permission_mode: BuddyPermissionMode;
+};
+
 export type OpenAICodexAuthStatus = {
   provider_id?: string;
   configured: boolean;
@@ -89,6 +95,7 @@ export type SettingsPayload = {
       }>;
     }
   >;
+  buddy_runtime?: BuddyRuntimeSettings;
   revision: {
     max_revision_round: number;
   };

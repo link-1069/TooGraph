@@ -55,6 +55,7 @@ const virtualOperationLifecycleSource = readFileSync(resolve(currentDirectory, "
 const virtualCursorGeometrySource = readFileSync(resolve(currentDirectory, "buddyVirtualCursorGeometry.ts"), "utf8");
 const chatSessionsSource = readFileSync(resolve(currentDirectory, "useBuddyChatSessions.ts"), "utf8");
 const modelSelectionSource = readFileSync(resolve(currentDirectory, "useBuddyModelSelection.ts"), "utf8");
+const permissionModeSource = readFileSync(resolve(currentDirectory, "useBuddyPermissionMode.ts"), "utf8");
 const sessionHistorySource = readFileSync(resolve(currentDirectory, "BuddySessionHistory.vue"), "utf8");
 const virtualOperationBannerSource = readFileSync(resolve(currentDirectory, "BuddyVirtualOperationBanner.vue"), "utf8");
 const pauseCardSource = readFileSync(resolve(currentDirectory, "BuddyPauseCard.vue"), "utf8");
@@ -318,6 +319,15 @@ test("BuddyWidget exposes ask-first and full-access permission tiers", () => {
   assert.doesNotMatch(componentSource, /buddyMode\s*=\s*"advisory"/);
   assert.doesNotMatch(componentSource, /buddyMode\s*=\s*"approval"/);
   assert.doesNotMatch(componentSource, /buddyMode\s*=\s*"unrestricted"/);
+});
+
+test("BuddyWidget persists permission mode through settings API composable", () => {
+  assert.match(componentSource, /import \{ useBuddyPermissionMode \} from "\.\/useBuddyPermissionMode\.ts";/);
+  assert.match(componentSource, /useBuddyPermissionMode\(\)/);
+  assert.match(componentSource, /hydrateBuddyPermissionMode\(\)/);
+  assert.match(permissionModeSource, /fetchBuddyRuntimeSettings/);
+  assert.match(permissionModeSource, /updateBuddyRuntimeSettings/);
+  assert.doesNotMatch(componentSource, /const buddyMode = ref<BuddyMode>\(DEFAULT_BUDDY_MODE\)/);
 });
 
 test("BuddyWidget lets the buddy runtime choose its own model", () => {

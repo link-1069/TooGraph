@@ -279,7 +279,7 @@ test("binding model exposes source options and Buddy Home folder package", () =>
   assert.deepEqual(buildBuddyHomeContextValue(), {
     kind: "local_folder",
     root: "buddy_home",
-    selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
+    selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"],
   });
   assert.deepEqual(buildDefaultBuddyRunTemplateBinding().input_bindings.input_user_message, "current_message");
   assert.deepEqual(buildDefaultBuddyRunTemplateBinding().input_bindings.input_existing_session_summary, "session_summary");

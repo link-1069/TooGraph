@@ -633,7 +633,7 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
   assert.deepEqual(graph.state_schema.buddy_context.value, {
     kind: "local_folder",
     root: "buddy_home",
-    selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md", "policy.json"],
+    selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"],
   });
   assert.deepEqual(graph.state_schema.autonomous_review.value, {});
   assert.deepEqual(graph.state_schema.improvement_candidates.value, []);

@@ -207,7 +207,6 @@ def list_home_files() -> dict[str, Any]:
         _home_file_entry(BUDDY_HOME_DIR / SOUL_PATH, SOUL_PATH),
         _home_file_entry(BUDDY_HOME_DIR / USER_PATH, USER_PATH),
         _home_file_entry(BUDDY_HOME_DIR / MEMORY_PATH, MEMORY_PATH),
-        _home_file_entry(BUDDY_HOME_DIR / POLICY_PATH, POLICY_PATH),
         _home_file_entry(
             BUDDY_HOME_DIR / BUDDY_DB_PATH,
             BUDDY_DB_PATH,

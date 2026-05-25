@@ -1,4 +1,10 @@
-import type { AgentThinkingLevel, ModelProviderTransport, OpenAICodexAuthStatus, SettingsPayload } from "@/types/settings";
+import type {
+  AgentThinkingLevel,
+  BuddyRuntimeSettings,
+  ModelProviderTransport,
+  OpenAICodexAuthStatus,
+  SettingsPayload,
+} from "@/types/settings";
 
 import { apiGet, apiPost } from "./http.ts";
 
@@ -34,6 +40,7 @@ export type SettingsUpdatePayload = {
     temperature: number;
   };
   model_providers?: Record<string, SettingsModelProviderUpdate>;
+  buddy_runtime?: BuddyRuntimeSettings;
 };
 
 export async function fetchSettings(): Promise<SettingsPayload> {
@@ -42,6 +49,14 @@ export async function fetchSettings(): Promise<SettingsPayload> {
 
 export async function updateSettings(payload: SettingsUpdatePayload): Promise<SettingsPayload> {
   return apiPost<SettingsPayload>("/api/settings", payload);
+}
+
+export async function fetchBuddyRuntimeSettings(): Promise<BuddyRuntimeSettings> {
+  return apiGet<BuddyRuntimeSettings>("/api/settings/buddy-runtime");
+}
+
+export async function updateBuddyRuntimeSettings(payload: BuddyRuntimeSettings): Promise<BuddyRuntimeSettings> {
+  return apiPost<BuddyRuntimeSettings>("/api/settings/buddy-runtime", payload);
 }
 
 export async function discoverModelProviderModels(payload: {

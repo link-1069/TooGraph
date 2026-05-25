@@ -196,6 +196,75 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(payload["agent_runtime_defaults"]["model"], "local/current-text")
         self.assertEqual(payload["agent_runtime_defaults"]["thinking_level"], "medium")
 
+    def test_settings_payload_includes_buddy_runtime_permission_mode(self) -> None:
+        catalog = {
+            "default_text_model_ref": "local/current-text",
+            "default_video_model_ref": "local/current-video",
+            "providers": [],
+            "provider_templates": [],
+        }
+
+        with patch("app.api.routes_settings.build_model_catalog", return_value=catalog):
+            with patch("app.api.routes_settings.get_default_agent_thinking_level", return_value="medium"):
+                with patch("app.api.routes_settings.get_default_agent_temperature", return_value=0.2):
+                    with patch("app.api.routes_settings.get_tool_registry", return_value={}):
+                        with patch(
+                            "app.api.routes_settings.load_app_settings",
+                            return_value={"buddy_runtime": {"permission_mode": "full_access"}},
+                        ):
+                            payload = routes_settings._build_settings_payload(force_refresh_models=False)
+
+        self.assertEqual(payload["buddy_runtime"], {"permission_mode": "full_access"})
+
+    def test_update_settings_preserves_existing_buddy_runtime_when_omitted(self) -> None:
+        saved_payload = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.clear()
+            saved_payload.update(payload)
+            return payload
+
+        existing_settings = {"buddy_runtime": {"permission_mode": "full_access"}}
+        with patch("app.api.routes_settings.load_app_settings", return_value=existing_settings):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}):
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/api/settings",
+                            json={
+                                "model": {
+                                    "text_model_ref": "local/text",
+                                    "video_model_ref": "local/video",
+                                },
+                                "agent_runtime_defaults": {
+                                    "model": "local/text",
+                                    "thinking_enabled": True,
+                                    "thinking_level": "medium",
+                                    "temperature": 0.2,
+                                },
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(saved_payload["buddy_runtime"], {"permission_mode": "full_access"})
+
+    def test_buddy_runtime_endpoint_persists_normalized_permission_mode(self) -> None:
+        saved_payload = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.clear()
+            saved_payload.update(payload)
+            return payload
+
+        with patch("app.api.routes_settings.load_app_settings", return_value={}):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with TestClient(app) as client:
+                    response = client.post("/api/settings/buddy-runtime", json={"permission_mode": "unrestricted"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"permission_mode": "full_access"})
+        self.assertEqual(saved_payload["buddy_runtime"], {"permission_mode": "full_access"})
+
     def test_get_settings_uses_cached_catalog_for_fast_page_loads(self) -> None:
         with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}) as build_payload:
             with TestClient(app) as client:

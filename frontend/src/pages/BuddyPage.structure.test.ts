@@ -6,11 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "BuddyPage.vue"), "utf8");
 
-test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () => {
+test("BuddyPage manages profile, MEMORY.md, summary, and revisions", () => {
   assert.match(source, /fetchBuddyProfile/);
   assert.match(source, /updateBuddyProfile/);
-  assert.match(source, /fetchBuddyPolicy/);
-  assert.match(source, /updateBuddyPolicy/);
   assert.match(source, /fetchBuddyMemoryDocument/);
   assert.match(source, /updateBuddyMemoryDocument/);
   assert.match(source, /fetchBuddyHomeFiles/);
@@ -26,7 +24,6 @@ test("BuddyPage manages profile, policy, MEMORY.md, summary, and revisions", () 
   assert.match(source, /fetchTemplate/);
   assert.match(source, /<ElTabs/);
   assert.match(source, /name="profile"/);
-  assert.match(source, /name="policy"/);
   assert.match(source, /name="memory"/);
   assert.match(source, /name="files"/);
   assert.match(source, /name="summary"/);
@@ -104,12 +101,12 @@ test("BuddyPage keeps template binding as the final advanced tab and renders it 
   assert.doesNotMatch(source, /<ElTable :data="bindingSourceRows"/);
 });
 
-test("BuddyPage exposes the unified buddy permission mode", () => {
-  assert.match(source, /<ElSegmented[\s\S]*v-model="policyDraft\.graph_permission_mode"[\s\S]*:options="permissionModeOptions"/);
-  assert.match(source, /permissionModeOptions/);
-  assert.match(source, /value: "ask_first"/);
-  assert.match(source, /value: "full_access"/);
-  assert.doesNotMatch(source, /graph_permission_mode:\s*"advisory"/);
+test("BuddyPage no longer exposes policy json as a Buddy Home editor surface", () => {
+  assert.doesNotMatch(source, /name="policy"/);
+  assert.doesNotMatch(source, /fetchBuddyPolicy/);
+  assert.doesNotMatch(source, /updateBuddyPolicy/);
+  assert.doesNotMatch(source, /policyDraft/);
+  assert.doesNotMatch(source, /graph_permission_mode/);
 });
 
 test("BuddyPage reloads buddy data when the widget reports external updates", () => {

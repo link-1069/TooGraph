@@ -40,12 +40,12 @@ class BuddyStoreTests(unittest.TestCase):
                 "SOUL.md",
                 "USER.md",
                 "MEMORY.md",
-                "policy.json",
                 "buddy.db",
             ]
             for relative_path in expected_files:
                 self.assertTrue((buddy_home / relative_path).exists(), relative_path)
 
+            self.assertFalse((buddy_home / "policy.json").exists())
             self.assertFalse((buddy_home / "reports").exists())
             for obsolete_path in [
                 "manifest.json",
@@ -66,7 +66,6 @@ class BuddyStoreTests(unittest.TestCase):
             self.assertIn("图模板", agents)
             self.assertIn("# USER.md - About Your Human", user)
             self.assertIn("# MEMORY.md - Long-Term Memory", memory)
-            self.assertTrue(json.loads((buddy_home / "policy.json").read_text(encoding="utf-8"))["behavior_boundaries"])
 
     def test_profile_update_creates_revision_with_previous_and_next_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

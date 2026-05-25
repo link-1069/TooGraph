@@ -61,34 +61,6 @@
           </article>
         </ElTabPane>
 
-        <ElTabPane :label="t('buddyPage.tabs.policy')" name="policy">
-          <article class="buddy-page__panel">
-            <div class="buddy-page__panel-heading">
-              <div>
-                <h3>{{ t("buddyPage.policy.title") }}</h3>
-                <p>{{ t("buddyPage.policy.body") }}</p>
-              </div>
-            </div>
-            <ElForm label-position="top" class="buddy-page__form">
-              <ElFormItem :label="t('buddyPage.policy.permissionMode')">
-                <ElSegmented v-model="policyDraft.graph_permission_mode" :options="permissionModeOptions" />
-              </ElFormItem>
-              <ElFormItem :label="t('buddyPage.policy.boundaries')">
-                <ElInput v-model="policyBoundaryText" type="textarea" :rows="6" />
-              </ElFormItem>
-              <ElFormItem :label="t('buddyPage.policy.preferences')">
-                <ElInput v-model="policyPreferenceText" type="textarea" :rows="5" />
-              </ElFormItem>
-              <div class="buddy-page__actions">
-                <ElButton type="primary" :loading="isSavingPolicy" @click="savePolicy">
-                  <ElIcon><Check /></ElIcon>
-                  <span>{{ t("buddyPage.savePolicy") }}</span>
-                </ElButton>
-              </div>
-            </ElForm>
-          </article>
-        </ElTabPane>
-
         <ElTabPane :label="t('buddyPage.tabs.memory')" name="memory">
           <article class="buddy-page__panel buddy-page__panel--memory-document">
             <div class="buddy-page__panel-heading">
@@ -797,7 +769,6 @@ import {
   fetchBuddyHomeFiles,
   fetchBuddyMemoryDocument,
   fetchBuddyMemoryReviewTemplateBinding,
-  fetchBuddyPolicy,
   fetchBuddyProfile,
   fetchBuddyRevisions,
   fetchBuddyRunTemplateBinding,
@@ -805,7 +776,6 @@ import {
   restoreBuddyRevision,
   updateBuddyMemoryDocument,
   updateBuddyMemoryReviewTemplateBinding,
-  updateBuddyPolicy,
   updateBuddyProfile,
   updateBuddyRunTemplateBinding,
   updateBuddySessionSummary,
@@ -841,7 +811,6 @@ import type {
   BuddyMemoryDocument,
   BuddyMemoryReviewInputSource,
   BuddyMemoryReviewTemplateBinding,
-  BuddyPolicy,
   BuddyProfile,
   BuddyRevision,
   BuddyRunInputSource,
@@ -872,7 +841,6 @@ const historyTargetFilter = ref<BuddyRevisionHistoryTargetFilter>("all");
 const hasLoaded = ref(false);
 const isLoading = ref(false);
 const isSavingProfile = ref(false);
-const isSavingPolicy = ref(false);
 const isSavingMemory = ref(false);
 const isSavingSummary = ref(false);
 const isSavingBinding = ref(false);
@@ -886,7 +854,6 @@ const restoreActionId = ref("");
 const errorMessage = ref("");
 
 const profileDraft = ref<BuddyProfile>(defaultProfileDraft());
-const policyDraft = ref<BuddyPolicy>(defaultPolicyDraft());
 const memoryDocumentDraft = ref<BuddyMemoryDocument>(defaultMemoryDocumentDraft());
 const homeFiles = ref<BuddyHomeFiles>(defaultHomeFiles());
 const selectedHomeFilePath = ref("");
@@ -912,18 +879,6 @@ const pausedRunSummaries = ref<RunSummary[]>([]);
 const selectedPausedRunId = ref("");
 const selectedPausedRunDetail = ref<RunDetail | null>(null);
 
-const policyBoundaryText = computed({
-  get: () => listToText(policyDraft.value.behavior_boundaries),
-  set: (value: string) => {
-    policyDraft.value.behavior_boundaries = textToList(value);
-  },
-});
-const policyPreferenceText = computed({
-  get: () => listToText(policyDraft.value.communication_preferences),
-  set: (value: string) => {
-    policyDraft.value.communication_preferences = textToList(value);
-  },
-});
 const canSaveMemory = computed(() => {
   return Boolean(memoryDocumentDraft.value.content.trim() && !isSavingMemory.value);
 });
@@ -991,10 +946,6 @@ const historyTargetOptions = computed(() =>
     value,
   })),
 );
-const permissionModeOptions = computed(() => [
-  { label: t("buddy.modes.askFirst"), value: "ask_first" },
-  { label: t("buddy.modes.fullAccess"), value: "full_access" },
-]);
 
 function defaultProfileDraft(): BuddyProfile {
   return {
@@ -1003,25 +954,6 @@ function defaultProfileDraft(): BuddyProfile {
     tone: "",
     response_style: "",
     display_preferences: {},
-  };
-}
-
-function defaultPolicyDraft(): BuddyPolicy {
-  return {
-    graph_permission_mode: "ask_first",
-    behavior_boundaries: [],
-    communication_preferences: [],
-  };
-}
-
-function normalizePolicyMode(value: unknown): BuddyPolicy["graph_permission_mode"] {
-  return value === "full_access" ? "full_access" : "ask_first";
-}
-
-function normalizeBuddyPolicy(policy: BuddyPolicy): BuddyPolicy {
-  return {
-    ...policy,
-    graph_permission_mode: normalizePolicyMode((policy as { graph_permission_mode?: unknown }).graph_permission_mode),
   };
 }
 
@@ -1045,17 +977,6 @@ function defaultSummaryDraft(): BuddySessionSummary {
     content: "",
     updated_at: "",
   };
-}
-
-function listToText(values: string[]) {
-  return values.join("\n");
-}
-
-function textToList(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
 }
 
 function formatDate(value: string) {
@@ -1272,7 +1193,6 @@ function hasActiveBuddyPageWrite() {
   return Boolean(
     isLoading.value ||
       isSavingProfile.value ||
-      isSavingPolicy.value ||
       isSavingMemory.value ||
       isSavingSummary.value ||
       isSavingBinding.value ||
@@ -1293,7 +1213,6 @@ async function loadAll(options: LoadAllOptions = {}) {
     }
     const [
       profile,
-      policy,
       memoryDocument,
       homeFileList,
       summary,
@@ -1304,7 +1223,6 @@ async function loadAll(options: LoadAllOptions = {}) {
       memoryReviewBinding,
     ] = await Promise.all([
       fetchBuddyProfile(),
-      fetchBuddyPolicy(),
       fetchBuddyMemoryDocument(),
       fetchBuddyHomeFiles(),
       fetchBuddySessionSummary(),
@@ -1315,7 +1233,6 @@ async function loadAll(options: LoadAllOptions = {}) {
       fetchBuddyMemoryReviewTemplateBinding(),
     ]);
     profileDraft.value = profile;
-    policyDraft.value = normalizeBuddyPolicy(policy);
     memoryDocumentDraft.value = memoryDocument;
     homeFiles.value = homeFileList;
     syncSelectedHomeFile();
@@ -1471,26 +1388,6 @@ async function saveProfile() {
     setError(error, "common.failedToSave");
   } finally {
     isSavingProfile.value = false;
-  }
-}
-
-async function savePolicy() {
-  try {
-    isSavingPolicy.value = true;
-    policyDraft.value = acceptCommandResult(
-      await updateBuddyPolicy(
-        normalizeBuddyPolicy(policyDraft.value),
-        t("buddyPage.changeReasons.policy"),
-      ),
-    );
-    await refreshAuditTrail();
-    await refreshHomeFiles();
-    errorMessage.value = "";
-    ElMessage.success(t("buddyPage.saved"));
-  } catch (error) {
-    setError(error, "common.failedToSave");
-  } finally {
-    isSavingPolicy.value = false;
   }
 }
 
