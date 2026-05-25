@@ -88,6 +88,7 @@ const PAGE_OPERATION_INPUT_PREVIEW_LIMIT = 6;
 const PAGE_OPERATION_UNAVAILABLE_PREVIEW_LIMIT = 4;
 const PAGE_OPERATION_LINE_MAX_CHARS = 260;
 const IMPORTANT_OPERATION_TARGET_IDS = new Set(["editor.graph.playback"]);
+const PAGE_OPERATION_FORBIDDEN_NOTE = "仅允许使用页面操作书中列出的命令；未列出的页面目标不可操作。";
 
 export type PageOperationRuntimeContext = {
   page_path: string;
@@ -227,7 +228,7 @@ export function buildPageOperationBook(snapshot: PageOperationSnapshotInit | Pag
     allowedOperations,
     inputs,
     unavailable,
-    forbidden: ["伙伴页面、伙伴浮窗、伙伴形象、伙伴调试入口不可由伙伴自己操作。"],
+    forbidden: [PAGE_OPERATION_FORBIDDEN_NOTE],
   };
 }
 
@@ -355,7 +356,7 @@ export function formatPageOperationBookLines(book: PageOperationBook | null | un
     return [
       "页面操作书:",
       "- 当前页面没有可操作目标。",
-      "- forbidden: 伙伴页面、伙伴浮窗、伙伴形象、伙伴调试面板和 Buddy 导航目标不可由伙伴自己操作。",
+      `- forbidden: ${PAGE_OPERATION_FORBIDDEN_NOTE}`,
     ];
   }
   const lines = [

@@ -116,6 +116,13 @@ def toograph_page_operator(**action_inputs: Any) -> dict[str, Any]:
         )
 
     action, target_id, payload = parsed
+    if _is_self_surface_target(target_id):
+        return _failed(
+            code="forbidden_self_surface",
+            message="该页面目标不允许由页面操作器执行。",
+            recoverable=False,
+            detail={"commands": commands, "target_id": target_id},
+        )
     command_match = _validate_current_operation_book_command(
         operation_book=operation_book,
         command=command,
@@ -125,14 +132,6 @@ def toograph_page_operator(**action_inputs: Any) -> dict[str, Any]:
     )
     if command_match is not None and command_match.get("ok") is False:
         return command_match
-
-    if _is_self_surface_target(target_id):
-        return _failed(
-            code="forbidden_self_surface",
-            message="伙伴不能操作伙伴页面、伙伴浮窗或自己的形象。",
-            recoverable=False,
-            detail={"commands": commands, "target_id": target_id},
-        )
     if action == "graph_edit":
         return _build_graph_edit_result(
             commands=commands,

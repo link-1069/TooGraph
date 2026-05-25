@@ -19,17 +19,21 @@ const BUDDY_MEMORY_REVIEW_REQUIRED_INPUT_SOURCES = new Set<BuddyMemoryReviewInpu
 ]);
 
 const BUDDY_MEMORY_REVIEW_INTERNAL_STATES = new Set([
-  "recall_request",
   "session_recall_context",
-  "recalled_sessions",
-  "memory_candidates",
-  "memory_filter_report",
+  "autonomous_review",
+  "improvement_candidates",
   "memory_update_plan",
   "memory_review_result",
   "memory_write_success",
   "applied_memory_commands",
   "skipped_memory_commands",
   "memory_write_result",
+  "profile_update_plan",
+  "profile_review_result",
+  "profile_write_success",
+  "applied_profile_commands",
+  "skipped_profile_commands",
+  "profile_write_result",
 ]);
 
 export type BuddyRunInputSourceOption = {

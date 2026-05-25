@@ -5,14 +5,15 @@ import sys
 from typing import Any
 
 
-DEFAULT_FORBIDDEN_NOTE = "伙伴页面、伙伴浮窗、伙伴形象和伙伴调试入口已过滤，不作为可操作内容返回。"
+DEFAULT_FORBIDDEN_NOTE = "仅允许使用页面操作书中列出的命令；未列出的页面目标不可操作。"
 
 
 def toograph_page_operator_before_llm(**payload: Any) -> dict[str, str]:
     runtime_context = payload.get("runtime_context") if isinstance(payload.get("runtime_context"), dict) else {}
     raw_book = runtime_context.get("page_operation_book")
-    page_path = _compact_text(runtime_context.get("page_path")) or _extract_book_path(raw_book) or "/"
-    operation_book = _sanitize_operation_book(raw_book, page_path)
+    source_page_path = _compact_text(runtime_context.get("page_path")) or _extract_book_path(raw_book) or "/"
+    page_path = _sanitize_page_path(source_page_path)
+    operation_book = _sanitize_operation_book(raw_book, page_path, source_page_path)
     available_commands = [
         command
         for operation in operation_book["allowedOperations"]
@@ -49,15 +50,18 @@ def toograph_page_operator_before_llm(**payload: Any) -> dict[str, str]:
             "graph_edit_intents 支持 create_node、create_state、bind_state、connect_nodes、update_node；create_node.nodeType 可为 input、agent、output、condition 或 subgraph。",
             "不要描述双击、菜单、DOM selector 或坐标。",
             "不要输出 DOM selector、坐标、鼠标轨迹或截图描述。",
-            "伙伴页面、伙伴浮窗、伙伴形象和调试入口不可操作。",
+            "只能选择页面操作书和 available_commands 中列出的目标；未列出的页面目标或内部控件不可操作。",
         ],
     }
     return {"context": json.dumps(context, ensure_ascii=False, indent=2)}
 
 
-def _sanitize_operation_book(value: Any, page_path: str) -> dict[str, Any]:
+def _sanitize_operation_book(value: Any, page_path: str, source_page_path: str) -> dict[str, Any]:
     source = value if isinstance(value, dict) else {}
     page = source.get("page") if isinstance(source.get("page"), dict) else {}
+    book_source_path = _compact_text(page.get("path")) or source_page_path or page_path
+    visible_page_path = _sanitize_page_path(book_source_path)
+    is_self_surface_page = _is_self_surface_route(book_source_path) or _is_self_surface_route(source_page_path)
     allowed_operations = []
     for operation in _list_records(source.get("allowedOperations")):
         target_id = _compact_text(operation.get("targetId"))
@@ -101,20 +105,16 @@ def _sanitize_operation_book(value: Any, page_path: str) -> dict[str, Any]:
             }
         )
 
-    forbidden = _list_text(source.get("forbidden"))
-    if DEFAULT_FORBIDDEN_NOTE not in forbidden:
-        forbidden.append(DEFAULT_FORBIDDEN_NOTE)
-
     return {
         "page": {
-            "path": _compact_text(page.get("path")) or page_path,
-            "title": _compact_text(page.get("title")) or "当前页面",
+            "path": visible_page_path,
+            "title": "当前页面" if is_self_surface_page else (_compact_text(page.get("title")) or "当前页面"),
             "snapshotId": _compact_text(page.get("snapshotId")),
         },
         "allowedOperations": allowed_operations,
         "inputs": inputs,
         "unavailable": _sanitize_unavailable(source.get("unavailable")),
-        "forbidden": forbidden,
+        "forbidden": [DEFAULT_FORBIDDEN_NOTE],
     }
 
 
@@ -122,6 +122,8 @@ def _sanitize_result_hint(value: Any) -> dict[str, str] | None:
     if not isinstance(value, dict):
         return None
     path = _compact_text(value.get("path"))
+    if _is_self_surface_route(path):
+        return None
     return {"path": path} if path else None
 
 
@@ -217,6 +219,16 @@ def _parse_command(command: str) -> tuple[str, str, str] | None:
 def _is_editor_page(page_path: str) -> bool:
     normalized = page_path.strip()
     return normalized == "/editor" or normalized.startswith("/editor/")
+
+
+def _sanitize_page_path(page_path: str) -> str:
+    normalized = page_path.strip() or "/"
+    return "/" if _is_self_surface_route(normalized) else normalized
+
+
+def _is_self_surface_route(page_path: str) -> bool:
+    normalized = page_path.strip().split("?", 1)[0].split("#", 1)[0].lower()
+    return normalized == "/buddy" or normalized.startswith("/buddy/")
 
 
 def _is_self_surface_target(target_id: str) -> bool:

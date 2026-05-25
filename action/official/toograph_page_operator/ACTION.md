@@ -1,11 +1,11 @@
 ---
 name: TooGraph 页面操作器
-description: Execute one semantic app-page operation through Buddy's virtual cursor without exposing DOM selectors or screen coordinates to the LLM.
+description: Execute one semantic app-page operation through the app-native virtual cursor without exposing DOM selectors or screen coordinates to the LLM.
 ---
 
 # TooGraph 页面操作器
 
-This official Action validates one page-operation command sequence or one fixed template-run target and asks TooGraph's app-native virtual operator layer to play the operation through Buddy's virtual cursor.
+This official Action validates one page-operation command sequence or one fixed template-run target and asks TooGraph's app-native virtual operator layer to play the operation through the app-native virtual cursor.
 
 Current phase:
 
@@ -15,7 +15,7 @@ Current phase:
 - Supports `graph_edit editor.graph.playback` on editor pages. For graph editing, the LLM outputs product-semantic `graph_edit_intents`; the frontend compiles them into graph commands and visible playback steps.
 - Validates commands against the current runtime page operation book. Off-book, stale-page, hidden, disabled, destructive, or confirmation-gated targets are rejected before a virtual operation event is accepted.
 - Emits a deterministic `operation_request_id` plus runtime-owned `expected_continuation` metadata so the frontend can resume the internal page-operation waitpoint with `page_operation_context`, `page_context`, `operation_result`, and compact `operation_report` after real UI execution. Official templates do not declare this as breakpoint metadata.
-- Rejects Buddy self surfaces such as the Buddy page, Buddy floating window, Buddy avatar, and debug controls.
+- Rejects internal/self-referential UI surfaces and debug controls.
 - Does not expose DOM selectors, screen coordinates, double-click recipes, or low-level mouse trajectories to the LLM.
 - The official `toograph_page_operation_workflow` graph template is the preferred multi-step wrapper around this Action. As a subgraph capability it exposes only the user's `user_goal`; page operation books and refreshed page facts come from Action runtime context and runtime continuation payloads. The Action accepts or rejects one semantic operation; the template loops, waits for frontend confirmation, verifies refreshed page facts, and writes the final user explanation.
 
@@ -26,7 +26,7 @@ Graph state inputs:
 Runtime context:
 
 - `page_path`: current application route.
-- `page_operation_book`: structured page operation book produced by the app runtime. Partner-related content is filtered before the LLM sees the operation book.
+- `page_operation_book`: structured page operation book produced by the app runtime. Internal/self-referential UI content is filtered before the LLM sees the operation book.
 
 LLM output:
 

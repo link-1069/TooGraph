@@ -234,11 +234,18 @@ function createReviewTemplate(): TemplateRecord {
       public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#16a34a" },
       autonomous_review: { name: "autonomous_review", description: "", type: "json", value: {}, color: "#9333ea" },
       improvement_candidates: { name: "improvement_candidates", description: "", type: "json", value: [], color: "#7c3aed" },
-      memory_update_plan: { name: "memory_update_plan", description: "", type: "json", value: { has_updates: false, commands: [] }, color: "#22c55e" },
-      memory_write_success: { name: "memory_write_success", description: "", type: "boolean", value: false, color: "#16a34a" },
-      applied_memory_commands: { name: "applied_memory_commands", description: "", type: "json", value: [], color: "#059669" },
-      skipped_memory_commands: { name: "skipped_memory_commands", description: "", type: "json", value: [], color: "#dc2626" },
-      memory_write_result: { name: "memory_write_result", description: "", type: "markdown", value: "", color: "#15803d" },
+      memory_update_plan: { name: "memory_update_plan", description: "", type: "json", value: { has_updates: true, commands: [{ action: "stale" }] }, color: "#22c55e" },
+      memory_review_result: { name: "memory_review_result", description: "", type: "markdown", value: "stale", color: "#0369a1" },
+      memory_write_success: { name: "memory_write_success", description: "", type: "boolean", value: true, color: "#16a34a" },
+      applied_memory_commands: { name: "applied_memory_commands", description: "", type: "json", value: [{ action: "stale" }], color: "#059669" },
+      skipped_memory_commands: { name: "skipped_memory_commands", description: "", type: "json", value: [{ action: "stale" }], color: "#dc2626" },
+      memory_write_result: { name: "memory_write_result", description: "", type: "markdown", value: "stale", color: "#15803d" },
+      profile_update_plan: { name: "profile_update_plan", description: "", type: "json", value: { has_updates: true, commands: [{ action: "stale" }], requires_confirmation: true }, color: "#f97316" },
+      profile_review_result: { name: "profile_review_result", description: "", type: "markdown", value: "stale", color: "#c2410c" },
+      profile_write_success: { name: "profile_write_success", description: "", type: "boolean", value: true, color: "#ea580c" },
+      applied_profile_commands: { name: "applied_profile_commands", description: "", type: "json", value: [{ action: "stale" }], color: "#f97316" },
+      skipped_profile_commands: { name: "skipped_profile_commands", description: "", type: "json", value: [{ action: "stale" }], color: "#dc2626" },
+      profile_write_result: { name: "profile_write_result", description: "", type: "markdown", value: "stale", color: "#ea580c" },
     },
     nodes: {
       input_source_run_id: {
@@ -638,10 +645,17 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
   assert.deepEqual(graph.state_schema.autonomous_review.value, {});
   assert.deepEqual(graph.state_schema.improvement_candidates.value, []);
   assert.deepEqual(graph.state_schema.memory_update_plan.value, { has_updates: false, commands: [] });
+  assert.equal(graph.state_schema.memory_review_result.value, "");
   assert.equal(graph.state_schema.memory_write_success.value, false);
   assert.deepEqual(graph.state_schema.applied_memory_commands.value, []);
   assert.deepEqual(graph.state_schema.skipped_memory_commands.value, []);
   assert.equal(graph.state_schema.memory_write_result.value, "");
+  assert.deepEqual(graph.state_schema.profile_update_plan.value, { has_updates: false, requires_confirmation: false, commands: [] });
+  assert.equal(graph.state_schema.profile_review_result.value, "");
+  assert.equal(graph.state_schema.profile_write_success.value, false);
+  assert.deepEqual(graph.state_schema.applied_profile_commands.value, []);
+  assert.deepEqual(graph.state_schema.skipped_profile_commands.value, []);
+  assert.equal(graph.state_schema.profile_write_result.value, "");
   assert.equal(graph.state_schema.writeback_commands, undefined);
   assertInputNode(graph.nodes.input_source_run_id);
   assertInputNode(graph.nodes.input_current_session_id);

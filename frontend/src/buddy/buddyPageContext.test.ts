@@ -97,6 +97,7 @@ test("buildBuddyPageContext creates a fenced read-only context snapshot for advi
   assert.match(context, /写入: creative_report\(state_2, replace\)/);
   assert.match(context, /运行状态: completed/);
   assert.match(context, /运行反馈: 校验通过。/);
+  assert.doesNotMatch(context, /伙伴页面|伙伴浮窗|伙伴形象|伙伴调试|Buddy 导航目标|app\.nav\.buddy/);
 });
 
 test("buildBuddyPageContext reports the absence of an active graph without inventing access", () => {
@@ -137,7 +138,8 @@ test("buildBuddyPageContext exposes only non-buddy page operations", () => {
   assert.match(context, /app\.nav\.runs/);
   assert.match(context, /click app\.nav\.runs/);
   assert.doesNotMatch(context, /click_nav runs/);
-  assert.match(context, /伙伴页面、伙伴浮窗、伙伴形象[\s\S]*不可由伙伴自己操作/);
+  assert.match(context, /未列出的页面目标不可操作/);
+  assert.doesNotMatch(context, /伙伴页面|伙伴浮窗|伙伴形象|伙伴调试|Buddy 导航目标/);
   assert.doesNotMatch(context, /app\.nav\.buddy/);
   assert.doesNotMatch(context, /buddy\.tab\.history/);
 });
@@ -211,9 +213,14 @@ test("buildBuddyPageContext filters buddy self-surface details on the Buddy page
     }),
   });
 
-  assert.match(context, /伙伴相关页面内容已过滤/);
+  assert.match(context, /当前页面细节已过滤/);
   assert.match(context, /页面操作书:/);
   assert.match(context, /app\.nav\.runs/);
+  assert.doesNotMatch(context, /当前路径: \/buddy/);
+  assert.doesNotMatch(context, /页面标题: 伙伴/);
+  assert.doesNotMatch(context, /页面操作书:[\s\S]*page: 伙伴/);
+  assert.doesNotMatch(context, /伙伴相关页面内容已过滤/);
+  assert.doesNotMatch(context, /伙伴页面|伙伴浮窗|伙伴形象|伙伴调试|Buddy 导航目标/);
   assert.doesNotMatch(context, /app\.nav\.buddy/);
   assert.doesNotMatch(context, /buddy\.tab\.history/);
   assert.doesNotMatch(context, /Buddy Home/);

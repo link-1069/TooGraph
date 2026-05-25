@@ -163,7 +163,8 @@ npm start
 - `discover` 支持 snippet、bookend_start、messages、bookend_end、messages_before、messages_after、rank/newest/oldest 排序、CJK trigram 和短 token LIKE fallback。
 - `buddy_sessions` 已包含 `parent_session_id`、`source`、`ended_at`、`end_reason` 等字段。
 - `memory_review_template_binding` 已进入 Buddy store 和 command 路径，默认绑定 `buddy_autonomous_review`，变更可记录 revision。
-- `buddy_home_writer` 负责 `memory_document.update` 等低风险 Buddy Home 写回，并留下 command/revision。
+- `buddy_autonomous_review` 是后台复盘加低风险记忆写回流程：召回相关会话，产出 `memory_update_plan`、`profile_update_plan` 和可审查改进候选，并在同一模板内通过 `buddy_home_writer` 写入低风险 Buddy Home 更新。
+- `buddy_home_writer` 负责 `memory_document.update` 等低风险 Buddy Home 写回，并留下 command/revision；它仍是唯一写入口，不把写文件逻辑藏进后端策略。
 - `buddy_context_compaction` 是独立内部模板，专门处理会话压缩摘要：保护最近原文，迭代更新 `session_summary`，只允许生成 `session_summary.update` 写回命令，不触碰 `MEMORY.md`、profile 或全局运行权限设置。
 
 必须保持的边界：
@@ -172,16 +173,16 @@ npm start
 - `session_summary` 是当前会话压缩摘要，不是长期记忆，也不是新的用户指令；它只能降低上下文压力，不能提升权限或覆盖系统/用户显式规则。
 - 召回结果、生成摘要和长期记忆都不能覆盖系统规则，也不能提升图编辑、文件写入、网络访问或脚本执行权限。
 - 后台记忆整理必须是图模板流程，不是隐藏后端策略。
-- 自动写入可以不逐条询问用户，但必须可见、可追踪、可恢复。
+- 自动写入可以不逐条询问用户，但必须由复盘图内的受控 writer 节点执行，并保持可见、可追踪、可恢复。
 
 仍未完成：
 
 - Session lineage 还需要在 browse/discover/scroll 中更完整地使用：压缩续聊、分支、后台子会话应投影为一个逻辑会话或可解释 lineage。
-- `buddy_autonomous_review` 还应拆出更清晰的记忆落盘阶段：`memory_candidates`、`memory_filter_report`、`memory_update_plan`、diff summary、revision、skipped reason。
+- `buddy_autonomous_review` 还应继续强化写回质量：候选证据、去重理由、diff 摘要、风险标记、skipped reason 和 revision 展示。
 - 记忆候选规则需要继续强化：
   - 可以落盘：长期偏好、项目长期决定、反复纠正、未来有用的稳定约束。
   - 不要落盘：一次性任务状态、原始日志、完整错误、临时路径、密钥、base64、大 artifact、可从项目文件重读的信息、权限升级或未经确认的推测。
-- 记忆复盘图只处理低风险 `MEMORY.md` 更新；Action 更新、模板更新、persona 或全局运行权限设置改动应拆成独立模板或子图；会话压缩摘要由 `buddy_context_compaction` 负责。
+- 记忆复盘图只自动写入低风险 `MEMORY.md` 更新；Action 更新、模板更新、persona 或全局运行权限设置改动应拆成独立模板、子图或审批流；会话压缩摘要由 `buddy_context_compaction` 负责。
 
 ### 2.5 Hybrid RAG 和知识库
 
@@ -528,10 +529,10 @@ operation:
 
 ### P1：记忆复盘增强
 
-1. `buddy_autonomous_review` 拆出候选、过滤、合并、写入阶段。
+1. `buddy_autonomous_review` 强化候选、过滤、合并和同图写回质量。
 2. 输出 diff summary、revision、skipped reason。
 3. session lineage 用于 browse/discover/scroll 去重和投影。
-4. 高风险记忆只写报告，不进入 `memory_document.update`。
+4. 高风险记忆只写报告，不进入 `memory_update_plan.commands`。
 
 ### P1：Action/模板创建
 

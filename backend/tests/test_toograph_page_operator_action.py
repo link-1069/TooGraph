@@ -59,6 +59,11 @@ class TooGraphPageOperatorActionTests(unittest.TestCase):
             [field.key for field in definition.state_output_schema],
             ["ok", "cursor_session_id", "operation_request_id", "journal", "error"],
         )
+        self.assertNotIn("伙伴页面", definition.llm_instruction)
+        self.assertNotIn("伙伴浮窗", definition.llm_instruction)
+        self.assertNotIn("伙伴形象", definition.llm_instruction)
+        self.assertNotIn("app.nav.buddy", definition.llm_instruction)
+        self.assertNotIn("Buddy page", definition.llm_instruction)
 
     def test_before_llm_returns_operation_book_without_buddy_targets(self) -> None:
         result = _run_action_script(
@@ -160,10 +165,61 @@ class TooGraphPageOperatorActionTests(unittest.TestCase):
         self.assertEqual(context_payload["output_contract"]["template_target"]["template_id"], "target_template_id")
         self.assertEqual(context_payload["page_operation_book"]["inputs"][0]["targetId"], "library.search.query")
         self.assertIn("graph_edit_intents", context_payload["output_contract"])
-        self.assertIn("伙伴页面、伙伴浮窗、伙伴形象", context)
+        self.assertIn("未列出的页面目标不可操作", context)
+        self.assertNotIn("伙伴页面", context)
+        self.assertNotIn("伙伴浮窗", context)
+        self.assertNotIn("伙伴形象", context)
+        self.assertNotIn("伙伴调试", context)
         self.assertNotIn("app.nav.buddy", context)
         self.assertNotIn("buddy.tab.history", context)
         self.assertNotIn("mascot-debug", context)
+
+    def test_before_llm_hides_self_surface_route_and_forbidden_note(self) -> None:
+        result = _run_action_script(
+            PAGE_OPERATOR_BEFORE_LLM_PATH,
+            {
+                "runtime_context": {
+                    "page_path": "/buddy",
+                    "page_operation_book": {
+                        "page": {"path": "/buddy", "title": "伙伴", "snapshotId": "snapshot-buddy"},
+                        "allowedOperations": [
+                            {
+                                "targetId": "app.nav.runs",
+                                "label": "运行历史",
+                                "role": "navigation-link",
+                                "commands": ["click app.nav.runs"],
+                                "resultHint": {"path": "/runs"},
+                            },
+                            {
+                                "targetId": "app.nav.buddy",
+                                "label": "伙伴",
+                                "role": "navigation-link",
+                                "commands": ["click app.nav.buddy"],
+                                "resultHint": {"path": "/buddy"},
+                            },
+                        ],
+                        "inputs": [],
+                        "unavailable": [],
+                        "forbidden": ["伙伴页面、伙伴浮窗、伙伴形象和伙伴调试入口已过滤。"],
+                    },
+                },
+            },
+        )
+
+        context = str(result.get("context") or "")
+        context_payload = json.loads(context)
+        self.assertEqual(context_payload["current_page_path"], "/")
+        self.assertEqual(context_payload["page_operation_book"]["page"]["path"], "/")
+        self.assertEqual(context_payload["page_operation_book"]["page"]["title"], "当前页面")
+        self.assertEqual(context_payload["available_commands"], ["click app.nav.runs"])
+        self.assertIn("未列出的页面目标不可操作", context)
+        self.assertNotIn("/buddy", context)
+        self.assertNotIn("app.nav.buddy", context)
+        self.assertNotIn("伙伴页面", context)
+        self.assertNotIn("伙伴浮窗", context)
+        self.assertNotIn("伙伴形象", context)
+        self.assertNotIn("伙伴调试", context)
+        self.assertNotIn("Buddy", context)
 
     def test_before_llm_filters_graph_edit_commands_outside_editor_page(self) -> None:
         result = _run_action_script(
@@ -613,9 +669,42 @@ class TooGraphPageOperatorActionTests(unittest.TestCase):
         self.assertNotIn("next_page_path", result)
         self.assertEqual(result["error"]["code"], "forbidden_self_surface")
         self.assertEqual(result["error"]["failure_category"], "permission_blocked")
+        self.assertNotIn("伙伴", result["error"]["message"])
+        self.assertNotIn("Buddy", result["error"]["message"])
         self.assertEqual(result["activity_events"][0]["kind"], "virtual_ui_operation")
         self.assertEqual(result["activity_events"][0]["status"], "failed")
         self.assertEqual(result["activity_events"][0]["detail"]["failure_category"], "permission_blocked")
+
+    def test_after_llm_rejects_buddy_self_targets_before_operation_book_lookup(self) -> None:
+        result = _run_action_script(
+            PAGE_OPERATOR_AFTER_LLM_PATH,
+            {
+                "commands": ["click app.nav.buddy"],
+                "runtime_context": {
+                    "page_path": "/editor",
+                    "page_operation_book": {
+                        "page": {"path": "/editor", "title": "图编辑器", "snapshotId": "snapshot-editor"},
+                        "allowedOperations": [
+                            {
+                                "targetId": "app.nav.runs",
+                                "label": "运行历史",
+                                "role": "navigation-link",
+                                "commands": ["click app.nav.runs"],
+                            }
+                        ],
+                        "inputs": [],
+                        "unavailable": [],
+                        "forbidden": [],
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result["ok"], False)
+        self.assertEqual(result["error"]["code"], "forbidden_self_surface")
+        self.assertEqual(result["error"]["failure_category"], "permission_blocked")
+        self.assertNotIn("伙伴", result["error"]["message"])
+        self.assertNotIn("Buddy", result["error"]["message"])
 
 
 if __name__ == "__main__":

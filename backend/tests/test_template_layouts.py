@@ -117,6 +117,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
                 "buddy_context_compaction",
+                "toograph_page_operation_workflow",
             ],
         )
         templates = {record["template_id"]: record for record in records}
@@ -144,6 +145,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(page_operation_template["label"], "操作 TooGraph 页面")
         self.assertEqual(page_operation_template["default_graph_name"], "操作 TooGraph 页面")
         self.assertIn("打开页面", page_operation_template["description"])
+        self.assertIs(page_operation_template["capabilityDiscoverable"], False)
 
         graph_template = templates["toograph_graph_template_creation_workflow"]
         self.assertEqual(graph_template["source"], "official")
@@ -200,6 +202,15 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(product_template["default_graph_name"], "产品竞品研究助手")
         self.assertIn("PRD 草稿", product_template["description"])
         self.assertIs(product_template["capabilityDiscoverable"], False)
+
+    def test_page_operation_template_instruction_hides_self_surface_details(self) -> None:
+        template = load_template_record("toograph_page_operation_workflow")
+        execute_node = template["nodes"]["execute_page_operation"]
+        config_text = json.dumps(execute_node.get("config", {}), ensure_ascii=False)
+
+        for forbidden_text in ["伙伴自表面", "伙伴页面", "伙伴浮窗", "伙伴形象", "app.nav.buddy", "Buddy page"]:
+            self.assertNotIn(forbidden_text, config_text)
+        self.assertIn("未列出的页面目标", config_text)
 
     def test_official_templates_do_not_embed_breakpoint_metadata(self) -> None:
         for template in _official_template_records():
@@ -2066,16 +2077,9 @@ class TemplateLayoutTests(unittest.TestCase):
             set(states),
             {
                 "user_goal",
-                "page_context",
                 "page_operation_context",
-                "goal_plan",
-                "operation_request",
-                "operation_ok",
-                "operation_request_id",
-                "operation_journal",
                 "operation_error",
                 "operation_result",
-                "page_snapshot",
                 "goal_review",
                 "loop_trace",
                 "public_response",
@@ -2083,70 +2087,89 @@ class TemplateLayoutTests(unittest.TestCase):
             },
         )
         self.assertEqual(states["user_goal"]["type"], "text")
-        self.assertEqual(states["page_context"]["type"], "markdown")
         self.assertEqual(states["page_operation_context"]["type"], "json")
-        self.assertEqual(states["goal_plan"]["type"], "json")
-        self.assertEqual(states["operation_request_id"]["binding"]["fieldKey"], "operation_request_id")
         self.assertEqual(states["operation_report"]["type"], "json")
 
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "input"],
             ["input_user_goal"],
         )
-        self.assertEqual(_read_contracts(nodes["classify_goal"]["reads"]), [{"state": "user_goal", "required": True}])
+        self.assertEqual([node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"], [])
+        self.assertTrue(all("graph" not in (node.get("config") or {}) for node in nodes.values()))
         self.assertEqual(
-            _read_contracts(nodes["operation_loop"]["reads"]),
+            list(nodes),
             [
-                {"state": "user_goal", "required": True},
-                {"state": "goal_plan", "required": True},
-                {"state": "loop_trace", "required": True},
+                "input_user_goal",
+                "execute_page_operation",
+                "verify_goal_against_refreshed_context",
+                "continue_operation_loop",
+                "draft_public_response",
+                "output_public_response",
+                "output_operation_report",
             ],
         )
-        self.assertEqual([node_id for node_id, node in nodes.items() if node["kind"] == "subgraph"], ["operation_loop"])
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
             ["output_public_response", "output_operation_report"],
         )
+        for debug_output_id in [
+            "output_operation_request",
+            "output_operation_ok",
+            "output_operation_request_id",
+            "output_operation_journal",
+            "output_operation_error",
+            "output_operation_result",
+            "output_page_snapshot",
+            "output_goal_review",
+            "output_loop_trace",
+            "classify_goal",
+            "plan_next_operation",
+        ]:
+            self.assertNotIn(debug_output_id, nodes)
         self.assertEqual(_read_contracts(nodes["output_public_response"]["reads"]), [{"state": "public_response", "required": True}])
         self.assertEqual(_read_contracts(nodes["output_operation_report"]["reads"]), [{"state": "operation_report", "required": False}])
-        self.assertIn({"source": "classify_goal", "target": "operation_loop"}, template["edges"])
-        self.assertIn({"source": "operation_loop", "target": "draft_public_response"}, template["edges"])
-
-        loop_graph = nodes["operation_loop"]["config"]["graph"]
-        self.assertEqual(loop_graph["metadata"]["role"], "page_operation_loop")
-        self.assertNotIn("interrupt_after", loop_graph["metadata"])
-        self.assertNotIn("auto_resume_after_ui_operation_nodes", loop_graph["metadata"])
         self.assertEqual(
-            loop_graph["conditional_edges"],
+            template["edges"],
+            [
+                {"source": "input_user_goal", "target": "execute_page_operation"},
+                {"source": "execute_page_operation", "target": "verify_goal_against_refreshed_context"},
+                {"source": "verify_goal_against_refreshed_context", "target": "continue_operation_loop"},
+                {"source": "draft_public_response", "target": "output_public_response"},
+                {"source": "draft_public_response", "target": "output_operation_report"},
+            ],
+        )
+        self.assertEqual(
+            template["conditional_edges"],
             [
                 {
                     "source": "continue_operation_loop",
                     "branches": {
-                        "true": "plan_next_operation",
-                        "false": "output_goal_review",
-                        "exhausted": "output_goal_review",
+                        "true": "execute_page_operation",
+                        "false": "draft_public_response",
+                        "exhausted": "draft_public_response",
                     },
                 }
             ],
         )
-        self.assertEqual(loop_graph["nodes"]["continue_operation_loop"]["config"]["loopLimit"], 6)
+        self.assertEqual(nodes["continue_operation_loop"]["config"]["loopLimit"], 6)
         self.assertEqual(
-            loop_graph["nodes"]["continue_operation_loop"]["config"]["rule"],
+            nodes["continue_operation_loop"]["config"]["rule"],
             {"source": "$state.goal_review.needs_more_operations", "operator": "==", "value": True},
         )
 
-        operator_node = loop_graph["nodes"]["execute_page_operation"]
+        operator_node = nodes["execute_page_operation"]
         self.assertEqual(operator_node["kind"], "agent")
         self.assertEqual(operator_node["config"]["actionKey"], "toograph_page_operator")
+        operator_config_text = json.dumps(operator_node["config"], ensure_ascii=False)
+        self.assertNotIn("operation_request JSON", operator_config_text)
+        self.assertNotIn("operation_request.", operator_config_text)
+        self.assertNotIn("goal_plan", json.dumps(operator_node["config"], ensure_ascii=False))
         self.assertEqual(
             operator_node["config"]["actionBindings"],
             [
                 {
                     "actionKey": "toograph_page_operator",
                     "outputMapping": {
-                        "ok": "operation_ok",
-                        "operation_request_id": "operation_request_id",
-                        "journal": "operation_journal",
                         "error": "operation_error",
                     },
                 }
@@ -2156,16 +2179,27 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(
             {binding["state"]: binding["mode"] for binding in operator_node["writes"]},
             {
-                "operation_ok": "replace",
-                "operation_request_id": "replace",
-                "operation_journal": "replace",
                 "operation_error": "replace",
             },
         )
         self.assertIn("只调用一次 toograph_page_operator", operator_node["config"]["taskInstruction"])
-        verifier_node = loop_graph["nodes"]["verify_goal_against_refreshed_context"]
+        self.assertIn("页面操作书", operator_node["config"]["taskInstruction"])
+        verifier_node = nodes["verify_goal_against_refreshed_context"]
         self.assertIn("goal_completed", verifier_node["config"]["taskInstruction"])
         self.assertIn("triggered_run_status", verifier_node["config"]["taskInstruction"])
+        self.assertNotIn("goal_plan", verifier_node["config"]["taskInstruction"])
+        self.assertNotIn("operation_request JSON", verifier_node["config"]["taskInstruction"])
+        self.assertNotIn("operation_request.", verifier_node["config"]["taskInstruction"])
+        self.assertEqual(
+            _read_contracts(verifier_node["reads"]),
+            [
+                {"state": "user_goal", "required": True},
+                {"state": "page_operation_context", "required": True},
+                {"state": "operation_error", "required": False},
+                {"state": "operation_result", "required": True},
+                {"state": "loop_trace", "required": False},
+            ],
+        )
         self.assertIn({"state": "operation_report", "mode": "replace"}, verifier_node["writes"])
 
     def test_toograph_page_operation_workflow_is_runtime_compatible(self) -> None:
@@ -2191,14 +2225,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual([issue.model_dump() for issue in validation.issues], [])
         self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
 
-        loop_graph = NodeSystemGraphPayload.model_validate(
-            {
-                **template["nodes"]["operation_loop"]["config"]["graph"],
-                "graph_id": "test_toograph_page_operation_loop",
-                "name": "页面操作循环",
-            }
-        )
-        cycle_tracker = build_langgraph_cycle_tracker(loop_graph, build_execution_edges(loop_graph))
+        cycle_tracker = build_langgraph_cycle_tracker(graph, build_execution_edges(graph))
         self.assertTrue(cycle_tracker["has_cycle"])
         self.assertEqual(cycle_tracker["loop_limits_by_source"], {"continue_operation_loop": 6})
 
@@ -2285,31 +2312,61 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(template["label"], "自主复盘")
         self.assertEqual(template["metadata"]["requiredActions"], ["buddy_session_recall", "buddy_home_writer"])
         self.assertEqual(template["metadata"]["permissions"], ["buddy_session_read", "buddy_home_write"])
+        self.assertEqual(
+            set(states),
+            {
+                "source_run_id",
+                "current_session_id",
+                "user_message",
+                "conversation_history",
+                "buddy_context",
+                "request_understanding",
+                "capability_result",
+                "capability_review",
+                "public_response",
+                "session_recall_context",
+                "autonomous_review",
+                "improvement_candidates",
+                "memory_update_plan",
+                "memory_review_result",
+                "memory_write_success",
+                "applied_memory_commands",
+                "skipped_memory_commands",
+                "memory_write_result",
+                "profile_update_plan",
+                "profile_review_result",
+                "profile_write_success",
+                "applied_profile_commands",
+                "skipped_profile_commands",
+                "profile_write_result",
+            },
+        )
         self.assertEqual(states["current_session_id"]["type"], "text")
         self.assertEqual(states["public_response"]["type"], "markdown")
-        self.assertEqual(states["recall_request"]["type"], "json")
-        self.assertEqual(states["buddy_session_recall_success"]["type"], "boolean")
         self.assertEqual(states["session_recall_context"]["type"], "json")
-        self.assertEqual(states["recalled_sessions"]["type"], "json")
-        self.assertEqual(states["buddy_session_recall_result"]["type"], "markdown")
         self.assertEqual(states["autonomous_review"]["type"], "json")
         self.assertEqual(states["improvement_candidates"]["type"], "json")
-        self.assertEqual(states["memory_candidates"]["type"], "json")
-        self.assertEqual(states["profile_candidates"]["type"], "json")
-        self.assertEqual(states["memory_filter_report"]["type"], "json")
         self.assertEqual(states["memory_update_plan"]["type"], "json")
         self.assertEqual(states["memory_review_result"]["type"], "markdown")
-        self.assertEqual(states["profile_update_plan"]["type"], "json")
-        self.assertEqual(states["profile_review_result"]["type"], "markdown")
         self.assertEqual(states["memory_write_success"]["type"], "boolean")
         self.assertEqual(states["applied_memory_commands"]["type"], "json")
         self.assertEqual(states["skipped_memory_commands"]["type"], "json")
         self.assertEqual(states["memory_write_result"]["type"], "markdown")
+        self.assertEqual(states["profile_update_plan"]["type"], "json")
+        self.assertEqual(states["profile_review_result"]["type"], "markdown")
         self.assertEqual(states["profile_write_success"]["type"], "boolean")
         self.assertEqual(states["applied_profile_commands"]["type"], "json")
         self.assertEqual(states["skipped_profile_commands"]["type"], "json")
         self.assertEqual(states["profile_write_result"]["type"], "markdown")
         for removed_state in [
+            "recall_request",
+            "buddy_session_recall_success",
+            "recalled_sessions",
+            "buddy_session_recall_result",
+            "memory_candidates",
+            "profile_candidates",
+            "memory_filter_report",
+            "state_1",
             "writeback_commands",
             "writeback_success",
             "writeback_result",
@@ -2336,9 +2393,7 @@ class TemplateLayoutTests(unittest.TestCase):
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
             [
                 "output_autonomous_review",
-                "output_session_recall_result",
                 "output_improvement_candidates",
-                "output_memory_filter_report",
                 "output_memory_review_result",
                 "output_applied_memory_commands",
                 "output_memory_write_result",
@@ -2347,25 +2402,36 @@ class TemplateLayoutTests(unittest.TestCase):
                 "output_profile_write_result",
             ],
         )
-        self.assertEqual(nodes["prepare_session_recall_request"]["kind"], "agent")
-        self.assertEqual(
-            nodes["prepare_session_recall_request"]["writes"],
-            [{"state": "recall_request", "mode": "replace"}],
-        )
-        self.assertIn("current_session_id", nodes["prepare_session_recall_request"]["config"]["taskInstruction"])
+        for removed_node_id in [
+            "prepare_session_recall_request",
+            "filter_memory_candidates",
+            "merge_memory_document",
+            "merge_profile_update",
+            "output_session_recall_result",
+            "output_memory_filter_report",
+        ]:
+            self.assertNotIn(removed_node_id, nodes)
         recall_node = nodes["recall_related_sessions"]
         self.assertEqual(recall_node["kind"], "agent")
         self.assertEqual(recall_node["config"]["actionKey"], "buddy_session_recall")
+        self.assertEqual(
+            _read_contracts(recall_node["reads"]),
+            [
+                {"state": "source_run_id", "required": False},
+                {"state": "current_session_id", "required": False},
+                {"state": "user_message", "required": True},
+                {"state": "conversation_history", "required": False},
+                {"state": "request_understanding", "required": False},
+                {"state": "public_response", "required": True},
+            ],
+        )
         self.assertEqual(
             recall_node["config"]["actionBindings"],
             [
                 {
                     "actionKey": "buddy_session_recall",
                     "outputMapping": {
-                        "success": "buddy_session_recall_success",
                         "session_recall_context": "session_recall_context",
-                        "sessions": "recalled_sessions",
-                        "result": "buddy_session_recall_result",
                     },
                 }
             ],
@@ -2373,51 +2439,46 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(
             {binding["state"]: binding["mode"] for binding in recall_node["writes"]},
             {
-                "buddy_session_recall_success": "replace",
                 "session_recall_context": "replace",
-                "recalled_sessions": "replace",
-                "buddy_session_recall_result": "replace",
             },
         )
-        extract_node = nodes["extract_memory_candidates"]
-        self.assertEqual(extract_node["kind"], "agent")
-        self.assertEqual(extract_node["config"]["thinkingMode"], "low")
+        self.assertIn("current_session_id", recall_node["config"]["taskInstruction"])
+        self.assertNotIn("recall_request", recall_node["config"]["taskInstruction"])
+        review_node = nodes["draft_autonomous_review"]
+        self.assertEqual(review_node["kind"], "agent")
+        self.assertEqual(review_node["config"]["thinkingMode"], "medium")
         self.assertEqual(
-            extract_node["writes"],
+            _read_contracts(review_node["reads"]),
+            [
+                {"state": "source_run_id", "required": False},
+                {"state": "user_message", "required": True},
+                {"state": "conversation_history", "required": False},
+                {"state": "buddy_context", "required": True},
+                {"state": "request_understanding", "required": False},
+                {"state": "capability_result", "required": False},
+                {"state": "capability_review", "required": False},
+                {"state": "public_response", "required": True},
+                {"state": "session_recall_context", "required": False},
+            ],
+        )
+        self.assertEqual(
+            review_node["writes"],
             [
                 {"state": "autonomous_review", "mode": "replace"},
                 {"state": "improvement_candidates", "mode": "replace"},
-                {"state": "memory_candidates", "mode": "replace"},
-                {"state": "profile_candidates", "mode": "replace"},
-            ],
-        )
-        self.assertIn("session_recall_context", extract_node["config"]["taskInstruction"])
-        self.assertIn("profile_candidates", extract_node["config"]["taskInstruction"])
-        self.assertIn(
-            'Map "call yourself X from now on" and "rename yourself to X" to field=name',
-            extract_node["config"]["taskInstruction"],
-        )
-        self.assertEqual(nodes["filter_memory_candidates"]["writes"], [{"state": "memory_filter_report", "mode": "replace"}])
-        self.assertEqual(
-            nodes["merge_memory_document"]["writes"],
-            [
                 {"state": "memory_update_plan", "mode": "replace"},
                 {"state": "memory_review_result", "mode": "replace"},
-            ],
-        )
-        self.assertIn("完整的新 MEMORY.md 内容", nodes["merge_memory_document"]["config"]["taskInstruction"])
-        self.assertEqual(
-            nodes["merge_profile_update"]["writes"],
-            [
                 {"state": "profile_update_plan", "mode": "replace"},
                 {"state": "profile_review_result", "mode": "replace"},
             ],
         )
-        self.assertIn("profile.update", nodes["merge_profile_update"]["config"]["taskInstruction"])
-        self.assertIn("requires_confirmation", nodes["merge_profile_update"]["config"]["taskInstruction"])
+        self.assertIn("session_recall_context", review_node["config"]["taskInstruction"])
+        self.assertIn("memory_update_plan", review_node["config"]["taskInstruction"])
+        self.assertIn("profile_update_plan", review_node["config"]["taskInstruction"])
+        self.assertNotIn("Do not call buddy_home_writer", review_node["config"]["taskInstruction"])
         self.assertIn(
-            "A rename/call-yourself request must update payload.name",
-            nodes["merge_profile_update"]["config"]["taskInstruction"],
+            'Map "call yourself X from now on" and "rename yourself to X" to payload.name',
+            review_node["config"]["taskInstruction"],
         )
         self.assertEqual(nodes["has_memory_updates"]["kind"], "condition")
         self.assertEqual(
@@ -2433,6 +2494,13 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(writer_node["kind"], "agent")
         self.assertEqual(writer_node["config"]["actionKey"], "buddy_home_writer")
         self.assertEqual(
+            _read_contracts(writer_node["reads"]),
+            [
+                {"state": "source_run_id", "required": False},
+                {"state": "memory_update_plan", "required": True},
+            ],
+        )
+        self.assertEqual(
             writer_node["config"]["actionBindings"],
             [
                 {
@@ -2446,9 +2514,18 @@ class TemplateLayoutTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertIn("memory_update_plan.commands", writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
+        self.assertIn("memory_document.update", writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
         profile_writer_node = nodes["write_profile_updates"]
         self.assertEqual(profile_writer_node["kind"], "agent")
         self.assertEqual(profile_writer_node["config"]["actionKey"], "buddy_home_writer")
+        self.assertEqual(
+            _read_contracts(profile_writer_node["reads"]),
+            [
+                {"state": "source_run_id", "required": False},
+                {"state": "profile_update_plan", "required": True},
+            ],
+        )
         self.assertEqual(
             profile_writer_node["config"]["actionBindings"],
             [
@@ -2464,22 +2541,7 @@ class TemplateLayoutTests(unittest.TestCase):
             ],
         )
         self.assertIn("profile.update", profile_writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
-        self.assertIn("For rename/call-yourself writebacks, the planned payload must use name", profile_writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
-        self.assertIn({"source": "prepare_session_recall_request", "target": "recall_related_sessions"}, template["edges"])
-        self.assertIn({"source": "recall_related_sessions", "target": "extract_memory_candidates"}, template["edges"])
-        self.assertIn({"source": "recall_related_sessions", "target": "output_session_recall_result"}, template["edges"])
-        self.assertIn({"source": "extract_memory_candidates", "target": "filter_memory_candidates"}, template["edges"])
-        self.assertIn({"source": "filter_memory_candidates", "target": "merge_memory_document"}, template["edges"])
-        self.assertIn({"source": "extract_memory_candidates", "target": "merge_profile_update"}, template["edges"])
-        self.assertIn({"source": "merge_memory_document", "target": "output_autonomous_review"}, template["edges"])
-        self.assertIn({"source": "merge_memory_document", "target": "output_improvement_candidates"}, template["edges"])
-        self.assertIn({"source": "merge_memory_document", "target": "output_memory_filter_report"}, template["edges"])
-        self.assertIn({"source": "merge_memory_document", "target": "has_memory_updates"}, template["edges"])
-        self.assertIn({"source": "merge_profile_update", "target": "has_profile_updates"}, template["edges"])
-        self.assertIn({"source": "write_memory_updates", "target": "output_applied_memory_commands"}, template["edges"])
-        self.assertIn({"source": "write_memory_updates", "target": "output_memory_write_result"}, template["edges"])
-        self.assertIn({"source": "write_profile_updates", "target": "output_applied_profile_commands"}, template["edges"])
-        self.assertIn({"source": "write_profile_updates", "target": "output_profile_write_result"}, template["edges"])
+        self.assertIn("planned payload must use name", profile_writer_node["config"]["actionInstructionBlocks"]["buddy_home_writer"]["content"])
         self.assertEqual(
             template["conditional_edges"],
             [
@@ -2499,6 +2561,29 @@ class TemplateLayoutTests(unittest.TestCase):
                         "exhausted": "output_profile_review_result",
                     },
                 },
+            ],
+        )
+        self.assertEqual(
+            template["edges"],
+            [
+                {"source": "input_source_run_id", "target": "recall_related_sessions"},
+                {"source": "input_current_session_id", "target": "recall_related_sessions"},
+                {"source": "input_user_message", "target": "recall_related_sessions"},
+                {"source": "input_conversation_history", "target": "recall_related_sessions"},
+                {"source": "input_request_understanding", "target": "recall_related_sessions"},
+                {"source": "input_public_response", "target": "recall_related_sessions"},
+                {"source": "input_buddy_context", "target": "draft_autonomous_review"},
+                {"source": "input_capability_result", "target": "draft_autonomous_review"},
+                {"source": "input_capability_review", "target": "draft_autonomous_review"},
+                {"source": "recall_related_sessions", "target": "draft_autonomous_review"},
+                {"source": "draft_autonomous_review", "target": "output_autonomous_review"},
+                {"source": "draft_autonomous_review", "target": "output_improvement_candidates"},
+                {"source": "draft_autonomous_review", "target": "has_memory_updates"},
+                {"source": "draft_autonomous_review", "target": "has_profile_updates"},
+                {"source": "write_memory_updates", "target": "output_applied_memory_commands"},
+                {"source": "write_memory_updates", "target": "output_memory_write_result"},
+                {"source": "write_profile_updates", "target": "output_applied_profile_commands"},
+                {"source": "write_profile_updates", "target": "output_profile_write_result"},
             ],
         )
 

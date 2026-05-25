@@ -80,7 +80,9 @@ test("buildPageOperationBook filters buddy self surfaces and disabled targets", 
 
   assert.deepEqual(book.allowedOperations.map((item) => item.targetId), ["app.nav.runs", "editor.graph.playback"]);
   assert.deepEqual(book.unavailable.map((item) => item.targetId), ["settings.disabled"]);
-  assert.match(book.forbidden.join("\n"), /伙伴页面、伙伴浮窗、伙伴形象/);
+  const forbiddenText = book.forbidden.join("\n");
+  assert.match(forbiddenText, /未列出的页面目标不可操作/);
+  assert.doesNotMatch(forbiddenText, /伙伴页面|伙伴浮窗|伙伴形象|伙伴调试|Buddy|app\.nav\.buddy/);
 });
 
 test("buildPageOperationBook keeps editor canvas affordances addressable by semantic target id", () => {
@@ -207,6 +209,7 @@ test("formatPageOperationBookLines renders commands without selectors or coordin
   assert.match(text, /commands: focus settings\.modelProviders\.local\.baseUrl/);
   assert.match(text, /type settings\.modelProviders\.local\.baseUrl <text>/);
   assert.doesNotMatch(text, /querySelector|selector|x:|y:/i);
+  assert.doesNotMatch(text, /伙伴页面|伙伴浮窗|伙伴形象|伙伴调试|Buddy|app\.nav\.buddy/);
 });
 
 test("formatPageOperationBookLines keeps the prompt preview bounded for dense editor pages", () => {

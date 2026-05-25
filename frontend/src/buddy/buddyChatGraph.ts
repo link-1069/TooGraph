@@ -224,14 +224,18 @@ export function buildBuddyReviewGraph(template: TemplateRecord, input: BuildBudd
   const outputDefaults: Record<string, unknown> = {
     autonomous_review: {},
     improvement_candidates: [],
-    memory_candidates: [],
-    memory_filter_report: { accepted: [], rejected: [] },
     memory_update_plan: { has_updates: false, commands: [] },
     memory_review_result: "",
     memory_write_success: false,
     applied_memory_commands: [],
     skipped_memory_commands: [],
     memory_write_result: "",
+    profile_update_plan: { has_updates: false, requires_confirmation: false, commands: [] },
+    profile_review_result: "",
+    profile_write_success: false,
+    applied_profile_commands: [],
+    skipped_profile_commands: [],
+    profile_write_result: "",
   };
 
   for (const [stateName, value] of Object.entries(outputDefaults)) {
