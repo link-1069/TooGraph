@@ -10,6 +10,7 @@ from app.core.storage.database import get_connection
 
 DETAIL_KEYS = (
     "max_revision_round",
+    "stop_reason",
     "selected_actions",
     "action_outputs",
     "selected_tools",
@@ -659,6 +660,7 @@ def _build_run_state(
             "completed_at": run.get("completed_at"),
             "duration_ms": run.get("duration_ms"),
             "final_score": run.get("final_score"),
+            "stop_reason": state.get("stop_reason") or artifact_payload.get("stop_reason") or "",
             "final_result": run.get("final_result") or "",
             "graph_snapshot": current_snapshot_payload.get("graph_snapshot") or {},
             "state_snapshot": current_snapshot_payload.get("state_snapshot") or {},
@@ -720,6 +722,7 @@ def _run_artifacts_payload(run_state: dict[str, Any]) -> dict[str, Any]:
         "activity_events",
         "output_previews",
         "saved_outputs",
+        "stop_reason",
         "state_events",
         "state_stream_events",
         "state_values",

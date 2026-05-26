@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "session_search_context_loader",
+  "name": "Session Search Context Loader",
+  "description": "A deterministic Buddy session search tool that turns FTS/trigram/LIKE history hits into an auditable context_package with message refs, snippets, session lineage, budget metadata, and warnings.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "query",
+      "name": "Query",
+      "valueType": "text",
+      "description": "Search query used to find Buddy history messages."
+    },
+    {
+      "key": "current_session_id",
+      "name": "Current Session ID",
+      "valueType": "text",
+      "description": "Optional current Buddy session id; matching lineage is excluded from discover results."
+    },
+    {
+      "key": "limit",
+      "name": "Limit",
+      "valueType": "number",
+      "description": "Maximum hit sessions to return."
+    },
+    {
+      "key": "window",
+      "name": "Window",
+      "valueType": "number",
+      "description": "Message window around each hit."
+    },
+    {
+      "key": "bookend",
+      "name": "Bookend",
+      "valueType": "number",
+      "description": "Number of session bookend messages to include when available."
+    },
+    {
+      "key": "sort",
+      "name": "Sort",
+      "valueType": "text",
+      "description": "rank, newest, or oldest."
+    },
+    {
+      "key": "role_filter",
+      "name": "Role Filter",
+      "valueType": "json",
+      "description": "Optional roles to search, usually user and assistant."
+    },
+    {
+      "key": "max_chars",
+      "name": "Max Chars",
+      "valueType": "number",
+      "description": "Maximum rendered session search context characters."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Loader status."
+    },
+    {
+      "key": "session_search_context",
+      "name": "Session Search Context",
+      "valueType": "json",
+      "description": "Session history search context_package."
+    },
+    {
+      "key": "session_search_report",
+      "name": "Session Search Report",
+      "valueType": "json",
+      "description": "Search query, hit message ids, session lineage, source refs, budget, and warnings."
+    }
+  ]
+}

@@ -68,6 +68,35 @@ Buddy / Agent entry
 
 ## 3. 差距与解决方案
 
+本节按能力差距逐项展开。每个差距都用同一套阅读方式：
+
+- Hermes 能力：`demo/hermes-agent` 中已经具备的能力形态。
+- TooGraph 差距：当前架构中缺失或成熟度不足的部分。
+- 解决方案：在 TooGraph 图优先架构下应该怎么补。
+- 验收标准：开发完成后如何判断真的追上，而不是只做了一个表面功能。
+
+### 3.0 差距落地总表
+
+| 差距点 | Hermes 参考 | TooGraph 目标形态 | 解决路径 | 关键产物 | 优先级 |
+| --- | --- | --- | --- | --- | --- |
+| Agent loop 鲁棒性 | `run_agent.py`、`agent/iteration_budget.py`、`agent/tool_executor.py` | 默认 Buddy 主循环有预算、停止原因、失败分类、诊断输出 | 用 `agent_loop_control` state 和 `agent_loop_guard` Tool 把循环控制图化；run record 写标准 stop reason；RunDetail 和胶囊读取同一事实源 | `agent_loop_guard`、stop reason schema、RunDetail Agent Diagnostic | P0 |
+| Prompt / Context Assembly | `agent/prompt_builder.py`、`agent/system_prompt.py`、`agent/context_engine.py` | 所有上下文都以 `context_package` 进入 LLM，来源与 authority 可审计 | Buddy Home、历史、记忆、知识库、网页、能力结果统一包装为 context package；prompt assembly 按 authority 分段渲染；RunDetail 展示裁剪与来源 | `context_package` 合同、Context Assembly 面板、source refs | P0 |
+| Session persistence 与搜索 | `hermes_state.py`、`tools/session_search_tool.py` | 历史是原子消息 + 摘要 + lineage + run refs，而不是每轮复制全文 | 完善 `buddy_sessions`、`buddy_messages`、`session_summaries`、`context_assemblies`、run/message links；FTS + embedding 混合搜索 | session search API、lineage 过滤、历史证据展开 | P1 |
+| 长期记忆与 Embedding 召回 | `tools/memory_tool.py`、`agent/memory_manager.py`、`plugins/memory/*` | 文件记忆负责稳定注入，DB 记忆负责可检索召回，二者互相引用但不互相替代 | 保持 Buddy Home 文件线；DB `memory_entries` 记录 kind、confidence、source refs、revision；embedding job queue + hybrid recall + rerank | embedding model registry、embedding jobs、hybrid recall report | P1 |
+| Background Review | `agent/background_review.py` | 主回复完成后触发独立后台复盘图，不污染可见回复路径 | 可见 run 完成后 enqueue `buddy_autonomous_review`；复盘读取 source run snapshot；写入 memory/file revision 或 improvement candidate；失败可见可重跑 | background run queue、review report、source_run_id links | P1 |
+| 自我改进与 Curator | `agent/curator.py`、`hermes_cli/curator.py` | 运行经验变成可审查候选，候选经过 diff、验证、approval、revision | 定义 `improvement_candidate`；新增 improvement workflow 和 capability curator；官方资产只生成候选，应用改动走 revision | improvement candidates、curator report、eval case | P2 |
+| Capability Selector 与能力路由 | `model_tools.py`、`tools/registry.py`、`toolsets.py` | selector 不只选择能力，还记录候选评分、拒绝理由、权限和 fallback | 统一 capability profile；selector 输出 score breakdown、rejected candidates、permission summary；失败写 usage event 供下一次选择参考 | capability profile、usage events、selection trace | P1 |
+| Action / Tool / Subgraph 生态 | `tools/*`、`plugins/*`、`toolsets.py` | 官方能力覆盖常用低层操作，每个能力有合同、权限、失败模式和测试 | Core Tools、Workspace Actions、Web Actions、Knowledge Tools、Graph Actions、Buddy Actions 分层建设；manifest 增强 permissions/scopes/artifacts/eval | capability catalog、能力准入规范、官方能力包 | P1-P2 |
+| Scheduler / Cron / 后台任务 | `cron/jobs.py`、`cron/scheduler.py`、`tools/cronjob_tools.py` | 定时任务是 scheduled graph job，每次运行都是可审计 graph run | 建 `scheduled_graph_jobs` 和 job runs；后台 tick 到点创建图运行；支持暂停、立即运行、失败记录、delivery target | Scheduler store/runtime/UI、job run history | P2 |
+| Delegation / Subagents / Kanban | `tools/delegate_tool.py`、`hermes_cli/kanban_db.py`、`tools/kanban_tools.py` | 委派表达为 Subgraph worker，主图负责拆分、预算、合并结果 | 定义 `worker_task_packet` 和 `worker_result_package`；Subgraph worker 模板执行受限能力；merge/review 节点聚合 | worker packet/result schema、worker run links、并发预算 | P2-P3 |
+| Provider Runtime 与模型能力矩阵 | `providers/base.py`、`hermes_cli/runtime_provider.py`、`agent/model_metadata.py`、`agent/transports/*` | 所有模型调用走同一 resolver，知道 provider 能力、fallback、repair trace | 扩展 provider profile；LLM、Action planning、review、scheduler、embedding/rerank 共用 runtime resolver；结构化输出 repair + fallback | provider capability matrix、fallback policy、repair trace | P2 |
+| 上下文压缩与 Prompt Cache | `agent/conversation_compression.py`、`agent/context_compressor.py`、`agent/prompt_caching.py` | 压缩是可审计图分支，摘要带 source refs，稳定上下文不反复破坏缓存 | 标准化压缩输出；保存 prompt snapshot 的引用而不是递归全文；复盘写入只影响下一轮 | compression report、summary revision、budget panel | P1 |
+| 权限、安全与注入防护 | `tools/approval.py`、`tools/path_security.py`、`tools/tirith_security.py`、`agent/file_safety.py`、`agent/redact.py` | 高风险副作用、注入风险和 secret 暴露都有通用 guardrail | context scanner 检查外部内容；operation-level approval；官方资产保护；run record 脱敏；定时任务不绕过权限 | context scanner、permission profile、approval audit | P1-P2 |
+| Plugin / Extension 体系 | `hermes_cli/plugins.py`、`plugins/*` | 插件可提供 Action/Tool/template/model provider/hooks，并有生命周期与权限 | 定义 TooGraph plugin manifest；install/enable/validate/update/uninstall；插件能力进入统一 capability catalog | plugin manifest、Plugin 页面、hook runtime | P3 |
+| Gateway / 多入口 / 消息平台 | `gateway/run.py`、`gateway/session.py`、`gateway/platforms/*`、`tui_gateway/*` | Web Buddy、API、CLI、cron、webhook 共用 session routing 和 run store | 定义 `agent_entrypoint`；entrypoint + external user + conversation -> Buddy session；CLI 先行，平台 gateway 后置 | entrypoint abstraction、CLI runner、platform session mapping | P3 |
+| 诊断与可观测性 | `hermes_cli/logs.py`、`hermes_cli/status.py`、`tui_gateway/*` | 用户能看到一次 Agent run 的上下文、能力选择、预算、停止原因和错误 | Agent Diagnostic view 聚合 context、recall、selection、capability result、loop budget、errors；后台任务生成 report artifact | diagnostic view、capsule diagnostics、metrics | P1-P2 |
+| Eval 与质量门禁 | `tests/*` | 主循环、召回、selector、压缩、自我改进、scheduler 都有自动评测 | 建 Agent eval suites；官方模板变更必须跑相关 eval；Action/Tool 包自带测试或 eval case | eval suites、quality reports、template gate | P1 |
+
 ### 3.1 Agent Loop 鲁棒性
 
 Hermes 能力：
@@ -81,6 +110,13 @@ TooGraph 差距：
 - 图模板能表达循环，但缺少统一的 Agent loop runtime contract。
 - Condition 节点有局部 `loopLimit`，但缺少跨整张图的 capability budget、iteration budget、stop reason、retry policy。
 - 失败后用户很难判断是模型问题、能力问题、权限问题、上下文问题还是图结构问题。
+
+当前进展：
+
+- 已新增官方 `agent_loop_guard` Tool，维护 `agent_loop_control`、能力调用计数、失败计数、retry budget 和标准 stop reason。
+- 官方 `buddy_autonomous_loop` 已接入 `agent_loop_guard`，并通过 schema-backed state 暴露 `agent_loop_report`、`agent_loop_stop_reason`、`agent_loop_should_continue` 和 `agent_loop_should_retry`。
+- 已有模板测试覆盖 Buddy 主循环的 guard 节点、状态绑定和预算耗尽 eval case；新增 Tool 单测覆盖 catalog、继续、能力预算耗尽和失败重试/停止判定。
+- 后续仍需把 run record、RunDetail 和 Buddy 胶囊的诊断展示进一步统一到这些 guard state，并补齐 provider_failed、permission_required、context_budget_exhausted 等端到端 UI 场景。
 
 解决方案：
 
@@ -133,6 +169,19 @@ TooGraph 差距：
 - Buddy Home 已有文件结构，但上下文注入、数据库召回、知识库召回和能力结果还没有统一上下文包合同贯穿所有模板。
 - 运行详情能看到部分 state，但对“模型到底看到了什么上下文、来源是什么、权威级别是什么”还不够清晰。
 
+当前进展：
+
+- `buddy_history_context_loader` 已将 `conversation_history` 输出升级为 `context_package`，包内记录 `source_kind=session`、`authority=history`、来源 refs、预算、warnings 和嵌套 `context_assembly_ref`。
+- LLM prompt assembly、上下文压力检查、RunDetail 上下文审计和 Buddy graph fallback 已能识别并展开 `context_package`。
+- `buddy_session_recall` 已输出 `source_kind=memory`、`authority=evidence` 的 `context_package`，召回的 Buddy messages、memory entries 和 graph outputs 可通过同一路径展开。
+- `buddy_home_context_loader` 已把 Buddy Home 文件选择升级为 `source_kind=buddy_home` 的 `context_package`；官方 Buddy 主循环保留 Buddy Home input 节点，但 LLM 读取的是带 `buddy_home_file` source refs、item authority、预算和 warnings 的组装包。
+- `knowledge_context_loader` 已把 `search_knowledge` 结果升级为 `source_kind=knowledge`、`authority=evidence` 的 `context_package`；知识库 chunk 以 `knowledge_chunk` source ref 写入 context assembly，可从 `knowledge_chunks` 数据库事实重新展开。
+- `capability_context_loader` 已把 Action、Tool、Subgraph 的 `result_package` 输出升级为 `source_kind=capability`、`authority=evidence` 的 `context_package`；输出项以 `capability_result_output` source ref 写入 context assembly，优先从 `graph_runs.detail_json.state_values` 重新展开。
+- `runtime_context_loader` 已把图运行时上下文升级为 `source_kind=runtime`、`authority=context_only` 的 `context_package`；运行时字段以 `runtime_context_item` source ref 写入 context assembly，可从 source blob 重新展开，并默认过滤敏感 key。
+- `page_context_loader` 已把页面操作上下文、页面快照文本、可用页面命令、页面事实和操作结果升级为 `source_kind=page`、`authority=context_only` 的 `context_package`；页面分区以 `page_context_item` source ref 写入 context assembly，可从 source blob 重新展开。
+- `web_context_loader` 已把网页搜索结果和已保存网页正文 artifact 升级为 `source_kind=web`、`authority=evidence` 的 `context_package`；网页来源以 `web_source_document` 或 `web_search_result` source ref 写入 context assembly，优先从 capability artifact 重新展开。
+- 核心上下文来源已经收敛到同一 `context_package` 合同；后续重点是把更多官方模板接入这些 loader，并完善 RunDetail 的上下文面板交互。
+
 解决方案：
 
 1. 定义标准 `context_package`：
@@ -179,6 +228,13 @@ TooGraph 差距：
 - Buddy messages 已存在，但 session lineage、context assembly refs、run refs、summary refs 和搜索投影还需要更系统地使用。
 - 当前 UI 还没有一个清晰的“历史查询/证据展开”视图。
 
+当前进展：
+
+- `buddy_sessions`、`buddy_messages`、`buddy_message_revisions`、`buddy_message_run_refs` 已进入统一数据库，消息 FTS 和 trigram FTS 会随消息写入更新。
+- `buddy_session_recall` 已能用 FTS/trigram/LIKE fallback 发现历史消息，并默认排除当前 session lineage，召回结果输出 `context_package`。
+- 已新增官方 `session_search_context_loader` Tool，把显式历史搜索 query 转成 `source_kind=session`、`authority=history` 的 `context_package`；结果包含 message ids、session lineage、hit snippets、source refs、预算和 warnings，可从 `buddy_messages` 原子事实重新展开。
+- 后续仍需补齐面向 UI/API 的 `search_sessions`、`search_run_context` 视图，并把历史查询/证据展开做成可交互页面。
+
 解决方案：
 
 1. 明确 session 数据模型：
@@ -222,6 +278,16 @@ TooGraph 差距：
 - 已有 Buddy Home 文件线和数据库记忆线，但写入、召回、去重、embedding、证据和评测还需要统一。
 - 记忆复盘已能写低风险文件，但 DB 结构化记忆和向量召回还没形成完整闭环。
 
+当前进展：
+
+- 统一 retrieval/embedding 表已支持 `embedding_models`、`embedding_jobs`、`embedding_vectors` 和 hybrid audit。
+- 已新增 `process_pending_embedding_jobs` 与官方 `embedding_job_processor` Tool；`hashing-*` / `local-hash` 模型可以显式处理 pending embedding jobs，生成 deterministic embedding 并完成 job。
+- embedding job processor 已接入 Model Providers 的 OpenAI-compatible `/embeddings` 调用；非 hashing 的 embedding model 会按 `provider_key/model` 解析保存的 provider 配置、调用真实 provider、校验维度并写回 `embedding_vectors`。
+- 已新增官方 `embedding_model_registry` Tool，用于通过可审计图运行注册、启用和列出 embedding models。
+- 记忆写入和更新后会根据 enabled embedding models 自动生成 dirty queue；内容更新会把旧 content hash 的 pending/running job 标记为 superseded，并为新内容排队。
+- 已新增官方 `embedding_maintenance` 模板，把 `embedding_job_processor` 包装为可审计图运行，输出处理明细和完成数量。
+- 仍需补齐 embedding model 选择 UI、调度触发和 rebuild UI。
+
 解决方案：
 
 1. 双线记忆保持：
@@ -239,7 +305,8 @@ TooGraph 差距：
 3. embedding pipeline：
    - 写入 memory/message/run summary 时生成 chunk。
    - 本地 hash embedding 保留为 deterministic fallback。
-   - Model Providers 增加真实 embedding provider 配置。
+   - Model Providers 的 OpenAI-compatible provider 作为真实 embedding 执行路径。
+   - 增加 embedding model 的注册、启用、维度配置和重建入口。
    - 支持 rebuild、incremental update、dirty queue。
 4. Hybrid recall：
    - query planning 生成关键词 query 和 vector query。
@@ -1091,7 +1158,31 @@ TooGraph 可以认为“追上 Hermes Agent 核心能力”的最低标准：
 - 不把完整聊天全文作为每轮 run 的递归事实源。
 - 不让召回内容、摘要或生成记忆变成更高优先级指令。
 
-## 8. 下一步开发建议
+## 8. Hermes 源码对照索引
+
+后续开发调研时，优先从下列文件验证 Hermes 的实际行为，再把能力翻译为 TooGraph 图、Action、Tool、Subgraph 和存储合同。
+
+| 能力域 | Hermes 参考文件 | TooGraph 翻译重点 |
+| --- | --- | --- |
+| 主 Agent loop | `demo/hermes-agent/run_agent.py`、`demo/hermes-agent/agent/conversation_loop.py`、`demo/hermes-agent/agent/iteration_budget.py`、`demo/hermes-agent/agent/tool_executor.py` | 不搬 monolithic loop；拆成图模板循环、guard Tool、stop reason、run diagnostics |
+| 模型调用与 fallback | `demo/hermes-agent/providers/base.py`、`demo/hermes-agent/hermes_cli/runtime_provider.py`、`demo/hermes-agent/agent/chat_completion_helpers.py`、`demo/hermes-agent/agent/transports/` | 统一 provider profile 与 runtime resolver；记录实际 provider/model、repair 和 fallback |
+| Prompt 构造 | `demo/hermes-agent/agent/prompt_builder.py`、`demo/hermes-agent/agent/system_prompt.py`、`demo/hermes-agent/agent/context_engine.py`、`demo/hermes-agent/agent/subdirectory_hints.py` | 统一 `context_package`；按 authority 渲染；保留来源、预算、裁剪和注入风险 |
+| 会话与搜索 | `demo/hermes-agent/hermes_state.py`、`demo/hermes-agent/tools/session_search_tool.py` | Buddy messages、summaries、lineage、context assemblies、run refs 形成可查询事实源 |
+| 记忆 | `demo/hermes-agent/tools/memory_tool.py`、`demo/hermes-agent/agent/memory_manager.py`、`demo/hermes-agent/agent/memory_provider.py`、`demo/hermes-agent/plugins/memory/` | 文件记忆 + DB 记忆双线；embedding queue；hybrid recall；evidence 和 revision |
+| 后台复盘 | `demo/hermes-agent/agent/background_review.py` | 独立后台图运行；只读 source run snapshot；写 memory 或 candidate；失败不影响主回复 |
+| 技能/能力整理 | `demo/hermes-agent/agent/curator.py`、`demo/hermes-agent/hermes_cli/curator.py`、`demo/hermes-agent/tools/skill_usage.py` | capability curator 图；输出整理候选、报告、测试建议；官方资产保护 |
+| Tool registry / toolsets | `demo/hermes-agent/model_tools.py`、`demo/hermes-agent/tools/registry.py`、`demo/hermes-agent/toolsets.py` | Action/Tool/Subgraph 统一 capability profile；selector 用同一 catalog |
+| 低层工具能力 | `demo/hermes-agent/tools/file_tools.py`、`demo/hermes-agent/tools/terminal_tool.py`、`demo/hermes-agent/tools/web_tools.py`、`demo/hermes-agent/tools/browser_tool.py`、`demo/hermes-agent/tools/mcp_tool.py` | 按权限和副作用拆成官方 Action/Tool；输出 artifacts、diff、revision 和错误分类 |
+| Cron / Scheduler | `demo/hermes-agent/cron/jobs.py`、`demo/hermes-agent/cron/scheduler.py`、`demo/hermes-agent/tools/cronjob_tools.py` | scheduled graph jobs；每次触发生成 graph run；失败、重试和投递目标可审计 |
+| 委派与 Kanban | `demo/hermes-agent/tools/delegate_tool.py`、`demo/hermes-agent/hermes_cli/kanban_db.py`、`demo/hermes-agent/tools/kanban_tools.py`、`demo/hermes-agent/hermes_cli/kanban_swarm.py` | Subgraph worker protocol；worker task/result package；并发预算；父图合并 |
+| 压缩与缓存 | `demo/hermes-agent/agent/conversation_compression.py`、`demo/hermes-agent/agent/context_compressor.py`、`demo/hermes-agent/agent/prompt_caching.py` | 压缩图输出 summary refs；run 保存 prompt/context assembly snapshot；稳定上下文只影响下一轮 |
+| 权限与安全 | `demo/hermes-agent/tools/approval.py`、`demo/hermes-agent/tools/path_security.py`、`demo/hermes-agent/tools/tirith_security.py`、`demo/hermes-agent/agent/file_safety.py`、`demo/hermes-agent/agent/redact.py`、`demo/hermes-agent/agent/message_sanitization.py` | operation-level approval；context scanner；secret 脱敏；资产保护；定时任务不绕过权限 |
+| 插件体系 | `demo/hermes-agent/hermes_cli/plugins.py`、`demo/hermes-agent/plugins/` | TooGraph plugin manifest；安装/启用/校验/升级；插件能力进入 selector |
+| 多入口与网关 | `demo/hermes-agent/gateway/run.py`、`demo/hermes-agent/gateway/session.py`、`demo/hermes-agent/gateway/platforms/`、`demo/hermes-agent/tui_gateway/` | `agent_entrypoint` 抽象；平台 session routing；CLI/API/gateway 共用 run store |
+| 诊断与 TUI | `demo/hermes-agent/hermes_cli/logs.py`、`demo/hermes-agent/hermes_cli/status.py`、`demo/hermes-agent/tui_gateway/server.py`、`demo/hermes-agent/ui-tui/src/` | RunDetail/Buddy 胶囊显示关键诊断，而不是暴露 raw JSON |
+| 测试与回归 | `demo/hermes-agent/tests/` | 为每个核心 Agent 能力建立 eval suite 和包级测试 |
+
+## 9. 下一步开发建议
 
 最合理的下一份开发计划应从阶段 A 开始：
 

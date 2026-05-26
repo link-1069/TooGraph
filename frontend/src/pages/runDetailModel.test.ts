@@ -223,6 +223,21 @@ test("listRunOutputArtifacts maps exported outputs into renderable cards", () =>
   ]);
 });
 
+test("buildRunStatusFacts includes stop reason when available", () => {
+  const facts = buildRunStatusFacts(createRunDetail({ stop_reason: "capability_budget_exhausted" }));
+
+  assert.deepEqual(
+    facts.map((fact) => [fact.key, fact.value]),
+    [
+      ["status", "completed"],
+      ["stopReason", "capability_budget_exhausted"],
+      ["current", "已结束"],
+      ["duration", "—"],
+      ["revision", "0"],
+    ],
+  );
+});
+
 test("buildRunContextAudit summarizes context assembly refs without copying source text", () => {
   const audit = buildRunContextAudit(
     createRunDetail({
@@ -257,9 +272,66 @@ test("buildRunContextAudit summarizes context assembly refs without copying sour
       renderedHash: "sha256:abc",
       sourceCount: 3,
       sourceKinds: ["buddy_message", "memory_entry"],
+      packageId: "",
+      packageSourceKind: "",
+      packageAuthority: "",
+      budgetLabel: "",
+      warningCount: 0,
     },
   ]);
   assert.equal(audit.contextSourceCount, 3);
+});
+
+test("buildRunContextAudit summarizes context packages and nested assembly refs", () => {
+  const audit = buildRunContextAudit(
+    createRunDetail({
+      state_snapshot: {
+        values: {
+          conversation_history: {
+            kind: "context_package",
+            package_id: "pkg_history_1",
+            source_kind: "session",
+            authority: "history",
+            items: [
+              { id: "msg_1", source_ref: { source_kind: "buddy_message", source_id: "msg_1" } },
+              { id: "summary_1", source_ref: { source_kind: "buddy_session_summary", source_id: "session_summary" } },
+            ],
+            context_ref: {
+              kind: "context_assembly_ref",
+              assembly_id: "ctx_pkg_1",
+              target_state_key: "conversation_history",
+              renderer_key: "buddy_history",
+              renderer_version: "1",
+              rendered_content_hash: "sha256:def",
+              source_count: 2,
+            },
+            budget: { used_chars: 128, source_chars: 256, omitted_count: 1 },
+            warnings: [{ code: "history_trimmed", message: "Older messages were omitted." }],
+          },
+        },
+        last_writers: {},
+      },
+    }),
+  );
+
+  assert.deepEqual(audit.assemblies, [
+    {
+      key: "ctx_pkg_1",
+      assemblyId: "ctx_pkg_1",
+      targetStateKey: "conversation_history",
+      rendererKey: "buddy_history",
+      rendererVersion: "1",
+      renderedHash: "sha256:def",
+      sourceCount: 2,
+      sourceKinds: ["buddy_message", "buddy_session_summary"],
+      packageId: "pkg_history_1",
+      packageSourceKind: "session",
+      packageAuthority: "history",
+      budgetLabel: "used 128 / source 256 / omitted 1",
+      warningCount: 1,
+    },
+  ]);
+  assert.equal(audit.contextSourceCount, 2);
 });
 
 test("buildRunContextAudit summarizes retrieval query and source refs", () => {

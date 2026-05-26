@@ -153,6 +153,96 @@ class BuddyContextPressureToolTests(unittest.TestCase):
         self.assertEqual(result["reason"], "history_pressure")
         self.assertGreaterEqual(result["context_budget_report"]["rendered_history_chars"], 6000)
 
+    def test_pressure_check_measures_context_package_rendered_history(self) -> None:
+        module = _load_pressure_tool_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir), patch(
+                "app.core.storage.database.DB_PATH",
+                data_dir / "toograph.db",
+            ):
+                database.initialize_storage()
+                long_history = "context package 应按引用展开后的正文计量。" * 420
+                with sqlite3.connect(database.DB_PATH) as connection:
+                    connection.execute(
+                        """
+                        INSERT INTO buddy_sessions (
+                            session_id, title, archived, deleted, source, created_at, updated_at
+                        ) VALUES ('session_package_pressure', '压力测试', 0, 0, 'buddy', ?, ?)
+                        """,
+                        ("2026-05-26T00:00:00Z", "2026-05-26T00:00:00Z"),
+                    )
+                    connection.execute(
+                        """
+                        INSERT INTO buddy_messages (
+                            message_id,
+                            session_id,
+                            role,
+                            content,
+                            client_order,
+                            include_in_context,
+                            run_id,
+                            metadata_json,
+                            created_at,
+                            updated_at
+                        ) VALUES ('msg_package_pressure', 'session_package_pressure', 'user', ?, 0, 1, NULL, '{}', ?, ?)
+                        """,
+                        (long_history, "2026-05-26T00:00:01Z", "2026-05-26T00:00:01Z"),
+                    )
+                    connection.commit()
+                package = {
+                    "kind": "context_package",
+                    "source_kind": "session",
+                    "authority": "history",
+                    "items": [
+                        {
+                            "id": "msg_package_pressure",
+                            "source_ref": {
+                                "source_kind": "buddy_message",
+                                "source_id": "msg_package_pressure",
+                                "role": "user",
+                                "ordinal": 0,
+                            },
+                        }
+                    ],
+                    "context_ref": {
+                        "kind": "context_assembly_ref",
+                        "assembly_id": "ctx_package_pressure_pending",
+                        "target_state_key": "conversation_history",
+                        "renderer_key": "buddy_history",
+                        "renderer_version": "1",
+                        "rendered_content_hash": "",
+                        "source_count": 1,
+                        "source_refs": [
+                            {
+                                "source_kind": "buddy_message",
+                                "source_id": "msg_package_pressure",
+                                "role": "user",
+                                "ordinal": 0,
+                            }
+                        ],
+                    },
+                    "budget": {"used_chars": 0, "source_chars": 0, "omitted_count": 0},
+                    "warnings": [],
+                }
+
+                result = module.buddy_context_pressure_check(
+                    {
+                        "trigger": "preflight",
+                        "conversation_history": package,
+                        "user_message": "继续",
+                        "existing_session_summary": "",
+                        "capability_result": {},
+                        "public_response": "",
+                    }
+                )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertTrue(result["needs_context_compaction"])
+        self.assertEqual(result["reason"], "history_pressure")
+        self.assertGreaterEqual(result["context_budget_report"]["rendered_history_chars"], 6000)
+
     def test_pressure_check_does_not_repeat_raw_history_compaction_after_summary_exists(self) -> None:
         module = _load_pressure_tool_module()
 

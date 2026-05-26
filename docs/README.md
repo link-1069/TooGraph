@@ -132,7 +132,7 @@ npm start
   - 对新闻、最新、研究、联网、搜索、调研等请求优先给研究类模板加分。
 - 官方 `buddy_autonomous_loop` 是扁平可见主循环：先由 `buddy_context_pressure_check` Tool 做上下文压力检查；需要时运行内部 `buddy_context_compaction` Subgraph；随后同一个 LLM 节点生成回复草稿并选择一个 `capability` 或 `none`；Condition 按 `needs_capability` 决定是否执行一次动态能力；动态能力只写一个 `result_package`，再回到压力检查节点，按需压缩后继续复盘。会话召回通过 `buddy_session_recall` 作为按需动态能力进入循环，不做每轮预取。
 - Buddy 主运行会注入 `current_session_id`，供按需召回排除当前会话谱系，避免把正在发生的上下文当作历史材料重复召回。
-- Buddy 上下文压缩参考 Hermes 触发方式，但保持图优先：可见主路径的压力判断和压缩节点已经进入官方 `buddy_autonomous_loop`，不是 Buddy 窗口外层隐藏重试。Buddy 窗口把 `conversation_history` 作为 `context_assembly_ref` 输入绑定进官方模板，引用具体消息和摘要来源，不在每次 run 中重复保存完整历史文本；真正摘要由内部官方 `buddy_context_compaction` 模板完成，并写回统一数据库中的 `session_summary`，留下 command/revision。可见路径的触发点包括首轮 LLM 前和动态能力结果后；可见 run 完成后的后台压缩仍然作为独立后台图运行。
+- Buddy 上下文压缩参考 Hermes 触发方式，但保持图优先：可见主路径的压力判断和压缩节点已经进入官方 `buddy_autonomous_loop`，不是 Buddy 窗口外层隐藏重试。Buddy 窗口把 `conversation_history` 作为 `context_package` 进入图状态，包内记录具体消息和摘要来源，并通过嵌套 `context_assembly_ref` 按需渲染，不在每次 run 中重复保存完整历史文本；真正摘要由内部官方 `buddy_context_compaction` 模板完成，并写回统一数据库中的 `session_summary`，留下 command/revision。可见路径的触发点包括首轮 LLM 前和动态能力结果后；可见 run 完成后的后台压缩仍然作为独立后台图运行。
 - 普通 Subgraph node、动态 `capability.kind=subgraph` 和 batch subgraph worker 会创建 child run。
 - `/api/runs/{run_id}` 会返回直接 children，`/api/runs/{run_id}/tree` 会返回运行树。
 - 动态 subgraph result package 会写入 `childRunId`、`child_run_id`、`triggered_run_id`，并把公开输出包装到 `outputs`。
@@ -160,7 +160,7 @@ npm start
   - `buddy_home/MEMORY.md` 仍是 Buddy Home 的可读文档，但长期记忆事实源是带 source/revision/event 的 `memory_entries`。
 - `buddy_home/` 规范形态是 `AGENTS.md`、`SOUL.md`、`USER.md` 和 `MEMORY.md`；`policy.json` 和 `buddy.db` 属于旧设计残留，不作为权限、记忆或历史事实源。
 - 平台 `memories` 体系和旧候选记忆体验不再是目标架构。
-- `buddy_session_recall` 只读统一数据库事实，支持 `browse`、`discover`、`scroll`，并可返回 Buddy messages、memory entries、graph outputs 和 `context_assembly_ref`。
+- `buddy_session_recall` 只读统一数据库事实，支持 `browse`、`discover`、`scroll`，并可返回 Buddy messages、memory entries、graph outputs、`context_assembly_ref` 和标准 `context_package`。
 - `buddy_messages_fts`、`buddy_messages_fts_trigram`、`retrieval_chunks_fts`、`retrieval_chunks_fts_trigram`、embedding vectors 和 hybrid audit 表已进入统一数据库。
 - `discover` 支持 snippet、bookend_start、messages、bookend_end、messages_before、messages_after、rank/newest/oldest 排序、CJK trigram 和短 token LIKE fallback。
 - `buddy_sessions` 已包含 `parent_session_id`、`source`、`ended_at`、`end_reason` 等字段。

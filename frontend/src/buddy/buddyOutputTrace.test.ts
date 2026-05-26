@@ -996,6 +996,122 @@ test("buildBuddyOutputTraceStateFromRunDetail rebuilds completed segments from r
   assert.deepEqual(segments[1].records.map((record) => record.label), ["C", "C / toograph_script_tester"]);
 });
 
+test("buildBuddyOutputTraceStateFromRunDetail attaches agent loop diagnostics without creating extra capsules", () => {
+  const state = (name: string) => ({ name, description: "", type: "markdown", value: "", color: "#000" });
+  const graph = {
+    graph_id: null,
+    name: "Buddy",
+    state_schema: {
+      public_response: state("Public Response"),
+    },
+    nodes: {
+      reply_and_select_capability: {
+        kind: "agent",
+        name: "回复并判断是否调用能力",
+        description: "",
+        reads: [],
+        writes: [],
+        config: { actionKey: "", actionBindings: [], taskInstruction: "", modelSource: "global", model: "", thinkingMode: "medium", temperature: 0.2 },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      execute_capability: {
+        kind: "agent",
+        name: "动态能力执行",
+        description: "",
+        reads: [],
+        writes: [],
+        config: { actionKey: "", actionBindings: [], taskInstruction: "", modelSource: "global", model: "", thinkingMode: "low", temperature: 0 },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      guard_agent_loop: {
+        kind: "tool",
+        name: "Agent 循环守卫",
+        description: "",
+        reads: [],
+        writes: [],
+        config: { toolKey: "agent_loop_guard" },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      finalize_guard_stop: {
+        kind: "agent",
+        name: "生成循环停止说明",
+        description: "",
+        reads: [],
+        writes: [{ state: "public_response", mode: "replace" }],
+        config: { actionKey: "", actionBindings: [], taskInstruction: "", modelSource: "global", model: "", thinkingMode: "low", temperature: 0.2 },
+        ui: { position: { x: 0, y: 0 } },
+      },
+      output_161c76f3: {
+        kind: "output",
+        name: "模型整理回复",
+        description: "",
+        reads: [{ state: "public_response", required: true }],
+        writes: [],
+        config: { displayMode: "markdown", persistEnabled: false, persistFormat: "auto", fileNameTemplate: "" },
+        ui: { position: { x: 0, y: 0 } },
+      },
+    },
+    edges: [
+      { source: "reply_and_select_capability", target: "execute_capability" },
+      { source: "execute_capability", target: "guard_agent_loop" },
+      { source: "guard_agent_loop", target: "finalize_guard_stop" },
+      { source: "finalize_guard_stop", target: "output_161c76f3" },
+    ],
+    conditional_edges: [],
+    metadata: {},
+  } as unknown as GraphPayload;
+  const plan = buildBuddyOutputTracePlan(graph, buildBuddyPublicOutputBindings(graph));
+  const run = {
+    run_id: "run_guard",
+    status: "completed",
+    node_executions: [
+      execution("reply_and_select_capability", "agent", "reply", "2026-05-13T10:00:00.000Z", 100),
+      execution("execute_capability", "agent", "execute", "2026-05-13T10:00:00.200Z", 100),
+      {
+        ...execution("guard_agent_loop", "tool", "guard", "2026-05-13T10:00:00.400Z", 100),
+        artifacts: {
+          inputs: {},
+          outputs: {
+            agent_loop_report: {
+              decision: "stop",
+              stop_reason: "capability_budget_exhausted",
+              iteration_index: 4,
+              max_iterations: 6,
+              capability_call_count: 4,
+              max_capability_calls: 4,
+            },
+          },
+          family: "tool",
+          state_reads: [],
+          state_writes: [],
+        },
+      },
+      execution("finalize_guard_stop", "agent", "finalize", "2026-05-13T10:00:00.600Z", 100),
+    ],
+    artifacts: {
+      output_previews: [
+        {
+          node_id: "output_161c76f3",
+          source_kind: "state",
+          source_key: "public_response",
+          display_mode: "markdown",
+          persist_enabled: false,
+          persist_format: "md",
+          value: "done",
+        },
+      ],
+    },
+  } as Partial<RunDetail> as RunDetail;
+
+  const traceState = buildBuddyOutputTraceStateFromRunDetail(run, plan, graph);
+  const segments = listBuddyOutputTraceSegmentsForDisplay(traceState, { visibleOutputNodeIds: new Set(["output_161c76f3"]) });
+  const labels = segments.flatMap((segment) => segment.records.flatMap((record) => record.artifactLabels ?? []));
+
+  assert.equal(segments.length, 1);
+  assert.ok(labels.includes("stop: capability_budget_exhausted"));
+  assert.ok(labels.includes("capabilities: 4 / 4"));
+});
+
 test("buildBuddyOutputTraceStateFromRunDetail keeps trace-only empty outputs with the next visible output capsule", () => {
   const graph = fiveNodeGraph();
   graph.nodes.node_gate = {

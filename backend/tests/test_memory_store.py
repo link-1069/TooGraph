@@ -70,6 +70,49 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertEqual(retrieval_doc, ("memory_entry", memory["memory_id"]))
         self.assertIn("唯一事实源", retrieval_chunk[0])
 
+    def test_memory_retrieval_projection_queues_enabled_embedding_models(self) -> None:
+        from app.core.storage.embedding_store import register_embedding_model
+        from app.core.storage.memory_store import create_memory_entry, update_memory_entry
+
+        model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
+        memory = create_memory_entry(
+            scope_kind="buddy_session",
+            scope_id="session_1",
+            layer="long_term",
+            memory_type="preference",
+            title="召回偏好",
+            content="用户希望新记忆自动进入 embedding dirty queue。",
+        )
+        update_memory_entry(
+            memory["memory_id"],
+            {"content": "用户希望更新后的记忆自动进入 embedding dirty queue。"},
+        )
+
+        with sqlite3.connect(database.DB_PATH) as connection:
+            jobs = connection.execute(
+                """
+                SELECT source_kind, source_id, chunk_id, embedding_model_id, content_hash, status, last_error
+                FROM embedding_jobs
+                WHERE source_id = ?
+                ORDER BY created_at ASC, job_id ASC
+                """,
+                (memory["memory_id"],),
+            ).fetchall()
+            current_chunk = connection.execute(
+                "SELECT chunk_id, content_hash FROM retrieval_chunks WHERE source_id = ?",
+                (memory["memory_id"],),
+            ).fetchone()
+
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0][5], "failed")
+        self.assertIn("superseded", jobs[0][6])
+        self.assertEqual(jobs[1][0], "memory_entry")
+        self.assertEqual(jobs[1][1], memory["memory_id"])
+        self.assertEqual(jobs[1][2], current_chunk[0])
+        self.assertEqual(jobs[1][3], model["embedding_model_id"])
+        self.assertEqual(jobs[1][4], current_chunk[1])
+        self.assertEqual(jobs[1][5], "pending")
+
     def test_memory_entry_sources_can_reference_supported_fact_types(self) -> None:
         from app.core.storage.memory_store import create_memory_entry
 

@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "embedding_job_processor",
+  "name": "Embedding Job Processor",
+  "description": "A deterministic maintenance tool that processes pending embedding jobs for hashing models and OpenAI-compatible embedding providers.",
+  "version": "0.1.0",
+  "timeoutSeconds": 60,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 60
+  },
+  "inputSchema": [
+    {
+      "key": "model_ref",
+      "name": "Model Ref",
+      "valueType": "text",
+      "description": "Optional embedding model id or provider:model filter."
+    },
+    {
+      "key": "limit",
+      "name": "Limit",
+      "valueType": "number",
+      "description": "Maximum pending jobs to process."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Processing status."
+    },
+    {
+      "key": "processed_count",
+      "name": "Processed Count",
+      "valueType": "number",
+      "description": "Number of pending jobs inspected."
+    },
+    {
+      "key": "completed_count",
+      "name": "Completed Count",
+      "valueType": "number",
+      "description": "Number of jobs completed."
+    },
+    {
+      "key": "failed_count",
+      "name": "Failed Count",
+      "valueType": "number",
+      "description": "Number of jobs marked failed."
+    },
+    {
+      "key": "processed_jobs",
+      "name": "Processed Jobs",
+      "valueType": "json",
+      "description": "Per-job processing audit records."
+    }
+  ]
+}

@@ -223,6 +223,7 @@ export type RunArtifacts = {
   state_stream_events?: StateStreamEvent[];
   state_values?: Record<string, unknown>;
   streaming_outputs?: Record<string, Record<string, unknown>>;
+  stop_reason?: string | null;
   cycle_iterations?: CycleIterationRecord[];
   cycle_summary?: CycleSummary;
 };
@@ -253,6 +254,7 @@ export type RunSummary = {
   completed_at?: string | null;
   duration_ms?: number | null;
   final_score?: number | null;
+  stop_reason?: string | null;
 };
 
 export type RunChildSummary = RunSummary;

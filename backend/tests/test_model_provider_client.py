@@ -128,6 +128,17 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertNotIn("def _extract_openai_chat_stream_delta(", client_source)
         self.assertNotIn("def _coalesce_openai_chat_stream_response(", client_source)
 
+    def test_openai_compatible_embedding_transport_is_isolated_from_provider_client(self) -> None:
+        spec = importlib.util.find_spec("app.tools.model_provider_embedding")
+        self.assertIsNotNone(spec, "OpenAI-compatible embedding transport should live in a dedicated module")
+
+        from app.tools import model_provider_client
+
+        client_source = Path(model_provider_client.__file__ or "").read_text(encoding="utf-8")
+        self.assertIn("model_provider_embedding", client_source)
+        self.assertIn("def _embed_openai_compatible(", client_source)
+        self.assertNotIn("def _extract_openai_embedding_vector(", client_source)
+
     def test_anthropic_chat_transport_is_isolated_from_provider_client(self) -> None:
         spec = importlib.util.find_spec("app.tools.model_provider_anthropic")
         self.assertIsNotNone(spec, "Anthropic chat transport should live in a dedicated module")
@@ -253,6 +264,38 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertEqual(requested["url"], "https://api.openai.com/v1/chat/completions")
         self.assertEqual(requested["json"]["stream"], True)
         self.assertEqual(requested["json"]["messages"][0], {"role": "system", "content": "sys"})
+
+    def test_embed_text_with_model_provider_posts_openai_compatible_embeddings(self) -> None:
+        from app.tools.model_provider_client import embed_text_with_model_provider
+
+        fake_client, client_patch = self._patched_client(
+            FakeResponse(
+                {
+                    "id": "emb_1",
+                    "model": "text-embedding-3-small",
+                    "data": [{"index": 0, "embedding": [0.1, 0.2, 0.3]}],
+                    "usage": {"prompt_tokens": 2, "total_tokens": 2},
+                }
+            )
+        )
+        with client_patch, patch("app.tools.model_provider_client.append_model_request_log"):
+            vector, meta = embed_text_with_model_provider(
+                provider_id="openai",
+                transport="openai-compatible",
+                base_url="https://api.openai.com/v1",
+                api_key="sk-openai",
+                model="text-embedding-3-small",
+                text="memory recall",
+                dimensions=3,
+            )
+
+        requested = fake_client.post_calls[0]
+        self.assertEqual(vector, [0.1, 0.2, 0.3])
+        self.assertEqual(meta["model"], "text-embedding-3-small")
+        self.assertEqual(meta["usage"], {"prompt_tokens": 2, "total_tokens": 2})
+        self.assertEqual(requested["url"], "https://api.openai.com/v1/embeddings")
+        self.assertEqual(requested["headers"]["Authorization"], "Bearer sk-openai")
+        self.assertEqual(requested["json"], {"model": "text-embedding-3-small", "input": "memory recall"})
 
     def test_chat_openai_compatible_posts_structured_response_format(self) -> None:
         from app.tools.model_provider_client import chat_with_model_provider

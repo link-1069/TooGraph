@@ -16,7 +16,7 @@ TOOL_DIR = REPO_ROOT / "tool" / "official" / "buddy_history_context_loader"
 sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.core.storage import database
-from app.core.storage.context_assembly_store import expand_context_assembly_ref
+from app.core.storage.context_assembly_store import expand_context_package
 
 
 def _load_history_tool_module():
@@ -42,7 +42,7 @@ class BuddyHistoryContextLoaderToolTests(unittest.TestCase):
         self.assertIn("conversation history", definition.description)
         self.assertIn("buddy_history_context_loader", get_tool_registry(include_disabled=True).keys())
 
-    def test_loader_outputs_context_assembly_ref_from_runtime_session_context(self) -> None:
+    def test_loader_outputs_context_package_from_runtime_session_context(self) -> None:
         module = _load_history_tool_module()
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -67,12 +67,19 @@ class BuddyHistoryContextLoaderToolTests(unittest.TestCase):
                         "buddy_current_message_id": "msg_q2",
                     },
                 )
-                history_ref = result["conversation_history"]
-                expanded = expand_context_assembly_ref(history_ref)
+                history_package = result["conversation_history"]
+                expanded = expand_context_package(history_package)
 
         self.assertEqual(result["status"], "succeeded")
-        self.assertEqual(history_ref["kind"], "context_assembly_ref")
-        self.assertEqual([ref["source_id"] for ref in history_ref["source_refs"]], ["msg_q1", "msg_a1"])
+        self.assertEqual(history_package["kind"], "context_package")
+        self.assertEqual(history_package["source_kind"], "session")
+        self.assertEqual(history_package["authority"], "history")
+        self.assertEqual(history_package["context_ref"]["kind"], "context_assembly_ref")
+        self.assertEqual([item["source_ref"]["source_id"] for item in history_package["items"]], ["msg_q1", "msg_a1"])
+        self.assertEqual([ref["source_id"] for ref in history_package["source_refs"]], ["msg_q1", "msg_a1"])
+        self.assertEqual(history_package["budget"]["omitted_count"], 0)
+        self.assertGreater(history_package["budget"]["source_chars"], 0)
+        self.assertGreater(history_package["budget"]["used_chars"], 0)
         self.assertIn("Q1", expanded["text"])
         self.assertIn("A1", expanded["text"])
         self.assertNotIn("Q2", expanded["text"])
@@ -80,6 +87,10 @@ class BuddyHistoryContextLoaderToolTests(unittest.TestCase):
         self.assertEqual(result["source_run_id"], "run_history")
         self.assertEqual(result["history_context_report"]["current_message_id"], "msg_q2")
         self.assertEqual(result["history_context_report"]["source_run_id"], "run_history")
+        self.assertEqual(result["history_context_report"]["message_ids"], ["msg_q1", "msg_a1"])
+        self.assertEqual(result["history_context_report"]["summary_ids"], [])
+        self.assertEqual(result["history_context_report"]["omitted_count"], 0)
+        self.assertEqual(result["history_context_report"]["omitted_reason"], "")
 
     def test_loader_returns_empty_history_without_buddy_session_context(self) -> None:
         module = _load_history_tool_module()
@@ -87,8 +98,14 @@ class BuddyHistoryContextLoaderToolTests(unittest.TestCase):
         result = module.buddy_history_context_loader({"user_message": "standalone"}, context={})
 
         self.assertEqual(result["status"], "succeeded")
-        self.assertEqual(result["conversation_history"]["kind"], "context_assembly_ref")
+        self.assertEqual(result["conversation_history"]["kind"], "context_package")
+        self.assertEqual(result["conversation_history"]["source_kind"], "session")
+        self.assertEqual(result["conversation_history"]["authority"], "history")
+        self.assertEqual(result["conversation_history"]["context_ref"]["kind"], "context_assembly_ref")
+        self.assertEqual(result["conversation_history"]["items"], [])
         self.assertEqual(result["conversation_history"]["source_refs"], [])
+        self.assertEqual(result["conversation_history"]["budget"]["omitted_count"], 0)
+        self.assertEqual(result["conversation_history"]["warnings"][0]["code"], "missing_buddy_session")
         self.assertEqual(result["current_session_id"], "")
         self.assertEqual(result["history_context_report"]["scope"], "standalone_run")
 

@@ -7,7 +7,7 @@ from app.core.runtime.state import utc_now_iso
 from app.core.schemas.node_system import NodeSystemGraphDocument, NodeSystemStateType, StateWriteMode
 
 
-REFERENCE_STATE_KINDS = {"content_ref", "context_assembly_ref"}
+REFERENCE_STATE_KINDS = {"content_ref", "context_assembly_ref", "context_package"}
 
 
 def input_state_keys(graph: NodeSystemGraphDocument) -> set[str]:

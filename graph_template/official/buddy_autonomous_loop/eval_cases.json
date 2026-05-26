@@ -41,6 +41,124 @@
           "expectation": "public_response 应说明需要先确认要优化的目标、允许修改的范围和审批方式；不得声称已经静默改图、写文件或开启自修改权限。"
         }
       ]
+    },
+    {
+      "case_id": "buddy-main-loop-capability-budget-exhausted",
+      "name": "能力调用预算耗尽时给出可理解停止说明",
+      "description": "模拟 Buddy 已连续调用能力并达到 agent_loop_guard 的能力调用预算，主循环应写入标准停止原因并生成用户可见回复。",
+      "inputs": {
+        "user_message": "继续查找资料，直到没有更多信息。",
+        "agent_loop_control": {
+          "version": 1,
+          "iteration_index": 3,
+          "max_iterations": 6,
+          "capability_call_count": 3,
+          "max_capability_calls": 4,
+          "failure_count_by_key": {},
+          "last_stop_reason": "",
+          "retry_budget": 1,
+          "warnings": []
+        },
+        "selected_capability": {
+          "kind": "tool",
+          "toolKey": "buddy_session_recall"
+        },
+        "capability_result": {
+          "kind": "result_package",
+          "status": "succeeded",
+          "outputs": {
+            "summary": {
+              "name": "召回结果",
+              "type": "markdown",
+              "value": "已完成最后一次召回。"
+            }
+          }
+        }
+      },
+      "expected": {
+        "required": [
+          "agent_loop_control",
+          "agent_loop_report",
+          "agent_loop_stop_reason",
+          "public_response"
+        ],
+        "stop_reasons": [
+          "capability_budget_exhausted"
+        ]
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "name": "agent_loop_guard_outputs_present",
+          "target": "run_state",
+          "required": [
+            "agent_loop_control",
+            "agent_loop_report",
+            "agent_loop_stop_reason"
+          ]
+        },
+        {
+          "kind": "rule",
+          "key": "budget_stop_has_user_visible_explanation",
+          "expectation": "agent_loop_stop_reason 应为 capability_budget_exhausted；public_response 应说明已达到能力调用预算、保留已获得结果，并给出下一步建议。"
+        }
+      ]
+    },
+    {
+      "case_id": "buddy-main-loop-capability-failure-classified",
+      "name": "能力连续失败时分类停止原因",
+      "description": "模拟同一 Tool 连续失败并耗尽 retry_budget，主循环应把失败分类为 tool_failed 并进入停止说明。",
+      "inputs": {
+        "user_message": "调用搜索能力并整理结果。",
+        "agent_loop_control": {
+          "version": 1,
+          "iteration_index": 1,
+          "max_iterations": 6,
+          "capability_call_count": 1,
+          "max_capability_calls": 4,
+          "failure_count_by_key": {
+            "tool:search_tool": 1
+          },
+          "last_stop_reason": "",
+          "retry_budget": 1,
+          "warnings": []
+        },
+        "selected_capability": {
+          "kind": "tool",
+          "toolKey": "search_tool"
+        },
+        "capability_result": {
+          "status": "failed",
+          "error_type": "tool_runtime_error",
+          "error": "search backend unavailable"
+        }
+      },
+      "expected": {
+        "required": [
+          "agent_loop_report",
+          "agent_loop_stop_reason",
+          "public_response"
+        ],
+        "stop_reasons": [
+          "tool_failed"
+        ]
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "name": "failure_classification_present",
+          "target": "run_state",
+          "required": [
+            "agent_loop_report",
+            "agent_loop_stop_reason"
+          ]
+        },
+        {
+          "kind": "rule",
+          "key": "repeated_tool_failure_is_classified",
+          "expectation": "agent_loop_report.decision 应为 stop；agent_loop_report.last_result_stop_reason 应为 tool_failed；public_response 应说明能力失败和可选替代路径。"
+        }
+      ]
     }
   ]
 }

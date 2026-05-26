@@ -6,6 +6,7 @@ from app.core.langgraph.checkpoints import JsonCheckpointSaver
 from app.core.langgraph.checkpoint_runtime import sync_checkpoint_metadata
 from app.core.langgraph.cycle_tracker import finalize_langgraph_cycle_summary
 from app.core.langgraph.interrupts import clear_pending_interrupt_metadata, next_run_snapshot_id
+from app.core.runtime.agent_stop_reason import set_agent_stop_reason
 from app.core.runtime.output_boundaries import collect_output_boundaries
 from app.core.runtime.run_artifacts import append_run_snapshot, refresh_run_artifacts
 from app.core.runtime.run_events import publish_run_event
@@ -29,6 +30,7 @@ def finalize_completed_langgraph_state(
     set_run_status_func: Callable[..., None] = set_run_status,
     collect_output_boundaries_func: Callable[..., None] = collect_output_boundaries,
     finalize_cycle_summary_func: Callable[..., None] = finalize_langgraph_cycle_summary,
+    set_agent_stop_reason_func: Callable[..., None] = set_agent_stop_reason,
     sync_checkpoint_metadata_func: Callable[..., None] = sync_checkpoint_metadata,
     refresh_run_artifacts_func: Callable[..., None] = refresh_run_artifacts,
     next_run_snapshot_id_func: Callable[..., str] = next_run_snapshot_id,
@@ -41,6 +43,7 @@ def finalize_completed_langgraph_state(
     state["current_node_id"] = None
     collect_output_boundaries_func(graph, state, active_edge_ids)
     finalize_cycle_summary_func(state, cycle_tracker, active_edge_ids)
+    set_agent_stop_reason_func(state)
     sync_checkpoint_metadata_func(state, checkpoint_saver, checkpoint_lookup_config)
     refresh_run_artifacts_func(state, node_outputs, active_edge_ids, started_perf=started_perf)
     if append_snapshot:
@@ -65,6 +68,7 @@ def finalize_failed_langgraph_state(
     checkpoint_saver: JsonCheckpointSaver,
     checkpoint_lookup_config: dict[str, Any],
     set_run_status_func: Callable[..., None] = set_run_status,
+    set_agent_stop_reason_func: Callable[..., None] = set_agent_stop_reason,
     sync_checkpoint_metadata_func: Callable[..., None] = sync_checkpoint_metadata,
     refresh_run_artifacts_func: Callable[..., None] = refresh_run_artifacts,
     next_run_snapshot_id_func: Callable[..., str] = next_run_snapshot_id,
@@ -75,6 +79,7 @@ def finalize_failed_langgraph_state(
     error = str(exc)
     set_run_status_func(state, "failed")
     state.setdefault("errors", []).append(error)
+    set_agent_stop_reason_func(state)
     sync_checkpoint_metadata_func(state, checkpoint_saver, checkpoint_lookup_config)
     refresh_run_artifacts_func(state, node_outputs, active_edge_ids, started_perf=started_perf)
     append_run_snapshot_func(

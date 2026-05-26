@@ -330,6 +330,18 @@ def _project_memory_to_retrieval(memory_id: str) -> None:
             }
         ],
     )
+    _queue_memory_embedding_jobs(memory["memory_id"])
+
+
+def _queue_memory_embedding_jobs(memory_id: str) -> None:
+    try:
+        from app.core.storage.embedding_store import list_embedding_models, queue_embedding_job
+
+        models = list_embedding_models(enabled_only=True)
+        for model in models:
+            queue_embedding_job("memory_entry", memory_id, str(model["embedding_model_id"]))
+    except Exception:
+        return
 
 
 def _memory_retrieval_metadata(memory: dict[str, Any]) -> dict[str, Any]:

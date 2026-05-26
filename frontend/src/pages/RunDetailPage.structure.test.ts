@@ -112,6 +112,14 @@ test("RunDetailPage renders the persisted child run tree with collapsed batch gr
   assert.match(componentSource, /v-for="row in item\.rows"/);
 });
 
+test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
+  assert.match(componentSource, /buildAgentDiagnostic/);
+  assert.match(componentSource, /const agentDiagnostic = computed/);
+  assert.match(componentSource, /run-detail__agent-diagnostic/);
+  assert.match(componentSource, /agentDiagnostic\.stopReason/);
+  assert.match(componentSource, /t\("runDetail\.agentDiagnostic"\)/);
+});
+
 test("RunDetailPage exposes operation journal entries from the dedicated journal API", () => {
   assert.match(componentSource, /import \{ fetchOperationJournal \} from "@\/api\/operationJournal";/);
   assert.match(

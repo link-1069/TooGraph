@@ -42,7 +42,7 @@
     },
     "conversation_history": {
       "name": "conversation_history",
-      "description": "从源 Buddy run 中恢复的对话历史引用；通常是 context_assembly_ref，由 prompt 渲染层按需展开。",
+      "description": "从源 Buddy run 中恢复的对话历史上下文包；通常是 context_package，并由 prompt 渲染层按需展开。",
       "type": "json",
       "value": {},
       "color": "#64748b",

@@ -124,6 +124,10 @@
                     <small>{{ t("runDetail.contextSourceCount", { count: assembly.sourceCount }) }}</small>
                   </div>
                   <div class="run-detail__badges">
+                    <span v-if="assembly.packageSourceKind">source {{ assembly.packageSourceKind }}</span>
+                    <span v-if="assembly.packageAuthority">authority {{ assembly.packageAuthority }}</span>
+                    <span v-if="assembly.budgetLabel">{{ assembly.budgetLabel }}</span>
+                    <span v-if="assembly.warningCount">warnings {{ assembly.warningCount }}</span>
                     <span>{{ t("runDetail.renderer") }} {{ assembly.rendererKey || "—" }}@{{ assembly.rendererVersion || "—" }}</span>
                     <span>{{ t("runDetail.hash") }} {{ assembly.renderedHash || "—" }}</span>
                     <span v-for="kind in assembly.sourceKinds" :key="`${assembly.key}-${kind}`">{{ kind }}</span>
@@ -274,6 +278,21 @@
         </article>
 
         <section class="run-detail__grid">
+          <article v-if="agentDiagnostic?.visible" class="run-detail__panel run-detail__agent-diagnostic">
+            <div class="run-detail__panel-heading">
+              <div>
+                <span class="run-detail__section-kicker">{{ t("runDetail.agentDiagnostic") }}</span>
+                <h3>{{ agentDiagnostic.stopReason || t("runDetail.agentRunning") }}</h3>
+              </div>
+            </div>
+            <div class="run-detail__badges">
+              <span v-for="badge in agentDiagnostic.badges" :key="badge">{{ badge }}</span>
+              <span v-if="agentDiagnostic.iterationLabel">{{ t("runDetail.agentIterations", { value: agentDiagnostic.iterationLabel }) }}</span>
+              <span v-if="agentDiagnostic.capabilityBudgetLabel">{{ t("runDetail.agentCapabilities", { value: agentDiagnostic.capabilityBudgetLabel }) }}</span>
+            </div>
+            <p v-for="warning in agentDiagnostic.warnings" :key="warning" class="run-detail__muted">{{ warning }}</p>
+          </article>
+
           <article v-if="cycleVisualization.hasCycle" class="run-detail__panel">
             <div class="run-detail__panel-heading">
               <div>
@@ -439,6 +458,7 @@ import type { RunDetail, RunTreeNode } from "@/types/run";
 
 import {
   buildRunAggregatedTimeline,
+  buildAgentDiagnostic,
   buildRunContextAudit,
   buildRunStatusFacts,
   buildRunTreeDisplayItems,
@@ -495,6 +515,7 @@ const runStatusFacts = computed(() => {
 const cycleVisualization = computed(() =>
   viewedRun.value ? buildCycleVisualization(viewedRun.value) : { hasCycle: false, summary: null, backEdges: [], iterations: [] },
 );
+const agentDiagnostic = computed(() => (viewedRun.value ? buildAgentDiagnostic(viewedRun.value) : null));
 const outputArtifacts = computed(() => (viewedRun.value ? listRunOutputArtifacts(viewedRun.value) : []));
 const aggregatedTimeline = computed(() => (viewedRun.value ? buildRunAggregatedTimeline(viewedRun.value) : []));
 const contextAudit = computed(() => (viewedRun.value ? buildRunContextAudit(viewedRun.value) : null));

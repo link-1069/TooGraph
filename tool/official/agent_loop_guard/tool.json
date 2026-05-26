@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "agent_loop_guard",
+  "name": "Agent Loop Guard",
+  "description": "A deterministic Agent loop guard that updates iteration and capability budget state, classifies capability failures, and emits standard stop reasons.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "agent_loop_control",
+      "name": "Agent Loop Control",
+      "valueType": "json",
+      "description": "Current loop counters, budgets, retry budget, failure counts, and warnings."
+    },
+    {
+      "key": "capability_trace",
+      "name": "Capability Trace",
+      "valueType": "json",
+      "description": "LLM-maintained capability trace from the Buddy loop."
+    },
+    {
+      "key": "selected_capability",
+      "name": "Selected Capability",
+      "valueType": "capability",
+      "description": "The capability that was just executed."
+    },
+    {
+      "key": "capability_result",
+      "name": "Capability Result",
+      "valueType": "result_package",
+      "description": "The raw structured result package from the latest capability execution."
+    },
+    {
+      "key": "context_budget_report",
+      "name": "Context Budget Report",
+      "valueType": "json",
+      "description": "Latest context pressure report, if available."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "agent_loop_control",
+      "name": "Updated Agent Loop Control",
+      "valueType": "json",
+      "description": "Updated loop counters, budgets, retry state, failure counts, and warnings."
+    },
+    {
+      "key": "agent_loop_report",
+      "name": "Agent Loop Report",
+      "valueType": "json",
+      "description": "Human-readable audit report for RunDetail and Buddy capsules."
+    },
+    {
+      "key": "agent_loop_stop_reason",
+      "name": "Agent Loop Stop Reason",
+      "valueType": "text",
+      "description": "A standard stop reason, or empty string when the loop may continue."
+    },
+    {
+      "key": "agent_loop_should_continue",
+      "name": "Should Continue",
+      "valueType": "boolean",
+      "description": "True when the graph should continue to context pressure check and the next selector round."
+    },
+    {
+      "key": "agent_loop_should_retry",
+      "name": "Should Retry",
+      "valueType": "boolean",
+      "description": "True when the latest failure is still inside retry budget."
+    },
+    {
+      "key": "reason",
+      "name": "Reason",
+      "valueType": "text",
+      "description": "Short guard decision reason."
+    }
+  ]
+}

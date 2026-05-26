@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "page_context_loader",
+  "name": "Page Context Loader",
+  "description": "A deterministic page-context reader that turns page operation context and page snapshots into an auditable context_package with source refs, budget metadata, and warnings.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "page_operation_context",
+      "name": "Page Operation Context",
+      "valueType": "json",
+      "description": "Structured page operation context, usually containing page_operation_book and page_facts."
+    },
+    {
+      "key": "page_context",
+      "name": "Page Context",
+      "valueType": "text",
+      "description": "Optional rendered page context text captured by the frontend."
+    },
+    {
+      "key": "operation_result",
+      "name": "Operation Result",
+      "valueType": "json",
+      "description": "Optional virtual UI operation result."
+    },
+    {
+      "key": "operation_report",
+      "name": "Operation Report",
+      "valueType": "json",
+      "description": "Optional structured operation report."
+    },
+    {
+      "key": "source_run_id",
+      "name": "Source Run ID",
+      "valueType": "text",
+      "description": "Optional graph run id associated with the page context."
+    },
+    {
+      "key": "max_chars",
+      "name": "Max Chars",
+      "valueType": "number",
+      "description": "Maximum rendered page context characters."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Loader status."
+    },
+    {
+      "key": "page_context_package",
+      "name": "Page Context Package",
+      "valueType": "json",
+      "description": "Page context_package."
+    },
+    {
+      "key": "page_context_report",
+      "name": "Page Context Report",
+      "valueType": "json",
+      "description": "Page context sections, source refs, budget, and warnings."
+    }
+  ]
+}

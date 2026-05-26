@@ -130,6 +130,12 @@
       "description": "由召回来源生成的 context_assembly_ref，用于后续上下文组装审计。"
     },
     {
+      "key": "context_package",
+      "name": "Context Package",
+      "valueType": "json",
+      "description": "标准 context_package，记录召回来源、authority、budget，并通过 context_assembly_ref 展开召回文本。"
+    },
+    {
       "key": "result",
       "name": "Result",
       "valueType": "markdown",

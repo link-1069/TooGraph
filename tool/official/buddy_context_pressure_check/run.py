@@ -130,23 +130,26 @@ def _text_length(value: Any) -> int:
 def _text(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
-    expanded = _expand_context_assembly_ref_text(value)
+    expanded = _expand_context_value_text(value)
     if expanded is not None:
         return expanded.strip()
     return str(value or "").strip()
 
 
-def _expand_context_assembly_ref_text(value: Any) -> str | None:
-    if not isinstance(value, dict) or value.get("kind") != "context_assembly_ref":
+def _expand_context_value_text(value: Any) -> str | None:
+    if not isinstance(value, dict) or value.get("kind") not in {"context_assembly_ref", "context_package"}:
         return None
     try:
         repo_root = _repo_root()
         backend_path = repo_root / "backend"
         if str(backend_path) not in sys.path:
             sys.path.insert(0, str(backend_path))
-        from app.core.storage.context_assembly_store import expand_context_assembly_ref
+        from app.core.storage.context_assembly_store import (
+            expand_context_assembly_ref,
+            expand_context_package,
+        )
 
-        expanded = expand_context_assembly_ref(value)
+        expanded = expand_context_package(value) if value.get("kind") == "context_package" else expand_context_assembly_ref(value)
         return str(expanded.get("text") or "")
     except Exception:
         return None

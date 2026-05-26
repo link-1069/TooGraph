@@ -58,6 +58,7 @@ def refresh_run_artifacts(
         "exported_outputs": exported_outputs,
         "node_outputs": node_outputs,
         "active_edge_ids": sorted(active_edge_ids),
+        "stop_reason": str(state.get("stop_reason") or ""),
         "state_events": state_events,
         "state_stream_events": state_stream_events,
         "state_values": stored_state_values,

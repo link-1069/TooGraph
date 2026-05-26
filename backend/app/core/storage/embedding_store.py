@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from app.core.storage.database import get_connection
+from app.tools.model_provider_client import embed_text_with_model_ref
 
 
 SUPPORTED_EMBEDDING_JOB_STATUSES = {"pending", "running", "completed", "failed"}
@@ -107,6 +108,20 @@ def resolve_embedding_model(model_ref: str) -> dict[str, Any]:
     return _model_from_row(row)
 
 
+def list_embedding_models(*, enabled_only: bool = False) -> list[dict[str, Any]]:
+    where_sql = "WHERE enabled = 1" if enabled_only else ""
+    with get_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT *
+            FROM embedding_models
+            {where_sql}
+            ORDER BY provider_key ASC, model ASC
+            """
+        ).fetchall()
+    return [_model_from_row(row) for row in rows]
+
+
 def queue_embedding_job(source_kind: str, source_id: str, model_ref: str) -> list[dict[str, Any]]:
     model = resolve_embedding_model(model_ref)
     normalized_source_kind = str(source_kind or "").strip()
@@ -130,6 +145,26 @@ def queue_embedding_job(source_kind: str, source_id: str, model_ref: str) -> lis
                 str(row["chunk_id"]),
                 model["embedding_model_id"],
                 str(row["content_hash"]),
+            )
+            connection.execute(
+                """
+                UPDATE embedding_jobs
+                SET status = 'failed',
+                    last_error = 'superseded by newer content hash',
+                    updated_at = ?,
+                    completed_at = ?
+                WHERE chunk_id = ?
+                  AND embedding_model_id = ?
+                  AND content_hash != ?
+                  AND status IN ('pending', 'running')
+                """,
+                (
+                    now,
+                    now,
+                    str(row["chunk_id"]),
+                    model["embedding_model_id"],
+                    str(row["content_hash"]),
+                ),
             )
             connection.execute(
                 """
@@ -196,6 +231,93 @@ def update_embedding_job_status(job_id: str, status: str, *, error: str = "") ->
     if row is None:
         raise FileNotFoundError(f"Embedding job '{normalized_job_id}' does not exist.")
     return _job_from_row(row)
+
+
+def process_pending_embedding_jobs(model_ref: str = "", limit: int = 50) -> dict[str, Any]:
+    normalized_limit = _bounded_int(limit, default=50, minimum=1, maximum=500)
+    model_id = resolve_embedding_model(model_ref)["embedding_model_id"] if str(model_ref or "").strip() else ""
+    where = "WHERE j.status = 'pending'"
+    params: list[Any] = []
+    if model_id:
+        where += " AND j.embedding_model_id = ?"
+        params.append(model_id)
+    with get_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT
+                j.*,
+                c.content,
+                c.content_hash AS chunk_content_hash,
+                m.provider_key,
+                m.model,
+                m.dimensions
+            FROM embedding_jobs AS j
+            JOIN retrieval_chunks AS c ON c.chunk_id = j.chunk_id
+            JOIN embedding_models AS m ON m.embedding_model_id = j.embedding_model_id
+            {where}
+            ORDER BY j.created_at ASC, j.job_id ASC
+            LIMIT ?
+            """,
+            [*params, normalized_limit],
+        ).fetchall()
+
+    processed_jobs: list[dict[str, Any]] = []
+    for row in rows:
+        job_id = str(row["job_id"] or "")
+        try:
+            update_embedding_job_status(job_id, "running")
+            provider_key = str(row["provider_key"] or "")
+            model_name = str(row["model"] or "")
+            content = str(row["content"] or "")
+            dimensions = int(row["dimensions"] or 0)
+            if _is_local_embedding_model(provider_key, model_name):
+                vector = build_local_text_embedding(content, dimensions=dimensions)
+                embedding_meta = {"mode": "local_hash", "provider_id": provider_key, "model": model_name}
+            else:
+                vector, embedding_meta = embed_text_with_model_ref(
+                    model_ref=f"{provider_key}/{model_name}",
+                    text=content,
+                    dimensions=dimensions,
+                )
+            vector_record = upsert_embedding_vector(
+                str(row["chunk_id"] or ""),
+                str(row["embedding_model_id"] or ""),
+                vector,
+                str(row["chunk_content_hash"] or row["content_hash"] or ""),
+            )
+            completed = update_embedding_job_status(job_id, "completed")
+            processed_jobs.append(
+                {
+                    "job_id": job_id,
+                    "status": completed["status"],
+                    "chunk_id": str(row["chunk_id"] or ""),
+                    "embedding_id": vector_record["embedding_id"],
+                    "embedding_model_id": str(row["embedding_model_id"] or ""),
+                    "query_vector": vector,
+                    "embedding_meta": embedding_meta,
+                }
+            )
+        except Exception as exc:
+            failed = update_embedding_job_status(job_id, "failed", error=str(exc))
+            processed_jobs.append(
+                {
+                    "job_id": job_id,
+                    "status": failed["status"],
+                    "chunk_id": str(row["chunk_id"] or ""),
+                    "embedding_model_id": str(row["embedding_model_id"] or ""),
+                    "error": str(exc),
+                }
+            )
+
+    completed_count = sum(1 for job in processed_jobs if job.get("status") == "completed")
+    failed_count = sum(1 for job in processed_jobs if job.get("status") == "failed")
+    return {
+        "status": "succeeded",
+        "processed_count": len(processed_jobs),
+        "completed_count": completed_count,
+        "failed_count": failed_count,
+        "processed_jobs": processed_jobs,
+    }
 
 
 def upsert_embedding_vector(
@@ -416,6 +538,12 @@ def _normalize_vector(vector: list[float], *, dimensions: int) -> list[float]:
     if len(normalized) != dimensions:
         raise ValueError(f"Expected {dimensions} dimensions, got {len(normalized)}.")
     return normalized
+
+
+def _is_local_embedding_model(provider_key: str, model: str) -> bool:
+    normalized_provider = str(provider_key or "").strip().lower()
+    normalized_model = str(model or "").strip().lower()
+    return normalized_provider == "local-hash" or normalized_model.startswith("hashing")
 
 
 def _normalize_query_vector(vector: Any) -> list[float]:

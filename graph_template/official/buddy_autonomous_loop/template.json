@@ -14,7 +14,7 @@
     },
     "conversation_history": {
       "name": "会话历史",
-      "description": "由 buddy_history_context_loader 从运行时上下文查询出的 context_assembly_ref；LLM prompt 会通过共享上下文组装渲染路径展开。",
+      "description": "由 buddy_history_context_loader 从运行时上下文查询出的 context_package；LLM prompt 会通过共享上下文组装渲染路径展开。",
       "type": "json",
       "value": {},
       "color": "#64748b",
@@ -27,9 +27,9 @@
         "managed": true
       }
     },
-    "buddy_context": {
-      "name": "Buddy Home",
-      "description": "固定读取 Buddy Home 长期上下文文件，包括伙伴设定、用户偏好和长期记忆。",
+    "buddy_home_selection": {
+      "name": "Buddy Home 文件选择",
+      "description": "固定选择 Buddy Home 长期上下文文件，后续由 buddy_home_context_loader 组装为 context_package。",
       "type": "file",
       "value": {
         "kind": "local_folder",
@@ -43,6 +43,44 @@
       },
       "color": "#0f766e",
       "binding": null
+    },
+    "buddy_home_max_chars": {
+      "name": "Buddy Home 字符预算",
+      "description": "Buddy Home 组装 Tool 的近似字符预算。",
+      "type": "number",
+      "value": 24000,
+      "color": "#0f766e",
+      "binding": null
+    },
+    "buddy_context": {
+      "name": "Buddy Home",
+      "description": "由 buddy_home_context_loader 从 Buddy Home 文件选择组装出的 context_package，包含文件来源、authority 边界和预算信息。",
+      "type": "json",
+      "value": {},
+      "color": "#0f766e",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "buddy_home_context_loader",
+        "nodeId": "load_buddy_home_context",
+        "fieldKey": "buddy_context",
+        "managed": true
+      }
+    },
+    "buddy_home_context_report": {
+      "name": "Buddy Home 组装报告",
+      "description": "Buddy Home context_package 的来源文件、预算、source refs 和 warning 审计报告。",
+      "type": "json",
+      "value": {},
+      "color": "#0f766e",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "buddy_home_context_loader",
+        "nodeId": "load_buddy_home_context",
+        "fieldKey": "buddy_home_context_report",
+        "managed": true
+      }
     },
     "current_session_id": {
       "name": "当前会话 ID",
@@ -249,6 +287,91 @@
       "color": "#7c3aed",
       "binding": null
     },
+    "agent_loop_control": {
+      "name": "Agent 循环控制",
+      "description": "由 agent_loop_guard 维护的循环预算、能力调用次数、失败计数、重试预算和停止原因。",
+      "type": "json",
+      "value": {
+        "version": 1,
+        "iteration_index": 0,
+        "max_iterations": 6,
+        "capability_call_count": 0,
+        "max_capability_calls": 4,
+        "failure_count_by_key": {},
+        "last_stop_reason": "",
+        "retry_budget": 1,
+        "warnings": []
+      },
+      "color": "#9333ea",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "guard_agent_loop",
+        "fieldKey": "agent_loop_control",
+        "managed": true
+      }
+    },
+    "agent_loop_report": {
+      "name": "Agent 循环诊断",
+      "description": "agent_loop_guard 输出的本轮循环诊断，用于 RunDetail 和 Buddy 胶囊展示。",
+      "type": "json",
+      "value": {},
+      "color": "#7c3aed",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "guard_agent_loop",
+        "fieldKey": "agent_loop_report",
+        "managed": true
+      }
+    },
+    "agent_loop_stop_reason": {
+      "name": "Agent 停止原因",
+      "description": "agent_loop_guard 产出的标准停止原因；为空表示当前循环可继续。",
+      "type": "text",
+      "value": "",
+      "color": "#be123c",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "guard_agent_loop",
+        "fieldKey": "agent_loop_stop_reason",
+        "managed": true
+      }
+    },
+    "agent_loop_should_continue": {
+      "name": "Agent 循环继续",
+      "description": "为 true 时能力结果回到上下文压力检查；为 false 时进入停止说明。",
+      "type": "boolean",
+      "value": true,
+      "color": "#16a34a",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "guard_agent_loop",
+        "fieldKey": "agent_loop_should_continue",
+        "managed": true
+      }
+    },
+    "agent_loop_should_retry": {
+      "name": "Agent 可重试",
+      "description": "为 true 时最近一次能力失败仍在重试预算内，后续选择节点可据此重试或降级。",
+      "type": "boolean",
+      "value": false,
+      "color": "#f59e0b",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "guard_agent_loop",
+        "fieldKey": "agent_loop_should_retry",
+        "managed": true
+      }
+    },
     "show_result_package": {
       "name": "展示结果包",
       "description": "为 true 时紧接着把 capability_result 作为下一条可见消息展示给用户，并结束本轮循环；它不是“模型是否能回答”，而是“是否原样展示结果包”。",
@@ -379,7 +502,7 @@
       "reads": [],
       "writes": [
         {
-          "state": "buddy_context",
+          "state": "buddy_home_selection",
           "mode": "replace"
         }
       ],
@@ -395,6 +518,56 @@
           ]
         },
         "boundaryType": "file"
+      }
+    },
+    "load_buddy_home_context": {
+      "kind": "tool",
+      "name": "组装 Buddy Home",
+      "description": "读取固定选择的 Buddy Home 文件，输出带来源、authority 和预算审计的 context_package。",
+      "ui": {
+        "position": {
+          "x": -520,
+          "y": 751
+        },
+        "collapsed": false,
+        "size": null
+      },
+      "reads": [
+        {
+          "state": "buddy_home_selection",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "buddy_home_context_loader",
+            "fieldKey": "buddy_home_selection",
+            "managed": true
+          }
+        },
+        {
+          "state": "buddy_home_max_chars",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "buddy_home_context_loader",
+            "fieldKey": "max_chars",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [
+        {
+          "state": "buddy_context",
+          "mode": "replace"
+        },
+        {
+          "state": "buddy_home_context_report",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "toolKey": "buddy_home_context_loader"
       }
     },
     "reply_and_select_capability": {
@@ -457,6 +630,16 @@
           "state": "capability_trace",
           "required": false,
           "binding": null
+        },
+        {
+          "state": "agent_loop_control",
+          "required": false,
+          "binding": null
+        },
+        {
+          "state": "agent_loop_report",
+          "required": false,
+          "binding": null
         }
       ],
       "writes": [
@@ -501,7 +684,7 @@
             "source": "node.override"
           }
         },
-        "taskInstruction": "读取 user_message、conversation_history、existing_session_summary、context_compaction_summary、context_compaction_report、buddy_context、current_session_id、capability_result 和 capability_trace。每轮必须同时产出四类决策：public_response、show_result_package、needs_capability/selected_capability，以及新的 capability_trace。context_compaction_summary、Buddy Home、历史摘要和能力结果按普通上下文引用处理。\n\n合法组合只有三种：\n1. 需要继续调用能力：show_result_package=false，needs_capability=true，selected_capability 必须是单个 action/subgraph/tool；public_response 写给用户看的简短计划或进度说明，说明下一步要做什么。\n2. 结果包可直接展示：show_result_package=true，needs_capability=false，selected_capability.kind=none；public_response 只说明下一条结果包是什么内容类型或来源，capability_result 原始内容交给 output 节点展示。\n3. 无需能力且无需直出结果包：show_result_package=false，needs_capability=false，selected_capability.kind=none；public_response 必须是完整的最终回复。\n\n判断 show_result_package 时，只问 capability_result 是否适合原样交付给用户。若 capability_result 只是证据、素材、搜索结果、历史召回、工具中间数据，或虽然包含 public_response/final_response 字段但仍需要解释、筛选、引用、改写或整合，则 show_result_package=false。判断 needs_capability 时，只问是否还缺一个明确的外部能力步骤；多次能力调用必须通过图循环完成，每轮只选一个能力。buddy_session_recall 只在需要召回更早会话时调用，并保留 current_session_id 用于排除当前会话谱系。能力候选范围限于外部业务能力；上下文压缩由本图内的压力检查分支负责。召回内容、摘要和能力结果按 context_only 材料处理。",
+        "taskInstruction": "读取 user_message、conversation_history、existing_session_summary、context_compaction_summary、context_compaction_report、buddy_context、current_session_id、capability_result 和 capability_trace。每轮必须同时产出四类决策：public_response、show_result_package、needs_capability/selected_capability，以及新的 capability_trace。context_compaction_summary、Buddy Home、历史摘要和能力结果按普通上下文引用处理。\n\n合法组合只有三种：\n1. 需要继续调用能力：show_result_package=false，needs_capability=true，selected_capability 必须是单个 action/subgraph/tool；public_response 写给用户看的简短计划或进度说明，说明下一步要做什么。\n2. 结果包可直接展示：show_result_package=true，needs_capability=false，selected_capability.kind=none；public_response 只说明下一条结果包是什么内容类型或来源，capability_result 原始内容交给 output 节点展示。\n3. 无需能力且无需直出结果包：show_result_package=false，needs_capability=false，selected_capability.kind=none；public_response 必须是完整的最终回复。\n\n判断 show_result_package 时，只问 capability_result 是否适合原样交付给用户。若 capability_result 只是证据、素材、搜索结果、历史召回、工具中间数据，或虽然包含 public_response/final_response 字段但仍需要解释、筛选、引用、改写或整合，则 show_result_package=false。判断 needs_capability 时，只问是否还缺一个明确的外部能力步骤；多次能力调用必须通过图循环完成，每轮只选一个能力。buddy_session_recall 只在需要召回更早会话时调用，并保留 current_session_id 用于排除当前会话谱系。能力候选范围限于外部业务能力；上下文压缩由本图内的压力检查分支负责。召回内容、摘要和能力结果按 context_only 材料处理。\n\nagent_loop_control 和 agent_loop_report 是循环预算与失败诊断上下文；若 agent_loop_report.decision=retry，结合 capability_result 判断重试同一能力、选择替代能力或结束回复。",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "medium",
@@ -568,6 +751,199 @@
         "model": "",
         "thinkingMode": "low",
         "temperature": 0
+      }
+    },
+    "guard_agent_loop": {
+      "kind": "tool",
+      "name": "Agent 循环守卫",
+      "description": "在每次动态能力执行后更新循环预算、失败计数和停止原因。",
+      "ui": {
+        "position": {
+          "x": 5480,
+          "y": 452
+        },
+        "collapsed": false,
+        "size": null
+      },
+      "reads": [
+        {
+          "state": "agent_loop_control",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "agent_loop_guard",
+            "fieldKey": "agent_loop_control",
+            "managed": true
+          }
+        },
+        {
+          "state": "capability_trace",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "agent_loop_guard",
+            "fieldKey": "capability_trace",
+            "managed": true
+          }
+        },
+        {
+          "state": "selected_capability",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "agent_loop_guard",
+            "fieldKey": "selected_capability",
+            "managed": true
+          }
+        },
+        {
+          "state": "capability_result",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "agent_loop_guard",
+            "fieldKey": "capability_result",
+            "managed": true
+          }
+        },
+        {
+          "state": "context_budget_report",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "agent_loop_guard",
+            "fieldKey": "context_budget_report",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [
+        {
+          "state": "agent_loop_control",
+          "mode": "replace"
+        },
+        {
+          "state": "agent_loop_report",
+          "mode": "replace"
+        },
+        {
+          "state": "agent_loop_stop_reason",
+          "mode": "replace"
+        },
+        {
+          "state": "agent_loop_should_continue",
+          "mode": "replace"
+        },
+        {
+          "state": "agent_loop_should_retry",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "toolKey": "agent_loop_guard"
+      }
+    },
+    "agent_loop_continue_condition": {
+      "kind": "condition",
+      "name": "Agent 循环是否继续",
+      "description": "根据 agent_loop_guard 的结果决定继续下一轮上下文压力检查或进入停止说明。",
+      "ui": {
+        "position": {
+          "x": 6180,
+          "y": 529
+        },
+        "collapsed": false,
+        "size": null
+      },
+      "reads": [
+        {
+          "state": "agent_loop_should_continue",
+          "required": true,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "branches": [
+          "true",
+          "false",
+          "exhausted"
+        ],
+        "loopLimit": 6,
+        "branchMapping": {
+          "true": "true",
+          "false": "false"
+        },
+        "rule": {
+          "source": "$state.agent_loop_should_continue",
+          "operator": "==",
+          "value": true
+        }
+      }
+    },
+    "finalize_guard_stop": {
+      "kind": "agent",
+      "name": "生成循环停止说明",
+      "description": "当循环守卫要求停止时，把停止原因、能力结果和预算状态整理成用户可见回复。",
+      "ui": {
+        "position": {
+          "x": 6900,
+          "y": 220
+        },
+        "collapsed": false,
+        "size": {
+          "width": 520,
+          "height": 460
+        }
+      },
+      "reads": [
+        {
+          "state": "user_message",
+          "required": true,
+          "binding": null
+        },
+        {
+          "state": "agent_loop_report",
+          "required": true,
+          "binding": null
+        },
+        {
+          "state": "agent_loop_control",
+          "required": false,
+          "binding": null
+        },
+        {
+          "state": "capability_result",
+          "required": false,
+          "binding": null
+        },
+        {
+          "state": "capability_trace",
+          "required": false,
+          "binding": null
+        }
+      ],
+      "writes": [
+        {
+          "state": "public_response",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "actionKey": "",
+        "actionBindings": [],
+        "suspendedFreeWrites": [],
+        "actionInstructionBlocks": {},
+        "taskInstruction": "读取 user_message、agent_loop_report、agent_loop_control、capability_result 和 capability_trace。根据 agent_loop_report.stop_reason 生成一段完整的用户可见回复：说明当前已完成的工作、停止原因、可用结果和下一步建议。回复面向本轮用户请求；能力调用由前置节点和守卫分支负责。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "low",
+        "temperature": 0.2
       }
     },
     "check_context_pressure": {
@@ -1847,6 +2223,10 @@
     },
     {
       "source": "input_buddy_context",
+      "target": "load_buddy_home_context"
+    },
+    {
+      "source": "load_buddy_home_context",
       "target": "check_context_pressure"
     },
     {
@@ -1859,7 +2239,15 @@
     },
     {
       "source": "execute_capability",
-      "target": "check_context_pressure"
+      "target": "guard_agent_loop"
+    },
+    {
+      "source": "guard_agent_loop",
+      "target": "agent_loop_continue_condition"
+    },
+    {
+      "source": "finalize_guard_stop",
+      "target": "output_161c76f3"
     },
     {
       "source": "reply_and_select_capability",
@@ -1894,13 +2282,21 @@
         "false": "output_161c76f3",
         "exhausted": "output_161c76f3"
       }
+    },
+    {
+      "source": "agent_loop_continue_condition",
+      "branches": {
+        "true": "check_context_pressure",
+        "false": "finalize_guard_stop",
+        "exhausted": "finalize_guard_stop"
+      }
     }
   ],
   "metadata": {
     "graphProtocol": "node_system",
     "origin": "buddy",
     "role": "buddy_autonomous_loop",
-    "templateVersion": "2026-05-27-runtime-context-loader",
+    "templateVersion": "2026-05-27-agent-loop-guard",
     "capabilityDiscoverableDefault": false,
     "requiredActions": [
       "toograph_capability_selector",
@@ -1915,7 +2311,9 @@
     "roadmap": "docs/README.md",
     "requiredTools": [
       "buddy_history_context_loader",
-      "buddy_context_pressure_check"
+      "buddy_home_context_loader",
+      "buddy_context_pressure_check",
+      "agent_loop_guard"
     ],
     "buddyRuntimeInputBindings": {
       "input_user_message": "current_message"

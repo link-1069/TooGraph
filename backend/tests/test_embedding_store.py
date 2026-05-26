@@ -105,6 +105,78 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertEqual(completed["status"], "completed")
         self.assertTrue(completed["completed_at"])
 
+    def test_process_pending_embedding_jobs_builds_local_vectors_and_completes_jobs(self) -> None:
+        from app.core.storage.embedding_store import (
+            process_pending_embedding_jobs,
+            queue_embedding_job,
+            register_embedding_model,
+            search_embedding_vectors,
+        )
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
+        document = upsert_retrieval_document(source_kind="memory_entry", source_id="mem_job")
+        [chunk] = upsert_retrieval_chunks(
+            document["document_id"],
+            [{"chunk_id": "chunk_memory_job", "content": "Embedding processor should index memory recall content."}],
+        )
+        [job] = queue_embedding_job("memory_entry", "mem_job", model["embedding_model_id"])
+
+        report = process_pending_embedding_jobs(model_ref=model["embedding_model_id"], limit=10)
+        results = search_embedding_vectors(
+            report["processed_jobs"][0]["query_vector"],
+            {"embedding_model_ref": model["embedding_model_id"], "source_kind": "memory_entry"},
+            limit=1,
+        )
+
+        self.assertEqual(report["completed_count"], 1)
+        self.assertEqual(report["failed_count"], 0)
+        self.assertEqual(report["processed_jobs"][0]["job_id"], job["job_id"])
+        self.assertEqual(report["processed_jobs"][0]["status"], "completed")
+        self.assertEqual(report["processed_jobs"][0]["chunk_id"], chunk["chunk_id"])
+        self.assertEqual(results[0]["chunk_id"], chunk["chunk_id"])
+
+    def test_process_pending_embedding_jobs_uses_provider_vectors_for_external_models(self) -> None:
+        from app.core.storage.embedding_store import (
+            process_pending_embedding_jobs,
+            queue_embedding_job,
+            register_embedding_model,
+            search_embedding_vectors,
+        )
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        model = register_embedding_model(provider_key="openai", model="text-embedding-3-small", dimensions=3)
+        document = upsert_retrieval_document(source_kind="memory_entry", source_id="mem_provider_job")
+        [chunk] = upsert_retrieval_chunks(
+            document["document_id"],
+            [{"chunk_id": "chunk_provider_memory", "content": "Provider embedding content."}],
+        )
+        [job] = queue_embedding_job("memory_entry", "mem_provider_job", model["embedding_model_id"])
+
+        with patch(
+            "app.core.storage.embedding_store.embed_text_with_model_ref",
+            return_value=([0.0, 1.0, 0.0], {"provider_id": "openai", "model": "text-embedding-3-small"}),
+        ) as embed:
+            report = process_pending_embedding_jobs(model_ref=model["embedding_model_id"], limit=10)
+
+        embed.assert_called_once_with(
+            model_ref="openai/text-embedding-3-small",
+            text="Provider embedding content.",
+            dimensions=3,
+        )
+        results = search_embedding_vectors(
+            [0.0, 1.0, 0.0],
+            {"embedding_model_ref": model["embedding_model_id"], "source_kind": "memory_entry"},
+            limit=1,
+        )
+
+        self.assertEqual(report["completed_count"], 1)
+        self.assertEqual(report["failed_count"], 0)
+        self.assertEqual(report["processed_jobs"][0]["job_id"], job["job_id"])
+        self.assertEqual(report["processed_jobs"][0]["status"], "completed")
+        self.assertEqual(report["processed_jobs"][0]["chunk_id"], chunk["chunk_id"])
+        self.assertEqual(results[0]["chunk_id"], chunk["chunk_id"])
+
     def test_search_embedding_vectors_uses_application_cosine_similarity(self) -> None:
         from app.core.storage.embedding_store import (
             register_embedding_model,

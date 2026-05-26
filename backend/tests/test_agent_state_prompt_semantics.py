@@ -653,6 +653,53 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
         self.assertNotIn('"kind": "context_assembly_ref"', prompt)
         self.assertNotIn(ref["assembly_id"], prompt)
 
+    def test_auto_prompt_expands_context_package_to_rendered_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"),
+            ):
+                database.initialize_storage()
+                from app.core.storage.context_assembly_store import create_context_assembly
+
+                ref = create_context_assembly(
+                    target_state_key="conversation_history",
+                    renderer_key="buddy_history",
+                    renderer_version="1",
+                    rendered_text="用户: 这是标准上下文包里的历史。",
+                    sources=[],
+                )
+                prompt = build_auto_system_prompt(
+                    ["answer"],
+                    {
+                        "conversation_history": {
+                            "kind": "context_package",
+                            "package_id": "pkg_prompt_history",
+                            "source_kind": "session",
+                            "authority": "history",
+                            "items": [],
+                            "context_ref": ref,
+                            "budget": {"used_chars": 16, "source_chars": 16, "omitted_count": 0},
+                            "warnings": [],
+                        }
+                    },
+                    {},
+                    state_schema={
+                        "conversation_history": NodeSystemStateDefinition(
+                            name="历史对话",
+                            type=NodeSystemStateType.MARKDOWN,
+                        ),
+                        "answer": NodeSystemStateDefinition(type=NodeSystemStateType.MARKDOWN),
+                    },
+                )
+
+        self.assertIn("source_kind: session", prompt)
+        self.assertIn("authority: history", prompt)
+        self.assertIn("用户: 这是标准上下文包里的历史。", prompt)
+        self.assertNotIn('"kind": "context_package"', prompt)
+        self.assertNotIn(ref["assembly_id"], prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

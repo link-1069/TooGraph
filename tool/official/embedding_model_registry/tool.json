@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "embedding_model_registry",
+  "name": "Embedding Model Registry",
+  "description": "A deterministic registry tool to register embedding models and list configured embedding models for retrieval maintenance.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "operation",
+      "name": "Operation",
+      "valueType": "text",
+      "description": "register or list."
+    },
+    {
+      "key": "provider_key",
+      "name": "Provider Key",
+      "valueType": "text",
+      "description": "Model provider key, for example local-hash, local, openai, or openrouter."
+    },
+    {
+      "key": "model",
+      "name": "Model",
+      "valueType": "text",
+      "description": "Embedding model name."
+    },
+    {
+      "key": "dimensions",
+      "name": "Dimensions",
+      "valueType": "number",
+      "description": "Embedding vector dimension count."
+    },
+    {
+      "key": "distance_metric",
+      "name": "Distance Metric",
+      "valueType": "text",
+      "description": "Embedding distance metric. The current supported value is cosine."
+    },
+    {
+      "key": "enabled",
+      "name": "Enabled",
+      "valueType": "boolean",
+      "description": "Whether memory writes should queue jobs for this embedding model."
+    },
+    {
+      "key": "enabled_only",
+      "name": "Enabled Only",
+      "valueType": "boolean",
+      "description": "When listing models, include only enabled models."
+    },
+    {
+      "key": "metadata",
+      "name": "Metadata",
+      "valueType": "json",
+      "description": "Optional model metadata."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Registry operation status."
+    },
+    {
+      "key": "operation",
+      "name": "Operation",
+      "valueType": "text",
+      "description": "The operation that was executed."
+    },
+    {
+      "key": "model",
+      "name": "Model",
+      "valueType": "json",
+      "description": "The registered embedding model record."
+    },
+    {
+      "key": "models",
+      "name": "Models",
+      "valueType": "json",
+      "description": "Listed embedding model records."
+    },
+    {
+      "key": "error",
+      "name": "Error",
+      "valueType": "text",
+      "description": "Error detail when the operation fails."
+    }
+  ]
+}

@@ -48,7 +48,7 @@
       "key": "conversation_history",
       "name": "Conversation History",
       "valueType": "json",
-      "description": "Conversation history state from the source run, normally a context_assembly_ref."
+      "description": "Conversation history state from the source run, normally a context_package with a nested context_assembly_ref."
     },
     {
       "key": "request_understanding",

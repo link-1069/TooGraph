@@ -24,7 +24,14 @@ from app.tools.openai_codex_client import (
     refresh_codex_access_token,
     resolve_codex_access_token,
 )
-from app.tools import model_provider_anthropic, model_provider_codex, model_provider_discovery, model_provider_gemini, model_provider_openai
+from app.tools import (
+    model_provider_anthropic,
+    model_provider_codex,
+    model_provider_discovery,
+    model_provider_embedding,
+    model_provider_gemini,
+    model_provider_openai,
+)
 from app.tools.model_provider_media import inline_provider_image_attachments
 from app.tools.video_frame_fallback import (
     build_video_frame_fallback_attachments,
@@ -193,6 +200,94 @@ def _chat_codex_responses(
         on_delta=on_delta,
         input_attachments=input_attachments,
         structured_output_schema=structured_output_schema,
+    )
+
+
+def _embed_openai_compatible(
+    *,
+    provider_id: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    text: str,
+    auth_header: str,
+    auth_scheme: str,
+) -> tuple[list[float], dict[str, Any]]:
+    return model_provider_embedding.embed_openai_compatible(
+        provider_id=provider_id,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        text=text,
+        auth_header=auth_header,
+        auth_scheme=auth_scheme,
+        append_request_log=_append_model_request_log_safely,
+    )
+
+
+def embed_text_with_model_provider(
+    *,
+    provider_id: str,
+    transport: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    text: str,
+    dimensions: int | None = None,
+    auth_header: str = "Authorization",
+    auth_scheme: str = "Bearer",
+) -> tuple[list[float], dict[str, Any]]:
+    normalized_transport = normalize_transport(transport)
+    normalized_base_url = _normalize_base_url(base_url)
+    if normalized_transport != TRANSPORT_OPENAI_COMPATIBLE:
+        raise RuntimeError(f"Embedding transport '{normalized_transport}' is not supported for provider '{provider_id}'.")
+
+    vector, meta = _embed_openai_compatible(
+        provider_id=provider_id,
+        base_url=normalized_base_url,
+        api_key=api_key,
+        model=model,
+        text=text,
+        auth_header=auth_header,
+        auth_scheme=auth_scheme,
+    )
+    if dimensions is not None and int(dimensions) > 0 and len(vector) != int(dimensions):
+        raise RuntimeError(f"Expected {int(dimensions)} embedding dimensions from '{provider_id}/{model}', got {len(vector)}.")
+    meta["base_url"] = normalized_base_url
+    return vector, meta
+
+
+def embed_text_with_model_ref(
+    *,
+    model_ref: str,
+    text: str,
+    dimensions: int | None = None,
+) -> tuple[list[float], dict[str, Any]]:
+    provider_id, model_name = model_ref.split("/", 1) if "/" in model_ref else ("local", model_ref)
+    provider_id = provider_id.strip() or "local"
+    model_name = model_name.strip()
+
+    saved_settings = load_app_settings()
+    saved_providers = saved_settings.get("model_providers")
+    saved_provider = saved_providers.get(provider_id) if isinstance(saved_providers, dict) else {}
+    saved_provider = saved_provider if isinstance(saved_provider, dict) else {}
+    template = get_provider_template(provider_id)
+    provider_config = {**template, **saved_provider}
+    auth_scheme = (
+        provider_config.get("auth_scheme")
+        if provider_config.get("auth_scheme") is not None
+        else template.get("auth_scheme", "Bearer")
+    )
+    return embed_text_with_model_provider(
+        provider_id=provider_id,
+        transport=str(provider_config.get("transport") or template["transport"]),
+        base_url=str(provider_config.get("base_url") or template["base_url"]),
+        api_key=str(provider_config.get("api_key") or ""),
+        model=model_name,
+        text=text,
+        dimensions=dimensions,
+        auth_header=str(provider_config.get("auth_header") or template.get("auth_header") or "Authorization"),
+        auth_scheme=str(auth_scheme or ""),
     )
 
 

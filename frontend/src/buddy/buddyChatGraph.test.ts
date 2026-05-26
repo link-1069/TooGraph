@@ -607,11 +607,23 @@ function assertAgentNode(node: TemplateRecord["nodes"][string]): asserts node is
   assert.equal(node.kind, "agent");
 }
 
-function assertContextAssemblyRef(value: unknown) {
+function assertContextPackage(value: unknown) {
   assert.equal(typeof value, "object");
   assert.notEqual(value, null);
   assert.equal(Array.isArray(value), false);
-  const ref = value as Record<string, unknown>;
+  const packageValue = value as Record<string, unknown>;
+  assert.equal(packageValue.kind, "context_package");
+  assert.equal(packageValue.source_kind, "session");
+  assert.equal(packageValue.authority, "history");
+  assert.equal(typeof packageValue.package_id, "string");
+  assert.equal(Array.isArray(packageValue.items), true);
+  assert.equal(Array.isArray(packageValue.source_refs), true);
+  assert.equal("rendered_text" in packageValue, false);
+  assert.equal("text" in packageValue, false);
+  const ref = packageValue.context_ref as Record<string, unknown>;
+  assert.equal(typeof ref, "object");
+  assert.notEqual(ref, null);
+  assert.equal(Array.isArray(ref), false);
   assert.equal(ref.kind, "context_assembly_ref");
   assert.equal(ref.target_state_key, "conversation_history");
   assert.equal(ref.renderer_key, "buddy_history");
@@ -620,7 +632,7 @@ function assertContextAssemblyRef(value: unknown) {
   assert.equal(typeof ref.source_count, "number");
   assert.equal("rendered_text" in ref, false);
   assert.equal("text" in ref, false);
-  return ref;
+  return packageValue;
 }
 
 test("formatBuddyHistory keeps a compact readable transcript", () => {
@@ -819,15 +831,15 @@ test("buildBuddyChatGraph injects only configured input-node bindings", () => {
   assert.equal(graph.graph_id, null);
   assert.equal(graph.name, "伙伴对话循环");
   assert.equal(graph.state_schema.state_1.value, "帮我看当前页面");
-  const stateHistoryRef = assertContextAssemblyRef(graph.state_schema.state_2.value);
-  assert.equal(stateHistoryRef.source_count, 1);
+  const stateHistoryPackage = assertContextPackage(graph.state_schema.state_2.value);
+  assert.equal(stateHistoryPackage.source_count, 1);
   assert.equal(graph.state_schema[BUDDY_REPLY_STATE_KEY].value, "");
   assertInputNode(graph.nodes.input_user_message);
   assertInputNode(graph.nodes.input_conversation_history);
   assert.equal(graph.nodes.input_user_message.config.value, "帮我看当前页面");
-  const nodeHistoryRef = assertContextAssemblyRef(graph.nodes.input_conversation_history.config.value);
-  assert.equal(nodeHistoryRef.source_count, 1);
-  assert.deepEqual(nodeHistoryRef.source_refs, [
+  const nodeHistoryPackage = assertContextPackage(graph.nodes.input_conversation_history.config.value);
+  assert.equal(nodeHistoryPackage.source_count, 1);
+  assert.deepEqual(nodeHistoryPackage.source_refs, [
     {
       source_kind: "buddy_message",
       source_id: "msg_assistant_1",
@@ -965,17 +977,19 @@ test("buildBuddyChatGraph feeds official loop conversation history and session s
   );
 
   assert.equal(graph.state_schema.existing_session_summary.value, "summary-so-far");
-  const historyRef = assertContextAssemblyRef(graph.nodes.input_conversation_history.config.value);
-  assert.equal(historyRef.source_count, 13);
-  assert.deepEqual((historyRef.source_refs as Array<Record<string, unknown>>)[0], {
+  const historyPackage = assertContextPackage(graph.nodes.input_conversation_history.config.value);
+  const sourceRefs = historyPackage.source_refs as Array<Record<string, unknown>>;
+  assert.equal(historyPackage.source_count, 13);
+  assert.equal((historyPackage.context_ref as Record<string, unknown>).source_count, 13);
+  assert.deepEqual(sourceRefs[0], {
     source_kind: "buddy_session_summary",
     source_id: "session_summary",
     role: "summary",
     ordinal: 0,
   });
-  assert.equal((historyRef.source_refs as Array<Record<string, unknown>>).at(-1)?.source_id, "msg_17");
+  assert.equal(sourceRefs.at(-1)?.source_id, "msg_17");
   assert.equal(
-    (historyRef.source_refs as Array<Record<string, unknown>>).some((source) => source.source_id === "msg_0"),
+    sourceRefs.some((source) => source.source_id === "msg_0"),
     false,
   );
 });

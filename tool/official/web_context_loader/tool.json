@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "web_context_loader",
+  "name": "Web Context Loader",
+  "description": "A deterministic web evidence reader that turns search results and saved source artifacts into an auditable context_package with source refs, budget metadata, and warnings.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "query",
+      "name": "Query",
+      "valueType": "text",
+      "description": "Search query that produced the web evidence."
+    },
+    {
+      "key": "source_urls",
+      "name": "Source URLs",
+      "valueType": "json",
+      "description": "Source URL list returned by web_search."
+    },
+    {
+      "key": "artifact_paths",
+      "name": "Artifact Paths",
+      "valueType": "file",
+      "description": "Saved readable source documents returned by web_search."
+    },
+    {
+      "key": "search_results",
+      "name": "Search Results",
+      "valueType": "json",
+      "description": "Optional raw or normalized web result objects."
+    },
+    {
+      "key": "errors",
+      "name": "Errors",
+      "valueType": "json",
+      "description": "Optional search or fetch errors to report as warnings."
+    },
+    {
+      "key": "source_run_id",
+      "name": "Source Run ID",
+      "valueType": "text",
+      "description": "Optional graph run id associated with the web evidence."
+    },
+    {
+      "key": "max_chars",
+      "name": "Max Chars",
+      "valueType": "number",
+      "description": "Maximum rendered web context characters."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Loader status."
+    },
+    {
+      "key": "web_context_package",
+      "name": "Web Context Package",
+      "valueType": "json",
+      "description": "Web context_package."
+    },
+    {
+      "key": "web_context_report",
+      "name": "Web Context Report",
+      "valueType": "json",
+      "description": "Web source refs, budget, and warnings."
+    }
+  ]
+}

@@ -58,6 +58,23 @@ def test_save_run_loads_run_detail_from_database_without_json_file(tmp_path: Pat
     assert detail.output_previews[0].value == "done"
 
 
+def test_save_run_persists_agent_stop_reason(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_temp_run_store(tmp_path, monkeypatch)
+    run = _run_state("run_stop_reason", "2026-05-26T00:00:00Z")
+    run["status"] = "completed"
+    run["stop_reason"] = "capability_budget_exhausted"
+    run["artifacts"] = {"stop_reason": "capability_budget_exhausted"}
+
+    run_store.save_run(run)
+
+    loaded = run_store.load_run("run_stop_reason")
+    detail = RunDetail.model_validate(loaded)
+
+    assert loaded["stop_reason"] == "capability_budget_exhausted"
+    assert detail.stop_reason == "capability_budget_exhausted"
+    assert detail.artifacts.stop_reason == "capability_budget_exhausted"
+
+
 def test_list_runs_sorts_by_started_at_then_run_id_desc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _prepare_temp_run_store(tmp_path, monkeypatch)
     run_store.save_run(_run_state("run_a", "2026-05-26T00:00:02Z"))

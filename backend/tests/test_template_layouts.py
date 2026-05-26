@@ -100,6 +100,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_autonomous_review",
                 "buddy_context_compaction",
                 "ecommerce_review_mining_agent",
+                "embedding_maintenance",
                 "game_creative_factory",
                 "job_application_interview_coach",
                 "multi_platform_content_repurposer",
@@ -117,6 +118,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
                 "buddy_context_compaction",
+                "embedding_maintenance",
                 "toograph_page_operation_workflow",
             ],
         )
@@ -149,21 +151,26 @@ class TemplateLayoutTests(unittest.TestCase):
         )
         for expected_node in [
             "load_history_context",
+            "load_buddy_home_context",
             "check_context_pressure",
             "context_pressure_condition",
             "run_context_compaction",
             "reply_and_select_capability",
             "execute_capability",
+            "guard_agent_loop",
+            "agent_loop_continue_condition",
+            "finalize_guard_stop",
             "condition_93972e3f",
             "condition_3706cb6e",
         ]:
             self.assertIn(expected_node, buddy_template["nodes"])
         self.assertEqual(buddy_template["nodes"]["run_context_compaction"]["kind"], "subgraph")
         self.assertEqual(buddy_template["nodes"]["load_history_context"]["config"]["toolKey"], "buddy_history_context_loader")
+        self.assertEqual(buddy_template["nodes"]["load_buddy_home_context"]["config"]["toolKey"], "buddy_home_context_loader")
         buddy_home_input = buddy_template["nodes"]["input_buddy_context"]
         self.assertEqual(buddy_home_input["kind"], "input")
         self.assertEqual(buddy_home_input["config"]["boundaryType"], "file")
-        self.assertEqual(buddy_home_input["writes"], [{"state": "buddy_context", "mode": "replace"}])
+        self.assertEqual(buddy_home_input["writes"], [{"state": "buddy_home_selection", "mode": "replace"}])
         self.assertEqual(
             buddy_home_input["config"]["value"],
             {
@@ -173,13 +180,14 @@ class TemplateLayoutTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            buddy_template["state_schema"]["buddy_context"]["value"],
+            buddy_template["state_schema"]["buddy_home_selection"]["value"],
             {
                 "kind": "local_folder",
                 "root": "buddy_home",
                 "selected": ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"],
             },
         )
+        self.assertEqual(buddy_template["state_schema"]["buddy_context"]["binding"]["toolKey"], "buddy_home_context_loader")
         self.assertEqual(
             buddy_template["state_schema"]["current_session_id"]["binding"]["fieldKey"],
             "current_session_id",
@@ -193,11 +201,19 @@ class TemplateLayoutTests(unittest.TestCase):
             buddy_template["edges"],
         )
         self.assertIn(
-            {"source": "input_buddy_context", "target": "check_context_pressure"},
+            {"source": "input_buddy_context", "target": "load_buddy_home_context"},
             buddy_template["edges"],
         )
         self.assertIn(
-            {"source": "execute_capability", "target": "check_context_pressure"},
+            {"source": "load_buddy_home_context", "target": "check_context_pressure"},
+            buddy_template["edges"],
+        )
+        self.assertIn(
+            {"source": "execute_capability", "target": "guard_agent_loop"},
+            buddy_template["edges"],
+        )
+        self.assertIn(
+            {"source": "guard_agent_loop", "target": "agent_loop_continue_condition"},
             buddy_template["edges"],
         )
         test_condition_edges = {
@@ -239,6 +255,63 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "input_source_run_id", "target": "load_review_context"}, review_template["edges"])
         self.assertIn({"source": "load_review_context", "target": "recall_related_sessions"}, review_template["edges"])
         self.assertIn({"source": "load_review_context", "target": "draft_autonomous_review"}, review_template["edges"])
+
+        embedding_template = templates["embedding_maintenance"]
+        self.assertEqual(embedding_template["source"], "official")
+        self.assertEqual(embedding_template["label"], "Embedding 维护")
+        self.assertEqual(embedding_template["default_graph_name"], "Embedding 维护")
+        self.assertEqual(embedding_template["metadata"]["role"], "embedding_maintenance")
+        self.assertEqual(embedding_template["metadata"]["requiredTools"], ["embedding_job_processor"])
+        self.assertIs(embedding_template["capabilityDiscoverable"], False)
+        self.assertEqual(
+            sorted(node_id for node_id, node in embedding_template["nodes"].items() if node["kind"] == "input"),
+            ["input_limit", "input_model_ref"],
+        )
+        self.assertEqual(embedding_template["nodes"]["process_embedding_jobs"]["kind"], "tool")
+        self.assertEqual(
+            embedding_template["nodes"]["process_embedding_jobs"]["config"]["toolKey"],
+            "embedding_job_processor",
+        )
+        self.assertEqual(
+            _read_contracts(embedding_template["nodes"]["process_embedding_jobs"]["reads"]),
+            [
+                {
+                    "state": "model_ref",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "embedding_job_processor",
+                        "fieldKey": "model_ref",
+                        "managed": True,
+                    },
+                },
+                {
+                    "state": "job_limit",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "embedding_job_processor",
+                        "fieldKey": "limit",
+                        "managed": True,
+                    },
+                },
+            ],
+        )
+        self.assertEqual(
+            embedding_template["nodes"]["process_embedding_jobs"]["writes"],
+            [
+                {"state": "processor_status", "mode": "replace"},
+                {"state": "processed_count", "mode": "replace"},
+                {"state": "completed_count", "mode": "replace"},
+                {"state": "failed_count", "mode": "replace"},
+                {"state": "processed_jobs", "mode": "replace"},
+            ],
+        )
+        self.assertIn({"source": "input_model_ref", "target": "process_embedding_jobs"}, embedding_template["edges"])
+        self.assertIn({"source": "input_limit", "target": "process_embedding_jobs"}, embedding_template["edges"])
+        self.assertIn({"source": "process_embedding_jobs", "target": "output_embedding_report"}, embedding_template["edges"])
 
         page_operation_template = templates["toograph_page_operation_workflow"]
         self.assertEqual(page_operation_template["source"], "official")
@@ -1832,14 +1905,20 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(template["metadata"]["origin"], "buddy")
         self.assertEqual(template["metadata"]["role"], "buddy_autonomous_loop")
         self.assertEqual(template["metadata"]["requiredActions"], ["toograph_capability_selector", "buddy_session_recall"])
-        self.assertEqual(template["metadata"]["requiredTools"], ["buddy_history_context_loader", "buddy_context_pressure_check"])
+        self.assertEqual(
+            template["metadata"]["requiredTools"],
+            ["buddy_history_context_loader", "buddy_home_context_loader", "buddy_context_pressure_check", "agent_loop_guard"],
+        )
         self.assertEqual(template["metadata"]["buddyRuntimeInputBindings"], {"input_user_message": "current_message"})
         self.assertEqual(
             set(states),
             {
                 "user_message",
                 "conversation_history",
+                "buddy_home_selection",
+                "buddy_home_max_chars",
                 "buddy_context",
+                "buddy_home_context_report",
                 "current_session_id",
                 "existing_session_summary",
                 "history_max_messages",
@@ -1856,6 +1935,11 @@ class TemplateLayoutTests(unittest.TestCase):
                 "needs_capability",
                 "capability_result",
                 "capability_trace",
+                "agent_loop_control",
+                "agent_loop_report",
+                "agent_loop_stop_reason",
+                "agent_loop_should_continue",
+                "agent_loop_should_retry",
                 "show_result_package",
                 "public_response",
             },
@@ -1863,7 +1947,10 @@ class TemplateLayoutTests(unittest.TestCase):
         expected_state_types = {
             "user_message": "text",
             "conversation_history": "json",
-            "buddy_context": "file",
+            "buddy_home_selection": "file",
+            "buddy_home_max_chars": "number",
+            "buddy_context": "json",
+            "buddy_home_context_report": "json",
             "current_session_id": "text",
             "existing_session_summary": "markdown",
             "history_max_messages": "number",
@@ -1880,6 +1967,11 @@ class TemplateLayoutTests(unittest.TestCase):
             "needs_capability": "boolean",
             "capability_result": "result_package",
             "capability_trace": "json",
+            "agent_loop_control": "json",
+            "agent_loop_report": "json",
+            "agent_loop_stop_reason": "text",
+            "agent_loop_should_continue": "boolean",
+            "agent_loop_should_retry": "boolean",
             "show_result_package": "boolean",
             "public_response": "markdown",
         }
@@ -1894,10 +1986,21 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["conversation_history"]["binding"]["kind"], "tool_output")
         self.assertEqual(states["conversation_history"]["binding"]["toolKey"], "buddy_history_context_loader")
         self.assertEqual(states["conversation_history"]["binding"]["nodeId"], "load_history_context")
+        self.assertIsNone(states["buddy_home_selection"]["binding"])
+        self.assertEqual(states["buddy_context"]["binding"]["kind"], "tool_output")
+        self.assertEqual(states["buddy_context"]["binding"]["toolKey"], "buddy_home_context_loader")
+        self.assertEqual(states["buddy_context"]["binding"]["nodeId"], "load_buddy_home_context")
+        self.assertEqual(states["buddy_home_context_report"]["binding"]["fieldKey"], "buddy_home_context_report")
         self.assertEqual(states["current_session_id"]["binding"]["toolKey"], "buddy_history_context_loader")
         self.assertEqual(states["existing_session_summary"]["binding"]["toolKey"], "buddy_history_context_loader")
         self.assertEqual(states["source_run_id"]["binding"]["toolKey"], "buddy_history_context_loader")
         self.assertEqual(states["history_context_report"]["binding"]["toolKey"], "buddy_history_context_loader")
+        self.assertEqual(states["agent_loop_control"]["binding"]["toolKey"], "agent_loop_guard")
+        self.assertEqual(states["agent_loop_control"]["binding"]["nodeId"], "guard_agent_loop")
+        self.assertEqual(states["agent_loop_report"]["binding"]["fieldKey"], "agent_loop_report")
+        self.assertEqual(states["agent_loop_stop_reason"]["binding"]["fieldKey"], "agent_loop_stop_reason")
+        self.assertEqual(states["agent_loop_should_continue"]["binding"]["fieldKey"], "agent_loop_should_continue")
+        self.assertEqual(states["agent_loop_should_retry"]["binding"]["fieldKey"], "agent_loop_should_retry")
         self.assertIsNone(states["show_result_package"]["binding"])
         self.assertIsNone(states["public_response"]["binding"])
         self.assertEqual(states["needs_context_compaction"]["binding"]["fieldKey"], "needs_context_compaction")
@@ -1916,13 +2019,15 @@ class TemplateLayoutTests(unittest.TestCase):
         ]:
             self.assertNotIn(removed_state_key, states)
 
-        self.assertEqual(states["buddy_context"]["type"], "file")
+        self.assertEqual(states["buddy_home_selection"]["type"], "file")
+        self.assertEqual(states["buddy_context"]["type"], "json")
         self.assertEqual(
             set(nodes),
             {
                 "input_user_message",
                 "load_history_context",
                 "input_buddy_context",
+                "load_buddy_home_context",
                 "check_context_pressure",
                 "context_pressure_condition",
                 "run_context_compaction",
@@ -1930,6 +2035,9 @@ class TemplateLayoutTests(unittest.TestCase):
                 "condition_93972e3f",
                 "condition_3706cb6e",
                 "execute_capability",
+                "guard_agent_loop",
+                "agent_loop_continue_condition",
+                "finalize_guard_stop",
                 "output_ab549b8d",
                 "output_161c76f3",
             },
@@ -1939,12 +2047,18 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(nodes["load_history_context"]["config"]["toolKey"], "buddy_history_context_loader")
         self.assertEqual(nodes["check_context_pressure"]["kind"], "tool")
         self.assertEqual(nodes["check_context_pressure"]["config"]["toolKey"], "buddy_context_pressure_check")
+        self.assertEqual(nodes["load_buddy_home_context"]["kind"], "tool")
+        self.assertEqual(nodes["load_buddy_home_context"]["config"]["toolKey"], "buddy_home_context_loader")
+        self.assertEqual(nodes["guard_agent_loop"]["kind"], "tool")
+        self.assertEqual(nodes["guard_agent_loop"]["config"]["toolKey"], "agent_loop_guard")
         self.assertEqual(nodes["run_context_compaction"]["config"]["graph"]["metadata"]["role"], "buddy_context_compaction")
         self.assertEqual(nodes["reply_and_select_capability"]["kind"], "agent")
         self.assertEqual(nodes["execute_capability"]["kind"], "agent")
+        self.assertEqual(nodes["finalize_guard_stop"]["kind"], "agent")
         self.assertEqual(nodes["context_pressure_condition"]["kind"], "condition")
         self.assertEqual(nodes["condition_93972e3f"]["kind"], "condition")
         self.assertEqual(nodes["condition_3706cb6e"]["kind"], "condition")
+        self.assertEqual(nodes["agent_loop_continue_condition"]["kind"], "condition")
         self.assertEqual(
             [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
             ["output_ab549b8d", "output_161c76f3"],
@@ -1958,6 +2072,7 @@ class TemplateLayoutTests(unittest.TestCase):
             "input_user_message": {"x": -1208, "y": 27},
             "load_history_context": {"x": -520, "y": 109},
             "input_buddy_context": {"x": -1211, "y": 751},
+            "load_buddy_home_context": {"x": -520, "y": 751},
             "check_context_pressure": {"x": 216, "y": 109},
             "context_pressure_condition": {"x": 877, "y": 237},
             "run_context_compaction": {"x": 1601, "y": -841},
@@ -1965,6 +2080,9 @@ class TemplateLayoutTests(unittest.TestCase):
             "condition_93972e3f": {"x": 3200, "y": 529},
             "condition_3706cb6e": {"x": 3962, "y": 854},
             "execute_capability": {"x": 4790, "y": 452},
+            "guard_agent_loop": {"x": 5480, "y": 452},
+            "agent_loop_continue_condition": {"x": 6180, "y": 529},
+            "finalize_guard_stop": {"x": 6900, "y": 220},
             "output_ab549b8d": {"x": 5661, "y": -376},
             "output_161c76f3": {"x": 4783, "y": -414},
         }
@@ -2000,6 +2118,8 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"state": "current_session_id", "required": False}, _read_contracts(selector_node["reads"]))
         self.assertIn({"state": "capability_result", "required": False}, _read_contracts(selector_node["reads"]))
         self.assertIn({"state": "capability_trace", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "agent_loop_control", "required": False}, _read_contracts(selector_node["reads"]))
+        self.assertIn({"state": "agent_loop_report", "required": False}, _read_contracts(selector_node["reads"]))
         for read in selector_node["reads"]:
             self.assertNotIn(read.get("state"), {"raw_conversation_history", "page_context"})
         self.assertEqual(
@@ -2034,6 +2154,26 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("buddy_session_recall", execute_node["config"]["taskInstruction"])
         self.assertIn("result_package", execute_node["config"]["taskInstruction"])
 
+        guard_node = nodes["guard_agent_loop"]
+        guard_reads_by_state = {read["state"]: read for read in guard_node["reads"]}
+        self.assertEqual(guard_reads_by_state["agent_loop_control"]["binding"]["fieldKey"], "agent_loop_control")
+        self.assertEqual(guard_reads_by_state["selected_capability"]["binding"]["fieldKey"], "selected_capability")
+        self.assertEqual(guard_reads_by_state["capability_result"]["binding"]["fieldKey"], "capability_result")
+        self.assertEqual(
+            guard_node["writes"],
+            [
+                {"state": "agent_loop_control", "mode": "replace"},
+                {"state": "agent_loop_report", "mode": "replace"},
+                {"state": "agent_loop_stop_reason", "mode": "replace"},
+                {"state": "agent_loop_should_continue", "mode": "replace"},
+                {"state": "agent_loop_should_retry", "mode": "replace"},
+            ],
+        )
+
+        finalize_guard_stop_node = nodes["finalize_guard_stop"]
+        self.assertIn({"state": "agent_loop_report", "required": True}, _read_contracts(finalize_guard_stop_node["reads"]))
+        self.assertEqual(finalize_guard_stop_node["writes"], [{"state": "public_response", "mode": "replace"}])
+
         direct_condition_node = nodes["condition_93972e3f"]
         self.assertEqual(direct_condition_node["config"]["loopLimit"], 5)
         self.assertEqual(
@@ -2055,6 +2195,13 @@ class TemplateLayoutTests(unittest.TestCase):
             {"source": "$state.needs_context_compaction", "operator": "==", "value": True},
         )
         self.assertIn({"state": "needs_context_compaction", "required": True}, _read_contracts(pressure_node["reads"]))
+        guard_condition_node = nodes["agent_loop_continue_condition"]
+        self.assertEqual(guard_condition_node["config"]["loopLimit"], 6)
+        self.assertEqual(
+            guard_condition_node["config"]["rule"],
+            {"source": "$state.agent_loop_should_continue", "operator": "==", "value": True},
+        )
+        self.assertIn({"state": "agent_loop_should_continue", "required": True}, _read_contracts(guard_condition_node["reads"]))
         for read in nodes["check_context_pressure"]["reads"]:
             self.assertNotIn(read.get("state"), {"raw_conversation_history", "page_context"})
         self.assertEqual(
@@ -2065,6 +2212,44 @@ class TemplateLayoutTests(unittest.TestCase):
                 {"state": "current_session_id", "mode": "replace"},
                 {"state": "source_run_id", "mode": "replace"},
                 {"state": "history_context_report", "mode": "replace"},
+            ],
+        )
+        self.assertEqual(
+            nodes["input_buddy_context"]["writes"],
+            [{"state": "buddy_home_selection", "mode": "replace"}],
+        )
+        self.assertEqual(
+            _read_contracts(nodes["load_buddy_home_context"]["reads"]),
+            [
+                {
+                    "state": "buddy_home_selection",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "buddy_home_context_loader",
+                        "fieldKey": "buddy_home_selection",
+                        "managed": True,
+                    },
+                },
+                {
+                    "state": "buddy_home_max_chars",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "buddy_home_context_loader",
+                        "fieldKey": "max_chars",
+                        "managed": True,
+                    },
+                },
+            ],
+        )
+        self.assertEqual(
+            nodes["load_buddy_home_context"]["writes"],
+            [
+                {"state": "buddy_context", "mode": "replace"},
+                {"state": "buddy_home_context_report", "mode": "replace"},
             ],
         )
         self.assertEqual(
@@ -2080,10 +2265,13 @@ class TemplateLayoutTests(unittest.TestCase):
             [
                 {"source": "input_user_message", "target": "load_history_context"},
                 {"source": "load_history_context", "target": "check_context_pressure"},
-                {"source": "input_buddy_context", "target": "check_context_pressure"},
+                {"source": "input_buddy_context", "target": "load_buddy_home_context"},
+                {"source": "load_buddy_home_context", "target": "check_context_pressure"},
                 {"source": "check_context_pressure", "target": "context_pressure_condition"},
                 {"source": "run_context_compaction", "target": "reply_and_select_capability"},
-                {"source": "execute_capability", "target": "check_context_pressure"},
+                {"source": "execute_capability", "target": "guard_agent_loop"},
+                {"source": "guard_agent_loop", "target": "agent_loop_continue_condition"},
+                {"source": "finalize_guard_stop", "target": "output_161c76f3"},
                 {"source": "reply_and_select_capability", "target": "output_161c76f3"},
                 {"source": "reply_and_select_capability", "target": "condition_93972e3f"},
             ],
@@ -2115,10 +2303,19 @@ class TemplateLayoutTests(unittest.TestCase):
                         "exhausted": "output_161c76f3",
                     },
                 },
+                {
+                    "source": "agent_loop_continue_condition",
+                    "branches": {
+                        "true": "check_context_pressure",
+                        "false": "finalize_guard_stop",
+                        "exhausted": "finalize_guard_stop",
+                    },
+                },
             ],
         )
         expected_sizes = {
             "reply_and_select_capability": {"width": 612, "height": 760},
+            "finalize_guard_stop": {"width": 520, "height": 460},
         }
         for node_id, node in nodes.items():
             with self.subTest(top_level_node=node_id):
@@ -2145,6 +2342,15 @@ class TemplateLayoutTests(unittest.TestCase):
             with self.subTest(template_id=template_id):
                 template = load_template_record(template_id)
                 self.assertNotIn("policy.json", json.dumps(template, ensure_ascii=False))
+
+    def test_buddy_autonomous_loop_has_agent_loop_guard_eval_cases(self) -> None:
+        eval_path = OFFICIAL_TEMPLATES_ROOT / "buddy_autonomous_loop" / "eval_cases.json"
+        payload = json.loads(eval_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["suite"], "buddy_autonomous_loop_core")
+        case_ids = {case["case_id"] for case in payload["cases"]}
+        self.assertIn("buddy-main-loop-capability-budget-exhausted", case_ids)
+        self.assertIn("buddy-main-loop-capability-failure-classified", case_ids)
 
     def test_buddy_support_templates_are_visible_and_loadable(self) -> None:
         public_template_ids = {record["template_id"] for record in _visible_official_template_records()}

@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "knowledge_context_loader",
+  "name": "Knowledge Context Loader",
+  "description": "A deterministic knowledge-base retriever that turns search_knowledge results into an auditable context_package with source refs, retrieval metadata, budget metadata, and warnings.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "query",
+      "name": "Query",
+      "valueType": "text",
+      "description": "Search query for the knowledge base."
+    },
+    {
+      "key": "knowledge_base",
+      "name": "Knowledge Base",
+      "valueType": "text",
+      "description": "Optional knowledge base id. Empty uses the default imported knowledge base."
+    },
+    {
+      "key": "limit",
+      "name": "Limit",
+      "valueType": "number",
+      "description": "Maximum number of knowledge chunks to include."
+    },
+    {
+      "key": "metadata_filter",
+      "name": "Metadata Filter",
+      "valueType": "json",
+      "description": "Optional search_knowledge metadata filter, such as source_path_prefix, source_kind, or section."
+    },
+    {
+      "key": "max_chars",
+      "name": "Max Chars",
+      "valueType": "number",
+      "description": "Maximum rendered knowledge context characters."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Loader status."
+    },
+    {
+      "key": "knowledge_context",
+      "name": "Knowledge Context",
+      "valueType": "json",
+      "description": "Knowledge context_package."
+    },
+    {
+      "key": "knowledge_context_report",
+      "name": "Knowledge Context Report",
+      "valueType": "json",
+      "description": "Search query, knowledge base, budget, source refs, retrieval metadata, and warnings."
+    }
+  ]
+}

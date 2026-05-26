@@ -44,6 +44,7 @@ def buddy_session_recall(**action_inputs: Any) -> dict[str, Any]:
             "memories": [],
             "run_outputs": [],
             "context_assembly_ref": {},
+            "context_package": {},
             "result": f"Buddy session recall failed: {exc}",
             "activity_events": [
                 {
@@ -66,6 +67,7 @@ def buddy_session_recall(**action_inputs: Any) -> dict[str, Any]:
         "memories": enrichment["memories"],
         "run_outputs": enrichment["run_outputs"],
         "context_assembly_ref": enrichment["context_assembly_ref"],
+        "context_package": enrichment["context_package"],
         "result": result_text,
         "activity_events": [
             {
@@ -96,12 +98,19 @@ def _recall_related_sources(context: dict[str, Any], merged: dict[str, Any]) -> 
             *_run_output_context_sources(run_outputs),
         ]
     )
-    context_assembly_ref = _create_context_assembly_ref(context_sources)
+    rendered_text = _render_recall_context_text(context=context, memories=memories, run_outputs=run_outputs)
+    context_assembly_ref = _create_context_assembly_ref(context_sources, rendered_text=rendered_text)
+    context_package = _create_context_package(
+        context_sources=context_sources,
+        context_assembly_ref=context_assembly_ref,
+        rendered_text=rendered_text,
+    )
     return {
         "memories": memories,
         "run_outputs": run_outputs,
         "context_sources": context_sources,
         "context_assembly_ref": context_assembly_ref,
+        "context_package": context_package,
     }
 
 
@@ -190,7 +199,7 @@ def _run_output_context_sources(run_outputs: list[dict[str, Any]]) -> list[dict[
     return sources
 
 
-def _create_context_assembly_ref(context_sources: list[dict[str, Any]]) -> dict[str, Any]:
+def _create_context_assembly_ref(context_sources: list[dict[str, Any]], *, rendered_text: str) -> dict[str, Any]:
     if not context_sources:
         return {}
     try:
@@ -200,7 +209,7 @@ def _create_context_assembly_ref(context_sources: list[dict[str, Any]]) -> dict[
             target_state_key="session_recall_context",
             renderer_key="buddy_session_recall",
             renderer_version="1",
-            rendered_text="",
+            rendered_text=rendered_text,
             sources=context_sources,
             metadata={"kind": "buddy_session_recall"},
         )
@@ -210,6 +219,86 @@ def _create_context_assembly_ref(context_sources: list[dict[str, Any]]) -> dict[
             "target_state_key": "session_recall_context",
             "source_refs": context_sources,
         }
+
+
+def _create_context_package(
+    *,
+    context_sources: list[dict[str, Any]],
+    context_assembly_ref: dict[str, Any],
+    rendered_text: str,
+) -> dict[str, Any]:
+    return {
+        "kind": "context_package",
+        "package_id": _context_package_id(context_assembly_ref),
+        "source_kind": "memory",
+        "authority": "evidence",
+        "title": "Buddy session recall",
+        "items": [
+            {
+                "id": _as_text(source.get("source_id")),
+                "title": _as_text(source.get("label")) or _as_text(source.get("source_kind")),
+                "source_ref": source,
+                "metadata": dict(source.get("metadata") if isinstance(source.get("metadata"), dict) else {}),
+            }
+            for source in context_sources
+        ],
+        "source_refs": context_sources,
+        "source_count": len(context_sources),
+        "context_ref": context_assembly_ref,
+        "budget": {
+            "source_chars": len(rendered_text),
+            "used_chars": len(rendered_text),
+            "omitted_count": 0,
+        },
+        "warnings": [],
+        "metadata": {
+            "renderer_key": "buddy_session_recall",
+            "renderer_version": "1",
+        },
+    }
+
+
+def _context_package_id(context_ref: dict[str, Any]) -> str:
+    assembly_id = _as_text(context_ref.get("assembly_id"))
+    if assembly_id.startswith("ctx_"):
+        return f"pkg_{assembly_id[4:]}"
+    if assembly_id:
+        return f"pkg_{assembly_id}"
+    return "pkg_buddy_session_recall_empty"
+
+
+def _render_recall_context_text(
+    *,
+    context: dict[str, Any],
+    memories: list[dict[str, Any]],
+    run_outputs: list[dict[str, Any]],
+) -> str:
+    lines: list[str] = []
+    sessions = context.get("sessions") if isinstance(context.get("sessions"), list) else []
+    for session in sessions:
+        title = _as_text(session.get("title")) or _as_text(session.get("session_id")) or "Buddy session"
+        lines.append(f"Session: {title}")
+        messages = session.get("messages") if isinstance(session.get("messages"), list) else []
+        for message in messages:
+            role = _as_text(message.get("role")) or "message"
+            content = _as_text(message.get("content"))
+            if content:
+                lines.append(f"{role}: {content}")
+    if memories:
+        lines.append("Memories:")
+        for memory in memories:
+            title = _as_text(memory.get("title")) or _as_text(memory.get("memory_id")) or "memory"
+            content = _as_text(memory.get("content"))
+            if content:
+                lines.append(f"- {title}: {content}")
+    if run_outputs:
+        lines.append("Run outputs:")
+        for output in run_outputs:
+            title = _as_text(output.get("title")) or _as_text(output.get("chunk_id")) or "run_output"
+            content = _as_text(output.get("content"))
+            if content:
+                lines.append(f"- {title}: {content}")
+    return "\n".join(lines)
 
 
 def _dedupe_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:

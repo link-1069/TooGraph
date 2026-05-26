@@ -11,10 +11,18 @@ from app.core.storage.database import get_connection
 
 
 CONTEXT_ASSEMBLY_KIND = "context_assembly_ref"
+CONTEXT_PACKAGE_KIND = "context_package"
 SUPPORTED_SOURCE_KINDS = {
     "buddy_message",
+    "buddy_home_file",
     "buddy_session_summary",
     "memory_entry",
+    "knowledge_chunk",
+    "capability_result_output",
+    "runtime_context_item",
+    "page_context_item",
+    "web_source_document",
+    "web_search_result",
     "retrieval_chunk",
     "graph_run",
     "graph_output",
@@ -195,8 +203,35 @@ def expand_context_assembly_ref(ref: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def expand_context_package(package: dict[str, Any]) -> dict[str, Any]:
+    if not is_context_package(package):
+        raise ValueError("Expected a context_package value.")
+
+    warnings = _normalize_context_package_warnings(package.get("warnings"))
+    context_ref = package.get("context_ref")
+    if is_context_assembly_ref(context_ref):
+        expanded = expand_context_assembly_ref(context_ref)
+        return {
+            "text": str(expanded.get("text") or ""),
+            "package": package,
+            "assembly": expanded.get("assembly") or {},
+            "warnings": warnings + list(expanded.get("warnings") or []),
+        }
+
+    return {
+        "text": _render_context_package_items(list(package.get("items") or [])),
+        "package": package,
+        "assembly": {},
+        "warnings": warnings,
+    }
+
+
 def is_context_assembly_ref(value: Any) -> bool:
     return isinstance(value, dict) and value.get("kind") == CONTEXT_ASSEMBLY_KIND
+
+
+def is_context_package(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("kind") == CONTEXT_PACKAGE_KIND
 
 
 def _load_or_materialize_ref(ref: dict[str, Any]) -> dict[str, Any]:
@@ -222,6 +257,21 @@ def _load_or_materialize_ref(ref: dict[str, Any]) -> dict[str, Any]:
     return load_context_assembly(created_ref["assembly_id"])
 
 
+def _render_context_package_items(items: list[Any]) -> str:
+    lines: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or item.get("summary") or "").strip()
+        if not content:
+            continue
+        title = str(item.get("title") or item.get("id") or "").strip()
+        if title:
+            lines.append(f"{title}:")
+        lines.append(content)
+    return "\n".join(lines)
+
+
 def _render_sources(sources: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for source in sources:
@@ -237,6 +287,15 @@ def _render_sources(sources: list[dict[str, Any]]) -> str:
                 lines.append("已有会话摘要:")
                 lines.append(content)
             continue
+        if source_kind == "buddy_home_file":
+            content = _read_buddy_home_file_source(source)
+            if content:
+                authority = str(_coerce_dict(source.get("metadata")).get("authority") or "context_only").strip()
+                source_id = str(source.get("source_id") or "").strip()
+                lines.append(f"source: {source_id}")
+                lines.append(f"authority: {authority}")
+                lines.append(content)
+            continue
         if source_kind == "graph_run":
             content = _read_graph_run_source(source)
             if content:
@@ -249,6 +308,36 @@ def _render_sources(sources: list[dict[str, Any]]) -> str:
             continue
         if source_kind == "retrieval_chunk":
             content = _read_retrieval_chunk_source(source)
+            if content:
+                lines.append(content)
+            continue
+        if source_kind == "knowledge_chunk":
+            content = _read_knowledge_chunk_source(source)
+            if content:
+                lines.append(content)
+            continue
+        if source_kind == "capability_result_output":
+            content = _read_capability_result_output_source(source)
+            if content:
+                lines.append(content)
+            continue
+        if source_kind == "runtime_context_item":
+            content = _read_runtime_context_item_source(source)
+            if content:
+                lines.append(content)
+            continue
+        if source_kind == "page_context_item":
+            content = _read_page_context_item_source(source)
+            if content:
+                lines.append(content)
+            continue
+        if source_kind == "web_source_document":
+            content = _read_web_source_document_source(source)
+            if content:
+                lines.append(content)
+            continue
+        if source_kind == "web_search_result":
+            content = _read_web_search_result_source(source)
             if content:
                 lines.append(content)
             continue
@@ -293,6 +382,21 @@ def _read_buddy_session_summary_source() -> str:
     return str(payload.get("content") or "").strip()
 
 
+def _read_buddy_home_file_source(source: dict[str, Any]) -> str:
+    source_id = str(source.get("source_id") or "").strip().replace("\\", "/")
+    if not source_id or source_id.startswith("/") or ".." in source_id.split("/"):
+        return ""
+    try:
+        from app.buddy.home import ensure_buddy_home, get_default_buddy_home_dir
+
+        buddy_home = ensure_buddy_home(get_default_buddy_home_dir())
+        path = (buddy_home / source_id).resolve()
+        path.relative_to(buddy_home.resolve())
+        return path.read_text(encoding="utf-8", errors="replace").strip() if path.is_file() else ""
+    except Exception:
+        return ""
+
+
 def _read_graph_run_source(source: dict[str, Any]) -> str:
     with get_connection() as connection:
         row = connection.execute("SELECT final_result FROM graph_runs WHERE run_id = ?", (str(source.get("source_id") or ""),)).fetchone()
@@ -315,6 +419,143 @@ def _read_retrieval_chunk_source(source: dict[str, Any]) -> str:
     except sqlite3.OperationalError:
         return ""
     return str(row["content"] or "").strip() if row is not None else ""
+
+
+def _read_knowledge_chunk_source(source: dict[str, Any]) -> str:
+    try:
+        with get_connection() as connection:
+            row = connection.execute("SELECT content FROM knowledge_chunks WHERE chunk_id = ?", (str(source.get("source_id") or ""),)).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    return str(row["content"] or "").strip() if row is not None else ""
+
+
+def _read_capability_result_output_source(source: dict[str, Any]) -> str:
+    metadata = _coerce_dict(source.get("metadata"))
+    run_id = str(metadata.get("run_id") or "").strip()
+    state_key = str(metadata.get("state_key") or "").strip()
+    output_key = str(metadata.get("output_key") or "").strip()
+    if run_id and state_key and output_key:
+        content = _read_capability_result_output_from_run(run_id, state_key, output_key)
+        if content:
+            return content
+    content_hash = str(source.get("source_content_hash") or "").strip()
+    if content_hash:
+        try:
+            return _blob_text(get_content_blob(content_hash)).strip()
+        except FileNotFoundError:
+            return ""
+    return ""
+
+
+def _read_capability_result_output_from_run(run_id: str, state_key: str, output_key: str) -> str:
+    try:
+        with get_connection() as connection:
+            row = connection.execute("SELECT detail_json FROM graph_runs WHERE run_id = ?", (run_id,)).fetchone()
+    except sqlite3.OperationalError:
+        return ""
+    if row is None:
+        return ""
+    detail = _json_loads(row["detail_json"], {})
+    state_values = detail.get("state_values") if isinstance(detail, dict) else {}
+    package = state_values.get(state_key) if isinstance(state_values, dict) else None
+    if not isinstance(package, dict) or package.get("kind") != "result_package":
+        return ""
+    outputs = package.get("outputs") if isinstance(package.get("outputs"), dict) else {}
+    raw_output = outputs.get(output_key)
+    output_value = raw_output.get("value") if isinstance(raw_output, dict) else raw_output
+    return _stringify_source_content(output_value)
+
+
+def _read_runtime_context_item_source(source: dict[str, Any]) -> str:
+    content_hash = str(source.get("source_content_hash") or "").strip()
+    if content_hash:
+        try:
+            return _blob_text(get_content_blob(content_hash)).strip()
+        except FileNotFoundError:
+            return ""
+    metadata = _coerce_dict(source.get("metadata"))
+    key = str(metadata.get("key") or source.get("label") or source.get("source_id") or "").strip()
+    value = metadata.get("value")
+    if key and value is not None:
+        return f"{key}: {_stringify_source_content(value)}"
+    return ""
+
+
+def _read_page_context_item_source(source: dict[str, Any]) -> str:
+    content_hash = str(source.get("source_content_hash") or "").strip()
+    if content_hash:
+        try:
+            return _blob_text(get_content_blob(content_hash)).strip()
+        except FileNotFoundError:
+            return ""
+    metadata = _coerce_dict(source.get("metadata"))
+    title = str(metadata.get("section") or source.get("label") or source.get("source_id") or "").strip()
+    value = metadata.get("value")
+    if title and value is not None:
+        return f"{title}:\n{_stringify_source_content(value)}"
+    return ""
+
+
+def _read_web_source_document_source(source: dict[str, Any]) -> str:
+    metadata = _coerce_dict(source.get("metadata"))
+    artifact_path = str(metadata.get("artifact_path") or source.get("source_id") or "").strip()
+    if artifact_path:
+        try:
+            from app.core.storage.capability_artifact_store import read_capability_artifact_text_for_prompt
+
+            artifact = read_capability_artifact_text_for_prompt(artifact_path)
+            content = str(artifact.get("content") or "").strip()
+            if content:
+                return _format_web_source_document(
+                    name=str(artifact.get("name") or metadata.get("title") or artifact_path).strip(),
+                    query=str(metadata.get("query") or "").strip(),
+                    url=str(metadata.get("source_url") or "").strip(),
+                    artifact_path=artifact_path,
+                    content=content,
+                )
+        except Exception:
+            pass
+    content_hash = str(source.get("source_content_hash") or "").strip()
+    if content_hash:
+        try:
+            return _blob_text(get_content_blob(content_hash)).strip()
+        except FileNotFoundError:
+            return ""
+    return ""
+
+
+def _read_web_search_result_source(source: dict[str, Any]) -> str:
+    content_hash = str(source.get("source_content_hash") or "").strip()
+    if content_hash:
+        try:
+            return _blob_text(get_content_blob(content_hash)).strip()
+        except FileNotFoundError:
+            return ""
+    metadata = _coerce_dict(source.get("metadata"))
+    title = str(metadata.get("title") or source.get("label") or "Web result").strip()
+    url = str(metadata.get("source_url") or source.get("source_id") or "").strip()
+    snippet = str(metadata.get("snippet") or "").strip()
+    if not (title or url or snippet):
+        return ""
+    lines = [f"Web result: {title}"]
+    if url:
+        lines.append(f"url: {url}")
+    if snippet:
+        lines.append(snippet)
+    return "\n".join(lines)
+
+
+def _format_web_source_document(*, name: str, query: str, url: str, artifact_path: str, content: str) -> str:
+    lines = [f"Web source: {name or artifact_path}"]
+    if query:
+        lines.append(f"query: {query}")
+    if url:
+        lines.append(f"url: {url}")
+    if artifact_path:
+        lines.append(f"artifact_path: {artifact_path}")
+    lines.append(content)
+    return "\n".join(lines)
 
 
 def _read_memory_entry_source(source: dict[str, Any]) -> str:
@@ -449,6 +690,18 @@ def _stringify_source_content(value: Any) -> str:
 
 def _coerce_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _normalize_context_package_warnings(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    warnings: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            warnings.append(dict(item))
+        elif item:
+            warnings.append({"code": "context_package_warning", "message": str(item)})
+    return warnings
 
 
 def _json_dumps(value: Any) -> str:

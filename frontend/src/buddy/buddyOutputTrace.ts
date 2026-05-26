@@ -333,6 +333,7 @@ export function reduceBuddyOutputTraceEvent(
     nodeType,
     subgraphNodeId: segmentScopeNodeId || null,
     aggregateSubgraphNodeId: !segmentScopeNodeId && nodeType === "subgraph" ? nodeId : null,
+    artifactLabels: normalizeTextList(payload.artifact_labels),
     treeDepth: dynamicCapabilityContext.parentNodeId ? 2 : undefined,
     dynamicCapabilityRunId: dynamicCapabilityContext.runId || null,
   });
@@ -1128,6 +1129,7 @@ function appendExecutionTimelineItems(
         status: execution.status,
         started_at: execution.started_at,
         duration_ms: execution.duration_ms,
+        artifact_labels: buildAgentLoopArtifactLabels(execution),
         ...context,
         ...buildDynamicCapabilityTimelineContext(options.dynamicCapability),
       },
@@ -1172,6 +1174,25 @@ function appendDynamicCapabilitySubgraphTimelineItems(
       );
     }
   }
+}
+
+function buildAgentLoopArtifactLabels(execution: NodeExecutionDetail) {
+  const outputs = recordFromUnknown(execution.artifacts?.outputs);
+  const report = recordFromUnknown(outputs?.agent_loop_report);
+  if (!report) {
+    return [];
+  }
+  const stopReason = normalizeText(report.stop_reason);
+  const decision = normalizeText(report.decision);
+  const capabilityCallCount = normalizeNumber(report.capability_call_count);
+  const maxCapabilityCalls = normalizeNumber(report.max_capability_calls);
+  return [
+    stopReason ? `stop: ${stopReason}` : "",
+    decision ? `decision: ${decision}` : "",
+    capabilityCallCount !== null || maxCapabilityCalls !== null
+      ? `capabilities: ${capabilityCallCount ?? "?"} / ${maxCapabilityCalls ?? "?"}`
+      : "",
+  ].filter(Boolean);
 }
 
 function buildDynamicCapabilityTimelineContext(context: DynamicCapabilityTraceContext | undefined) {
@@ -1281,8 +1302,16 @@ function normalizePositiveInteger(value: unknown) {
   return Number.isFinite(numberValue) && numberValue > 0 ? Math.round(numberValue) : null;
 }
 
+function normalizeNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function normalizeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeTextList(value: unknown) {
+  return Array.isArray(value) ? value.map(normalizeText).filter(Boolean) : [];
 }
 
 function recordFromUnknown(value: unknown): Record<string, unknown> | null {

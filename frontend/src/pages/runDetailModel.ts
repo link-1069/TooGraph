@@ -4,6 +4,7 @@ import { collectLocalArtifactReferences, type LocalArtifactReference } from "../
 import { formatRunDuration } from "../lib/run-display-name.ts";
 import { summarizeVirtualOperationActivity } from "../lib/virtual-operation-activity.ts";
 import { translate } from "../i18n/index.ts";
+export { buildAgentDiagnostic, type AgentDiagnostic } from "./agentDiagnosticModel.ts";
 export {
   buildRunTreeDisplayItems,
   countRunTreeNodes,
@@ -61,6 +62,11 @@ export type RunContextAssemblyAudit = {
   renderedHash: string;
   sourceCount: number;
   sourceKinds: string[];
+  packageId: string;
+  packageSourceKind: string;
+  packageAuthority: string;
+  budgetLabel: string;
+  warningCount: number;
 };
 
 export type RunRetrievalAuditSource = {
@@ -155,12 +161,19 @@ function normalizeNumber(value: unknown) {
 }
 
 export function buildRunStatusFacts(run: RunDetail): RunStatusFact[] {
-  return [
+  const facts: RunStatusFact[] = [
     { key: "status", label: translate("runDetail.status"), value: run.status, tone: "status" },
+  ];
+  const stopReason = normalizeText(run.stop_reason);
+  if (stopReason) {
+    facts.push({ key: "stopReason", label: translate("runDetail.stopReason"), value: stopReason, tone: "default" });
+  }
+  facts.push(
     { key: "current", label: translate("runDetail.currentNode"), value: run.current_node_id?.trim() || translate("runDetail.ended"), tone: "default" },
     { key: "duration", label: translate("runDetail.duration"), value: formatRunDuration(run.duration_ms), tone: "default" },
     { key: "revision", label: translate("runDetail.revision"), value: String(run.revision_round), tone: "default" },
-  ];
+  );
+  return facts;
 }
 
 export function buildRunContextAudit(run: RunDetail): RunContextAudit {
@@ -181,8 +194,10 @@ export function buildRunContextAudit(run: RunDetail): RunContextAudit {
     },
     (value) => {
       const record = recordFromUnknown(value);
-      if (record.kind === "context_assembly_ref") {
-        const assembly = contextAssemblyAuditFromRecord(record);
+      if (record.kind === "context_package" || record.kind === "context_assembly_ref") {
+        const assembly = record.kind === "context_package"
+          ? contextPackageAuditFromRecord(record)
+          : contextAssemblyAuditFromRecord(record);
         if (assembly && !assemblies.has(assembly.key)) {
           assemblies.set(assembly.key, assembly);
           contextSourceCount += assembly.sourceCount;
@@ -515,7 +530,48 @@ function contextAssemblyAuditFromRecord(record: Record<string, unknown>): RunCon
     renderedHash,
     sourceCount,
     sourceKinds: uniqueNonEmpty(sourceRefs.map((source) => normalizeText(source.source_kind))),
+    packageId: "",
+    packageSourceKind: "",
+    packageAuthority: "",
+    budgetLabel: "",
+    warningCount: 0,
   };
+}
+
+function contextPackageAuditFromRecord(record: Record<string, unknown>): RunContextAssemblyAudit | null {
+  const contextRef = recordFromUnknown(record.context_ref);
+  if (contextRef.kind !== "context_assembly_ref") {
+    return null;
+  }
+  const packageSourceRefs = contextPackageSourceRefs(record);
+  const assembly = contextAssemblyAuditFromRecord({
+    ...contextRef,
+    source_refs: Array.isArray(contextRef.source_refs) ? contextRef.source_refs : packageSourceRefs,
+    source_count: normalizeSequence(contextRef.source_count, packageSourceRefs.length),
+  });
+  if (!assembly) {
+    return null;
+  }
+  return {
+    ...assembly,
+    packageId: normalizeText(record.package_id),
+    packageSourceKind: normalizeText(record.source_kind),
+    packageAuthority: normalizeText(record.authority),
+    budgetLabel: formatContextPackageBudget(recordFromUnknown(record.budget)),
+    warningCount: Array.isArray(record.warnings) ? record.warnings.length : 0,
+  };
+}
+
+function contextPackageSourceRefs(record: Record<string, unknown>): Record<string, unknown>[] {
+  if (Array.isArray(record.source_refs)) {
+    return record.source_refs.map((source) => recordFromUnknown(source));
+  }
+  if (!Array.isArray(record.items)) {
+    return [];
+  }
+  return record.items
+    .map((item) => recordFromUnknown(recordFromUnknown(item).source_ref))
+    .filter((sourceRef) => normalizeText(sourceRef.source_kind) || normalizeText(sourceRef.source_id));
 }
 
 function retrievalAuditSourceFromRecord(record: Record<string, unknown>): RunRetrievalAuditSource | null {
@@ -546,6 +602,23 @@ function retrievalAuditSourceFromRecord(record: Record<string, unknown>): RunRet
     mode,
     score,
   };
+}
+
+function formatContextPackageBudget(budget: Record<string, unknown>): string {
+  const usedChars = normalizeNumber(budget.used_chars);
+  const sourceChars = normalizeNumber(budget.source_chars);
+  const omittedCount = normalizeNumber(budget.omitted_count);
+  const parts: string[] = [];
+  if (usedChars !== null) {
+    parts.push(`used ${usedChars}`);
+  }
+  if (sourceChars !== null) {
+    parts.push(`source ${sourceChars}`);
+  }
+  if (omittedCount !== null) {
+    parts.push(`omitted ${omittedCount}`);
+  }
+  return parts.join(" / ");
 }
 
 function walkUnknown(

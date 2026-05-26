@@ -84,7 +84,16 @@ class BuddySessionRecallActionTests(unittest.TestCase):
         )
         self.assertEqual(
             [field.key for field in definition.state_output_schema],
-            ["success", "session_recall_context", "sessions", "memories", "run_outputs", "context_assembly_ref", "result"],
+            [
+                "success",
+                "session_recall_context",
+                "sessions",
+                "memories",
+                "run_outputs",
+                "context_assembly_ref",
+                "context_package",
+                "result",
+            ],
         )
 
     def test_discover_returns_real_buddy_messages_from_db(self) -> None:
@@ -158,7 +167,7 @@ class BuddySessionRecallActionTests(unittest.TestCase):
         )
 
     def test_discover_returns_memories_run_outputs_and_context_source_refs(self) -> None:
-        from app.core.storage.context_assembly_store import load_context_assembly
+        from app.core.storage.context_assembly_store import expand_context_package, load_context_assembly
         from app.core.storage.memory_store import create_memory_entry
         from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
 
@@ -211,6 +220,19 @@ class BuddySessionRecallActionTests(unittest.TestCase):
         self.assertIn("memory_entry", source_kinds)
         self.assertIn("graph_output", source_kinds)
         self.assertEqual(result["context_assembly_ref"]["kind"], "context_assembly_ref")
+        self.assertEqual(result["context_package"]["kind"], "context_package")
+        self.assertEqual(result["context_package"]["source_kind"], "memory")
+        self.assertEqual(result["context_package"]["authority"], "evidence")
+        self.assertEqual(result["context_package"]["context_ref"]["kind"], "context_assembly_ref")
+        self.assertEqual(result["context_package"]["budget"]["omitted_count"], 0)
+        self.assertEqual(
+            [item["source_ref"]["source_kind"] for item in result["context_package"]["items"]],
+            ["buddy_message", "memory_entry", "graph_output"],
+        )
+        expanded = expand_context_package(result["context_package"])
+        self.assertIn("数据库事实源需要服务记忆召回。", expanded["text"])
+        self.assertIn("用户偏好完整 embedding 方案服务记忆召回。", expanded["text"])
+        self.assertIn("图运行输出记录了数据库事实源和记忆召回。", expanded["text"])
         self.assertEqual(
             [source["source_kind"] for source in assembly["sources"]],
             ["buddy_message", "memory_entry", "graph_output"],

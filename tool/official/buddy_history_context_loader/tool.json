@@ -2,7 +2,7 @@
   "schemaVersion": "toograph.tool/v1",
   "toolKey": "buddy_history_context_loader",
   "name": "Buddy History Context Loader",
-  "description": "A deterministic Buddy runtime tool that loads conversation history from the current Buddy session runtime context and returns an auditable context_assembly_ref.",
+  "description": "A deterministic Buddy runtime tool that loads conversation history from the current Buddy session runtime context and returns an auditable context_package.",
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
@@ -34,9 +34,9 @@
   "outputSchema": [
     {
       "key": "conversation_history",
-      "name": "Conversation History Reference",
+      "name": "Conversation History Package",
       "valueType": "json",
-      "description": "context_assembly_ref pointing at the selected Buddy message and summary sources."
+      "description": "context_package with session history source refs, budget metadata, warnings, and a nested context_assembly_ref for prompt rendering."
     },
     {
       "key": "existing_session_summary",

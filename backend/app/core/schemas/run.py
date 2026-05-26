@@ -170,6 +170,7 @@ class RunArtifacts(BaseModel):
     state_stream_events: list[dict[str, Any]] = Field(default_factory=list)
     state_values: dict[str, Any] = Field(default_factory=dict)
     streaming_outputs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    stop_reason: str = ""
     cycle_iterations: list[CycleIterationRecord] = Field(default_factory=list)
     cycle_summary: CycleSummary = Field(default_factory=CycleSummary)
 
@@ -201,6 +202,7 @@ class RunSummary(BaseModel):
     completed_at: str | None = None
     duration_ms: int | None = None
     final_score: float | None = None
+    stop_reason: str = ""
 
 
 class RunChildSummary(RunSummary):

@@ -7,7 +7,12 @@ from app.core.runtime.agent_multimodal import normalize_uploaded_file_envelope
 from app.core.schemas.node_system import NodeSystemStateDefinition, NodeSystemStateType
 from app.core.storage.local_input_sources import read_local_input_file_metadata, read_local_input_text_for_prompt
 from app.core.storage.capability_artifact_store import read_capability_artifact_file_metadata, read_capability_artifact_text_for_prompt
-from app.core.storage.context_assembly_store import expand_context_assembly_ref, is_context_assembly_ref
+from app.core.storage.context_assembly_store import (
+    expand_context_assembly_ref,
+    expand_context_package,
+    is_context_assembly_ref,
+    is_context_package,
+)
 
 
 RESULT_PACKAGE_INPUT_PROMPT_CHAR_LIMIT = 1200
@@ -103,6 +108,8 @@ def format_graph_state_input_prompt_lines(
     definition: NodeSystemStateDefinition | None,
     value: Any,
 ) -> list[str]:
+    if is_context_package(value):
+        return format_context_package_prompt_lines(key, definition, value)
     if is_context_assembly_ref(value):
         return format_context_assembly_ref_prompt_lines(key, definition, value)
     if _is_result_package_prompt_state(definition):
@@ -132,6 +139,45 @@ def format_context_assembly_ref_prompt_lines(
         text = str(expanded.get("text") or "")
     except Exception:
         text = "[上下文组装记录读取失败。]"
+    lines.append(f"  value: {text}")
+    return lines
+
+
+def format_context_package_prompt_lines(
+    key: str,
+    definition: NodeSystemStateDefinition | None,
+    value: dict[str, Any],
+) -> list[str]:
+    lines = format_state_prompt_lines(key, definition)
+    source_kind = str(value.get("source_kind") or "").strip()
+    authority = str(value.get("authority") or "").strip()
+    if source_kind:
+        lines.append(f"  source_kind: {source_kind}")
+    if authority:
+        lines.append(f"  authority: {authority}")
+    budget = value.get("budget") if isinstance(value.get("budget"), dict) else {}
+    if budget:
+        budget_parts = []
+        for key_name in ("used_chars", "source_chars", "omitted_count"):
+            if budget.get(key_name) not in (None, ""):
+                budget_parts.append(f"{key_name}={budget.get(key_name)}")
+        if budget_parts:
+            lines.append(f"  budget: {', '.join(budget_parts)}")
+    warnings = value.get("warnings") if isinstance(value.get("warnings"), list) else []
+    if warnings:
+        warning_codes = [
+            str(warning.get("code") or warning.get("message") or "").strip()
+            for warning in warnings
+            if isinstance(warning, dict)
+        ]
+        warning_summary = ", ".join(code for code in warning_codes if code)
+        if warning_summary:
+            lines.append(f"  warnings: {warning_summary}")
+    try:
+        expanded = expand_context_package(value)
+        text = str(expanded.get("text") or "")
+    except Exception:
+        text = "[上下文包读取失败。]"
     lines.append(f"  value: {text}")
     return lines
 

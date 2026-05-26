@@ -463,7 +463,7 @@ type BuddyRuntimeSourceValues<TSource extends string> = Partial<Record<TSource, 
 function buildBuddyRuntimeSourceValues(input: BuildBuddyChatGraphInput): BuddyRuntimeSourceValues<BuddyRunInputSource> {
   return {
     current_message: input.userMessage,
-    conversation_history: buildBuddyConversationHistoryContextRef(input),
+    conversation_history: buildBuddyConversationHistoryContextPackage(input),
     session_summary: input.sessionSummary ?? "",
     buddy_home_context: buildBuddyHomeContextValue(),
     current_session_id: input.currentSessionId ?? "",
@@ -493,12 +493,85 @@ type BuddyContextAssemblyRef = {
   };
   metadata: {
     current_session_id: string;
+    current_message_id: string;
   };
   preview: string;
 };
 
-function buildBuddyConversationHistoryContextRef(input: BuildBuddyChatGraphInput): BuddyContextAssemblyRef {
+type BuddyContextPackageItem = {
+  id: string;
+  title: string;
+  source_ref: BuddyContextAssemblySourceRef;
+  metadata: {
+    source_kind: BuddyContextAssemblySourceRef["source_kind"];
+    role: BuddyContextAssemblySourceRef["role"];
+    ordinal: number;
+  };
+};
+
+type BuddyConversationHistoryContextPackage = {
+  kind: "context_package";
+  package_id: string;
+  source_kind: "session";
+  authority: "history";
+  title: string;
+  items: BuddyContextPackageItem[];
+  source_refs: BuddyContextAssemblySourceRef[];
+  source_count: number;
+  context_ref: BuddyContextAssemblyRef;
+  budget: {
+    max_messages: number;
+    max_chars: number;
+    source_chars: number;
+    used_chars: number;
+    omitted_count: number;
+  };
+  warnings: Array<{ code: string; message: string }>;
+  metadata: {
+    current_session_id: string;
+    current_message_id: string;
+    renderer_key: "buddy_history";
+    renderer_version: "1";
+  };
+};
+
+function buildBuddyConversationHistoryContextPackage(input: BuildBuddyChatGraphInput): BuddyConversationHistoryContextPackage {
   const sourceRefs = buildBuddyConversationHistorySourceRefs(input);
+  const contextRef = buildBuddyConversationHistoryContextRef(input, sourceRefs);
+  const sourceChars = estimateBuddyConversationHistorySourceChars(input);
+  const usedChars = sourceRefs.length > 0 ? buildBuddyConversationHistoryRenderedPreview(input).length : 0;
+  const omittedCount = estimateBuddyConversationHistoryOmittedCount(input, sourceRefs);
+  return {
+    kind: "context_package",
+    package_id: buildPendingContextPackageId(contextRef.assembly_id),
+    source_kind: "session",
+    authority: "history",
+    title: "Buddy conversation history",
+    items: buildBuddyConversationHistoryPackageItems(sourceRefs),
+    source_refs: sourceRefs,
+    source_count: sourceRefs.length,
+    context_ref: contextRef,
+    budget: {
+      max_messages: MAX_BUDDY_HISTORY_MESSAGES,
+      max_chars: MAX_BUDDY_HISTORY_CONTEXT_CHARS,
+      source_chars: sourceChars,
+      used_chars: usedChars,
+      omitted_count: omittedCount,
+    },
+    warnings: [],
+    metadata: {
+      current_session_id: input.currentSessionId ?? "",
+      current_message_id: input.currentMessageId ?? "",
+      renderer_key: "buddy_history",
+      renderer_version: "1",
+    },
+  };
+}
+
+function buildBuddyConversationHistoryContextRef(
+  input: BuildBuddyChatGraphInput,
+  sourceRefs = buildBuddyConversationHistorySourceRefs(input),
+): BuddyContextAssemblyRef {
   return {
     kind: "context_assembly_ref",
     assembly_id: buildPendingContextAssemblyId(input.currentSessionId ?? "", sourceRefs),
@@ -514,6 +587,7 @@ function buildBuddyConversationHistoryContextRef(input: BuildBuddyChatGraphInput
     },
     metadata: {
       current_session_id: input.currentSessionId ?? "",
+      current_message_id: input.currentMessageId ?? "",
     },
     preview: buildBuddyConversationHistoryPreview(input),
   };
@@ -572,6 +646,63 @@ function buildPendingContextAssemblyId(sessionId: string, sourceRefs: BuddyConte
     ]),
   });
   return `ctx_pending_${stableHashString(key)}`;
+}
+
+function buildPendingContextPackageId(assemblyId: string) {
+  return assemblyId.startsWith("ctx_") ? `pkg_${assemblyId.slice(4)}` : `pkg_${stableHashString(assemblyId)}`;
+}
+
+function buildBuddyConversationHistoryPackageItems(sourceRefs: BuddyContextAssemblySourceRef[]): BuddyContextPackageItem[] {
+  return sourceRefs.map((sourceRef) => ({
+    id: sourceRef.source_id,
+    title: sourceRef.source_kind === "buddy_session_summary" ? "已有会话摘要" : buddyMessageSourceTitle(sourceRef.role),
+    source_ref: sourceRef,
+    metadata: {
+      source_kind: sourceRef.source_kind,
+      role: sourceRef.role,
+      ordinal: sourceRef.ordinal,
+    },
+  }));
+}
+
+function buddyMessageSourceTitle(role: BuddyContextAssemblySourceRef["role"]) {
+  if (role === "user") {
+    return "用户消息";
+  }
+  if (role === "assistant") {
+    return "伙伴消息";
+  }
+  return "会话摘要";
+}
+
+function estimateBuddyConversationHistorySourceChars(input: BuildBuddyChatGraphInput) {
+  const summaryChars = (input.sessionSummary ?? "").trim().length;
+  const messageChars = input.history
+    .filter((message) => message.includeInContext !== false)
+    .reduce((total, message) => total + message.content.trim().length, 0);
+  return summaryChars + messageChars;
+}
+
+function estimateBuddyConversationHistoryOmittedCount(
+  input: BuildBuddyChatGraphInput,
+  sourceRefs: BuddyContextAssemblySourceRef[],
+) {
+  const selectedMessageCount = sourceRefs.filter((sourceRef) => sourceRef.source_kind === "buddy_message").length;
+  const visibleMessageCount = input.history
+    .filter((message) => message.includeInContext !== false)
+    .filter((message) => message.content.trim().length > 0)
+    .filter((message) => typeof message.id === "string" && message.id.trim().length > 0)
+    .length;
+  return Math.max(0, visibleMessageCount - selectedMessageCount);
+}
+
+function buildBuddyConversationHistoryRenderedPreview(input: BuildBuddyChatGraphInput) {
+  const summary = (input.sessionSummary ?? "").trim();
+  const history = formatBuddyHistory(input.history);
+  if (!summary) {
+    return history === "暂无历史对话。" ? "" : history;
+  }
+  return history === "暂无历史对话。" ? `已有会话摘要:\n${summary}` : `已有会话摘要:\n${summary}\n${history}`;
 }
 
 function stableHashString(value: string) {

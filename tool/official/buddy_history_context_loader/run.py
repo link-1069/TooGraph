@@ -33,7 +33,8 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
     max_chars = _bounded_int(inputs.get("max_chars"), default=DEFAULT_MAX_CHARS, minimum=256, maximum=50000)
 
     if not session_id:
-        ref = _build_context_ref(
+        warnings = [_warning("missing_buddy_session", "No Buddy session runtime context was available.")]
+        context_ref = _build_context_ref(
             session_id="",
             current_message_id=current_message_id,
             source_refs=[],
@@ -43,7 +44,18 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
         )
         return {
             "status": "succeeded",
-            "conversation_history": ref,
+            "conversation_history": _build_context_package(
+                session_id="",
+                current_message_id=current_message_id,
+                context_ref=context_ref,
+                source_refs=[],
+                max_messages=max_messages,
+                max_chars=max_chars,
+                source_chars=0,
+                used_chars=0,
+                omitted_count=0,
+                warnings=warnings,
+            ),
             "existing_session_summary": "",
             "current_session_id": "",
             "source_run_id": source_run_id,
@@ -56,6 +68,8 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
                 max_messages=max_messages,
                 max_chars=max_chars,
                 warning="No Buddy session runtime context was available.",
+                omitted_count=0,
+                omitted_reason="",
             ),
         }
 
@@ -66,7 +80,8 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
         messages = list_chat_messages(session_id)
         session_summary = load_session_summary()
     except Exception as exc:
-        ref = _build_context_ref(
+        warning = _warning("history_load_failed", str(exc))
+        context_ref = _build_context_ref(
             session_id=session_id,
             current_message_id=current_message_id,
             source_refs=[],
@@ -78,7 +93,18 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
             "status": "failed",
             "error_type": "history_load_failed",
             "error": str(exc),
-            "conversation_history": ref,
+            "conversation_history": _build_context_package(
+                session_id=session_id,
+                current_message_id=current_message_id,
+                context_ref=context_ref,
+                source_refs=[],
+                max_messages=max_messages,
+                max_chars=max_chars,
+                source_chars=0,
+                used_chars=0,
+                omitted_count=0,
+                warnings=[warning],
+            ),
             "existing_session_summary": "",
             "current_session_id": session_id,
             "source_run_id": source_run_id,
@@ -91,12 +117,17 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
                 max_messages=max_messages,
                 max_chars=max_chars,
                 warning=str(exc),
+                omitted_count=0,
+                omitted_reason="",
             ),
         }
 
-    selected_messages = _select_visible_messages_before_current(
-        messages,
-        current_message_id=current_message_id,
+    visible_messages = _visible_messages_before_current(messages, current_message_id=current_message_id)
+    selected_messages = _select_recent_visible_messages(visible_messages, max_messages=max_messages, max_chars=max_chars)
+    omitted_count = max(0, len(visible_messages) - len(selected_messages))
+    omitted_reason = _resolve_omitted_reason(
+        visible_messages=visible_messages,
+        selected_messages=selected_messages,
         max_messages=max_messages,
         max_chars=max_chars,
     )
@@ -124,9 +155,22 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
         max_chars=max_chars,
         scope="buddy_session",
     )
+    rendered_text = _render_history_text(summary_content=summary_content, messages=selected_messages)
+    source_chars = len(summary_content) + _messages_char_count(visible_messages)
     return {
         "status": "succeeded",
-        "conversation_history": ref,
+        "conversation_history": _build_context_package(
+            session_id=session_id,
+            current_message_id=current_message_id,
+            context_ref=ref,
+            source_refs=source_refs,
+            max_messages=max_messages,
+            max_chars=max_chars,
+            source_chars=source_chars,
+            used_chars=len(rendered_text),
+            omitted_count=omitted_count,
+            warnings=[],
+        ),
         "existing_session_summary": summary_content,
         "current_session_id": session_id,
         "source_run_id": source_run_id,
@@ -139,6 +183,8 @@ def buddy_history_context_loader(payload: dict[str, Any] | None, *, context: dic
             max_messages=max_messages,
             max_chars=max_chars,
             warning="",
+            omitted_count=omitted_count,
+            omitted_reason=omitted_reason,
         ),
     }
 
@@ -191,12 +237,10 @@ def _read_json_env(key: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _select_visible_messages_before_current(
+def _visible_messages_before_current(
     messages: list[dict[str, Any]],
     *,
     current_message_id: str,
-    max_messages: int,
-    max_chars: int,
 ) -> list[dict[str, Any]]:
     visible = [
         message
@@ -210,10 +254,36 @@ def _select_visible_messages_before_current(
         )
         if current_index >= 0:
             visible = visible[:current_index]
+    return visible
+
+
+def _select_recent_visible_messages(
+    visible: list[dict[str, Any]],
+    *,
+    max_messages: int,
+    max_chars: int,
+) -> list[dict[str, Any]]:
     selected = visible[-max_messages:]
     while len(selected) > 1 and _messages_char_count(selected) > max_chars:
         selected = selected[1:]
     return selected
+
+
+def _resolve_omitted_reason(
+    *,
+    visible_messages: list[dict[str, Any]],
+    selected_messages: list[dict[str, Any]],
+    max_messages: int,
+    max_chars: int,
+) -> str:
+    if len(visible_messages) == len(selected_messages):
+        return ""
+    reasons: list[str] = []
+    if len(visible_messages) > max_messages:
+        reasons.append("message_limit")
+    if _messages_char_count(visible_messages[-max_messages:]) > max_chars:
+        reasons.append("char_budget")
+    return ",".join(reasons) or "history_budget"
 
 
 def _build_source_refs(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -279,6 +349,83 @@ def _build_context_ref(
     }
 
 
+def _build_context_package(
+    *,
+    session_id: str,
+    current_message_id: str,
+    context_ref: dict[str, Any],
+    source_refs: list[dict[str, Any]],
+    max_messages: int,
+    max_chars: int,
+    source_chars: int,
+    used_chars: int,
+    omitted_count: int,
+    warnings: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "kind": "context_package",
+        "package_id": _context_package_id(context_ref),
+        "source_kind": "session",
+        "authority": "history",
+        "title": "Buddy conversation history",
+        "items": _build_context_package_items(source_refs),
+        "source_refs": source_refs,
+        "source_count": len(source_refs),
+        "context_ref": context_ref,
+        "budget": {
+            "max_messages": max_messages,
+            "max_chars": max_chars,
+            "source_chars": source_chars,
+            "used_chars": used_chars,
+            "omitted_count": omitted_count,
+        },
+        "warnings": warnings,
+        "metadata": {
+            "current_session_id": session_id,
+            "current_message_id": current_message_id,
+            "renderer_key": "buddy_history",
+            "renderer_version": "1",
+        },
+    }
+
+
+def _context_package_id(context_ref: dict[str, Any]) -> str:
+    assembly_id = _text(context_ref.get("assembly_id"))
+    if assembly_id.startswith("ctx_"):
+        return f"pkg_{assembly_id[4:]}"
+    return f"pkg_{assembly_id or 'buddy_history'}"
+
+
+def _build_context_package_items(source_refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for source_ref in source_refs:
+        source_id = _text(source_ref.get("source_id"))
+        source_kind = _text(source_ref.get("source_kind"))
+        role = _text(source_ref.get("role"))
+        title = "已有会话摘要" if source_kind == "buddy_session_summary" else _message_title(role)
+        items.append(
+            {
+                "id": source_id,
+                "title": title,
+                "source_ref": source_ref,
+                "metadata": {
+                    "source_kind": source_kind,
+                    "role": role,
+                    "ordinal": source_ref.get("ordinal"),
+                },
+            }
+        )
+    return items
+
+
+def _message_title(role: str) -> str:
+    if role == "user":
+        return "用户消息"
+    if role == "assistant":
+        return "伙伴消息"
+    return "会话消息"
+
+
 def _build_report(
     *,
     scope: str,
@@ -289,7 +436,19 @@ def _build_report(
     max_messages: int,
     max_chars: int,
     warning: str,
+    omitted_count: int,
+    omitted_reason: str,
 ) -> dict[str, Any]:
+    message_ids = [
+        _text(ref.get("source_id"))
+        for ref in source_refs
+        if ref.get("source_kind") == "buddy_message" and _text(ref.get("source_id"))
+    ]
+    summary_ids = [
+        _text(ref.get("source_id"))
+        for ref in source_refs
+        if ref.get("source_kind") == "buddy_session_summary" and _text(ref.get("source_id"))
+    ]
     return {
         "scope": scope,
         "session_id": session_id,
@@ -297,10 +456,41 @@ def _build_report(
         "source_run_id": source_run_id,
         "source_count": len(source_refs),
         "source_refs": source_refs,
+        "message_ids": message_ids,
+        "summary_ids": summary_ids,
+        "omitted_count": omitted_count,
+        "omitted_reason": omitted_reason,
+        "lineage": {
+            "current_session_id": session_id,
+            "current_message_id": current_message_id,
+            "source_run_id": source_run_id,
+        },
         "max_messages": max_messages,
         "max_chars": max_chars,
         "warning": warning,
     }
+
+
+def _render_history_text(*, summary_content: str, messages: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    if summary_content:
+        lines.append("已有会话摘要:")
+        lines.append(summary_content)
+    for message in messages:
+        role = _text(message.get("role"))
+        content = _text(message.get("content"))
+        if content:
+            lines.append(_format_history_line(role, content))
+    return "\n".join(lines)
+
+
+def _format_history_line(role: str, content: str) -> str:
+    label = "用户" if role == "user" else "伙伴" if role == "assistant" else "消息"
+    return f"{label}: {content.strip()}"
+
+
+def _warning(code: str, message: str) -> dict[str, Any]:
+    return {"code": code, "message": message}
 
 
 def _messages_char_count(messages: list[dict[str, Any]]) -> int:

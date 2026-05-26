@@ -134,6 +134,53 @@ class ContextAssemblyStoreTests(unittest.TestCase):
         self.assertEqual(expanded["assembly"]["assembly_id"], "ctx_pending_test")
         self.assertEqual(expanded["assembly"]["source_count"], 1)
 
+    def test_expand_context_package_uses_nested_context_ref_without_copying_item_text(self) -> None:
+        from app.core.storage.context_assembly_store import expand_context_package
+
+        self._insert_buddy_message("msg_1", "session_1", "user", "历史事实来自数据库。")
+        package = {
+            "kind": "context_package",
+            "package_id": "pkg_history_1",
+            "source_kind": "session",
+            "authority": "history",
+            "items": [
+                {
+                    "id": "msg_1",
+                    "title": "用户消息",
+                    "source_ref": {"source_kind": "buddy_message", "source_id": "msg_1", "role": "user", "ordinal": 0},
+                    "metadata": {"role": "user"},
+                }
+            ],
+            "context_ref": {
+                "kind": "context_assembly_ref",
+                "assembly_id": "ctx_package_pending",
+                "target_state_key": "conversation_history",
+                "renderer_key": "buddy_history",
+                "renderer_version": "1",
+                "rendered_content_hash": "",
+                "source_count": 1,
+                "source_refs": [
+                    {
+                        "source_kind": "buddy_message",
+                        "source_id": "msg_1",
+                        "role": "user",
+                        "ordinal": 0,
+                    }
+                ],
+            },
+            "budget": {"used_chars": 0, "source_chars": 0, "omitted_count": 0},
+            "warnings": [],
+        }
+
+        expanded = expand_context_package(package)
+
+        self.assertEqual(expanded["text"], "用户: 历史事实来自数据库。")
+        self.assertEqual(expanded["package"]["package_id"], "pkg_history_1")
+        self.assertEqual(expanded["package"]["source_kind"], "session")
+        self.assertEqual(expanded["package"]["authority"], "history")
+        self.assertEqual(expanded["assembly"]["assembly_id"], "ctx_package_pending")
+        self.assertEqual(expanded["warnings"], [])
+
     def test_expand_context_assembly_ref_rebuilds_from_sources_and_audits_hash_mismatch_when_blob_is_missing(self) -> None:
         from app.core.storage.context_assembly_store import create_context_assembly, expand_context_assembly_ref
 

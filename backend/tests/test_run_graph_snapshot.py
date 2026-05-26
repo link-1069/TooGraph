@@ -22,6 +22,7 @@ class RunGraphSnapshotTests(unittest.TestCase):
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
                 "buddy_context_compaction",
+                "embedding_maintenance",
                 "toograph_page_operation_workflow",
             ],
         )
