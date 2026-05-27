@@ -65,6 +65,29 @@
       },
       "checks": [
         {
+          "kind": "graph_run",
+          "name": "provider_fallback_runs_template",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "provider_fallback_eval_core",
+              "case_id": "provider-fallback-selects-compatible-model",
+              "target_template_id": "provider_fallback_eval"
+            }
+          },
+          "required_state_keys": [
+            "requested_model_ref",
+            "provider_fallback_trace",
+            "selected_model_ref"
+          ],
+          "required_node_ids": [
+            "resolve_provider_fallback",
+            "output_provider_fallback_trace"
+          ],
+          "min_node_executions": 2
+        },
+        {
           "kind": "provider_fallback",
           "name": "provider_fallback_selects_compatible_model",
           "target": "provider_fallback_trace",

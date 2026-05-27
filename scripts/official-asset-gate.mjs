@@ -46,6 +46,7 @@ const TOOL_GATE = {
     "backend.tests.test_tool_catalog_routes",
     "backend.tests.test_node_system_validator_tools",
     "backend.tests.test_tool_node_runtime",
+    "backend.tests.test_official_tool_eval_bindings",
   ],
 };
 

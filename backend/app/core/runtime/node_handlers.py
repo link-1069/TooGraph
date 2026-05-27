@@ -37,6 +37,7 @@ from app.core.runtime.action_bindings import (
     ResolvedAgentActionBinding,
     build_action_output_mapping_details,
     iter_capability_state_subgraph_keys,
+    iter_capability_state_tool_keys,
     map_action_outputs,
     resolve_agent_action_output_binding,
     resolve_agent_action_bindings,
@@ -152,17 +153,27 @@ def execute_tool_node(
     tool_definition = tool_definitions.get(tool_key)
 
     tool_inputs = _collect_tool_inputs(node, input_values, tool_key=tool_key)
-    started_at = perf_counter()
-    tool_result = invoke_tool_func(
-        tool_func,
-        tool_inputs,
-        context=_build_tool_invocation_context(
-            state=state,
-            node_name=node_name,
-            tool_key=tool_key,
-            graph_context=graph_context,
-        ),
+    graph_metadata = graph_context.get("metadata") if isinstance(graph_context.get("metadata"), dict) else {}
+    tool_runtime_fixture = _resolve_tool_runtime_fixture_from_graph_metadata(graph_metadata)
+    fixture_result = _resolve_tool_runtime_fixture_result(
+        tool_runtime_fixture,
+        node_name=node_name,
+        tool_key=tool_key,
     )
+    started_at = perf_counter()
+    if fixture_result is not None:
+        tool_result = fixture_result
+    else:
+        tool_result = invoke_tool_func(
+            tool_func,
+            tool_inputs,
+            context=_build_tool_invocation_context(
+                state=state,
+                node_name=node_name,
+                tool_key=tool_key,
+                graph_context=graph_context,
+            ),
+        )
     duration_ms = int((perf_counter() - started_at) * 1000)
     if not isinstance(tool_result, dict):
         tool_result = {
@@ -374,7 +385,7 @@ def execute_batch_node(
                     for output_key in output_keys
                 },
                 "reasoning": reasoning,
-                "runtime_config": runtime_config,
+                "runtime_config": _runtime_config_for_artifacts(runtime_config),
                 **item_artifacts,
             }
             warnings.extend(item_warnings)
@@ -472,6 +483,9 @@ def execute_agent_node(
     get_action_registry_func: Callable[..., dict[str, Any]] = get_action_registry,
     get_action_definition_registry_func: Callable[..., dict[str, Any]] = get_action_definition_registry,
     invoke_action_func: Callable[..., dict[str, Any]] = invoke_action,
+    get_tool_registry_func: Callable[..., dict[str, Any]] = get_tool_registry,
+    get_tool_definition_registry_func: Callable[..., dict[str, Any]] = get_tool_definition_registry,
+    invoke_tool_func: Callable[..., dict[str, Any]] = invoke_tool,
     resolve_agent_runtime_config_func: Callable[..., dict[str, Any]] = resolve_agent_runtime_config,
     build_agent_stream_delta_callback_func: Callable[..., Any] = build_agent_stream_delta_callback,
     callable_accepts_keyword_func: Callable[..., bool] = callable_accepts_keyword,
@@ -487,6 +501,7 @@ def execute_agent_node(
     selected_actions: list[str] = []
     selected_capabilities: list[dict[str, str]] = []
     action_outputs: list[dict[str, Any]] = []
+    tool_outputs: list[dict[str, Any]] = []
     capability_outputs: list[dict[str, Any]] = []
     action_context: dict[str, Any] = {}
     registry = get_action_registry_func(include_disabled=False)
@@ -511,6 +526,12 @@ def execute_agent_node(
         runtime_config = {
             **runtime_config,
             "action_runtime_context": action_runtime_context,
+        }
+    model_runtime_fixture = _resolve_model_runtime_fixture_from_graph_metadata(graph_metadata)
+    if model_runtime_fixture:
+        runtime_config = {
+            **runtime_config,
+            "model_runtime_fixture": model_runtime_fixture,
         }
     action_definitions = get_action_definition_registry_func(include_disabled=False)
     resolved_bindings = resolve_agent_action_bindings(node, input_values=input_values, state_schema=state_schema)
@@ -691,8 +712,9 @@ def execute_agent_node(
                         if resolved_binding.source == "capability_state"
                         else [],
                         "action_outputs": [],
+                        "tool_outputs": [],
                         "capability_outputs": [],
-                        "runtime_config": runtime_config,
+                        "runtime_config": _runtime_config_for_artifacts(runtime_config),
                         "warnings": list(dict.fromkeys(warnings)),
                         "llm_phases": list(llm_phases),
                         "context_assembly_report": context_assembly_report(),
@@ -790,6 +812,97 @@ def execute_agent_node(
             record_activity_event_func=record_activity_event_func,
         )
 
+    tool_keys = (
+        iter_capability_state_tool_keys(node, input_values=input_values, state_schema=state_schema)[:1]
+        if not resolved_bindings and not node.config.action_key
+        else []
+    )
+    tool_registry = get_tool_registry_func(include_disabled=False) if tool_keys else {}
+    tool_definitions = get_tool_definition_registry_func(include_disabled=False) if tool_keys else {}
+    for tool_key in tool_keys:
+        tool_func = tool_registry.get(tool_key)
+        if tool_func is None:
+            raise ValueError(f"Tool '{tool_key}' is not registered.")
+        tool_definition = tool_definitions.get(tool_key)
+        tool_inputs = _collect_dynamic_tool_inputs(node, input_values, state_schema=state_schema, tool_key=tool_key)
+        graph_metadata = graph_context.get("metadata") if isinstance(graph_context.get("metadata"), dict) else {}
+        tool_runtime_fixture = _resolve_tool_runtime_fixture_from_graph_metadata(graph_metadata)
+        fixture_result = _resolve_tool_runtime_fixture_result(
+            tool_runtime_fixture,
+            node_name=node_name,
+            tool_key=tool_key,
+        )
+        started_at = perf_counter()
+        if fixture_result is not None:
+            tool_result = fixture_result
+        else:
+            tool_result = invoke_tool_func(
+                tool_func,
+                tool_inputs,
+                context=_build_tool_invocation_context(
+                    state=state,
+                    node_name=node_name,
+                    tool_key=tool_key,
+                    graph_context=graph_context,
+                ),
+            )
+        duration_ms = int((perf_counter() - started_at) * 1000)
+        if not isinstance(tool_result, dict):
+            tool_result = {
+                "status": "failed",
+                "error_type": "invalid_tool_output",
+                "error": "Tool runtime returned a non-object result.",
+            }
+        status, error = _resolve_tool_invocation_status(tool_key, tool_result)
+        error_type = _resolve_action_error_type(tool_result)
+        state_writes = map_dynamic_tool_result_package(
+            node,
+            state_schema,
+            tool_key=tool_key,
+            tool_definition=tool_definition,
+            inputs=tool_inputs,
+            tool_result=tool_result,
+            status=status,
+            error=error,
+            error_type=error_type,
+            duration_ms=duration_ms,
+        )
+        if status == "failed":
+            warnings.append(f"Tool '{tool_key}' failed: {error or 'Unknown error.'}")
+        mapped_capability_outputs.update(state_writes)
+        selected_capabilities.append({"kind": "tool", "key": tool_key})
+        tool_output_record = {
+            "node_id": node_name,
+            "tool_name": str(getattr(tool_definition, "name", "") or tool_key),
+            "tool_key": tool_key,
+            "binding_source": "capability_state",
+            "input_source": "capability_state",
+            "inputs": tool_inputs,
+            "outputs": tool_result,
+            "state_writes": state_writes,
+            "duration_ms": duration_ms,
+            "status": status,
+            "error": error,
+            "error_type": error_type,
+        }
+        tool_outputs.append(tool_output_record)
+        record_activity_event_func(
+            state,
+            kind="tool_invocation",
+            summary=_tool_invocation_activity_summary(tool_key, status),
+            node_id=node_name,
+            status=status,
+            duration_ms=duration_ms,
+            detail={
+                "tool_key": tool_key,
+                "binding_source": "capability_state",
+                "input_keys": sorted(tool_inputs.keys()),
+                "output_keys": sorted(tool_result.keys()),
+                **({"error_type": error_type} if error_type else {}),
+            },
+            error=error,
+        )
+
     subgraph_keys = (
         iter_capability_state_subgraph_keys(node, input_values=input_values, state_schema=state_schema)[:1]
         if not resolved_bindings and not node.config.action_key
@@ -860,8 +973,9 @@ def execute_agent_node(
                 "selected_actions": selected_actions,
                 "selected_capabilities": [{"kind": "subgraph", "key": subgraph_key}],
                 "action_outputs": action_outputs,
+                "tool_outputs": tool_outputs,
                 "capability_outputs": [],
-                "runtime_config": runtime_config,
+                "runtime_config": _runtime_config_for_artifacts(runtime_config),
                 "warnings": list(dict.fromkeys(warnings)),
                 "llm_phases": list(llm_phases),
                 "context_assembly_report": context_assembly_report(),
@@ -953,8 +1067,9 @@ def execute_agent_node(
             "selected_actions": selected_actions,
             "selected_capabilities": selected_capabilities,
             "action_outputs": action_outputs,
+            "tool_outputs": tool_outputs,
             "capability_outputs": capability_outputs,
-            "runtime_config": runtime_config,
+            "runtime_config": _runtime_config_for_artifacts(runtime_config),
             "warnings": list(dict.fromkeys(warnings)),
             "llm_phases": list(llm_phases),
             "context_assembly_report": context_assembly_report(),
@@ -1034,8 +1149,9 @@ def execute_agent_node(
         "selected_actions": selected_actions,
         "selected_capabilities": selected_capabilities,
         "action_outputs": action_outputs,
+        "tool_outputs": tool_outputs,
         "capability_outputs": capability_outputs,
-        "runtime_config": runtime_config,
+        "runtime_config": _runtime_config_for_artifacts(runtime_config),
         "warnings": list(dict.fromkeys(warnings)),
         "llm_phases": list(llm_phases),
         "context_assembly_report": context_assembly_report(),
@@ -1145,6 +1261,46 @@ def _collect_tool_inputs(
         if binding.tool_key != tool_key:
             continue
         tool_inputs[binding.field_key] = copy.deepcopy(input_values.get(read.state))
+    return tool_inputs
+
+
+def _collect_dynamic_tool_inputs(
+    node: NodeSystemAgentNode,
+    input_values: dict[str, Any],
+    *,
+    state_schema: dict[str, NodeSystemStateDefinition],
+    tool_key: str,
+) -> dict[str, Any]:
+    for read in node.reads:
+        definition = state_schema.get(read.state)
+        if definition is None or definition.type != NodeSystemStateType.CAPABILITY:
+            continue
+        capability = input_values.get(read.state)
+        if not isinstance(capability, dict):
+            continue
+        if str(capability.get("kind") or "").strip().lower() != "tool":
+            continue
+        capability_key = str(
+            capability.get("key") or capability.get("toolKey") or capability.get("tool_key") or ""
+        ).strip()
+        if capability_key != tool_key:
+            continue
+        for input_key in ("inputs", "tool_inputs", "arguments", "args"):
+            raw_inputs = capability.get(input_key)
+            if isinstance(raw_inputs, dict):
+                return copy.deepcopy(raw_inputs)
+
+    tool_inputs: dict[str, Any] = {}
+    for read in node.reads:
+        binding = read.binding
+        if binding is None or binding.kind != NodeSystemReadBindingKind.TOOL_INPUT:
+            continue
+        if binding.tool_key != tool_key:
+            continue
+        field_key = str(binding.field_key or "").strip()
+        if not field_key:
+            continue
+        tool_inputs[field_key] = copy.deepcopy(input_values.get(read.state))
     return tool_inputs
 
 
@@ -1263,6 +1419,88 @@ def build_dynamic_action_result_package(
         "sourceType": "action",
         "sourceKey": action_key,
         "sourceName": str(getattr(action_definition, "name", "") or action_key),
+        "status": status,
+        "inputs": inputs,
+        "outputs": outputs,
+        "durationMs": duration_ms,
+        "error": error,
+        "errorType": error_type,
+    }
+
+
+def map_dynamic_tool_result_package(
+    node: NodeSystemAgentNode,
+    state_schema: dict[str, NodeSystemStateDefinition],
+    *,
+    tool_key: str,
+    tool_definition: Any | None,
+    inputs: dict[str, Any],
+    tool_result: dict[str, Any],
+    status: str,
+    error: str,
+    error_type: str,
+    duration_ms: int,
+) -> dict[str, Any]:
+    output_state_keys = [
+        write.state
+        for write in node.writes
+        if state_schema.get(write.state) is not None
+        and state_schema[write.state].type == NodeSystemStateType.RESULT_PACKAGE
+    ]
+    if len(output_state_keys) != 1:
+        raise ValueError("Dynamic tool execution requires exactly one result_package output state.")
+    state_key = output_state_keys[0]
+    return {
+        state_key: build_dynamic_tool_result_package(
+            tool_key=tool_key,
+            tool_definition=tool_definition,
+            inputs=inputs,
+            tool_result=tool_result,
+            status=status,
+            error=error,
+            error_type=error_type,
+            duration_ms=duration_ms,
+        )
+    }
+
+
+def build_dynamic_tool_result_package(
+    *,
+    tool_key: str,
+    tool_definition: Any | None,
+    inputs: dict[str, Any],
+    tool_result: dict[str, Any],
+    status: str,
+    error: str,
+    error_type: str,
+    duration_ms: int,
+) -> dict[str, Any]:
+    output_fields = list(getattr(tool_definition, "output_schema", []) or [])
+    outputs: dict[str, Any] = {}
+    if output_fields:
+        for field in output_fields:
+            outputs[field.key] = {
+                "name": field.name,
+                "description": field.description,
+                "type": field.value_type,
+                "value": tool_result.get(field.key),
+            }
+    else:
+        for key, value in tool_result.items():
+            if key in {"status", "error", "error_type", "recoverable", "missing_inputs"}:
+                continue
+            outputs[key] = {
+                "name": key,
+                "description": "",
+                "type": "json" if isinstance(value, (dict, list)) else "text",
+                "value": value,
+            }
+
+    return {
+        "kind": "result_package",
+        "sourceType": "tool",
+        "sourceKey": tool_key,
+        "sourceName": str(getattr(tool_definition, "name", "") or tool_key),
         "status": status,
         "inputs": inputs,
         "outputs": outputs,
@@ -1499,6 +1737,172 @@ def _resolve_graph_runtime_context(graph_context: dict[str, Any] | None) -> dict
     if isinstance(graph_runtime_context, dict):
         runtime_context.update(graph_runtime_context)
     return runtime_context
+
+
+def _runtime_config_for_artifacts(runtime_config: dict[str, Any]) -> dict[str, Any]:
+    sanitized = copy.deepcopy(runtime_config) if isinstance(runtime_config, dict) else {}
+    sanitized.pop("model_runtime_fixture", None)
+    return sanitized
+
+
+def _resolve_model_runtime_fixture_from_graph_metadata(graph_metadata: dict[str, Any]) -> dict[str, Any]:
+    eval_metadata = graph_metadata.get("eval")
+    if isinstance(eval_metadata, dict):
+        fixture = eval_metadata.get("model_runtime_fixture")
+        if isinstance(fixture, dict):
+            return copy.deepcopy(fixture)
+    fixture = graph_metadata.get("model_runtime_fixture")
+    if isinstance(fixture, dict):
+        return copy.deepcopy(fixture)
+    return {}
+
+
+def _resolve_tool_runtime_fixture_from_graph_metadata(graph_metadata: dict[str, Any]) -> dict[str, Any]:
+    eval_metadata = graph_metadata.get("eval")
+    if isinstance(eval_metadata, dict):
+        fixture = eval_metadata.get("tool_runtime_fixture")
+        if isinstance(fixture, dict):
+            return copy.deepcopy(fixture)
+    fixture = graph_metadata.get("tool_runtime_fixture")
+    if isinstance(fixture, dict):
+        return copy.deepcopy(fixture)
+    return {}
+
+
+def _resolve_tool_runtime_fixture_result(
+    fixture: dict[str, Any],
+    *,
+    node_name: str,
+    tool_key: str,
+) -> dict[str, Any] | None:
+    if not isinstance(fixture, dict):
+        return None
+    failure = _tool_runtime_fixture_record(fixture.get("failures"), node_name=node_name, tool_key=tool_key)
+    if failure:
+        return _tool_runtime_fixture_failure_result(failure, node_name=node_name, tool_key=tool_key)
+    response = _tool_runtime_fixture_record(fixture.get("responses"), node_name=node_name, tool_key=tool_key)
+    if response:
+        return _tool_runtime_fixture_response_result(response)
+    return None
+
+
+def _tool_runtime_fixture_record(
+    records: Any,
+    *,
+    node_name: str,
+    tool_key: str,
+) -> dict[str, Any]:
+    if isinstance(records, list):
+        for item in records:
+            if not isinstance(item, dict):
+                continue
+            if _tool_runtime_fixture_record_matches(item, node_name=node_name, tool_key=tool_key):
+                return copy.deepcopy(item)
+        return {}
+    if not isinstance(records, dict):
+        return {}
+    if _looks_like_tool_runtime_fixture_record(records):
+        if _tool_runtime_fixture_record_matches(records, node_name=node_name, tool_key=tool_key):
+            return copy.deepcopy(records)
+        return {}
+
+    for key in (
+        f"{node_name}:{tool_key}",
+        f"{node_name}/{tool_key}",
+        node_name,
+        tool_key,
+        "*",
+    ):
+        item = records.get(key)
+        if isinstance(item, dict) and _tool_runtime_fixture_record_matches(
+            item,
+            node_name=node_name,
+            tool_key=tool_key,
+        ):
+            return copy.deepcopy(item)
+    return {}
+
+
+def _looks_like_tool_runtime_fixture_record(record: dict[str, Any]) -> bool:
+    return any(
+        key in record
+        for key in (
+            "node_id",
+            "nodeId",
+            "tool_key",
+            "toolKey",
+            "outputs",
+            "result",
+            "status",
+            "error",
+            "error_type",
+            "message",
+        )
+    )
+
+
+def _tool_runtime_fixture_record_matches(
+    record: dict[str, Any],
+    *,
+    node_name: str,
+    tool_key: str,
+) -> bool:
+    record_node = _compact_text(record.get("node_id") or record.get("nodeId"))
+    record_tool = _compact_text(record.get("tool_key") or record.get("toolKey"))
+    node_matches = not record_node or record_node in {node_name, "*"}
+    tool_matches = not record_tool or record_tool in {tool_key, "*"}
+    return node_matches and tool_matches
+
+
+def _tool_runtime_fixture_response_result(record: dict[str, Any]) -> dict[str, Any]:
+    result = _tool_runtime_fixture_output_payload(record)
+    result.setdefault("status", _compact_text(record.get("status")) or "succeeded")
+    return result
+
+
+def _tool_runtime_fixture_failure_result(
+    record: dict[str, Any],
+    *,
+    node_name: str,
+    tool_key: str,
+) -> dict[str, Any]:
+    result = _tool_runtime_fixture_output_payload(record)
+    result["status"] = "failed"
+    result["error_type"] = (
+        _compact_text(record.get("error_type"))
+        or _compact_text(result.get("error_type"))
+        or "eval_tool_failure"
+    )
+    result["error"] = (
+        _compact_text(record.get("error"))
+        or _compact_text(record.get("message"))
+        or _compact_text(result.get("error"))
+        or f"Eval fixture failed tool '{tool_key}' at node '{node_name}'."
+    )
+    return result
+
+
+def _tool_runtime_fixture_output_payload(record: dict[str, Any]) -> dict[str, Any]:
+    outputs = record.get("outputs")
+    if isinstance(outputs, dict):
+        return copy.deepcopy(outputs)
+    result = record.get("result")
+    if isinstance(result, dict):
+        return copy.deepcopy(result)
+    reserved_keys = {
+        "node_id",
+        "nodeId",
+        "tool_key",
+        "toolKey",
+        "message",
+        "duration_ms",
+        "durationMs",
+    }
+    return {
+        str(key): copy.deepcopy(value)
+        for key, value in record.items()
+        if str(key) not in reserved_keys
+    }
 
 
 def _resolve_action_invocation_status(action_key: str, action_result: dict[str, Any]) -> tuple[str, str]:

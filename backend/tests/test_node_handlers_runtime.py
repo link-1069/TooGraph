@@ -16,6 +16,7 @@ from app.core.runtime.permission_approval import build_pending_permission_approv
 from app.core.runtime.action_invocation import callable_accepts_keyword
 from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemConditionNode, NodeSystemInputNode, NodeSystemStateDefinition
 from app.core.schemas.actions import ActionDefinition, ActionIoField
+from app.core.schemas.tools import ToolDefinition, ToolIoField
 
 
 def pass_through_action_inputs_func(**kwargs):
@@ -1457,6 +1458,83 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             },
         )
         self.assertIn('"sourceType": "subgraph"', result["final_result"].replace("'", '"'))
+
+    def test_execute_agent_node_runs_capability_state_selected_tool_as_result_package(self) -> None:
+        state_schema = {
+            "selected_capability": NodeSystemStateDefinition.model_validate({"type": "capability"}),
+            "dynamic_result": NodeSystemStateDefinition.model_validate({"type": "result_package"}),
+        }
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "name": "tool_executor",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "reads": [{"state": "selected_capability"}],
+                "writes": [{"state": "dynamic_result"}],
+                "config": {"actionKey": ""},
+            }
+        )
+        captured_inputs: list[dict[str, object]] = []
+
+        result = execute_agent_node(
+            state_schema,
+            node,
+            {
+                "selected_capability": {
+                    "kind": "tool",
+                    "key": "provider_fallback_resolver",
+                    "name": "Provider Fallback Resolver",
+                }
+            },
+            {"state": {}},
+            node_name="tool_executor",
+            state={"run_id": "run-1"},
+            get_action_registry_func=lambda *, include_disabled: {},
+            get_action_definition_registry_func=lambda *, include_disabled: {},
+            get_tool_registry_func=lambda *, include_disabled: {"provider_fallback_resolver": "provider_fallback_resolver"},
+            get_tool_definition_registry_func=lambda *, include_disabled: {
+                "provider_fallback_resolver": ToolDefinition(
+                    toolKey="provider_fallback_resolver",
+                    name="Provider Fallback Resolver",
+                    inputSchema=[ToolIoField(key="requested_model_ref", name="Requested", valueType="text")],
+                    outputSchema=[
+                        ToolIoField(key="selected_model_ref", name="Selected Model", valueType="text"),
+                        ToolIoField(key="provider_fallback_trace", name="Trace", valueType="json"),
+                    ],
+                    runtimeReady=True,
+                    runtimeRegistered=True,
+                )
+            },
+            invoke_tool_func=lambda tool_func, tool_inputs, **kwargs: captured_inputs.append(dict(tool_inputs))
+            or {
+                "status": "succeeded",
+                "selected_model_ref": "eval-fallback/gpt-fallback",
+                "provider_fallback_trace": {"selected": {"model_ref": "eval-fallback/gpt-fallback"}},
+            },
+            resolve_agent_runtime_config_func=lambda agent_node: {},
+            build_agent_stream_delta_callback_func=lambda *, state, node_name, output_keys: None,
+            callable_accepts_keyword_func=lambda func, keyword: callable_accepts_keyword(func, keyword),
+            generate_agent_response_func=lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("dynamic tool results should be packaged without an extra LLM response")
+            ),
+            finalize_agent_stream_delta_func=lambda *, state, node_name, output_values: None,
+            first_truthy_func=lambda values: next((value for value in values if value), None),
+        )
+
+        self.assertEqual(captured_inputs, [{}])
+        self.assertEqual(result["selected_capabilities"], [{"kind": "tool", "key": "provider_fallback_resolver"}])
+        self.assertEqual(result["tool_outputs"][0]["node_id"], "tool_executor")
+        self.assertEqual(result["tool_outputs"][0]["tool_key"], "provider_fallback_resolver")
+        self.assertEqual(result["tool_outputs"][0]["status"], "succeeded")
+        self.assertEqual(
+            result["outputs"]["dynamic_result"]["outputs"]["selected_model_ref"]["value"],
+            "eval-fallback/gpt-fallback",
+        )
+        self.assertEqual(
+            result["outputs"]["dynamic_result"]["outputs"]["provider_fallback_trace"]["value"]["selected"]["model_ref"],
+            "eval-fallback/gpt-fallback",
+        )
+        self.assertIn('"sourceType": "tool"', result["final_result"].replace("'", '"'))
 
     def test_execute_agent_node_records_dynamic_subgraph_activity_event(self) -> None:
         state_schema = {

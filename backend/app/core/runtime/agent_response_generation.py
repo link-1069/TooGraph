@@ -98,6 +98,7 @@ def generate_agent_response(
                 on_delta=on_delta,
                 input_attachments=input_attachments,
                 structured_output_schema=structured_output_schema,
+                model_runtime_fixture=runtime_config.get("model_runtime_fixture"),
             )
         finally:
             _cleanup_prepared_media_paths(attachment_meta.get("cleanup_paths"))
@@ -248,6 +249,7 @@ def repair_structured_output_with_runtime_model(
         on_delta=None,
         input_attachments=[],
         structured_output_schema=structured_output_schema,
+        model_runtime_fixture=runtime_config.get("model_runtime_fixture"),
     )
     return content, {**meta, "prompt_snapshot": prompt_snapshot}
 

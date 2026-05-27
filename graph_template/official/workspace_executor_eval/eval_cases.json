@@ -1,0 +1,79 @@
+{
+  "suite": "workspace_executor_eval_core",
+  "name": "Workspace Executor 核心回归",
+  "description": "覆盖真实 local_workspace_executor Action 运行：eval runner 注入模型规划响应，Action 执行只读搜索，collector 从 graph run 中收集 Action invocation。",
+  "cases": [
+    {
+      "case_id": "workspace-executor-searches-roadmap-through-action",
+      "name": "Workspace executor 应通过真实 Action 搜索路线图",
+      "description": "运行一个 agent 节点，模型夹具返回 local_workspace_executor 的 search 参数；评测检查 Action 输出、graph run 状态和 Action invocation 审计。",
+      "inputs": {
+        "workspace_request": "在路线图里搜索 Tool runtime fallback 的记录。"
+      },
+      "metadata": {
+        "fixture_model_runtime": {
+          "model_providers": {
+            "eval-primary": {
+              "enabled": true,
+              "transport": "openai-compatible",
+              "base_url": "http://127.0.0.1:9999/v1",
+              "models": [
+                {
+                  "model": "gpt-primary",
+                  "capabilities": {"chat": true, "structured_output": true},
+                  "permissions": ["text_generation"]
+                }
+              ]
+            }
+          },
+          "responses": {
+            "eval-primary/gpt-primary": {
+              "content": "{\"local_workspace_executor\":{\"operation\":\"search\",\"path\":\"docs/hermes-agent-capability-parity-roadmap.md\",\"content\":\"\",\"query\":\"Tool runtime fallback\",\"old_string\":\"\",\"new_string\":\"\",\"replace_all\":false,\"expected_sha256\":\"\",\"expected_mtime_ns\":\"\",\"args\":{}}}",
+              "meta": {"response_id": "workspace-action-fixture"}
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "name": "workspace_outputs_present",
+          "target": "final_output",
+          "required": ["workspace_success", "workspace_result"]
+        },
+        {
+          "kind": "rule",
+          "name": "workspace_result_contains_route_record",
+          "target": "workspace_result",
+          "must_include": ["Tool runtime fallback"]
+        },
+        {
+          "kind": "graph_run",
+          "name": "workspace_executor_graph_run_contract",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_template_id": "workspace_executor_eval",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "workspace_executor_eval_core",
+              "case_id": "workspace-executor-searches-roadmap-through-action"
+            }
+          },
+          "required_state_keys": ["workspace_success", "workspace_result"],
+          "required_output_keys": ["workspace_result"],
+          "required_node_ids": ["run_workspace_search", "output_workspace_result"],
+          "required_activity_kinds": ["action_invocation"],
+          "required_action_invocations": [
+            {
+              "node_id": "run_workspace_search",
+              "action_key": "local_workspace_executor",
+              "status": "succeeded"
+            }
+          ],
+          "min_node_executions": 2,
+          "min_action_invocations": 1
+        }
+      ]
+    }
+  ]
+}

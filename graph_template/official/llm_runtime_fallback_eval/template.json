@@ -1,0 +1,76 @@
+{
+  "template_id": "llm_runtime_fallback_eval",
+  "label": "LLM Runtime Fallback 评测",
+  "description": "运行一个真实 LLM 节点，验证 eval runner 的模型运行夹具能触发 provider fallback，并把 fallback trace 留在运行详情中。",
+  "default_graph_name": "LLM Runtime Fallback 评测",
+  "state_schema": {
+    "prompt": {
+      "name": "Prompt",
+      "description": "评测输入问题。",
+      "type": "text",
+      "value": "",
+      "color": "#2563eb",
+      "binding": null
+    },
+    "public_response": {
+      "name": "Public Response",
+      "description": "LLM 节点生成的公开回复。",
+      "type": "text",
+      "value": "",
+      "color": "#0f766e",
+      "binding": null
+    }
+  },
+  "nodes": {
+    "input_prompt": {
+      "kind": "input",
+      "name": "评测问题",
+      "description": "提供当前评测问题。",
+      "ui": {"position": {"x": 80, "y": 140}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "prompt", "mode": "replace"}],
+      "config": {"value": "", "boundaryType": "text"}
+    },
+    "generate_public_response": {
+      "kind": "agent",
+      "name": "生成回复",
+      "description": "调用配置模型生成 public_response。",
+      "ui": {"position": {"x": 620, "y": 100}, "collapsed": false, "size": {"width": 520, "height": 260}},
+      "reads": [{"state": "prompt", "required": true, "binding": null}],
+      "writes": [{"state": "public_response", "mode": "replace"}],
+      "config": {
+        "taskInstruction": "根据评测问题生成 public_response 字段，内容保持简短。",
+        "modelSource": "override",
+        "model": "eval-primary/gpt-primary",
+        "thinkingMode": "off",
+        "temperature": 0.2
+      }
+    },
+    "output_public_response": {
+      "kind": "output",
+      "name": "公开回复",
+      "description": "展示模型运行后的公开回复。",
+      "ui": {"position": {"x": 1280, "y": 110}, "collapsed": false, "size": {"width": 460, "height": 240}},
+      "reads": [{"state": "public_response", "required": true, "binding": null}],
+      "writes": [],
+      "config": {"displayMode": "markdown", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": ""}
+    }
+  },
+  "edges": [
+    {"source": "input_prompt", "target": "generate_public_response"},
+    {"source": "generate_public_response", "target": "output_public_response"}
+  ],
+  "conditional_edges": [],
+  "metadata": {
+    "category": "model_provider",
+    "role": "llm_runtime_fallback_eval",
+    "visible": false,
+    "capabilityDiscoverableDefault": false,
+    "tags": ["provider", "fallback", "eval", "llm_runtime"],
+    "output_contract": [
+      {"state": "public_response", "role": "final_response"}
+    ]
+  },
+  "source": "official",
+  "status": "active"
+}

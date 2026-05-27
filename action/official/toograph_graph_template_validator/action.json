@@ -3,8 +3,19 @@
   "actionKey": "toograph_graph_template_validator",
   "name": "图模板校验器",
   "description": "当用户已经生成或修改 TooGraph 图模板 JSON，需要在写入或运行前检查 node_system 协议、图校验器和运行时兼容性时使用。",
-  "llmInstruction": "你已绑定图模板校验器。只把 graph template JSON 作为 template_json 传入，不修改、不总结、不写文件。此 Action 返回 success 和 validation_report。",
+  "llmInstruction": "把 graph template JSON 作为 template_json 传入。此 Action 校验模板协议、图结构和运行时兼容性，并返回 success 和 validation_report。",
   "version": "0.1.0",
+  "verificationEvalSuites": [
+    "toograph_graph_template_creation_workflow_core",
+    "buddy_improvement_review_workflow_core"
+  ],
+  "verificationCommands": [
+    {
+      "name": "Graph template action tests",
+      "command": "python",
+      "args": ["-m", "unittest", "backend.tests.test_toograph_graph_template_actions"]
+    }
+  ],
   "timeoutSeconds": 30,
   "permissions": [],
   "stateInputSchema": [

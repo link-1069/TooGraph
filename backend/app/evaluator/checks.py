@@ -50,6 +50,8 @@ def evaluate_case_checks(
             results.append(_evaluate_delegation_worker_check(check_record, expected, output, artifact_map))
         elif kind in {"provider_fallback", "model_provider_fallback", "provider_fallback_trace"}:
             results.append(_evaluate_provider_fallback_check(check_record, expected, output, artifact_map))
+        elif kind in {"graph_run", "graph_run_contract"}:
+            results.append(_evaluate_graph_run_check(check_record, expected, output, artifact_map))
         elif kind in {"llm_judge", "judge"}:
             results.append(
                 _evaluate_llm_judge_check(
@@ -143,7 +145,7 @@ def _evaluate_rule_check(
 ) -> dict[str, Any]:
     target_name = _text(check.get("target")) or _text(expected.get("target")) or "final_output"
     target = _resolve_target(target_name, final_output, artifacts)
-    text = _flatten_text(target)
+    text = f"{_flatten_text(target)}\n{_flatten_mapping_keys(target)}"
     must_include = _string_list(check.get("must_include")) or _string_list(expected.get("must_include"))
     forbidden = (
         _string_list(check.get("forbidden"))
@@ -825,6 +827,209 @@ def _evaluate_scheduler_run_check(
             "missing_pending_permission_approval": missing_pending_permission_approval,
             "missing_terms": missing_terms,
             "forbidden_terms_found": forbidden_terms_found,
+        },
+    )
+
+
+def _evaluate_graph_run_check(
+    check: dict[str, Any],
+    expected: dict[str, Any],
+    final_output: dict[str, Any],
+    artifacts: dict[str, Any],
+) -> dict[str, Any]:
+    target_name = _text(check.get("target")) or _text(expected.get("target")) or "graph_run"
+    target = _resolve_target(target_name, final_output, artifacts)
+    graph_run = _as_dict(target)
+
+    required_status = _text(check.get("required_status")) or _text(expected.get("required_status"))
+    required_graph_id = _text(check.get("required_graph_id")) or _text(expected.get("required_graph_id"))
+    required_template_id = _text(check.get("required_template_id")) or _text(expected.get("required_template_id"))
+    required_runtime_backend = _text(check.get("required_runtime_backend")) or _text(
+        expected.get("required_runtime_backend")
+    )
+    required_metadata = _as_dict(check.get("required_metadata")) or _as_dict(expected.get("required_metadata"))
+    required_state_keys = _string_list(check.get("required_state_keys")) or _string_list(
+        expected.get("required_state_keys")
+    )
+    required_output_keys = _string_list(check.get("required_output_keys")) or _string_list(
+        expected.get("required_output_keys")
+    )
+    required_node_ids = _string_list(check.get("required_node_ids")) or _string_list(expected.get("required_node_ids"))
+    required_activity_kinds = _string_list(check.get("required_activity_kinds")) or _string_list(
+        expected.get("required_activity_kinds")
+    )
+    required_tool_invocations = _dict_list(check.get("required_tool_invocations")) or _dict_list(
+        expected.get("required_tool_invocations")
+    )
+    required_action_invocations = _dict_list(check.get("required_action_invocations")) or _dict_list(
+        expected.get("required_action_invocations")
+    )
+    required_subgraph_invocations = _dict_list(check.get("required_subgraph_invocations")) or _dict_list(
+        expected.get("required_subgraph_invocations")
+    )
+    min_node_executions = _int_value(check.get("min_node_executions"))
+    if min_node_executions <= 0:
+        min_node_executions = _int_value(expected.get("min_node_executions"))
+    min_tool_invocations = _int_value(check.get("min_tool_invocations"))
+    if min_tool_invocations <= 0:
+        min_tool_invocations = _int_value(expected.get("min_tool_invocations"))
+    min_action_invocations = _int_value(check.get("min_action_invocations"))
+    if min_action_invocations <= 0:
+        min_action_invocations = _int_value(expected.get("min_action_invocations"))
+    min_subgraph_invocations = _int_value(check.get("min_subgraph_invocations"))
+    if min_subgraph_invocations <= 0:
+        min_subgraph_invocations = _int_value(expected.get("min_subgraph_invocations"))
+
+    actual_status = _text(graph_run.get("status"))
+    actual_graph_id = _text(graph_run.get("graph_id"))
+    actual_template_id = _text(graph_run.get("template_id"))
+    actual_runtime_backend = _text(graph_run.get("runtime_backend"))
+    metadata = _as_dict(graph_run.get("metadata"))
+    state_keys = _dedupe(
+        [
+            *_string_list(graph_run.get("state_keys")),
+            *list(_as_dict(graph_run.get("state_values")).keys()),
+        ]
+    )
+    output_keys = _dedupe(_string_list(graph_run.get("output_keys")))
+    node_ids = _dedupe(
+        [
+            *_string_list(graph_run.get("node_ids")),
+            *list(_as_dict(graph_run.get("node_status_map")).keys()),
+            *[
+                _text(execution.get("node_id"))
+                for execution in _as_list(graph_run.get("node_executions"))
+                if isinstance(execution, dict) and _text(execution.get("node_id"))
+            ],
+        ]
+    )
+    activity_kinds = _dedupe(
+        [
+            *_string_list(graph_run.get("activity_kinds")),
+            *[
+                _text(event.get("kind"))
+                for event in _as_list(graph_run.get("activity_events"))
+                if isinstance(event, dict) and _text(event.get("kind"))
+            ],
+        ]
+    )
+    node_execution_count = _int_value(graph_run.get("node_execution_count"))
+    if node_execution_count <= 0:
+        node_execution_count = len(_as_list(graph_run.get("node_executions")))
+    tool_invocations = _tool_invocation_records(graph_run)
+    action_invocations = _action_invocation_records(graph_run)
+    subgraph_invocations = _subgraph_invocation_records(graph_run)
+
+    missing_fields: list[str] = []
+    if required_status and actual_status != required_status:
+        missing_fields.append("status")
+    if required_graph_id and actual_graph_id != required_graph_id:
+        missing_fields.append("graph_id")
+    if required_template_id and actual_template_id != required_template_id:
+        missing_fields.append("template_id")
+    if required_runtime_backend and actual_runtime_backend != required_runtime_backend:
+        missing_fields.append("runtime_backend")
+    missing_metadata = _dict_subset_missing(required_metadata, metadata)
+    missing_state_keys = [key for key in required_state_keys if key not in state_keys]
+    missing_output_keys = [key for key in required_output_keys if key not in output_keys]
+    missing_node_ids = [node_id for node_id in required_node_ids if node_id not in node_ids]
+    missing_activity_kinds = [kind for kind in required_activity_kinds if kind not in activity_kinds]
+    missing_tool_invocations = [
+        requirement
+        for requirement in required_tool_invocations
+        if not any(_tool_invocation_matches(requirement, invocation) for invocation in tool_invocations)
+    ]
+    missing_action_invocations = [
+        requirement
+        for requirement in required_action_invocations
+        if not any(_action_invocation_matches(requirement, invocation) for invocation in action_invocations)
+    ]
+    missing_subgraph_invocations = [
+        requirement
+        for requirement in required_subgraph_invocations
+        if not any(_subgraph_invocation_matches(requirement, invocation) for invocation in subgraph_invocations)
+    ]
+
+    issues: list[str] = []
+    if not graph_run:
+        issues.append(f"Missing graph run summary at target '{target_name}'.")
+    if missing_fields:
+        issues.append(f"Graph run field mismatch: {', '.join(missing_fields)}.")
+    if missing_metadata:
+        issues.append(f"Missing graph run metadata subset: {missing_metadata}.")
+    if missing_state_keys:
+        issues.append(f"Missing graph run state key(s): {', '.join(missing_state_keys)}.")
+    if missing_output_keys:
+        issues.append(f"Missing graph run output key(s): {', '.join(missing_output_keys)}.")
+    if missing_node_ids:
+        issues.append(f"Missing graph run node id(s): {', '.join(missing_node_ids)}.")
+    if missing_activity_kinds:
+        issues.append(f"Missing graph run activity kind(s): {', '.join(missing_activity_kinds)}.")
+    if missing_tool_invocations:
+        issues.append(f"Missing graph run tool invocation(s): {missing_tool_invocations}.")
+    if missing_action_invocations:
+        issues.append(f"Missing graph run action invocation(s): {missing_action_invocations}.")
+    if missing_subgraph_invocations:
+        issues.append(f"Missing graph run subgraph invocation(s): {missing_subgraph_invocations}.")
+    if min_node_executions > 0 and node_execution_count < min_node_executions:
+        issues.append(f"Expected at least {min_node_executions} node execution(s), found {node_execution_count}.")
+    if min_tool_invocations > 0 and len(tool_invocations) < min_tool_invocations:
+        issues.append(f"Expected at least {min_tool_invocations} tool invocation(s), found {len(tool_invocations)}.")
+    if min_action_invocations > 0 and len(action_invocations) < min_action_invocations:
+        issues.append(f"Expected at least {min_action_invocations} action invocation(s), found {len(action_invocations)}.")
+    if min_subgraph_invocations > 0 and len(subgraph_invocations) < min_subgraph_invocations:
+        issues.append(
+            f"Expected at least {min_subgraph_invocations} subgraph invocation(s), found {len(subgraph_invocations)}."
+        )
+
+    passed = not issues
+    return _result(
+        check,
+        status="passed" if passed else "failed",
+        score=1.0 if passed else 0.0,
+        message="Graph run check passed." if passed else " ".join(issues),
+        expected={
+            "target": target_name,
+            "required_status": required_status,
+            "required_graph_id": required_graph_id,
+            "required_template_id": required_template_id,
+            "required_runtime_backend": required_runtime_backend,
+            "required_metadata": required_metadata,
+            "required_state_keys": required_state_keys,
+            "required_output_keys": required_output_keys,
+            "required_node_ids": required_node_ids,
+            "required_activity_kinds": required_activity_kinds,
+            "required_tool_invocations": required_tool_invocations,
+            "required_action_invocations": required_action_invocations,
+            "required_subgraph_invocations": required_subgraph_invocations,
+            "min_node_executions": min_node_executions,
+            "min_tool_invocations": min_tool_invocations,
+            "min_action_invocations": min_action_invocations,
+            "min_subgraph_invocations": min_subgraph_invocations,
+        },
+        actual={
+            "run_id": _text(graph_run.get("run_id")),
+            "status": actual_status,
+            "graph_id": actual_graph_id,
+            "template_id": actual_template_id,
+            "runtime_backend": actual_runtime_backend,
+            "state_keys": state_keys,
+            "output_keys": output_keys,
+            "node_ids": node_ids,
+            "activity_kinds": activity_kinds,
+            "node_execution_count": node_execution_count,
+            "tool_invocations": tool_invocations,
+            "action_invocations": action_invocations,
+            "subgraph_invocations": subgraph_invocations,
+            "missing_fields": missing_fields,
+            "missing_metadata": missing_metadata,
+            "missing_state_keys": missing_state_keys,
+            "missing_output_keys": missing_output_keys,
+            "missing_node_ids": missing_node_ids,
+            "missing_activity_kinds": missing_activity_kinds,
+            "missing_tool_invocations": missing_tool_invocations,
+            "missing_action_invocations": missing_action_invocations,
+            "missing_subgraph_invocations": missing_subgraph_invocations,
         },
     )
 
@@ -1534,6 +1739,189 @@ def _worker_source_refs(package: dict[str, Any]) -> list[dict[str, Any]]:
     return _dedupe_source_refs(refs)
 
 
+def _tool_invocation_records(graph_run: dict[str, Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for item in _as_list(graph_run.get("tool_invocations")):
+        if isinstance(item, dict):
+            records.append(_normalize_tool_invocation_record(item))
+    for item in _as_list(graph_run.get("tool_outputs")):
+        if isinstance(item, dict):
+            records.append(_normalize_tool_invocation_record(item))
+    for execution in _as_list(graph_run.get("node_executions")):
+        if not isinstance(execution, dict):
+            continue
+        artifacts = execution.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        for item in _as_list(artifacts.get("tool_outputs")):
+            if isinstance(item, dict):
+                records.append(_normalize_tool_invocation_record(item))
+    return _dedupe_tool_invocations(records)
+
+
+def _action_invocation_records(graph_run: dict[str, Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for item in _as_list(graph_run.get("action_invocations")):
+        if isinstance(item, dict):
+            records.append(_normalize_action_invocation_record(item))
+    for item in _as_list(graph_run.get("action_outputs")):
+        if isinstance(item, dict):
+            records.append(_normalize_action_invocation_record(item))
+    for execution in _as_list(graph_run.get("node_executions")):
+        if not isinstance(execution, dict):
+            continue
+        artifacts = execution.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        for item in _as_list(artifacts.get("action_outputs")):
+            if isinstance(item, dict):
+                records.append(_normalize_action_invocation_record(item))
+    return _dedupe_action_invocations(records)
+
+
+def _subgraph_invocation_records(graph_run: dict[str, Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for item in _as_list(graph_run.get("subgraph_invocations")):
+        if isinstance(item, dict):
+            records.append(_normalize_subgraph_invocation_record(item))
+    for item in _as_list(graph_run.get("capability_outputs")):
+        if isinstance(item, dict) and _text(item.get("capability_kind") or item.get("sourceType")) == "subgraph":
+            records.append(_normalize_subgraph_invocation_record(item))
+    for execution in _as_list(graph_run.get("node_executions")):
+        if not isinstance(execution, dict):
+            continue
+        artifacts = execution.get("artifacts")
+        if not isinstance(artifacts, dict):
+            continue
+        for item in _as_list(artifacts.get("capability_outputs")):
+            if isinstance(item, dict) and _text(item.get("capability_kind") or item.get("sourceType")) == "subgraph":
+                records.append(_normalize_subgraph_invocation_record(item))
+    return _dedupe_subgraph_invocations(records)
+
+
+def _normalize_action_invocation_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "node_id": _text(record.get("node_id") or record.get("nodeId")),
+        "action_key": _text(record.get("action_key") or record.get("actionKey") or record.get("action_name")),
+        "action_name": _text(record.get("action_name") or record.get("actionName")),
+        "status": _text(record.get("status")),
+        "error": _text(record.get("error")),
+        "error_type": _text(record.get("error_type") or record.get("errorType")),
+    }
+
+
+def _normalize_subgraph_invocation_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "node_id": _text(record.get("node_id") or record.get("nodeId")),
+        "subgraph_key": _text(
+            record.get("subgraph_key")
+            or record.get("subgraphKey")
+            or record.get("capability_key")
+            or record.get("sourceKey")
+        ),
+        "subgraph_name": _text(
+            record.get("subgraph_name")
+            or record.get("subgraphName")
+            or record.get("capability_name")
+            or record.get("sourceName")
+        ),
+        "status": _text(record.get("status")),
+        "error": _text(record.get("error")),
+        "error_type": _text(record.get("error_type") or record.get("errorType")),
+        "child_run_id": _text(record.get("child_run_id") or record.get("childRunId") or record.get("triggered_run_id")),
+    }
+
+
+def _dedupe_action_invocations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str, str]] = set()
+    result: list[dict[str, Any]] = []
+    for record in records:
+        signature = (
+            _text(record.get("node_id")),
+            _text(record.get("action_key")),
+            _text(record.get("status")),
+            _text(record.get("error_type")),
+            _text(record.get("error")),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        result.append(record)
+    return result
+
+
+def _dedupe_subgraph_invocations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str, str]] = set()
+    result: list[dict[str, Any]] = []
+    for record in records:
+        signature = (
+            _text(record.get("node_id")),
+            _text(record.get("subgraph_key")),
+            _text(record.get("status")),
+            _text(record.get("error_type")),
+            _text(record.get("error")),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        result.append(record)
+    return result
+
+
+def _action_invocation_matches(requirement: dict[str, Any], invocation: dict[str, Any]) -> bool:
+    required = _normalize_action_invocation_record(requirement)
+    for key, expected in required.items():
+        if expected and _text(invocation.get(key)) != expected:
+            return False
+    return True
+
+
+def _subgraph_invocation_matches(requirement: dict[str, Any], invocation: dict[str, Any]) -> bool:
+    required = _normalize_subgraph_invocation_record(requirement)
+    actual = _normalize_subgraph_invocation_record(invocation)
+    for key, expected in required.items():
+        if expected and _text(actual.get(key)) != expected:
+            return False
+    return True
+
+
+def _normalize_tool_invocation_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "node_id": _text(record.get("node_id") or record.get("nodeId")),
+        "tool_key": _text(record.get("tool_key") or record.get("toolKey")),
+        "tool_name": _text(record.get("tool_name") or record.get("toolName")),
+        "status": _text(record.get("status")),
+        "error": _text(record.get("error")),
+        "error_type": _text(record.get("error_type") or record.get("errorType")),
+    }
+
+
+def _dedupe_tool_invocations(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str, str, str, str]] = set()
+    result: list[dict[str, Any]] = []
+    for record in records:
+        signature = (
+            _text(record.get("node_id")),
+            _text(record.get("tool_key")),
+            _text(record.get("status")),
+            _text(record.get("error_type")),
+            _text(record.get("error")),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        result.append(record)
+    return result
+
+
+def _tool_invocation_matches(requirement: dict[str, Any], invocation: dict[str, Any]) -> bool:
+    required = _normalize_tool_invocation_record(requirement)
+    for key, expected in required.items():
+        if expected and _text(invocation.get(key)) != expected:
+            return False
+    return True
+
+
 def _dict_subset_missing(required: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
     if not required:
         return {}
@@ -1636,6 +2024,10 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, list) else []
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    return [dict(item) for item in _as_list(value) if isinstance(item, dict)]
 
 
 def _int_value(value: Any) -> int:

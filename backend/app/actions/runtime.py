@@ -13,6 +13,8 @@ import sys
 import tempfile
 from typing import Any
 
+from app.core.storage import database
+
 
 SUPPORTED_SCRIPT_RUNTIME_TYPES = {"script", "python", "node", "javascript", "command"}
 DEFAULT_ACTION_TIMEOUT_SECONDS = 30.0
@@ -177,6 +179,7 @@ class ScriptActionRunner:
             "TOOGRAPH_ACTION_DIR": str(self.action_dir),
             "TOOGRAPH_ACTION_ENTRYPOINT": str(self.entrypoint_path),
             "TOOGRAPH_REPO_ROOT": str(REPO_ROOT),
+            "TOOGRAPH_DATA_DIR": str(database.DATA_DIR),
             "TOOGRAPH_ACTION_PYTHON": python_environment.python_executable,
             "PYTHONIOENCODING": SCRIPT_PROCESS_ENCODING,
             "PYTHONUTF8": "1",

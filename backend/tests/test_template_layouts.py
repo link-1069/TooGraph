@@ -113,6 +113,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "embedding_maintenance",
                 "game_creative_factory",
                 "job_application_interview_coach",
+                "llm_runtime_fallback_eval",
                 "multi_platform_content_repurposer",
                 "policy_navigator_agent",
                 "product_competitor_research_agent",
@@ -121,6 +122,9 @@ class TemplateLayoutTests(unittest.TestCase):
                 "toograph_action_creation_workflow",
                 "toograph_graph_template_creation_workflow",
                 "toograph_page_operation_workflow",
+                "tool_runtime_fallback_eval",
+                "video_segmenter_eval",
+                "workspace_executor_eval",
             ],
         )
         self.assertEqual(
@@ -2042,6 +2046,104 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue(cycle_tracker["has_cycle"])
         self.assertEqual(cycle_tracker["loop_limits_by_source"], {"validation_passed": 3})
 
+    def test_toograph_graph_template_creation_workflow_eval_cases(self) -> None:
+        eval_path = OFFICIAL_TEMPLATES_ROOT / "toograph_graph_template_creation_workflow" / "eval_cases.json"
+        payload = json.loads(eval_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["suite"], "toograph_graph_template_creation_workflow_core")
+        self.assertGreaterEqual(len(payload["cases"]), 1)
+        case = payload["cases"][0]
+        self.assertEqual(
+            case["case_id"],
+            "graph-template-creation-requires-user-template-write-and-validation",
+        )
+        self.assertEqual(
+            set(case["expected"]["required"]),
+            {"generated_template_json", "validation_report", "write_template_result", "final_summary"},
+        )
+        self.assertIn("template_request", case["inputs"])
+        self.assertIn("capability_gap", case["inputs"])
+        self.assertIn("fixture_model_runtime", case["metadata"])
+        self.assertEqual(case["metadata"]["fixture_agent_model_ref"], "eval-primary/gpt-primary")
+        self.assertTrue(case["metadata"]["fixture_graph_template_workspace"])
+        self.assertEqual(
+            case["metadata"]["fixture_model_runtime"]["responses"]["eval-primary/gpt-primary"]["meta"]["response_id"],
+            "graph-template-creation-fixture",
+        )
+        self.assertEqual({check["kind"] for check in case["checks"]}, {"schema", "rule", "graph_run"})
+        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(graph_run_check["min_action_invocations"], 3)
+        self.assertEqual(
+            [item["action_key"] for item in graph_run_check["required_action_invocations"]],
+            [
+                "toograph_graph_template_reader",
+                "toograph_graph_template_validator",
+                "toograph_graph_template_writer",
+            ],
+        )
+
+    def test_llm_runtime_fallback_eval_cases(self) -> None:
+        eval_path = OFFICIAL_TEMPLATES_ROOT / "llm_runtime_fallback_eval" / "eval_cases.json"
+        payload = json.loads(eval_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["suite"], "llm_runtime_fallback_eval_core")
+        self.assertEqual(len(payload["cases"]), 1)
+        case = payload["cases"][0]
+        self.assertEqual(case["case_id"], "llm-runtime-fallback-uses-compatible-provider")
+        self.assertIn("fixture_model_runtime", case["metadata"])
+        self.assertEqual(
+            {check["kind"] for check in case["checks"]},
+            {"schema", "rule", "provider_fallback", "graph_run"},
+        )
+
+    def test_tool_runtime_fallback_eval_cases(self) -> None:
+        eval_path = OFFICIAL_TEMPLATES_ROOT / "tool_runtime_fallback_eval" / "eval_cases.json"
+        payload = json.loads(eval_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["suite"], "tool_runtime_fallback_eval_core")
+        self.assertEqual(len(payload["cases"]), 1)
+        case = payload["cases"][0]
+        self.assertEqual(case["case_id"], "tool-runtime-fallback-routes-to-fallback-tool")
+        self.assertIn("fixture_tool_runtime", case["metadata"])
+        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(graph_run_check["min_tool_invocations"], 2)
+        self.assertEqual(
+            graph_run_check["required_tool_invocations"][0]["error_type"],
+            "eval_tool_timeout",
+        )
+
+    def test_workspace_executor_eval_cases(self) -> None:
+        eval_path = OFFICIAL_TEMPLATES_ROOT / "workspace_executor_eval" / "eval_cases.json"
+        payload = json.loads(eval_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["suite"], "workspace_executor_eval_core")
+        self.assertEqual(len(payload["cases"]), 1)
+        case = payload["cases"][0]
+        self.assertEqual(case["case_id"], "workspace-executor-searches-roadmap-through-action")
+        self.assertIn("fixture_model_runtime", case["metadata"])
+        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(graph_run_check["min_action_invocations"], 1)
+        self.assertEqual(
+            graph_run_check["required_action_invocations"][0]["action_key"],
+            "local_workspace_executor",
+        )
+
+    def test_video_segmenter_eval_cases(self) -> None:
+        eval_path = OFFICIAL_TEMPLATES_ROOT / "video_segmenter_eval" / "eval_cases.json"
+        payload = json.loads(eval_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["suite"], "video_segmenter_eval_core")
+        self.assertEqual(len(payload["cases"]), 1)
+        case = payload["cases"][0]
+        self.assertEqual(case["case_id"], "video-segmenter-splits-fixture-video-through-tool")
+        self.assertIn("fixture_video_files", case["metadata"])
+        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(graph_run_check["min_tool_invocations"], 1)
+        self.assertEqual(
+            graph_run_check["required_tool_invocations"][0]["tool_key"],
+            "video_segmenter",
+        )
+
     def test_buddy_autonomous_loop_contract(self) -> None:
         template = next(record for record in _official_template_records() if record["template_id"] == "buddy_autonomous_loop")
         states = template["state_schema"]
@@ -2521,6 +2623,220 @@ class TemplateLayoutTests(unittest.TestCase):
         case_ids = {case["case_id"] for case in payload["cases"]}
         self.assertIn("buddy-main-loop-capability-budget-exhausted", case_ids)
         self.assertIn("buddy-main-loop-capability-failure-classified", case_ids)
+        self.assertIn("buddy-main-loop-recovers-from-live-tool-failure-with-fallback", case_ids)
+        self.assertIn("buddy-main-loop-recovers-from-provider-model-fallback", case_ids)
+        self.assertIn("buddy-main-loop-recovers-from-subgraph-failure-with-fallback", case_ids)
+        self.assertIn("buddy-main-loop-pauses-for-action-permission-required", case_ids)
+        self.assertIn("buddy-main-loop-compacts-context-overflow-before-reply", case_ids)
+        self.assertIn("buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure", case_ids)
+        self.assertIn("buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure", case_ids)
+        self.assertIn("buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required", case_ids)
+        fallback_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-recovers-from-live-tool-failure-with-fallback"
+        )
+        self.assertIn("fixture_model_runtime", fallback_case["metadata"])
+        self.assertIn("fixture_tool_runtime", fallback_case["metadata"])
+        graph_run_check = next(check for check in fallback_case["checks"] if check["kind"] == "graph_run")
+        self.assertGreaterEqual(graph_run_check["min_tool_invocations"], 4)
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "provider_fallback_resolver",
+                "status": "failed",
+                "error_type": "eval_tool_timeout",
+            },
+            graph_run_check["required_tool_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            graph_run_check["required_tool_invocations"],
+        )
+        provider_fallback_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-recovers-from-provider-model-fallback"
+        )
+        self.assertIn("fixture_model_runtime", provider_fallback_case["metadata"])
+        provider_fallback_check = next(
+            check for check in provider_fallback_case["checks"] if check["kind"] == "provider_fallback"
+        )
+        self.assertEqual(
+            provider_fallback_check["required_selected"],
+            {"provider_id": "eval-fallback", "model": "gpt-fallback"},
+        )
+        provider_graph_run_check = next(
+            check for check in provider_fallback_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertIn("reply_and_select_capability", provider_graph_run_check["required_node_ids"])
+        self.assertGreaterEqual(provider_graph_run_check["min_action_invocations"], 1)
+        subgraph_fallback_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-recovers-from-subgraph-failure-with-fallback"
+        )
+        self.assertIn("fixture_model_runtime", subgraph_fallback_case["metadata"])
+        subgraph_graph_run_check = next(
+            check for check in subgraph_fallback_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "subgraph_key": "advanced_web_research_loop",
+                "status": "failed",
+                "error_type": "missing_required_input",
+            },
+            subgraph_graph_run_check["required_subgraph_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            subgraph_graph_run_check["required_tool_invocations"],
+        )
+        permission_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-pauses-for-action-permission-required"
+        )
+        self.assertEqual(permission_case["metadata"]["fixture_graph_metadata"]["graph_permission_mode"], "ask_first")
+        permission_graph_run_check = next(
+            check for check in permission_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(permission_graph_run_check["required_status"], "awaiting_human")
+        self.assertIn("permission_pause", permission_graph_run_check["required_activity_kinds"])
+        self.assertEqual(
+            permission_graph_run_check["required_metadata"]["pending_permission_approval"]["capability_key"],
+            "local_workspace_executor",
+        )
+        self.assertEqual(
+            permission_graph_run_check["required_metadata"]["pending_permission_approval"]["permissions"],
+            ["file_write"],
+        )
+        context_overflow_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-before-reply"
+        )
+        self.assertIn("fixture_buddy_sessions", context_overflow_case["metadata"])
+        self.assertEqual(
+            context_overflow_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
+            "session_eval_context_overflow",
+        )
+        context_overflow_graph_run_check = next(
+            check for check in context_overflow_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertIn("run_context_compaction", context_overflow_graph_run_check["required_node_ids"])
+        self.assertIn("context_budget_report", context_overflow_graph_run_check["required_state_keys"])
+        self.assertIn("context_compaction_summary", context_overflow_graph_run_check["required_state_keys"])
+        self.assertIn(
+            {
+                "node_id": "check_context_pressure",
+                "tool_key": "buddy_context_pressure_check",
+                "status": "succeeded",
+            },
+            context_overflow_graph_run_check["required_tool_invocations"],
+        )
+        combo_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure"
+        )
+        self.assertIn("fixture_buddy_sessions", combo_case["metadata"])
+        self.assertIn("fixture_tool_runtime", combo_case["metadata"])
+        self.assertEqual(
+            combo_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
+            "session_eval_context_overflow_tool_combo",
+        )
+        combo_graph_run_check = next(check for check in combo_case["checks"] if check["kind"] == "graph_run")
+        self.assertIn("run_context_compaction", combo_graph_run_check["required_node_ids"])
+        self.assertIn("execute_capability", combo_graph_run_check["required_node_ids"])
+        self.assertIn("context_compaction_summary", combo_graph_run_check["required_state_keys"])
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "provider_fallback_resolver",
+                "status": "failed",
+                "error_type": "eval_tool_timeout",
+            },
+            combo_graph_run_check["required_tool_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            combo_graph_run_check["required_tool_invocations"],
+        )
+        combo_subgraph_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure"
+        )
+        self.assertIn("fixture_buddy_sessions", combo_subgraph_case["metadata"])
+        self.assertIn("fixture_tool_runtime", combo_subgraph_case["metadata"])
+        self.assertEqual(
+            combo_subgraph_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
+            "session_eval_context_overflow_subgraph_combo",
+        )
+        combo_subgraph_graph_run_check = next(
+            check for check in combo_subgraph_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertIn("run_context_compaction", combo_subgraph_graph_run_check["required_node_ids"])
+        self.assertIn("execute_capability", combo_subgraph_graph_run_check["required_node_ids"])
+        self.assertIn("context_compaction_summary", combo_subgraph_graph_run_check["required_state_keys"])
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "subgraph_key": "advanced_web_research_loop",
+                "status": "failed",
+                "error_type": "missing_required_input",
+            },
+            combo_subgraph_graph_run_check["required_subgraph_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            combo_subgraph_graph_run_check["required_tool_invocations"],
+        )
+        combo_permission_case = next(
+            case
+            for case in payload["cases"]
+            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required"
+        )
+        self.assertIn("fixture_buddy_sessions", combo_permission_case["metadata"])
+        self.assertEqual(combo_permission_case["metadata"]["fixture_graph_metadata"]["graph_permission_mode"], "ask_first")
+        self.assertEqual(
+            combo_permission_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
+            "session_eval_context_overflow_permission_combo",
+        )
+        combo_permission_graph_run_check = next(
+            check for check in combo_permission_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(combo_permission_graph_run_check["required_status"], "awaiting_human")
+        self.assertIn("run_context_compaction", combo_permission_graph_run_check["required_node_ids"])
+        self.assertIn("execute_capability", combo_permission_graph_run_check["required_node_ids"])
+        self.assertIn("context_compaction_summary", combo_permission_graph_run_check["required_state_keys"])
+        self.assertIn("permission_pause", combo_permission_graph_run_check["required_activity_kinds"])
+        self.assertEqual(
+            combo_permission_graph_run_check["required_metadata"]["pending_permission_approval"]["capability_key"],
+            "local_workspace_executor",
+        )
+        self.assertEqual(
+            combo_permission_graph_run_check["required_metadata"]["pending_permission_approval"]["permissions"],
+            ["file_write"],
+        )
 
     def test_buddy_support_templates_are_visible_and_loadable(self) -> None:
         public_template_ids = {record["template_id"] for record in _visible_official_template_records()}

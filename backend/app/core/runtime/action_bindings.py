@@ -138,12 +138,36 @@ def iter_capability_state_subgraph_keys(
     return subgraph_keys
 
 
+def iter_capability_state_tool_keys(
+    node: NodeSystemAgentNode,
+    *,
+    input_values: dict[str, Any] | None,
+    state_schema: dict[str, NodeSystemStateDefinition] | None,
+) -> list[str]:
+    if not input_values or not state_schema:
+        return []
+
+    tool_keys: list[str] = []
+    for read_binding in node.reads:
+        definition = state_schema.get(read_binding.state)
+        if definition is None or definition.type != NodeSystemStateType.CAPABILITY:
+            continue
+        tool_key = extract_capability_tool_key(input_values.get(read_binding.state))
+        if tool_key:
+            tool_keys.append(tool_key)
+    return tool_keys
+
+
 def extract_capability_action_key(value: Any) -> str:
     return _extract_capability_key(value, expected_kind="action")
 
 
 def extract_capability_subgraph_key(value: Any) -> str:
     return _extract_capability_key(value, expected_kind="subgraph")
+
+
+def extract_capability_tool_key(value: Any) -> str:
+    return _extract_capability_key(value, expected_kind="tool")
 
 
 def _extract_capability_key(value: Any, *, expected_kind: str) -> str:
@@ -163,7 +187,9 @@ def _extract_capability_key(value: Any, *, expected_kind: str) -> str:
     if isinstance(value, dict):
         if str(value.get("kind") or "").strip().lower() != expected_kind:
             return ""
-        return str(value.get("key") or "").strip()
+        alias_key = f"{expected_kind}Key"
+        snake_alias_key = f"{expected_kind}_key"
+        return str(value.get("key") or value.get(alias_key) or value.get(snake_alias_key) or "").strip()
 
     return ""
 

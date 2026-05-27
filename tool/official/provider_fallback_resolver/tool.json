@@ -6,7 +6,7 @@
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
-  "verificationEvalSuites": ["provider_fallback_eval_core"],
+  "verificationEvalSuites": ["provider_fallback_eval_core", "tool_runtime_fallback_eval_core"],
   "verificationCommands": [
     {
       "name": "Provider fallback resolver core tests",

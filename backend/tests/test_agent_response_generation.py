@@ -914,6 +914,49 @@ class AgentResponseGenerationTests(unittest.TestCase):
         self.assertEqual(updated_config["provider_timings"], {"total_ms": 12})
         self.assertEqual(updated_config["provider_video_fallback"], {"used": True, "frame_count": 1})
 
+    def test_passes_model_runtime_fixture_to_configured_provider(self) -> None:
+        captured: dict[str, object] = {}
+        fixture = {
+            "model_providers": {
+                "eval-primary": {
+                    "models": [{"model": "gpt-primary"}],
+                }
+            },
+            "failures": {"eval-primary/gpt-primary": {"message": "timeout"}},
+        }
+
+        def chat_with_model_ref_with_meta_func(**kwargs):
+            captured.update(kwargs)
+            return (
+                '{"answer": "done"}',
+                {
+                    "warnings": [],
+                    "provider_id": "eval-primary",
+                    "model": "gpt-primary",
+                },
+            )
+
+        generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {"question": "q"},
+            {},
+            {
+                "resolved_provider_id": "eval-primary",
+                "runtime_model_name": "gpt-primary",
+                "resolved_model_ref": "eval-primary/gpt-primary",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "model_runtime_fixture": fixture,
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "system prompt",
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        self.assertIs(captured["model_runtime_fixture"], fixture)
+
 
 if __name__ == "__main__":
     unittest.main()

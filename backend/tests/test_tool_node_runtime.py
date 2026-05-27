@@ -107,6 +107,56 @@ class ToolNodeRuntimeTests(unittest.TestCase):
         self.assertEqual(result["tool_outputs"][0]["state_writes"], {"result": {"echo": {"ok": True}}})
         self.assertEqual(events[0]["kind"], "tool_invocation")
 
+    def test_execute_tool_node_uses_eval_tool_runtime_failure_fixture(self) -> None:
+        graph = _tool_graph()
+        node = graph.nodes["passthrough"]
+        calls: list[dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
+
+        def run_tool(_tool_func: object, _tool_inputs: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+            calls.append({"called": True})
+            return {"status": "succeeded", "result": {"unexpected": True}}
+
+        result = node_handlers.execute_tool_node(
+            graph.state_schema,
+            node,
+            {"source": {"ok": True}},
+            {
+                "state": {"source": {"ok": True}},
+                "metadata": {
+                    "eval": {
+                        "tool_runtime_fixture": {
+                            "failures": {
+                                "passthrough": {
+                                    "tool_key": "json_passthrough",
+                                    "error_type": "eval_tool_timeout",
+                                    "message": "eval injected timeout",
+                                    "outputs": {"result": {"fallback_required": True}},
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+            node_name="passthrough",
+            state={"run_id": "run-1"},
+            get_tool_registry_func=lambda *, include_disabled: {"json_passthrough": object()},
+            get_tool_definition_registry_func=lambda *, include_disabled: {
+                "json_passthrough": _tool_definition("json_passthrough")
+            },
+            invoke_tool_func=run_tool,
+            record_activity_event_func=lambda state, **event: events.append(event) or event,
+        )
+
+        self.assertEqual(calls, [])
+        self.assertEqual(result["outputs"], {"result": {"fallback_required": True}})
+        self.assertEqual(result["tool_outputs"][0]["status"], "failed")
+        self.assertEqual(result["tool_outputs"][0]["error"], "eval injected timeout")
+        self.assertEqual(result["tool_outputs"][0]["error_type"], "eval_tool_timeout")
+        self.assertNotIn("tool_runtime_fixture", result["tool_outputs"][0])
+        self.assertEqual(events[0]["status"], "failed")
+        self.assertEqual(events[0]["detail"]["error_type"], "eval_tool_timeout")
+
 
 if __name__ == "__main__":
     unittest.main()

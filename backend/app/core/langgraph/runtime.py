@@ -84,13 +84,16 @@ class _SubgraphAwaitingHuman(Exception):
     pass
 
 
-INHERITED_PERMISSION_METADATA_KEYS = {
+INHERITED_SUBGRAPH_METADATA_KEYS = {
     "graph_permission_mode",
     "buddy_mode",
     "buddy_requires_approval",
     "buddy_can_execute_actions",
     "action_runtime_context",
     "capability_permission_policy",
+    "eval",
+    "model_runtime_fixture",
+    "tool_runtime_fixture",
 }
 
 
@@ -379,7 +382,7 @@ def _apply_inherited_permission_metadata(
 ) -> NodeSystemGraphDocument:
     metadata = dict(subgraph_document.metadata or {})
     parent_metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
-    for key in INHERITED_PERMISSION_METADATA_KEYS:
+    for key in INHERITED_SUBGRAPH_METADATA_KEYS:
         if key in parent_metadata:
             metadata[key] = copy.deepcopy(parent_metadata[key])
     subgraph_document.metadata = metadata

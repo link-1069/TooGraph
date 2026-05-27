@@ -41,6 +41,7 @@ class VideoSegmenterToolTests(unittest.TestCase):
         self.assertEqual(definition.input_schema[0].value_type, "video")
         self.assertEqual([field.key for field in definition.output_schema], ["segments"])
         self.assertEqual(definition.output_schema[0].value_type, "json")
+        self.assertEqual(definition.verification_eval_suites, ["game_creative_factory_official", "video_segmenter_eval_core"])
         self.assertIn("video_segmenter", get_tool_registry(include_disabled=True).keys())
 
     def test_default_segment_duration_leaves_headroom_for_llm_video_limit(self):

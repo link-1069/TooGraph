@@ -1,0 +1,103 @@
+{
+  "suite": "llm_runtime_fallback_eval_core",
+  "name": "LLM Runtime Fallback 核心回归",
+  "description": "覆盖真实 LLM 节点运行时的 provider fallback：eval runner 注入 primary 失败，fallback provider 返回受控结构化响应，collector 从 graph run 中收集 provider_fallback_trace。",
+  "cases": [
+    {
+      "case_id": "llm-runtime-fallback-uses-compatible-provider",
+      "name": "LLM runtime 应在 primary 失败后使用兼容 fallback",
+      "description": "运行一个 agent 节点，primary provider 由 eval 夹具注入 timeout，fallback provider 返回结构化 public_response；评测检查最终输出、fallback trace 和 graph run 合同。",
+      "inputs": {
+        "prompt": "请用一句话说明 LLM runtime fallback 是否生效。"
+      },
+      "metadata": {
+        "fixture_model_runtime": {
+          "model_providers": {
+            "eval-primary": {
+              "enabled": true,
+              "transport": "openai-compatible",
+              "base_url": "http://127.0.0.1:9999/v1",
+              "models": [
+                {
+                  "model": "gpt-primary",
+                  "capabilities": {"chat": true, "structured_output": true},
+                  "permissions": ["text_generation"]
+                }
+              ]
+            },
+            "eval-fallback": {
+              "enabled": true,
+              "transport": "openai-compatible",
+              "base_url": "http://127.0.0.1:9998/v1",
+              "models": [
+                {
+                  "model": "gpt-fallback",
+                  "capabilities": {"chat": true, "structured_output": true},
+                  "permissions": ["text_generation"]
+                }
+              ]
+            }
+          },
+          "failures": {
+            "eval-primary/gpt-primary": {
+              "error_type": "provider_timeout",
+              "message": "eval injected primary timeout"
+            }
+          },
+          "responses": {
+            "eval-fallback/gpt-fallback": {
+              "content": "{\"public_response\":\"fallback provider answered through real runtime fallback\"}",
+              "meta": {"response_id": "eval-fixture-response-1"}
+            }
+          }
+        }
+      },
+      "expected": {
+        "required": ["public_response"]
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "name": "runtime_fallback_output_present",
+          "target": "final_output",
+          "required": ["public_response", "provider_fallback_trace"]
+        },
+        {
+          "kind": "rule",
+          "key": "runtime_fallback_response_mentions_fixture_answer",
+          "target": "public_response",
+          "must_include": ["fallback provider answered through real runtime fallback"]
+        },
+        {
+          "kind": "provider_fallback",
+          "name": "runtime_provider_fallback_trace",
+          "target": "provider_fallback_trace",
+          "required_requested": {"provider_id": "eval-primary", "model": "gpt-primary"},
+          "required_selected": {"provider_id": "eval-fallback", "model": "gpt-fallback"},
+          "required_failed": {"provider_id": "eval-primary", "error_type": "provider_timeout"},
+          "required_capabilities": ["chat", "structured_output"],
+          "required_permissions": ["text_generation"],
+          "min_fallbacks": 1,
+          "required_terms": ["fallback_selected", "provider_timeout"]
+        },
+        {
+          "kind": "graph_run",
+          "name": "runtime_fallback_graph_run_contract",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_template_id": "llm_runtime_fallback_eval",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "llm_runtime_fallback_eval_core",
+              "case_id": "llm-runtime-fallback-uses-compatible-provider"
+            }
+          },
+          "required_state_keys": ["prompt", "public_response"],
+          "required_output_keys": ["public_response"],
+          "required_node_ids": ["generate_public_response", "output_public_response"],
+          "min_node_executions": 2
+        }
+      ]
+    }
+  ]
+}

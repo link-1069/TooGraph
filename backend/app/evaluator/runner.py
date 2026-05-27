@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import copy
 import logging
+from pathlib import Path
+import shutil
+import subprocess
 from typing import Any
 from uuid import uuid4
 
@@ -13,6 +16,7 @@ from app.core.runtime.run_events import publish_run_event
 from app.core.runtime.state import create_initial_run_state, set_run_status, touch_run_lifecycle
 from app.core.runtime.state_io import input_state_keys
 from app.core.schemas.node_system import NodeSystemGraphDocument
+from app.core.storage import database
 from app.core.storage.graph_store import load_graph
 from app.core.storage.json_file_utils import utc_now_iso
 from app.core.storage.run_store import save_run
@@ -112,10 +116,11 @@ def build_eval_case_graph_document(
         applied_input_keys.append(state_key)
 
     graph_data["state_schema"] = state_schema
+    _apply_agent_model_ref_fixture(graph_data, case)
     case_id = str(case.get("case_id") or case_result.get("case_id") or "")
     graph_data["graph_id"] = _eval_runtime_graph_id(source_id, case_id)
     graph_data["name"] = f"{graph.name} / Eval {case_id or 'case'}"
-    graph_data["metadata"] = {
+    graph_metadata = {
         **dict(graph.metadata),
         "eval": {
             "eval_run_id": str(eval_run.get("eval_run_id") or ""),
@@ -128,9 +133,138 @@ def build_eval_case_graph_document(
             "target_id": source_id,
             "requested_by": str(requested_by or ""),
             "applied_input_keys": applied_input_keys,
+            **_case_model_runtime_fixture_metadata(case),
+            **_case_tool_runtime_fixture_metadata(case),
         },
     }
+    fixture_graph_metadata = _case_graph_metadata_fixture(case)
+    if fixture_graph_metadata:
+        graph_metadata = _merge_runtime_context(graph_metadata, fixture_graph_metadata)
+    action_runtime_context = _case_action_runtime_context_fixture(eval_run, case_result, case)
+    if action_runtime_context:
+        existing_context = graph_metadata.get("action_runtime_context")
+        graph_metadata["action_runtime_context"] = _merge_runtime_context(
+            existing_context if isinstance(existing_context, dict) else {},
+            action_runtime_context,
+        )
+    graph_data["metadata"] = graph_metadata
     return NodeSystemGraphDocument.model_validate(graph_data)
+
+
+def _case_model_runtime_fixture_metadata(case: dict[str, Any]) -> dict[str, Any]:
+    metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
+    fixture = metadata.get("fixture_model_runtime")
+    if not isinstance(fixture, dict):
+        fixture = metadata.get("model_runtime_fixture")
+    if not isinstance(fixture, dict):
+        return {}
+    return {"model_runtime_fixture": copy.deepcopy(fixture)}
+
+
+def _case_tool_runtime_fixture_metadata(case: dict[str, Any]) -> dict[str, Any]:
+    metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
+    fixture = metadata.get("fixture_tool_runtime")
+    if not isinstance(fixture, dict):
+        fixture = metadata.get("tool_runtime_fixture")
+    if not isinstance(fixture, dict):
+        return {}
+    return {"tool_runtime_fixture": copy.deepcopy(fixture)}
+
+
+def _case_graph_metadata_fixture(case: dict[str, Any]) -> dict[str, Any]:
+    metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
+    fixture = metadata.get("fixture_graph_metadata")
+    if not isinstance(fixture, dict):
+        fixture = metadata.get("graph_metadata_fixture")
+    if not isinstance(fixture, dict):
+        return {}
+    return copy.deepcopy(fixture)
+
+
+def _apply_agent_model_ref_fixture(graph_data: dict[str, Any], case: dict[str, Any]) -> None:
+    model_ref = _case_agent_model_ref(case)
+    if not model_ref:
+        return
+    nodes = graph_data.get("nodes")
+    if not isinstance(nodes, dict):
+        return
+    _apply_agent_model_ref_fixture_to_nodes(nodes, model_ref)
+
+
+def _apply_agent_model_ref_fixture_to_nodes(nodes: Any, model_ref: str) -> None:
+    if not isinstance(nodes, dict):
+        return
+    for node in nodes.values():
+        if not isinstance(node, dict):
+            continue
+        if node.get("kind") == "agent":
+            config = node.get("config")
+            if not isinstance(config, dict):
+                config = {}
+                node["config"] = config
+            config["modelSource"] = "override"
+            config["model"] = model_ref
+            continue
+        if node.get("kind") == "subgraph":
+            config = node.get("config") if isinstance(node.get("config"), dict) else {}
+            embedded_graph = config.get("graph") if isinstance(config.get("graph"), dict) else {}
+            _apply_agent_model_ref_fixture_to_nodes(embedded_graph.get("nodes"), model_ref)
+
+
+def _case_agent_model_ref(case: dict[str, Any]) -> str:
+    metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
+    return str(metadata.get("fixture_agent_model_ref") or metadata.get("agent_model_ref") or "").strip()
+
+
+def _case_action_runtime_context_fixture(
+    eval_run: dict[str, Any],
+    case_result: dict[str, Any],
+    case: dict[str, Any],
+) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    graph_template_context = _case_graph_template_workspace_context(eval_run, case_result, case)
+    if graph_template_context:
+        context["graph_template_writer"] = graph_template_context
+    return context
+
+
+def _case_graph_template_workspace_context(
+    eval_run: dict[str, Any],
+    case_result: dict[str, Any],
+    case: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
+    fixture = metadata.get("fixture_graph_template_workspace")
+    if fixture is not True and not isinstance(fixture, dict):
+        return {}
+
+    case_id = str(case.get("case_id") or case_result.get("case_id") or "case")
+    eval_run_id = str(eval_run.get("eval_run_id") or "eval")
+    workspace_dir = (
+        database.DATA_DIR
+        / "eval_fixtures"
+        / _safe_path_part(eval_run_id)
+        / _safe_path_part(case_id)
+        / "graph_template_workspace"
+    )
+    user_templates_root = workspace_dir / "graph_template" / "user"
+    template_revision_root = workspace_dir / "backend" / "data" / "template_revisions"
+    user_templates_root.mkdir(parents=True, exist_ok=True)
+    template_revision_root.mkdir(parents=True, exist_ok=True)
+    return {
+        "user_templates_root": str(user_templates_root),
+        "template_revision_root": str(template_revision_root),
+    }
+
+
+def _merge_runtime_context(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    result = copy.deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = _merge_runtime_context(result[key], value)
+        else:
+            result[key] = copy.deepcopy(value)
+    return result
 
 
 def _load_target_graph(*, source: str, source_id: str) -> NodeSystemGraphDocument:
@@ -176,6 +310,7 @@ def _install_case_fixtures(
     _install_case_fixture_memories(eval_run, case_result, case)
     _install_case_fixture_capability_usage(eval_run, case_result, case)
     _install_case_fixture_scheduler_records(case)
+    _install_case_fixture_video_files(eval_run, case_result, case)
 
 
 def _install_case_fixture_runs(
@@ -410,6 +545,118 @@ def _case_fixture_scheduled_graph_job_runs(case: dict[str, Any]) -> list[dict[st
         if isinstance(fixture, dict):
             fixtures.append(fixture)
     return fixtures
+
+
+def _install_case_fixture_video_files(
+    eval_run: dict[str, Any],
+    case_result: dict[str, Any],
+    case: dict[str, Any],
+) -> None:
+    fixtures = _case_fixture_video_files(case)
+    if not fixtures:
+        return
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise HTTPException(status_code=422, detail="fixture_video_files requires ffmpeg.")
+
+    input_values = case.setdefault("input_values", {})
+    if not isinstance(input_values, dict):
+        input_values = {}
+        case["input_values"] = input_values
+
+    case_id = str(case.get("case_id") or case_result.get("case_id") or "case")
+    eval_run_id = str(eval_run.get("eval_run_id") or "eval")
+    fixture_dir = database.DATA_DIR / "eval_fixtures" / _safe_path_part(eval_run_id) / _safe_path_part(case_id)
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+
+    for index, fixture in enumerate(fixtures):
+        state_key = str(fixture.get("state_key") or fixture.get("stateKey") or "").strip()
+        if not state_key:
+            continue
+        target_path = fixture_dir / _safe_fixture_filename(str(fixture.get("filename") or f"fixture_video_{index}.mp4"))
+        _write_fixture_video(
+            ffmpeg=ffmpeg,
+            target_path=target_path,
+            duration_seconds=_positive_float(
+                fixture.get("duration_seconds") or fixture.get("durationSeconds"),
+                default=1.0,
+            ),
+            size=str(fixture.get("size") or "160x90").strip() or "160x90",
+            rate=str(fixture.get("rate") or "4").strip() or "4",
+        )
+        input_values[state_key] = {
+            "filesystem_path": str(target_path),
+            "mime_type": "video/mp4",
+            "local_path": target_path.name,
+        }
+
+
+def _case_fixture_video_files(case: dict[str, Any]) -> list[dict[str, Any]]:
+    metadata = case.get("metadata") if isinstance(case.get("metadata"), dict) else {}
+    fixtures: list[dict[str, Any]] = []
+    single_fixture = metadata.get("fixture_video_file")
+    if isinstance(single_fixture, dict):
+        fixtures.append(single_fixture)
+    for fixture in metadata.get("fixture_video_files") or []:
+        if isinstance(fixture, dict):
+            fixtures.append(fixture)
+    return fixtures
+
+
+def _write_fixture_video(
+    *,
+    ffmpeg: str,
+    target_path: Path,
+    duration_seconds: float,
+    size: str,
+    rate: str,
+) -> None:
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    completed = subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            f"testsrc=size={size}:rate={rate}",
+            "-t",
+            f"{duration_seconds:.3f}",
+            "-pix_fmt",
+            "yuv420p",
+            "-y",
+            str(target_path),
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or f"ffmpeg exited with code {completed.returncode}.").strip()
+        raise HTTPException(status_code=422, detail=f"Failed to create eval video fixture: {detail[:800]}")
+
+
+def _safe_fixture_filename(value: str) -> str:
+    name = Path(value).name.strip() or "fixture_video.mp4"
+    if not name.lower().endswith(".mp4"):
+        name = f"{Path(name).stem or 'fixture_video'}.mp4"
+    return name
+
+
+def _safe_path_part(value: str) -> str:
+    normalized = "".join(character if character.isalnum() or character in {"-", "_"} else "_" for character in value)
+    return normalized.strip("_") or "fixture"
+
+
+def _positive_float(value: Any, *, default: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def _installed_capability_usage_event_ids(stats: dict[str, Any]) -> set[str]:

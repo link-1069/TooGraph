@@ -1,0 +1,64 @@
+{
+  "suite": "video_segmenter_eval_core",
+  "name": "Video Segmenter 核心回归",
+  "description": "覆盖真实 video_segmenter Tool 运行：eval runner 生成短视频 fixture，Tool 节点切分视频并把片段 artifact 写入 graph run。",
+  "cases": [
+    {
+      "case_id": "video-segmenter-splits-fixture-video-through-tool",
+      "name": "Video segmenter 应通过真实 Tool 切分 fixture 视频",
+      "description": "运行一个 Tool 节点，eval runner 先生成短 mp4 fixture 并绑定到 source_video；评测检查片段输出和 graph run 中的 Tool invocation 审计。",
+      "inputs": {},
+      "metadata": {
+        "fixture_video_files": [
+          {
+            "state_key": "source_video",
+            "filename": "source.mp4",
+            "duration_seconds": 1.2,
+            "size": "160x90",
+            "rate": 4
+          }
+        ]
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "name": "video_segments_present",
+          "target": "final_output",
+          "required": ["video_segments"]
+        },
+        {
+          "kind": "rule",
+          "name": "video_segments_include_artifact_path",
+          "target": "video_segments",
+          "must_include": ["segment_000.mp4", "video/mp4"]
+        },
+        {
+          "kind": "graph_run",
+          "name": "video_segmenter_graph_run_contract",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_template_id": "video_segmenter_eval",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "video_segmenter_eval_core",
+              "case_id": "video-segmenter-splits-fixture-video-through-tool"
+            }
+          },
+          "required_state_keys": ["source_video", "video_segments"],
+          "required_output_keys": ["video_segments"],
+          "required_node_ids": ["segment_video", "output_video_segments"],
+          "required_activity_kinds": ["tool_invocation"],
+          "required_tool_invocations": [
+            {
+              "node_id": "segment_video",
+              "tool_key": "video_segmenter",
+              "status": "succeeded"
+            }
+          ],
+          "min_node_executions": 2,
+          "min_tool_invocations": 1
+        }
+      ]
+    }
+  ]
+}

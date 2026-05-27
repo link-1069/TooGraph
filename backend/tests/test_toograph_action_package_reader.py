@@ -31,6 +31,12 @@ class ToographActionPackageReaderTests(unittest.TestCase):
         self.assertEqual(definition.action_key, "toograph_action_package_reader")
         self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
         self.assertEqual(definition.permissions, ["action_read"])
+        self.assertEqual(
+            definition.verification_eval_suites,
+            ["toograph_action_creation_workflow_core", "buddy_improvement_review_workflow_core"],
+        )
+        self.assertNotIn("You are bound", definition.llm_instruction)
+        self.assertNotIn("do not", definition.llm_instruction.lower())
         self.assertEqual([field.key for field in definition.state_input_schema], ["target_action_key"])
         self.assertEqual([field.key for field in definition.llm_output_schema], ["action_key", "source_scope"])
         self.assertEqual([field.key for field in definition.state_output_schema], ["success", "action_package", "result"])

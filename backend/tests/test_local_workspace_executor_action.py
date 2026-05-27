@@ -45,6 +45,16 @@ class LocalWorkspaceExecutorActionTests(unittest.TestCase):
         self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
         self.assertEqual(definition.llm_node_blockers, [])
         self.assertEqual(definition.permissions, ["file_read", "file_write", "subprocess"])
+        self.assertEqual(
+            definition.verification_eval_suites,
+            [
+                "toograph_action_creation_workflow_core",
+                "scheduler_retry_delivery_eval_core",
+                "workspace_executor_eval_core",
+            ],
+        )
+        self.assertNotIn("你已绑定", definition.llm_instruction)
+        self.assertNotIn("不要", definition.llm_instruction)
         self.assertFalse(definition.capability_policy.default.requires_approval)
         self.assertEqual([field.key for field in definition.state_input_schema], ["workspace_request"])
         self.assertEqual(

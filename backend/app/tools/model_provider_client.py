@@ -710,6 +710,107 @@ def _provider_auth_scheme(provider_config: dict[str, Any], template: dict[str, A
     return str(auth_scheme or "")
 
 
+def _resolve_model_runtime_fixture_result(
+    model_ref: str,
+    model_runtime_fixture: dict[str, Any] | None,
+    *,
+    system_prompt: str = "",
+    user_prompt: str = "",
+) -> dict[str, Any]:
+    fixture = model_runtime_fixture if isinstance(model_runtime_fixture, dict) else {}
+    failure = _model_runtime_fixture_record(
+        fixture.get("failures"),
+        model_ref,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+    if failure:
+        return {"kind": "failure", **failure}
+    response = _model_runtime_fixture_record(
+        fixture.get("responses"),
+        model_ref,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+    if response:
+        return {"kind": "response", **response}
+    return {}
+
+
+def _model_runtime_fixture_record(
+    records: Any,
+    model_ref: str,
+    *,
+    system_prompt: str = "",
+    user_prompt: str = "",
+) -> dict[str, Any]:
+    if isinstance(records, dict):
+        record = records.get(model_ref)
+        return dict(record) if isinstance(record, dict) else {}
+    if not isinstance(records, list):
+        return {}
+    provider_id, model = _split_model_ref(model_ref)
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        item_model_ref = str(item.get("model_ref") or "").strip()
+        item_provider_id = str(item.get("provider_id") or "").strip()
+        item_model = str(item.get("model") or "").strip()
+        has_model_target = bool(item_model_ref or item_provider_id or item_model)
+        if has_model_target and not (
+            item_model_ref == model_ref or (item_provider_id == provider_id and item_model == model)
+        ):
+            continue
+        if not _model_runtime_fixture_prompt_matches(
+            item,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        ):
+            continue
+        return dict(item)
+    return {}
+
+
+def _model_runtime_fixture_prompt_matches(
+    record: dict[str, Any],
+    *,
+    system_prompt: str,
+    user_prompt: str,
+) -> bool:
+    prompt = f"{system_prompt}\n{user_prompt}"
+    return (
+        _fixture_terms_match(record.get("system_contains"), system_prompt)
+        and _fixture_terms_match(record.get("user_contains"), user_prompt)
+        and _fixture_terms_match(record.get("prompt_contains"), prompt)
+    )
+
+
+def _fixture_terms_match(raw_terms: Any, haystack: str) -> bool:
+    if raw_terms in (None, "", []):
+        return True
+    terms = raw_terms if isinstance(raw_terms, list) else [raw_terms]
+    return all(str(term or "") in haystack for term in terms if str(term or ""))
+
+
+def _model_runtime_fixture_failure(failure: dict[str, Any], model_ref: str) -> Exception:
+    message = str(failure.get("message") or failure.get("error") or f"Eval model runtime fixture failed {model_ref}.")
+    error_type = str(failure.get("error_type") or "").strip()
+    if error_type == "provider_timeout":
+        return httpx.TimeoutException(message)
+    return RuntimeError(message)
+
+
+def _model_runtime_fixture_response(response: dict[str, Any], model_ref: str) -> tuple[str, dict[str, Any]]:
+    provider_id, model = _split_model_ref(model_ref)
+    content = str(response.get("content") or response.get("text") or "")
+    meta = dict(response.get("meta")) if isinstance(response.get("meta"), dict) else {}
+    meta.setdefault("provider_id", provider_id)
+    meta.setdefault("model", model)
+    meta.setdefault("warnings", [])
+    meta["model_runtime_fixture_used"] = True
+    return content, meta
+
+
 def _chat_with_model_ref_once(
     *,
     model_ref: str,
@@ -723,8 +824,20 @@ def _chat_with_model_ref_once(
     on_delta: Callable[[str], None] | None,
     input_attachments: list[dict[str, Any]] | None,
     structured_output_schema: dict[str, Any] | None,
+    model_runtime_fixture: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     provider_id, model_name = _split_model_ref(model_ref)
+    fixture_result = _resolve_model_runtime_fixture_result(
+        model_ref,
+        model_runtime_fixture,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+    )
+    if fixture_result.get("kind") == "failure":
+        raise _model_runtime_fixture_failure(fixture_result, model_ref)
+    if fixture_result.get("kind") == "response":
+        return _model_runtime_fixture_response(fixture_result, model_ref)
+
     if provider_id == "local":
         from app.tools.local_llm import _chat_with_local_model_with_meta
 
@@ -1060,10 +1173,16 @@ def chat_with_model_ref_with_meta(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    model_runtime_fixture: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    saved_settings = load_app_settings()
-    saved_providers = saved_settings.get("model_providers")
-    saved_providers = saved_providers if isinstance(saved_providers, dict) else {}
+    fixture = model_runtime_fixture if isinstance(model_runtime_fixture, dict) else {}
+    fixture_providers = fixture.get("model_providers")
+    if isinstance(fixture_providers, dict):
+        saved_providers = fixture_providers
+    else:
+        saved_settings = load_app_settings()
+        saved_providers = saved_settings.get("model_providers")
+        saved_providers = saved_providers if isinstance(saved_providers, dict) else {}
     provider_id, model_name = _split_model_ref(model_ref)
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
 
@@ -1080,6 +1199,7 @@ def chat_with_model_ref_with_meta(
             on_delta=on_delta,
             input_attachments=input_attachments,
             structured_output_schema=structured_output_schema,
+            model_runtime_fixture=fixture,
         )
     except Exception as primary_exc:
         fallback_result = resolve_provider_fallback(
@@ -1123,6 +1243,7 @@ def chat_with_model_ref_with_meta(
                     on_delta=on_delta,
                     input_attachments=input_attachments,
                     structured_output_schema=structured_output_schema,
+                    model_runtime_fixture=fixture,
                 )
             except Exception as fallback_exc:
                 fallback_errors.append(f"{candidate_model_ref}: {fallback_exc}")

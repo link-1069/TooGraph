@@ -1,0 +1,90 @@
+{
+  "template_id": "video_segmenter_eval",
+  "label": "Video Segmenter 评测",
+  "description": "运行真实 video_segmenter Tool，验证视频文件输入、片段 artifact 输出、state/output 映射和 graph run Tool invocation 审计。",
+  "default_graph_name": "Video Segmenter 评测",
+  "state_schema": {
+    "source_video": {
+      "name": "Source Video",
+      "description": "要切分的本地视频文件引用。",
+      "type": "video",
+      "value": {},
+      "color": "#2563eb",
+      "binding": null
+    },
+    "video_segments": {
+      "name": "Video Segments",
+      "description": "video_segmenter 输出的视频片段列表。",
+      "type": "json",
+      "value": [],
+      "color": "#9333ea",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "video_segmenter",
+        "nodeId": "segment_video",
+        "fieldKey": "segments",
+        "managed": true
+      }
+    }
+  },
+  "nodes": {
+    "input_source_video": {
+      "kind": "input",
+      "name": "输入视频",
+      "description": "提供 source_video。",
+      "ui": {"position": {"x": 80, "y": 140}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "source_video", "mode": "replace"}],
+      "config": {"value": {}, "boundaryType": "video"}
+    },
+    "segment_video": {
+      "kind": "tool",
+      "name": "切分视频",
+      "description": "调用 video_segmenter，把输入视频切成 Batch/LLM 可用的短片段。",
+      "ui": {"position": {"x": 620, "y": 120}, "collapsed": false, "size": {"width": 480, "height": 260}},
+      "reads": [
+        {
+          "state": "source_video",
+          "required": true,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "video_segmenter",
+            "fieldKey": "video",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [{"state": "video_segments", "mode": "replace"}],
+      "config": {"toolKey": "video_segmenter"}
+    },
+    "output_video_segments": {
+      "kind": "output",
+      "name": "视频片段",
+      "description": "展示 video_segmenter 返回的片段列表。",
+      "ui": {"position": {"x": 1260, "y": 130}, "collapsed": false, "size": {"width": 460, "height": 260}},
+      "reads": [{"state": "video_segments", "required": true, "binding": null}],
+      "writes": [],
+      "config": {"displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": ""}
+    }
+  },
+  "edges": [
+    {"source": "input_source_video", "target": "segment_video"},
+    {"source": "segment_video", "target": "output_video_segments"}
+  ],
+  "conditional_edges": [],
+  "metadata": {
+    "category": "video",
+    "role": "video_segmenter_eval",
+    "visible": false,
+    "capabilityDiscoverableDefault": false,
+    "tags": ["video", "tool", "eval"],
+    "requiredTools": ["video_segmenter"],
+    "output_contract": [
+      {"state": "video_segments", "role": "artifact_list"}
+    ]
+  },
+  "source": "official",
+  "status": "active"
+}

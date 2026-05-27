@@ -1,0 +1,137 @@
+{
+  "suite": "tool_runtime_fallback_eval_core",
+  "name": "Tool Runtime Fallback 核心回归",
+  "description": "覆盖真实 Tool 节点运行时的失败恢复：eval runner 注入 primary Tool 失败，图分支进入 fallback Tool，collector 从 graph run 中收集两次 tool_invocation。",
+  "cases": [
+    {
+      "case_id": "tool-runtime-fallback-routes-to-fallback-tool",
+      "name": "Tool runtime 应在 primary 失败后进入 fallback Tool",
+      "description": "运行两个 Tool 节点和一个 condition 节点，primary 由 eval 夹具注入 timeout，fallback 由夹具返回结构化报告；评测检查最终输出和 graph run 中的 Tool invocation 审计。",
+      "inputs": {
+        "requested_model_ref": "openai/gpt-primary",
+        "failure_event": {
+          "model_ref": "openai/gpt-primary",
+          "provider_id": "openai",
+          "error_type": "provider_timeout",
+          "message": "primary provider timed out"
+        },
+        "provider_candidates": [
+          {
+            "model_ref": "openai/gpt-primary",
+            "enabled": true,
+            "configured": true,
+            "capabilities": {"chat": true, "structured_output": true},
+            "permissions": ["text_generation"]
+          },
+          {
+            "model_ref": "local/backup-model",
+            "enabled": true,
+            "configured": true,
+            "capabilities": {"chat": true, "structured_output": true},
+            "permissions": ["text_generation"]
+          }
+        ],
+        "required_capabilities": ["chat", "structured_output"],
+        "required_permissions": ["text_generation"],
+        "preserve_permission_scope": true
+      },
+      "metadata": {
+        "fixture_tool_runtime": {
+          "failures": {
+            "primary_provider_tool": {
+              "tool_key": "provider_fallback_resolver",
+              "error_type": "eval_tool_timeout",
+              "message": "eval injected primary tool timeout",
+              "outputs": {
+                "status": "failed",
+                "selected_model_ref": "",
+                "provider_fallback_trace": {
+                  "decision": "tool_failed",
+                  "error_type": "eval_tool_timeout",
+                  "message": "eval injected primary tool timeout"
+                }
+              }
+            }
+          },
+          "responses": {
+            "fallback_guard_tool": {
+              "tool_key": "agent_loop_guard",
+              "outputs": {
+                "status": "succeeded",
+                "agent_loop_report": {
+                  "decision": "fallback_tool_succeeded",
+                  "fallback_source": "eval_fixture",
+                  "primary_tool_key": "provider_fallback_resolver",
+                  "primary_tool_error_type": "eval_tool_timeout",
+                  "recovery_path": "condition_true_to_fallback_guard_tool"
+                },
+                "agent_loop_stop_reason": "",
+                "agent_loop_should_continue": false,
+                "agent_loop_should_retry": false,
+                "reason": "fallback tool completed after primary tool failure"
+              }
+            }
+          }
+        }
+      },
+      "checks": [
+        {
+          "kind": "schema",
+          "name": "fallback_report_present",
+          "target": "final_output",
+          "required": ["fallback_agent_loop_report"]
+        },
+        {
+          "kind": "rule",
+          "name": "fallback_report_records_recovery",
+          "target": "fallback_agent_loop_report",
+          "must_include": [
+            "fallback_tool_succeeded",
+            "eval_tool_timeout",
+            "condition_true_to_fallback_guard_tool"
+          ]
+        },
+        {
+          "kind": "graph_run",
+          "name": "tool_runtime_fallback_graph_run_contract",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_template_id": "tool_runtime_fallback_eval",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "tool_runtime_fallback_eval_core",
+              "case_id": "tool-runtime-fallback-routes-to-fallback-tool"
+            }
+          },
+          "required_state_keys": [
+            "primary_tool_status",
+            "fallback_agent_loop_report"
+          ],
+          "required_output_keys": ["fallback_agent_loop_report"],
+          "required_node_ids": [
+            "primary_provider_tool",
+            "route_primary_failure",
+            "fallback_guard_tool",
+            "output_fallback_report"
+          ],
+          "required_activity_kinds": ["tool_invocation"],
+          "required_tool_invocations": [
+            {
+              "node_id": "primary_provider_tool",
+              "tool_key": "provider_fallback_resolver",
+              "status": "failed",
+              "error_type": "eval_tool_timeout"
+            },
+            {
+              "node_id": "fallback_guard_tool",
+              "tool_key": "agent_loop_guard",
+              "status": "succeeded"
+            }
+          ],
+          "min_node_executions": 4,
+          "min_tool_invocations": 2
+        }
+      ]
+    }
+  ]
+}

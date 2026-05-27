@@ -63,8 +63,10 @@ test("official asset gate runs action and tool contract checks for official capa
       "diff --check",
       "-m unittest backend.tests.test_action_manifest_contract backend.tests.test_backend_action_package_naming backend.tests.test_node_system_validator_actions",
       "-m unittest backend.tests.test_toograph_capability_selector_action",
-      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
+      "scripts/official_eval_suite_gate.py buddy_autonomous_loop_core",
+      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime backend.tests.test_official_tool_eval_bindings",
       "-m unittest backend.tests.test_delegation_kanban_board_builder_tool",
+      "scripts/official_eval_suite_gate.py delegation_kanban_board_eval_core",
     ],
   );
 });
@@ -83,7 +85,9 @@ test("official asset gate adds package-specific tests for changed official actio
       "diff --check",
       "-m unittest backend.tests.test_action_manifest_contract backend.tests.test_backend_action_package_naming backend.tests.test_node_system_validator_actions",
       "-m unittest backend.tests.test_buddy_session_recall_action",
-      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
+      "scripts/official_eval_suite_gate.py buddy_hybrid_recall_eval_core",
+      "scripts/official_eval_suite_gate.py buddy_memory_recall_eval_core",
+      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime backend.tests.test_official_tool_eval_bindings",
       "-m unittest backend.tests.test_provider_fallback_resolver_tool",
       "-m unittest backend.tests.test_provider_fallback_resolver",
       "scripts/official_eval_suite_gate.py provider_fallback_eval_core",
@@ -100,7 +104,7 @@ test("official asset gate runs manifest-declared verification commands for capab
     plan.commands.map((command) => command.args.join(" ")),
     [
       "diff --check",
-      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
+      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime backend.tests.test_official_tool_eval_bindings",
       "-m unittest backend.tests.test_provider_fallback_resolver_tool",
       "-m unittest backend.tests.test_provider_fallback_resolver",
       "scripts/official_eval_suite_gate.py provider_fallback_eval_core",

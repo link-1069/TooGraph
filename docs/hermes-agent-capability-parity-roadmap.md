@@ -9,6 +9,14 @@
 - 单个 LLM 节点只做一次模型回合；多步骤智能属于整张图。
 - 重要副作用必须可见、可审计、可恢复。
 
+## 文档关系
+
+本文是当前 Hermes 能力追赶的唯一进度事实源。
+
+- 看当前完成度、剩余缺口和下一步，阅读本文的“当前总进度看板”。
+- 旧的 `hermes-agent-capability-gap-resolution-plan.md` 已删除；仍有效的内容已经折叠进本文。
+- 不再保留平行的当前状态或能力差距计划文档。
+
 ## 1. 参考基线
 
 ### Hermes Agent 已具备的关键能力
@@ -28,21 +36,89 @@
 
 ### TooGraph 当前基线
 
-当前 TooGraph 已经有一些关键基础：
+当前 TooGraph 已经有以下关键基础：
 
 - 官方 `buddy_autonomous_loop` 已只绑定当前用户消息；历史、摘要、session id 由 `buddy_history_context_loader` Tool 组装。
 - `buddy_context_pressure_check` + `buddy_context_compaction` 已进入主循环，压缩作为可见图分支。
+- `agent_loop_control`、`agent_loop_guard`、标准 stop reason、`agent_loop_events`、RunDetail Agent Diagnostic 和 Buddy 胶囊诊断已经构成主循环诊断基础。
 - 动态 `capability` state 可表达 `action` / `subgraph` / `tool` / `none`，并写入 `result_package`。
-- `buddy_autonomous_review` 已作为后台复盘图，能输出记忆更新、用户信息更新、身份更新和改进候选。
+- `toograph_capability_selector` 已能读取 capability profile、usage stats、权限策略和 loop budget，并输出可解释 selection trace。
+- `buddy_autonomous_review` 已作为后台复盘图，能输出记忆更新、用户信息更新、身份更新和改进候选；后台复盘记录、候选持久化和候选验证/审批/apply 主链路已经存在。
 - Buddy Home 规范为 `AGENTS.md`、`SOUL.md`、`USER.md`、`MEMORY.md`。
-- 统一数据库已包含 Buddy messages、run records、context assembly、retrieval index、embedding vectors、memory entries 等方向。
-- RunDetail、run tree 和 Buddy 胶囊已经提供基础可视化。
+- 统一数据库已包含 Buddy messages、run records、context assembly、retrieval index、embedding vectors、memory entries、scheduler jobs、improvement candidates、agent loop events 和 capability usage events 等方向。
+- RunDetail、run tree、Buddy 胶囊、Evidence、Scheduler、Improvements 和 Curator reports 已经提供主要可视化入口。
+- eval runner 已支持 runs、sessions、memory、capability usage、scheduler、model runtime、Tool runtime fixtures、Subgraph invocation 审计和 permission-required 等待态验收，官方资产 gate 已能按 manifest 声明执行测试和 suite seed 检查；完整 Buddy 主循环已经有真实 Tool 失败、动态 Subgraph 失败、动态 Action 权限暂停和 provider 模型失败后的端到端 eval。
 
-核心差距集中在成熟度和闭环：
+当前核心差距集中在生产级外延、更多组合评测和长期任务协作：
 
-- loop 预算、stop reason、失败恢复、诊断还不够强。
-- memory recall、embedding、rerank、lineage、eval 还不够生产级。
-- capability selector、能力生态、工具注册、权限、调度、委派和自我改进闭环仍不完整。
+- 完整 Buddy 主循环已补齐真实 Tool 失败后的 selector 改选、fallback 执行和最终回复端到端 eval，也已补齐主循环内 LLM provider primary 失败后的 runtime fallback provider 端到端 eval，已补齐动态 Subgraph 缺少必填输入失败后的 guard 重试、fallback Tool 改选和最终回复 eval，已补齐高风险动态 Action 在 ask-first 权限策略下暂停并留下 `pending_permission_approval` 的 eval，已补齐历史上下文溢出时先压缩再回复的 eval，并已补齐“长历史压缩 + 动态 Tool 失败 + fallback Tool 恢复”、“长历史压缩 + 动态 Subgraph 失败 + fallback Tool 恢复”和“长历史压缩 + 高风险 Action 权限暂停”三条组合 eval；后续还需要扩展更多复杂跨能力组合路径。
+- workspace executor、video segmenter 和 graph template creation 已从 seed/manifest gate 升级为真实图运行级 eval；后续重点转向 Buddy 级组合路径和更多官方能力包的真实端到端覆盖。
+- Scheduler 还缺经审批后的真实外部投递 adapter。
+- Delegation 还缺持久协作 board、claim/ownership 和长期任务状态。
+- Provider profile 还缺 timeout、prompt cache、credential pool、per-node override 等细粒度能力。
+- 记忆召回仍需继续强化弱语义去重、复杂 lineage 和质量评测。
+
+## 当前总进度看板
+
+状态口径：
+
+- `基本完成`：核心运行链路已经落地，并且有单测、模板测试、eval gate 或运行详情证据；仍可能有生产硬化项。
+- `进行中`：关键骨架已经落地，但还有明确闭环缺口。
+- `未开始`：主要仍停留在设计层，尚无可用产品链路。
+- `非目标`：不再由本文档追踪或验收，相关开发在其他分支树推进。
+
+当前总判断：TooGraph 的 Buddy 核心 Agent 内核已经成形，P0/P1 的主循环、上下文、历史、记忆、复盘、能力选择、诊断和 eval gate 都有可运行实现；provider fallback、Tool runtime fallback、完整 Buddy 主循环 Tool 失败恢复、Buddy 主循环动态 Subgraph 失败恢复、Buddy 主循环动态 Action 权限暂停、Buddy 主循环 provider 模型失败恢复、Buddy 主循环上下文溢出压缩，以及上下文压缩后继续从动态 Tool、动态 Subgraph 或高风险 Action 权限暂停恢复/等待的组合路径，都已经有真实图运行级 eval 入口。尚未达到 Hermes 的完整生产级外延，主要差距在真实外部投递、持久协作 board、完整 provider profile、更多复杂跨能力组合 eval、剩余官方能力包门禁。`Gateway / 多入口 / 消息平台` 已移出本文档目标范围，相关开发在其他分支树推进；完整 RAG ingestion/index/QA 本轮不开发，只保留 `knowledge_context_loader`、retrieval/embedding 存储、context package 和官方能力入口作为未来承载点。
+
+完成度估算：
+
+- 按“Buddy 核心 Agent 内核”口径：约 81%。主循环、上下文、历史、召回、后台复盘、能力选择、诊断、权限、Tool 失败恢复、动态 Subgraph 失败恢复、动态 Action 权限暂停、provider 模型失败恢复、上下文溢出压缩，以及 context overflow 后 Tool / Subgraph 失败恢复和高风险 Action 权限暂停组合 eval 已经连成闭环。
+- 按“完整 Hermes Agent 外延”口径：约 69% 到 72%。Cron、delegation、curator、provider fallback、Buddy Tool 失败恢复、Buddy Subgraph 失败恢复、Buddy 权限暂停、Buddy provider 模型失败恢复、Buddy context overflow 压缩和三条 Buddy 组合恢复/等待 eval 已有骨架与局部闭环，但真实外部投递、持久协作 board、完整 provider profile、更多跨能力端到端评测还没完成。
+
+| 能力差距 | 当前状态 | 已完成的主要证据 | 仍未完成 / 下一步 |
+| --- | --- | --- | --- |
+| Agent loop 鲁棒性 | 基本完成 | `agent_loop_guard`、`agent_loop_control`、标准 stop reason、`agent_loop_events` 投影、RunDetail / Buddy 胶囊诊断、真实图运行回归、Tool runtime fallback eval、完整 Buddy 主循环真实 Tool 失败恢复 eval、完整 Buddy 主循环动态 Subgraph 失败恢复 eval、完整 Buddy 主循环动态 Action permission-required eval、完整 Buddy 主循环 provider 模型失败恢复 eval、完整 Buddy 主循环 context overflow 压缩 eval、context overflow 后动态 Tool 失败恢复组合 eval、context overflow 后动态 Subgraph 失败恢复组合 eval、context overflow 后高风险 Action 权限暂停组合 eval | 扩展更多复杂组合恢复回归 |
+| Prompt / Context Assembly | 基本完成 | `context_package` 已覆盖 history、recall、Buddy Home、knowledge、capability、runtime、page、web；prompt assembly 和 RunDetail 可展开来源 | 更多官方模板接入统一 loader；RunDetail 上下文面板继续增强 |
+| Session persistence 与搜索 | 基本完成 | Buddy sessions/messages/revisions/run refs、FTS/trigram、session search API、Evidence 页、session hybrid search、summary refs、hybrid recall eval | 继续强化 lineage、summary/source refs 在复杂分支和长会话中的覆盖 |
+| 长期记忆与 Embedding 召回 | 进行中 | `memory_entries`、embedding jobs/vectors、真实 provider embedding、registry、maintenance 模板、memory search API/UI、hybrid recall、rerank、去重、memory eval | 近似去重接入 embedding 相似度或人工复核；召回质量继续扩充评测 |
+| Background Review | 进行中 | 后台复盘记录表、复盘 API、source run 触发、RunDetail 复盘面板、revision 恢复、structured memory 和候选聚合 | 复盘质量、失败处理、预算隔离和周期化整理还需继续硬化 |
+| 自我改进与 Curator | 进行中 | `buddy_improvement_review_workflow`、候选持久化、验证 run 状态同步、approve/reject/apply API、`/improvements`、curator loader/template/report 页、图模板 reader/validator/writer gate | curator 候选自动验证和 eval 覆盖扩展 |
+| Capability Selector 与能力路由 | 进行中 | capability profile、权限过滤、selection trace、usage events 投影、capability usage 复盘写入、selector fallback eval、真实 Tool invocation 失败/恢复审计 check、完整 Buddy 主循环中 primary Tool 失败后改选 fallback Tool 并最终回复、动态 Subgraph 失败后改选 fallback Tool 并最终回复、context overflow 后继续完成 Tool fallback、Subgraph fallback 和权限暂停 | 扩展更多复杂跨能力组合 fallback |
+| Action / Tool / Subgraph 生态 | 进行中 | 官方 Action/Tool/Subgraph primitives 持续补齐；官方资产 gate、包级测试、`verificationCommands`、全量官方 Tool 和核心 Action `verificationEvalSuites` 已接入；`workspace_executor_eval_core` 已用真实 `local_workspace_executor` Action 搜索路线图并验证 Action invocation；`video_segmenter_eval_core` 已用真实 `video_segmenter` Tool 切分视频 fixture；`toograph_graph_template_creation_workflow_core` 已用真实 workflow 调用 graph template reader/validator/writer 并验证写入审计；`tool_runtime_fallback_eval_core` 已覆盖 primary Tool 失败后进入 fallback Tool；动态 `capability.kind=tool` 已能在 Agent 节点中真实执行并写入 `result_package`；`buddy_autonomous_loop_core` 已覆盖动态 `capability.kind=subgraph` 缺少必填输入失败、Subgraph invocation 审计和 fallback Tool 恢复；Buddy 主循环 provider 模型失败恢复已验证 LLM Action planning 阶段 fallback provider | 继续增加更多 Subgraph worker 组合和官方能力包端到端 eval |
+| Scheduler / Cron / 后台任务 | 进行中 | `scheduled_graph_jobs`、runner、lifespan tick、Scheduler UI、官方 job seeds、retry policy、delivery audit、scheduler eval | 经审批后的真实外部投递 adapter |
+| Delegation / Subagents / Kanban | 进行中 | worker packet/result/merge schema、Batch/Subgraph worker eval、可见 batch workflow、board snapshot、RunDetail/胶囊诊断 | 持久化协作 board、claim/ownership 语义、更细 provider/tool 失败恢复 |
+| Provider Runtime 与模型能力矩阵 | 进行中 | 统一 fallback resolver、LLM/structured repair/embedding/rerank fallback、trace、Model Providers 能力矩阵、diagnostic 展示；eval runner 已可通过模型运行夹具注入 primary provider 失败并验证真实 LLM runtime fallback trace；`buddy_autonomous_loop_core` 已验证主循环内 provider fallback | timeout、prompt cache、credential pool、per-node override 等更细 provider profile |
+| 上下文压缩与 Prompt Cache | 进行中 | Context Audit 展示预算和压缩报告、hash-only prompt snapshot、repair snapshot、summary source refs、prompt cache audit metadata | 真正 provider 级 prompt cache-control、per-node cache override、稳定前缀拆分 |
+| 权限、安全与注入防护 | 进行中 | context scanner、secret 脱敏、高风险阻断、artifact prompt 脱敏、模型日志脱敏、operation-level approval、permission profile、scheduler 权限边界、RunDetail 审批闭环 | 能力包保护、完整 approval review surface、经审批外部投递 |
+| Gateway / 多入口 / 消息平台 | 非目标 | 用户已明确该能力在其他分支树开发 | 本路线图不再追踪或验收该能力；合并时只处理必要接口对齐 |
+| 诊断与可观测性 | 进行中 | RunDetail Agent Diagnostic 聚合 loop、selector、provider fallback、warnings、权限审批；pending 审批可在 RunDetail 继续 | 后台任务 report、能力失败/fallback、上下文裁剪和召回诊断继续集中化 |
+| Eval 与质量门禁 | 进行中 | eval fixtures、memory/session/hybrid/scheduler/delegation/provider checks、`graph_run` 自动 check、official asset gate、包级测试、Action/Tool eval suite binding、全量官方 Tool eval binding 总覆盖测试；`llm_runtime_fallback_eval_core` 已用真实 agent 节点验证 provider fallback trace 收集；`tool_runtime_fallback_eval_core` 已用真实 Tool 节点验证失败注入、fallback 分支和 tool invocation 审计；`workspace_executor_eval_core` 已用真实 Action 节点验证 workspace 搜索和 action invocation 审计；`video_segmenter_eval_core` 已用真实 Tool 节点验证视频 fixture 切分和 tool invocation 审计；`toograph_graph_template_creation_workflow_core` 已用真实 workflow 验证模型 fixture、模板校验、隔离写入和 Action invocation 审计；`buddy_autonomous_loop_core` 已用完整主循环验证真实 Tool 失败、动态 Subgraph 失败、动态 Action permission-required 暂停、guard 重试、selector fallback、fallback Tool 成功、provider 模型失败 fallback、context overflow 压缩、context overflow 后 Tool fallback 组合、context overflow 后 Subgraph fallback 组合、context overflow 后 Action permission-required 暂停和最终回复/等待态；`graph_run` check 已支持 `required_subgraph_invocations` / `min_subgraph_invocations`，collector 已支持 `awaiting_human` permission-required 终态验收 | 继续扩大更多 Buddy 级 subgraph 组合路径和更多官方能力包真实端到端运行收集覆盖 |
+
+### 已完成能力与增强效果
+
+| 能力域 | 当前状态 | 已经怎么做到 | 增强了什么能力 | 仍然剩什么 |
+| --- | --- | --- | --- | --- |
+| Agent loop 鲁棒性 | 基本完成 | 用 `agent_loop_control` state 承载预算、失败计数和 stop reason；用官方 `agent_loop_guard` Tool 在能力执行后做确定性判断；把 `agent_loop_events` 投影进统一数据库；RunDetail 和 Buddy 胶囊从同一 run fact 重组诊断；完整 Buddy 主循环已有真实 Tool 失败恢复 eval、动态 Subgraph 失败恢复 eval、动态 Action permission-required eval、provider 模型失败恢复 eval、context overflow 压缩 eval，以及 context overflow 后继续执行 Tool / Subgraph fallback 与 Action permission-required 的组合 eval | Buddy 主循环从“能跑完”升级为“能解释为什么继续、为什么停止、预算还剩多少、失败属于哪类”；真实 Tool 失败和动态 Subgraph 缺少必填输入失败后，都可以由 guard 允许重试、selector 改选 fallback Tool、fallback 成功后生成最终回复；高风险动态 Action 在 ask-first 策略下会暂停并留下 pending approval；主循环 LLM provider primary 失败时会使用 fallback provider 完成结构化 Action planning 并留下 trace；历史上下文过大时会在回复前进入 `buddy_context_compaction` 子图，保留 source refs 和压缩摘要再生成最终回复；压缩后如果后续动态 Tool 或动态 Subgraph 失败，主循环仍能复用同一 guard / selector / fallback Tool 恢复路径；压缩后如果后续高风险 Action 需要写入，本轮 run 会进入标准 `awaiting_human` 等待态并保留 pending approval | 更多复杂组合恢复 eval 还要补 |
+| Prompt / Context Assembly | 基本完成 | 把 history、Buddy Home、memory、knowledge、web、page、runtime、capability result 都包装成 `context_package`；prompt assembly 按 authority 渲染；context assembly 保存 source refs、预算和 warnings | 模型输入不再是散落文本；每段上下文能说明来源、权威级别、裁剪原因和安全 warning，RunDetail 可回查 | 更多官方模板需要继续统一接入 loader；上下文面板交互还可增强 |
+| Session persistence 与搜索 | 基本完成 | 用统一 DB 保存 `buddy_sessions`、`buddy_messages`、message revisions、run refs、summaries、FTS/trigram/retrieval 投影；Evidence 页和 API 可查 session hits、bookends、source refs、run context | 聊天历史不再每轮递归复制全文；可以通过原子消息、摘要和 run refs 还原上下文，支持历史证据搜索和 hybrid search | 更复杂分支 lineage、summary refs/source refs 覆盖还需继续打磨 |
+| 长期记忆与 Embedding 召回 | 进行中，核心链路可用 | 保留 Buddy Home 文件线，同时用 `memory_entries`、embedding jobs/vectors、registry、maintenance 模板、memory search API/UI、hybrid recall 和 rerank 建 DB 召回线；记忆写入有 source refs、revision、去重事件 | 文件记忆负责稳定注入，DB 记忆负责召回和排序；记忆能被搜索、重排、评测和追溯，不再只能靠 markdown 全文 | 近似去重还需接入更强 embedding 相似度或人工复核；召回质量 eval 需要扩充 |
+| Background Review | 进行中，主链路可用 | 可见 run 完成后通过后端创建 `buddy_autonomous_review` 后台图；`buddy_background_review_runs` 记录 source/review run；RunDetail 可看复盘状态、写回摘要、revision、structured memory 和 candidates | 复盘不再阻塞主回复；复盘产物可审计、可重跑、可恢复，主回复路径和后台记忆写入解耦 | 复盘质量、失败处理、预算隔离、周期化整理需要继续硬化 |
+| 自我改进与 Curator | 进行中，候选闭环可用 | `improvement_candidates` 持久化候选；`buddy_improvement_review_workflow` 做验证、diff、test plan 和 approval request；RunDetail 与 `/improvements` 支持验证、同步状态、批准、拒绝、apply；`buddy_capability_curator` 产出能力健康报告和候选 | Buddy 能把运行经验沉淀成可审查改进候选，不再静默改官方资产；候选能进入验证和人工决策路径 | 自动验证覆盖、writer/apply 覆盖、curator 候选质量和周期化整理还要扩展 |
+| Capability Selector 与能力路由 | 进行中，核心选择与 fallback 可用 | `toograph_capability_selector` 读取 capability profile、权限、usage stats 和 loop budget；输出 selection trace、score breakdown、rejected/fallback candidates；`capability_usage_events` 从 run fact 投影；eval 可 fixture 近期失败并验证改选健康 fallback；完整 Buddy 主循环 eval 已覆盖真实 Tool 失败、动态 Subgraph 失败、以及 context overflow 后动态 Tool / Subgraph 失败驱动的改选与最终回复，也覆盖 context overflow 后选择高风险 Action 并进入权限暂停 | 能力选择变成可解释、可诊断、可学习失败反馈的过程；RunDetail 和胶囊能显示为什么选、为什么拒绝、预算如何变化；selector 现在有 Buddy 级真实失败恢复证据，并证明压缩后的主循环仍能继续选择、恢复能力或按权限边界暂停 | 继续补更多复杂跨能力组合 eval |
+| Action / Tool / Subgraph 生态 | 进行中 | 官方 Action/Tool/Subgraph 持续补齐；manifest 支持 `verificationCommands`、`verificationEvalSuites`；官方资产 gate 能按 diff 跑模板、Action、Tool、suite seed 和包级测试；Tool runtime fallback eval 已验证 Tool 失败与 fallback 分支；workspace executor eval 已验证真实 Action 搜索；video segmenter eval 已验证真实 Tool 切分视频；graph template creation eval 已验证真实 workflow 读模板、生成模板、校验模板、隔离写入用户模板和 revision；Agent 节点已能执行动态 `capability.kind=tool` 并把原始 Tool 结果包装为 `result_package`；Buddy 主循环已用动态 `capability.kind=subgraph` 触发真实 Subgraph 输入校验失败，并用 `subgraph_invocation` activity event 和 graph_run check 验证失败事实 | 能力包从“有 manifest”升级为“有合同、有门禁、有 eval 绑定”；selector 和诊断可以依赖统一 profile；Tool 和 Subgraph 都可以作为动态 capability 被主循环调用并被 run record 复原 | 继续补更多 Subgraph worker 组合和更多跨能力组合 eval |
+| Scheduler / Cron | 进行中，第一版可用 | `scheduled_graph_jobs` / `scheduled_graph_job_runs`、scheduler store/API/runner/lifespan tick、官方 job seeds、Scheduler UI、自定义任务、retry policy、本地审计 delivery、权限边界和 eval 已落地 | 定时任务变成标准 graph run，有 run record、retry、delivery audit 和权限边界，不再是隐藏后台副作用 | 经审批后的真实外部投递 adapter 还没做 |
+| Delegation / Subagents / Kanban | 进行中，协议和 eval 可用 | 定义 worker task/result/merge/board state；用 packager、merger、board builder Tool 和 Batch/Subgraph eval 验证并发 worker、child runs、预算、risk flags 和 board snapshot；RunDetail/胶囊能重组诊断 | 委派从手工子图组织升级为标准 worker 协议；父图能合并多 worker 结果并投影可视 board | 持久协作 board、claim/ownership、长期任务状态和更细失败恢复还没完成 |
+| Provider Runtime 与模型能力矩阵 | 进行中，fallback 主链路可用 | 建 `provider_fallback` resolver 和 Tool；`chat_with_model_ref_with_meta`、structured repair、embedding、rerank 都接入 fallback trace；Model Providers 页面保存模型能力矩阵；LLM runtime fallback eval 用真实 agent 节点验证；Buddy 主循环 provider fallback eval 用官方主循环验证 | 模型调用可以知道请求模型、实际模型、失败候选、fallback 决策和权限边界；embedding/rerank 也进入统一 provider runtime；Buddy 主循环中的 Action planning provider 失败也能被恢复和审计 | timeout、prompt cache、credential pool、per-node override 还没系统化 |
+| 上下文压缩与 Prompt Cache | 进行中 | `buddy_context_pressure_check` / `buddy_context_compaction` 图化；RunDetail Context Audit 展示 budget、compaction report、summary source refs；LLM prompt snapshot 保存 hash-only 元数据和 audit-only cache policy | 压缩、摘要和 prompt 输入可追溯；run record 不递归保存完整聊天全文；为后续 provider prompt cache 打基础 | 真正 provider 级 cache-control、per-node cache override、稳定前缀拆分还没完成 |
+| 权限、安全与注入防护 | 进行中，主要 guardrail 可用 | context scanner、secret redaction、高风险上下文阻断、artifact prompt 脱敏、模型日志脱敏、operation-level approval、permission profile、scheduler 权限边界、RunDetail 审批操作已接入 | 外部上下文、能力执行、后台任务和 run record 有统一安全边界；用户能在 RunDetail 看见并处理 pending approval | 能力包保护、完整 approval review surface、经审批外部投递仍需扩展 |
+| 诊断与可观测性 | 进行中，Agent 诊断核心可用 | RunDetail Agent Diagnostic 聚合 loop、selector、provider fallback、warnings、permission approval；Buddy 胶囊从相同事实源显示 evidence labels，且仍按 output 边界分段 | 用户不用读 raw JSON 就能看停止原因、能力选择、fallback、预算、权限和警告；胶囊显示逻辑不被内部节点污染 | 后台任务 report、召回/裁剪/能力失败诊断还要继续集中化 |
+| Eval 与质量门禁 | 进行中，基础设施明显增强 | eval fixtures 已覆盖 runs、sessions、memory、capability usage、scheduler、model runtime、tool runtime、video fixture、隔离 graph template workspace、eval agent model override 和 eval graph metadata override；自动 checks 覆盖 memory/hybrid/scheduler/delegation/provider/graph_run/tool invocation/action invocation/subgraph invocation；official asset gate、包级测试、Tool eval binding 总覆盖已落地；Buddy 主循环真实 Tool 失败恢复 eval、动态 Subgraph 失败恢复 eval、动态 Action permission-required eval、provider 模型失败恢复 eval、context overflow 压缩 eval、context overflow 后 Tool fallback 组合 eval、context overflow 后 Subgraph fallback 组合 eval 和 context overflow 后 Action permission-required 组合 eval 已进入 `buddy_autonomous_loop_core` | 评测从“检查输出文本”升级为“检查真实 graph run、runtime trace、能力调用、权限、source refs 和 artifacts”；官方能力包改动能自动触发相关 gate；图模板写入类 Action 能在 eval 隔离目录中真实执行，不污染用户模板目录；Buddy 主循环失败恢复不再只靠单元级或底层模板证明，也能检查动态 Subgraph failure fact、permission pause fact、压缩摘要和后续 fallback fact 是否能在同一 run 中共存 | 更多复杂跨能力组合 eval 还要补 |
+
+最高优先级下一步：
+
+1. 扩展完整 Buddy 主循环 eval：继续覆盖更复杂跨能力组合 fallback；Tool 失败恢复、动态 Subgraph 失败恢复、permission-required 暂停、provider 模型失败恢复、context overflow 压缩，以及 context overflow 后 Tool / Subgraph fallback 和 Action permission-required 组合路径已经完成。
+2. 完成 scheduler 外部投递 adapter 的审批后真实执行路径。
+3. 继续扩展 provider profile：timeout、prompt cache、credential pool、per-node override。
+4. Gateway / 多入口 / 消息平台由其他分支树负责；本路线图只在后续合并时处理必要接口对齐。
 
 ## 2. 总体架构目标
 
@@ -92,8 +168,7 @@ Buddy / Agent entry
 | Provider Runtime 与模型能力矩阵 | `providers/base.py`、`hermes_cli/runtime_provider.py`、`agent/model_metadata.py`、`agent/transports/*` | 所有模型调用走同一 resolver，知道 provider 能力、fallback、repair trace | 扩展 provider profile；LLM、Action planning、review、scheduler、embedding/rerank 共用 runtime resolver；结构化输出 repair + fallback | provider capability matrix、fallback policy、repair trace | P2 |
 | 上下文压缩与 Prompt Cache | `agent/conversation_compression.py`、`agent/context_compressor.py`、`agent/prompt_caching.py` | 压缩是可审计图分支，摘要带 source refs，稳定上下文不反复破坏缓存 | 标准化压缩输出；保存 prompt snapshot 的引用而不是递归全文；复盘写入只影响下一轮 | compression report、summary revision、budget panel | P1 |
 | 权限、安全与注入防护 | `tools/approval.py`、`tools/path_security.py`、`tools/tirith_security.py`、`agent/file_safety.py`、`agent/redact.py` | 高风险副作用、注入风险和 secret 暴露都有通用 guardrail | context scanner 检查外部内容；operation-level approval；官方资产保护；run record 脱敏；定时任务不绕过权限 | context scanner、permission profile、approval audit | P1-P2 |
-| Plugin / Extension 体系 | `hermes_cli/plugins.py`、`plugins/*` | 插件可提供 Action/Tool/template/model provider/hooks，并有生命周期与权限 | 定义 TooGraph plugin manifest；install/enable/validate/update/uninstall；插件能力进入统一 capability catalog | plugin manifest、Plugin 页面、hook runtime | P3 |
-| Gateway / 多入口 / 消息平台 | `gateway/run.py`、`gateway/session.py`、`gateway/platforms/*`、`tui_gateway/*` | Web Buddy、API、CLI、cron、webhook 共用 session routing 和 run store | 定义 `agent_entrypoint`；entrypoint + external user + conversation -> Buddy session；CLI 先行，平台 gateway 后置 | entrypoint abstraction、CLI runner、platform session mapping | P3 |
+| Gateway / 多入口 / 消息平台 | `gateway/run.py`、`gateway/session.py`、`gateway/platforms/*`、`tui_gateway/*` | 非本文档目标；相关开发在其他分支树推进 | 本路线图不再规划该能力，只在后续合并时处理接口对齐 | 外部分支树产物 | 非目标 |
 | 诊断与可观测性 | `hermes_cli/logs.py`、`hermes_cli/status.py`、`tui_gateway/*` | 用户能看到一次 Agent run 的上下文、能力选择、预算、停止原因和错误 | Agent Diagnostic view 聚合 context、recall、selection、capability result、loop budget、errors；后台任务生成 report artifact | diagnostic view、capsule diagnostics、metrics | P1-P2 |
 | Eval 与质量门禁 | `tests/*` | 主循环、召回、selector、压缩、自我改进、scheduler 都有自动评测 | 建 Agent eval suites；官方模板变更必须跑相关 eval；Action/Tool 包自带测试或 eval case | eval suites、quality reports、template gate | P1 |
 
@@ -124,6 +199,22 @@ TooGraph 差距：
 - RunDetail Agent Diagnostic 模型测试已覆盖投影事件中的 provider 失败详情，会把 `error_type` / `error_message` 与 warnings 一起作为用户可见诊断证据重组。
 - RunDetail 页面结构测试已覆盖 Agent Diagnostic 的独立 warning list，页面会把这些由运行事实重组出的错误详情作为可扫描诊断证据展示。
 - 已新增真实图运行端到端回归：最小 LangGraph 图实际调用 `agent_loop_guard` Tool，验证 `agent_loop_report` / `agent_loop_stop_reason` 从运行时 state 写入、投影成 `agent_loop_events`、通过 `/api/runs/{run_id}` 返回，并保留给 RunDetail 与 Buddy 胶囊共用的诊断事实。
+- 已新增 LLM runtime fallback 端到端 eval 能力：eval case metadata 可携带 `fixture_model_runtime`，运行时把它注入 LLM 节点的 provider 调用；primary provider 可被确定性失败注入，fallback provider 可返回受控响应，真实 `chat_with_model_ref_with_meta` fallback resolver 会产出 `provider_fallback_trace`，collector 会从 graph run 的 node runtime config 中收集 trace 供 `provider_fallback` check 和 RunDetail 诊断复用。
+- 已新增完整 Buddy 主循环真实 Tool 失败恢复 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-recovers-from-live-tool-failure-with-fallback` 会真实运行官方主循环，第一次由 selector 选择 `provider_fallback_resolver`，通过 Tool runtime fixture 注入 `eval_tool_timeout`，`agent_loop_guard` 允许重试，第二轮 selector 改选 `runtime_context_loader`，fallback Tool 成功后第三轮生成最终 `public_response` 和 `capability_trace`。
+- 已新增完整 Buddy 主循环 provider 模型失败恢复 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-recovers-from-provider-model-fallback` 会真实运行官方主循环，`reply_and_select_capability` 节点请求 `eval-primary/gpt-primary` 时由模型 runtime fixture 注入 `provider_timeout`，通用 provider fallback resolver 选择 `eval-fallback/gpt-fallback`，fallback provider 返回结构化 selector 输出，最终 run 写出 `public_response`、`capability_trace` 和 `provider_fallback_trace`。
+- 已新增完整 Buddy 主循环动态 Subgraph 失败恢复 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-recovers-from-subgraph-failure-with-fallback` 会真实运行官方主循环，第一次由 selector 选择 `advanced_web_research_loop`，Subgraph 输入规划 fixture 故意遗漏必填 `user_question`，运行时产生 `missing_required_input` 的 `subgraph_invocation` 失败事实；`agent_loop_guard` 允许重试，第二轮 selector 改选 `runtime_context_loader`，fallback Tool 成功后第三轮生成最终 `public_response` 和 `capability_trace`。
+- 已新增完整 Buddy 主循环 permission-required eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-pauses-for-action-permission-required` 会真实运行官方主循环，case 级 `fixture_graph_metadata` 把图置为 `graph_permission_mode=ask_first` 并要求 risky tier approval；selector 选择动态 Action `local_workspace_executor`，Action 输入规划产生 `write` 操作，运行时在执行前暂停为 `awaiting_human`，并把 `pending_permission_approval`、`permission_pause` activity event 和 selector Action invocation 写入 run fact。
+- 已新增完整 Buddy 主循环 context overflow 压缩 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-compacts-context-overflow-before-reply` 会真实安装过长 Buddy 会话历史，通过 `buddy_history_context_loader` 生成带 `source_chars` / `omitted_count` 的 `conversation_history` context package，再由 `buddy_context_pressure_check` 记录 `history_source_chars`、`history_omitted_count` 和 `history_pressure`，随后进入 `run_context_compaction` 子图，最后基于 `context_compaction_summary` 生成最终 `public_response`。
+- 已新增完整 Buddy 主循环跨能力组合 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure` 会先安装过长 Buddy 会话历史，触发 `buddy_context_compaction` 生成 `combo-overflow-summary`；压缩后 selector 继续选择动态 Tool `provider_fallback_resolver`，Tool runtime fixture 注入 `eval_tool_timeout`；`agent_loop_guard` 允许重试，selector 改选 `runtime_context_loader`，fallback Tool 成功后最终回复同时引用压缩摘要和 `combo fallback context loaded`。
+- 已新增完整 Buddy 主循环跨能力组合 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure` 会先安装过长 Buddy 会话历史，触发 `buddy_context_compaction` 生成 `combo-subgraph-overflow-summary`；压缩后 selector 继续选择动态 Subgraph `advanced_web_research_loop`，Subgraph 输入规划 fixture 故意遗漏 `user_question`，运行时写入 `missing_required_input` failure fact；`agent_loop_guard` 允许重试，selector 改选 `runtime_context_loader`，fallback Tool 成功后最终回复同时引用压缩摘要和 `combo subgraph fallback context loaded`。
+- 已新增完整 Buddy 主循环跨能力组合 eval：`buddy_autonomous_loop_core` 的 `buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required` 会先安装过长 Buddy 会话历史，触发 `buddy_context_compaction` 生成 `combo-permission-overflow-summary`；压缩后 selector 继续选择动态 Action `local_workspace_executor`，Action 输入规划产生写入操作，ask-first 权限策略在执行前暂停为 `awaiting_human`，并写入 `pending_permission_approval` 与 `permission_pause` activity event。
+- 为让这些 eval 可重复，运行时和 eval 基础设施已补齐三处真实链路能力：Subgraph metadata 会继承 `eval`、`model_runtime_fixture` 和 `tool_runtime_fixture`；eval agent model override 会递归进入嵌入式 Subgraph 的 Agent 节点；Action/Tool 子进程会继承当前 `TOOGRAPH_DATA_DIR`，确保隔离 eval 数据库中的 Buddy history、context assembly 和 retrieval facts 可被脚本读取。
+- collector 的 `rule` check 已能对结构化 JSON target 同时匹配值和字段名，因此可以直接验证 `graph_run.state_values.context_budget_report` 中的预算字段，而不需要把结构化审计事实降级成输出文本。
+- 动态 `capability.kind=tool` 已进入 Agent 节点运行时：当 `selected_capability` 指向 Tool 时，运行时会读取 Tool registry、执行 Tool 或 eval Tool runtime fixture、把结果写成标准 `result_package`，并记录 `tool_outputs` 与 `tool_invocation` activity event。
+- eval 模型 fixture 已支持 `prompt_contains` / `system_contains` / `user_contains` 的列表响应匹配；这让同一个 fixture provider 能根据不同轮次的图 state 输入稳定返回不同 selector 决策。
+- collector 的 `artifacts.graph_run` 摘要已暴露 `state_values`，`rule` check 可以直接用 `graph_run.state_values.<state_key>` 验证真实图运行中的最终 state，而不是只看 output preview。
+- collector 的 `artifacts.graph_run` 摘要和 `graph_run` 自动 check 已新增 Subgraph invocation 支持：可以从 `capability_outputs`、节点 artifacts 和 `subgraph_invocation` activity event 收集 `subgraph_key`、状态、错误类型、child run 和输入/输出 key，并用 `required_subgraph_invocations` / `min_subgraph_invocations` 验证真实 Subgraph 调用事实。
+- collector 已把 `awaiting_human` / `permission_required` 纳入可检查终态，permission-required eval 不再被当作未完成 run；`graph_run` check 可以直接验证 `pending_permission_approval` metadata 和 `permission_pause` activity event。
 
 解决方案：
 
@@ -153,6 +244,9 @@ TooGraph 差距：
    - `graph_validation_failed`
    - `context_budget_exhausted`
 5. RunDetail 和 Buddy 胶囊显示 stop reason 和 loop budget。
+6. Eval 分层覆盖：
+   - 已覆盖 ambiguous request、max capability、capability failure、Tool runtime fallback、LLM runtime fallback、完整 Buddy 主循环真实 Tool 失败恢复、完整 Buddy 主循环动态 Subgraph 失败恢复、完整 Buddy 主循环 permission-required 暂停、完整 Buddy 主循环 provider 模型失败恢复、完整 Buddy 主循环 context overflow 压缩，以及 context overflow 后继续完成 Tool / Subgraph fallback 和 Action permission-required 的组合路径。
+   - 后续继续补更多 stop reason fixture 和更复杂跨能力组合 fixture。
 
 验收标准：
 
@@ -517,7 +611,14 @@ TooGraph 差距：
 - selector 已根据 runtime `capability_usage_stats` 评估近期失败：当 LLM 请求的能力连续近期失败，并且同覆盖范围内存在更健康的候选时，`toograph_capability_selector` 会改选 fallback，并在 `capability_selection_trace.rejected_candidates` 中以 `recent_failures_fallback_preferred` 记录原请求；RunDetail 和 Buddy 胶囊可直接展示该结构化拒绝原因。
 - Eval runner 已支持 case 级 `metadata.fixture_capability_usage_entries`，可在运行官方 eval 前预置能力成功/失败统计；新增 `capability_selection` 自动 check，可确定性验证 requested/selected/rejected/fallback 候选与 `recent_failures_fallback_preferred` 等拒绝原因。
 - 官方 `buddy_autonomous_loop_core` 已新增 selector fallback eval case，用预置的 `advanced_web_research_loop` 近期失败和 `web_search` 成功记录，验证 Buddy 主循环在能力选择 trace 中改选健康 fallback。
-- 后续仍需把更多运行时失败恢复结果投影成结构化事件，并把能力失败后的自动 fallback 评估扩展到真实 provider/tool 失败驱动的完整 Buddy 图端到端测试。
+- 完整 Buddy 主循环已把真实 Tool 失败驱动的自动 fallback 评估接入端到端测试：primary Tool 失败会进入 guard 重试，selector 第二轮改选 fallback Tool，fallback 成功后第三轮结束循环并写出最终回复。
+- 完整 Buddy 主循环已把 provider 模型失败驱动的 runtime fallback 接入端到端测试：selector 所在 Agent 节点 primary provider 超时后，通用 provider fallback resolver 选择兼容 fallback provider，fallback provider 产出结构化 Action planning 输出，collector 验证 `provider_fallback_trace`。
+- 完整 Buddy 主循环已把动态 Subgraph 失败驱动的自动 fallback 评估接入端到端测试：primary Subgraph 缺少必填输入触发 `missing_required_input`，collector 和 check 记录 `subgraph_invocation` 失败事实，guard 允许重试，selector 第二轮改选 fallback Tool，fallback 成功后第三轮结束循环并写出最终回复。
+- 完整 Buddy 主循环已把动态 Action 权限暂停接入端到端测试：case 级 graph metadata fixture 设置 ask-first permission mode，selector 选择 `local_workspace_executor`，Action 输入规划生成 `write` 操作，运行时在 Action 执行前暂停并写入 `pending_permission_approval`；collector 能把 `awaiting_human` 作为 permission-required 终态验收。
+- 完整 Buddy 主循环已把 context overflow 后继续执行 Tool fallback 的组合路径接入端到端测试：先由 history loader 和 context pressure check 触发 `buddy_context_compaction`，再在压缩后的同一 run 中经历动态 Tool 失败、guard 重试、selector 改选 fallback Tool、fallback 成功和最终回复。
+- 完整 Buddy 主循环已把 context overflow 后继续执行 Subgraph fallback 的组合路径接入端到端测试：先由长历史触发 `buddy_context_compaction`，再让动态 Subgraph `advanced_web_research_loop` 因缺少 `user_question` 写入 `missing_required_input` failure fact，随后经过 guard 重试、selector 改选 `runtime_context_loader`、fallback Tool 成功和最终回复。
+- 完整 Buddy 主循环已把 context overflow 后继续执行高风险 Action 权限暂停的组合路径接入端到端测试：先由长历史触发 `buddy_context_compaction`，再选择 `local_workspace_executor` 写入操作，运行时按 ask-first risky 策略暂停，collector 验证 `pending_permission_approval`、`permission_pause`、压缩摘要和等待态能在同一 run 中共存。
+- 后续仍需把更多复杂跨能力组合恢复结果纳入同类端到端测试。
 
 解决方案：
 
@@ -574,7 +675,28 @@ Hermes 能力：
 TooGraph 差距：
 
 - Action/Tool/Subgraph 协议已经有，但官方能力数量和覆盖面不足。
-- Tool 节点方向刚起步，很多确定性操作仍未工具化。
+- Action/Tool/Subgraph 的基础协议、catalog 和门禁已经成形，但真实端到端 eval 覆盖还不均衡。
+
+当前进展：
+
+- 官方 Action、Tool 和 Subgraph 已经统一进入 capability catalog，selector 可以按 kind、key、description、permissions、eval status 和 usage stats 读取能力 profile。
+- 官方能力包 manifest 已支持 `verificationCommands` 和 `verificationEvalSuites`；后端 catalog、前端类型和本地 `npm run verify:official-assets` gate 会保留并执行这些声明。
+- 全量官方 Tool 包已绑定对应 eval suite，并有 `backend.tests.test_official_tool_eval_bindings` 做总覆盖；`agent_loop_guard` 和 `provider_fallback_resolver` 还绑定了 `tool_runtime_fallback_eval_core`，用于验证 Tool 节点失败注入和 fallback Tool 恢复。
+- 首批高风险官方 Action 已绑定核心 eval suite：能力选择、页面操作、Action 创建、Web research、Buddy Home 写回、记忆写入、session recall、workspace executor、Action package reader 和 graph template reader/validator/writer 都已有 gate 入口。
+- 图模板创建三件套已经通过 manifest `verificationCommands` 绑定 `backend.tests.test_toograph_graph_template_actions`，官方 `toograph_graph_template_creation_workflow` 也有同目录 `eval_cases.json`。
+- Tool runtime fixture 已进入真实 Tool 节点执行入口；collector 会把 Tool 输出规整为 `artifacts.graph_run.tool_invocations`，`graph_run` check 可验证指定 Tool 是否以指定 `tool_key`、`status`、`error_type` 执行。
+- 动态 `capability.kind=tool` 已进入 Agent 节点执行入口；Buddy 主循环的 `execute_capability` 这类 Agent 节点不需要静态绑定 Tool，也能从 `selected_capability` 读取 Tool key，执行 Tool 或 eval fixture，写回标准 `result_package` 并留下 Tool invocation 审计。
+- collector 已把 graph run 顶层、artifacts 和 node execution artifacts 中的 `action_outputs` 规整为 `artifacts.graph_run.action_invocations`；`graph_run` check 新增 `required_action_invocations` 和 `min_action_invocations`，可以直接验证某个 Action 节点是否以指定 `action_key` 和 `status` 执行过。
+- 新增隐藏官方模板 `workspace_executor_eval` 和 suite `workspace_executor_eval_core`。该模板用真实 `local_workspace_executor` Action 节点执行只读 search，eval case 通过 `fixture_model_runtime` 注入 Action 规划响应，最终用 schema/rule/graph_run check 同时验证输出、路线图搜索结果和 Action invocation 审计。
+- `local_workspace_executor` manifest 已绑定 `workspace_executor_eval_core`，因此该 Action 的变更会触发真实 Action 节点运行级 gate，而不只停留在 Action 创建流程或调度流程的间接覆盖。
+- eval runner 已支持 case 级 `fixture_video_files`，会在隔离数据目录生成短 mp4 fixture，并把生成的 `filesystem_path` 写入指定 input state，让视频类 Tool 可以通过真实文件输入运行。
+- 新增隐藏官方模板 `video_segmenter_eval` 和 suite `video_segmenter_eval_core`。该模板用真实 `video_segmenter` Tool 节点切分 eval runner 生成的视频 fixture，最终用 schema/rule/graph_run check 同时验证 `video_segments`、片段 artifact 路径、mime type 和 Tool invocation 审计。
+- `video_segmenter` manifest 已绑定 `video_segmenter_eval_core`，因此该 Tool 的变更会触发真实 Tool 节点运行级 gate，而不只停留在游戏模板的间接覆盖。
+- eval runner 已支持 `metadata.fixture_graph_template_workspace`，会为 eval case 创建隔离的用户模板目录和 revision 目录，并通过 `action_runtime_context.graph_template_writer` 注入 `toograph_graph_template_writer`，避免真实写模板评测污染 `graph_template/user`。
+- eval runner 已支持 `metadata.fixture_agent_model_ref`，会把目标图里的 agent 节点模型改成受控 fixture provider，使官方工作流可以通过 `fixture_model_runtime` 在真实 LLM 节点中稳定产出读模板、生成、校验、写入和总结所需 JSON。
+- 官方 `toograph_graph_template_creation_workflow_core` 已升级为真实图运行 eval：同一个工作流会真实调用 `toograph_graph_template_reader` 读取现有模板、由模型 fixture 生成新模板 JSON、调用 `toograph_graph_template_validator` 校验、调用 `toograph_graph_template_writer` 写入隔离用户模板并生成 revision，最后用 `schema` / `rule` / `graph_run` check 验证 state、output 和 reader/validator/writer Action invocation 审计。
+- `toograph_graph_template_reader`、`toograph_graph_template_validator` 和 `toograph_graph_template_writer` 的 Action subprocess 入口已补齐 backend import 路径；writer 还能读取 `TOOGRAPH_ACTION_RUNTIME_CONTEXT` / `TOOGRAPH_ACTION_RUNTIME_CONTEXT_FILE` 覆盖模板根目录和 revision 根目录，因此包级测试和真实 Action 子进程执行使用同一能力边界。
+- 当前能力生态已经从“有官方包”推进到“有合同、权限、eval 绑定、包级测试和运行审计”；完整 Buddy 主循环中的真实 Tool 失败恢复、动态 Subgraph 失败恢复、动态 Action 权限暂停、provider 模型失败恢复、context overflow 压缩、context overflow 后 Tool / Subgraph fallback 组合和 context overflow 后 Action permission-required 组合已接入 eval，剩余重点转为更复杂的 Subgraph worker 组合和更多官方能力包端到端覆盖。
 
 解决方案：
 
@@ -582,7 +704,7 @@ TooGraph 差距：
    - Core Tools：历史组装、上下文预算、文件读取、检索、schema validate。
    - Workspace Actions：读写文件、运行命令、创建 revision。
    - Web Actions：搜索、抓取、下载、引用生成。
-   - Knowledge Tools：RAG 检索、chunk、embedding rebuild。
+   - Knowledge Tools：RAG 检索、chunk、embedding rebuild。当前只保留 `knowledge_context_loader`、retrieval/embedding 表、context package 和 eval 入口作为未来能力承载点，不在本轮 Hermes 追赶中开发完整 RAG ingestion/index/QA 链路。
    - Graph Actions：读取模板、校验模板、写模板、预览 diff。
    - Buddy Actions：记忆写入、Buddy Home 写入、复盘上下文加载。
 2. manifest 增强：
@@ -782,6 +904,7 @@ TooGraph 差距：
 - 已新增官方隐藏模板 `provider_fallback_eval` 和 `provider_fallback_eval_core` suite，用 `provider_fallback` 自动 check 验证 provider 失败后能选择兼容 fallback，并拒绝会扩大权限范围的候选。
 - RunDetail Agent Diagnostic 已能从 `provider_fallback_trace` 重组 provider fallback 诊断，展示 requested model、selected model、decision、失败模型、被拒绝模型、fallback 候选、能力/权限要求和 warnings。
 - `chat_with_model_ref_with_meta` 已接入真实 LLM 调用链：主 provider/model 调用失败后，会从保存的 Model Providers 配置构造候选，按 `chat`、`structured_output`、`vision` 等能力和 `text_generation` 权限范围调用 `provider_fallback` resolver，选择不扩大权限的兼容 fallback，并把 `provider_fallback_trace`、`requested_model_ref` 和 fallback warning 写入模型调用 meta。
+- eval runner 已能通过 case metadata 的 `fixture_model_runtime` 给 LLM 节点注入可重复的模型运行夹具：primary provider 可被确定性失败注入，fallback provider 可返回受控响应，真实 `chat_with_model_ref_with_meta` fallback resolver 仍会执行并产出 `provider_fallback_trace`。新增官方隐藏模板 `llm_runtime_fallback_eval` 和 `llm_runtime_fallback_eval_core` suite 覆盖该链路。
 - `embed_text_with_model_ref` 已接入同一 provider fallback 机制：embedding provider 失败后按 `embedding` capability 和 `embedding` permission 选择兼容 fallback，并把 `provider_fallback_trace` 写入 embedding meta；embedding job processor 通过该入口会继承相同行为。
 - Provider fallback runtime 已支持多候选重试：第一个兼容 fallback 运行时失败后，会继续尝试后续兼容候选；`provider_fallback_trace.attempts` 和 `failed_candidates` 会记录实际失败的 fallback provider，最终 `selected` 指向真正成功的候选。
 - 结构化输出 repair 已接入可审计 provider fallback：主结构化输出调用和 repair 调用都会把实际 provider/model、requested model ref、`provider_fallback_used` 和 `provider_fallback_trace` 写入节点 runtime config；RunDetail Agent Diagnostic 在没有顶层 state trace 时，会从 node execution runtime config 读取这些 trace，展示 repair/main LLM provider fallback 证据。
@@ -949,96 +1072,22 @@ TooGraph 差距：
 
 优先级：P1-P2。
 
-### 3.14 Plugin / Extension 体系
-
-Hermes 能力：
-
-- 用户、项目、pip entry point 三类插件来源。
-- 插件可注册 tools、hooks、CLI commands。
-- memory provider 和 context engine 是专门插件类型。
-
-TooGraph 差距：
-
-- TooGraph 有 Action/Tool package 和 graph template，但缺少统一插件生命周期、安装、启用、版本、权限和 hook。
-
-解决方案：
-
-1. 定义 TooGraph plugin manifest：
-   - `plugin_id`
-   - `version`
-   - `provides`: `actions|tools|templates|knowledge_loaders|model_providers|hooks`
-   - `permissions`
-   - `entrypoints`
-   - `settings_schema`
-2. 插件目录：
-   - official plugins。
-   - user plugins。
-   - project plugins。
-3. Lifecycle：
-   - install。
-   - enable/disable。
-   - validate。
-   - update。
-   - uninstall。
-4. Hooks：
-   - before graph run。
-   - after graph run。
-   - before context assembly。
-   - after capability result。
-   - scheduler tick。
-5. UI：
-   - Plugin page 显示包内容、权限、状态、版本、最近运行错误。
-
-验收标准：
-
-- 一个插件可以同时提供 Action、Tool 和模板。
-- 插件启用后 selector 能发现其 capability profile。
-- 插件权限在安装和使用位置都可见。
-
-优先级：P3。
-
-### 3.15 Gateway / 多入口 / 消息平台
+### 3.14 Gateway / 多入口 / 消息平台
 
 Hermes 能力：
 
 - Gateway 支持多个平台、session routing、授权、slash commands、hooks、cron ticking。
 
-TooGraph 差距：
+当前状态：
 
-- TooGraph 当前主要是 Web app + Buddy UI。
-- 没有独立平台 gateway，也没有 Telegram/Discord/Slack/CLI 等入口。
+- 非本文档目标。
+- 用户已明确该能力在其他分支树开发。
+- 本路线图不再规划、实现或验收 Gateway / 多入口 / 消息平台能力。
+- 后续合并相关分支时，本路线图只关心必要的接口对齐：run store、session refs、权限审计和图运行事实源是否仍与 Buddy 核心一致。
 
-解决方案：
+优先级：非目标。
 
-1. 定义 `agent_entrypoint` 抽象：
-   - `web_buddy`
-   - `api`
-   - `cli`
-   - `cron`
-   - `webhook`
-   - future platform adapters。
-2. 统一 session routing：
-   - entrypoint + external user id + conversation id -> Buddy session。
-3. 权限模型：
-   - 每个 entrypoint 有 allowed actions、delivery target、approval strategy。
-4. API：
-   - start buddy run。
-   - stream activity events。
-   - resume approval。
-   - list sessions。
-5. CLI 入口：
-   - 最先做本地 CLI，可以复用 Web app backend。
-   - 平台 gateway 后置。
-
-验收标准：
-
-- CLI 可以启动同一个 Buddy 主循环并写入同一 run store。
-- 不同入口的 session 和权限隔离清晰。
-- cron/job 结果可以投递到指定 UI 或输出 artifact。
-
-优先级：P3。
-
-### 3.16 诊断与可观测性
+### 3.15 诊断与可观测性
 
 Hermes 能力：
 
@@ -1087,7 +1136,7 @@ TooGraph 差距：
 
 优先级：P1-P2。
 
-### 3.17 Eval 与质量门禁
+### 3.16 Eval 与质量门禁
 
 Hermes 能力：
 
@@ -1112,18 +1161,45 @@ TooGraph 差距：
 - 新增 `delegation_worker` / `worker_merge_review` 自动 check、`delegation_worker_result_packager` / `delegation_worker_result_merger` / `delegation_kanban_board_builder` Tool 和 delegation eval suites，委派 worker packet/result/merge review/board snapshot 协议已有可重复评测入口。
 - 新增 `hybrid_recall` 自动 check、`hybrid_recall_context_loader` Tool 和 `buddy_hybrid_recall_eval_core`，session/history + DB memory 的混合召回已有可重复评测入口。
 - 新增 `provider_fallback` 自动 check、`provider_fallback_resolver` Tool 和 `provider_fallback_eval_core`，provider/model fallback 选择合同已有可重复评测入口。
+- 新增 `graph_run` 自动 check，并把 collector 的 completed run 摘要作为 `artifacts.graph_run` 提供给 check executor。Buddy selector fallback、provider fallback、delegation worker 和 delegation batch eval case 现在都要求真实 eval run 收集时校验目标模板 metadata、关键 state、关键节点和节点执行数量，不再只检查单个 Tool 输出。
 - 新增本地 `npm run verify:official-assets` gate：脚本会从当前 Git diff 识别 `graph_template/official/`、`action/official/` 和 `tool/official/` 变更，自动运行 `git diff --check` 以及模板布局/官方 eval seed、Action manifest/协议、Tool catalog/runtime 等相关检查，使官方模板和能力包变更不再只靠人工选择 suite。
 - 官方模板变更门禁已能读取同目录 `eval_cases.json` 中声明的 suite，并追加执行 `scripts/official_eval_suite_gate.py <suite_id>`。该专项 gate 会在隔离数据库中重新 seed 官方 eval suite，验证目标 suite 可发现、包含 case，且每个 case 有 `case_id` 和自动 check 配置。
 - 官方 Action/Tool 能力包变更门禁已能按包 key 自动发现 `backend/tests/test_<key>_action.py`、`backend/tests/test_<key>_tool.py` 或 `backend/tests/test_<key>.py`，并追加运行对应包级专项测试，让能力包改动不再只依赖通用 manifest/catalog/runtime 合同测试。
 - 官方 Action/Tool manifest schema、后端 catalog 和前端类型已正式承载 `verificationCommands` 声明式专项门禁；本地 gate 会在不经过 shell 的前提下执行受限命令。`provider_fallback_resolver` 已用该字段把核心 resolver unittest 纳入 Tool 包变更门禁，覆盖 manifest/catalog/runtime 合同测试之外的实现语义。
 - 官方 Action/Tool manifest schema、后端 catalog 和前端类型已正式承载 `verificationEvalSuites`；本地 gate 会根据能力包声明自动追加 `scripts/official_eval_suite_gate.py <suite_id>`。`provider_fallback_resolver` 已绑定 `provider_fallback_eval_core`，能力包变更会同时验证 Tool 包合同、核心 resolver unittest 和对应官方 eval suite seed/case/check 合同。
-- 高风险官方 Tool 包已开始批量绑定对应 eval suite：`embedding_job_processor -> embedding_maintenance_core`、`hybrid_recall_context_loader -> buddy_hybrid_recall_eval_core`、`scheduler_run_context_loader -> scheduler_retry_delivery_eval_core`、`delegation_worker_result_packager -> delegation_worker_eval_core`、`delegation_worker_result_merger -> delegation_worker_batch_eval_core`、`delegation_kanban_board_builder -> delegation_kanban_board_eval_core`。这些 Tool 的代码或 manifest 变更现在会自动触发相应 suite gate。
+- 全量官方 Tool 包已绑定对应 eval suite，并新增 `backend.tests.test_official_tool_eval_bindings` 作为总覆盖测试；`scripts/official-asset-gate.mjs` 的官方 Tool 基础门禁会默认运行该测试。已覆盖 `agent_loop_guard`、Buddy history/home/review/context pressure loaders、memory/session/hybrid recall loaders、capability curator/context loaders、embedding processor/registry、delegation tools、provider fallback resolver、scheduler loader、page/runtime/knowledge/web context loaders 和 `video_segmenter`。其中 `agent_loop_guard` 和 `provider_fallback_resolver` 已额外绑定 `tool_runtime_fallback_eval_core`，用于验证 Tool 运行失败和 fallback Tool 恢复链路。
 - 首批高风险官方 Action 包已绑定对应 eval suite：`toograph_capability_selector -> buddy_autonomous_loop_core`、`toograph_page_operator -> toograph_page_operation_workflow_core`、`toograph_action_builder` / `toograph_script_tester -> toograph_action_creation_workflow_core`、`web_search -> advanced_web_research_loop_core`、`buddy_home_writer -> buddy_autonomous_review_core` / `buddy_context_compaction_core`、`buddy_memory_writer -> buddy_autonomous_review_core` / `buddy_memory_recall_eval_core`、`buddy_session_recall -> buddy_hybrid_recall_eval_core` / `buddy_memory_recall_eval_core`。这些 Action 的代码或 manifest 变更现在会自动触发对应 suite gate，并由包级测试锁定 manifest 绑定。
+- 图模板创建和工作区相关官方 Action 已继续补齐 gate：`local_workspace_executor -> toograph_action_creation_workflow_core` / `scheduler_retry_delivery_eval_core`、`toograph_action_package_reader -> toograph_action_creation_workflow_core` / `buddy_improvement_review_workflow_core`、`toograph_graph_template_reader` / `toograph_graph_template_validator -> toograph_graph_template_creation_workflow_core` / `buddy_improvement_review_workflow_core`、`toograph_graph_template_writer -> toograph_graph_template_creation_workflow_core`。图模板三件套还通过 manifest `verificationCommands` 显式绑定 `backend.tests.test_toograph_graph_template_actions`，官方 `toograph_graph_template_creation_workflow` 已有同目录 `eval_cases.json`。
+- eval runner 已支持 `metadata.fixture_model_runtime`，能把模型 provider fixture、失败注入和受控响应传入真实 LLM 节点；collector 会从 graph run 的 node execution runtime config 中提取 `provider_fallback_trace`，作为 `final_output.provider_fallback_trace` 和 `artifacts.graph_run.provider_fallback_traces` 暴露给 check executor。新增 `llm_runtime_fallback_eval_core` 用真实 agent 节点覆盖 primary timeout -> fallback selected -> state/output/trace 收集的端到端路径。
+- eval runner 已支持 `metadata.fixture_tool_runtime` / `metadata.tool_runtime_fixture`，启动 eval case 时会把 Tool runtime fixture 放入 `graph.metadata.eval.tool_runtime_fixture`。`execute_tool_node` 在通用 Tool 节点执行入口读取该 fixture，按 `node_id` + `tool_key` 匹配 `failures` 或 `responses`；命中失败 fixture 时返回标准 Tool 失败结果，命中响应 fixture 时返回受控 Tool 输出。输出仍通过原有 Tool output binding 写入 state，并通过原有 `tool_outputs` 和 `tool_invocation` activity event 进入 run record。
+- collector 已把 graph run 顶层 `tool_outputs`、run artifacts 中的 `tool_outputs`、以及 node execution artifacts 中的 `tool_outputs` 规整为 `artifacts.graph_run.tool_invocations`。`graph_run` 自动 check 新增 `required_tool_invocations` 和 `min_tool_invocations`，可以直接验证某个 Tool 节点是否以指定 `tool_key`、`status`、`error_type` 执行过。
+- 新增隐藏官方模板 `tool_runtime_fallback_eval` 和 suite `tool_runtime_fallback_eval_core`。该模板用真实 `provider_fallback_resolver` Tool 节点作为 primary，用 condition 节点检查 `primary_tool_status == failed`，再进入 `agent_loop_guard` fallback Tool；eval case 通过 `fixture_tool_runtime` 注入 primary timeout 和 fallback report，最终用 schema/rule/graph_run check 同时验证输出、分支恢复和两次 Tool invocation 审计。
+- collector 已把 graph run 顶层 `action_outputs`、run artifacts 中的 `action_outputs`、以及 node execution artifacts 中的 `action_outputs` 规整为 `artifacts.graph_run.action_invocations`。`graph_run` 自动 check 新增 `required_action_invocations` 和 `min_action_invocations`，可以直接验证某个 Action 节点是否以指定 `action_key`、`status` 执行过。
+- 新增隐藏官方模板 `workspace_executor_eval` 和 suite `workspace_executor_eval_core`。该模板用真实 `local_workspace_executor` Action 节点执行路线图只读 search，eval case 通过 `fixture_model_runtime` 注入模型规划出的 Action 参数，最终用 schema/rule/graph_run check 同时验证 `workspace_success` / `workspace_result`、搜索结果内容和 Action invocation 审计。
+- `local_workspace_executor` manifest 已绑定 `workspace_executor_eval_core`。该能力从 seed/manifest gate 和间接工作流覆盖升级为真实 Action 节点端到端 eval：模型规划 -> Action 调用 -> 文件搜索 -> state/output 映射 -> graph run 审计。
+- eval runner 已支持 case 级 `fixture_video_files`，能生成短 mp4 文件并把文件引用写入 input state。新增隐藏官方模板 `video_segmenter_eval` 和 suite `video_segmenter_eval_core`，用真实 `video_segmenter` Tool 节点切分该视频 fixture，并通过 schema/rule/graph_run check 验证 `video_segments`、片段 artifact 路径、mime type 和 Tool invocation 审计。
+- `video_segmenter` manifest 已绑定 `video_segmenter_eval_core`。该能力从游戏模板间接覆盖升级为真实 Tool 节点端到端 eval：video fixture 生成 -> Tool 调用 -> ffmpeg 切分 -> artifact path 输出 -> state/output 映射 -> graph run 审计。
+- eval runner 已支持 `metadata.fixture_graph_template_workspace` 和 `metadata.fixture_agent_model_ref`。前者为 graph template writer 创建隔离模板/revision workspace，并通过 Action runtime context 注入 writer；后者把目标图 agent 节点改成 fixture provider，让真实工作流稳定使用 `fixture_model_runtime`。
+- `toograph_graph_template_creation_workflow_core` 已升级为真实 graph run eval。该 suite 会执行官方模板创建工作流，真实调用 graph template reader/validator/writer Action，验证新模板写入隔离用户模板目录、revision 创建、最终 state/output，以及 reader/validator/writer 的 Action invocation 审计。
+- `toograph_graph_template_reader`、`toograph_graph_template_validator` 和 `toograph_graph_template_writer` 已补齐真实 Action subprocess 的 backend import 路径；writer 已支持 `TOOGRAPH_ACTION_RUNTIME_CONTEXT` / `TOOGRAPH_ACTION_RUNTIME_CONTEXT_FILE`，包级测试和 eval 子进程都能使用同一隔离写入路径。
+- 动态 Tool capability 已进入 Agent 节点运行时。`selected_capability.kind=tool` 会通过 Tool registry 执行真实 Tool 或 eval Tool runtime fixture，输出统一包装为 `result_package`，并保留 `tool_outputs`、`tool_invocation` activity event 和 state writes。
+- eval 模型 fixture 的 `responses` 列表已支持按 `prompt_contains` / `system_contains` / `user_contains` 匹配不同轮次输入。Buddy 主循环可以在同一个 fixture provider 下根据上一轮 `capability_result` 失败信息、fallback Tool 成功证据等不同 state，稳定返回不同 selector 决策。
+- collector 的 `artifacts.graph_run` 已暴露 `state_values`，`rule` check 可以直接验证 `graph_run.state_values.public_response`、`graph_run.state_values.capability_trace` 等真实运行 state；这让 eval 不必只依赖 output preview。
+- collector 的 `artifacts.graph_run` 已新增 `subgraph_invocations` 摘要，`graph_run` 自动 check 已支持 `required_subgraph_invocations` 和 `min_subgraph_invocations`；eval 可以直接验证动态 Subgraph 的 `subgraph_key`、状态和错误类型，而不需要从原始 run JSON 手动推断。
+- eval runner 已新增 `fixture_graph_metadata`，可在真实模板图运行前注入 `graph_permission_mode`、`capability_permission_policy` 等运行 metadata；collector 已支持 `awaiting_human` / `permission_required` 作为可检查终态，因此权限暂停不再被 eval 误判为“未完成”。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环失败恢复 case：第一次动态 Tool `provider_fallback_resolver` 被 fixture 注入 `eval_tool_timeout`，`agent_loop_guard` 判断可重试，第二轮 selector 改选动态 Tool `runtime_context_loader`，fallback Tool 返回 runtime context package，第三轮 selector 结束循环并写出最终回复与 `capability_trace`。该 case 用 schema/rule/graph_run check 同时验证最终回复、trace、Tool invocation 审计、关键节点和 eval metadata。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环 provider fallback case：模型 runtime fixture 注入 `eval-primary/gpt-primary` 的 `provider_timeout`，真实 provider fallback 机制选择 `eval-fallback/gpt-fallback`，fallback provider 返回 selector 结构化输出，最终用 schema/rule/provider_fallback/graph_run check 同时验证最终回复、`provider_fallback_trace`、关键 state 和 selector Action invocation。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环动态 Subgraph 失败恢复 case：第一次动态 Subgraph `advanced_web_research_loop` 由 fixture 返回空输入，运行时因为缺少必填 `user_question` 写出 `missing_required_input` 的 Subgraph failure；`agent_loop_guard` 判断可重试，第二轮 selector 改选动态 Tool `runtime_context_loader`，fallback Tool 返回 runtime context package，第三轮 selector 结束循环并写出最终回复与 `capability_trace`。该 case 用 schema/rule/graph_run check 同时验证最终回复、trace、Subgraph invocation、Tool invocation、关键节点和 eval metadata。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环 permission-required case：动态 Action `local_workspace_executor` 在 ask-first 权限策略下产生 `write` 输入后暂停为 `awaiting_human`，run metadata 保留 `pending_permission_approval`，activity events 保留 `permission_pause`，graph_run check 同时验证状态、权限策略、pending approval、关键节点和 selector Action invocation。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环 context overflow 压缩 case：eval fixture 安装多轮 Buddy history，`buddy_history_context_loader` 输出裁剪后的 `conversation_history` 和预算字段，`buddy_context_pressure_check` 通过 `source_chars` / `omitted_count` 判断历史压力，主循环进入 `buddy_context_compaction` 子图生成 `context_compaction_summary`，最终回复引用该摘要。该 case 用 rule/graph_run check 验证 `context_budget_report` 字段、压缩摘要、最终回复、关键节点、Tool invocation 和 eval metadata。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环组合恢复 case：`buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure` 同时安装长历史 fixture、模型 fixture 和 Tool runtime fixture；真实图运行先通过 `run_context_compaction` 得到 `combo-overflow-summary`，再让动态 Tool `provider_fallback_resolver` 失败，经过 `agent_loop_guard` 后改选 `runtime_context_loader` 并完成最终回复。该 case 用 rule/graph_run check 验证预算字段、压缩摘要、Tool failure fact、fallback Tool success fact、关键节点和 eval metadata。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环组合恢复 case：`buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure` 同时安装长历史 fixture、模型 fixture 和 Tool runtime fixture；真实图运行先通过 `run_context_compaction` 得到 `combo-subgraph-overflow-summary`，再让动态 Subgraph `advanced_web_research_loop` 因缺少必填 `user_question` 失败，经过 `agent_loop_guard` 后改选 `runtime_context_loader` 并完成最终回复。该 case 用 rule/graph_run check 验证预算字段、压缩摘要、Subgraph failure fact、fallback Tool success fact、关键节点和 eval metadata。
+- `buddy_autonomous_loop_core` 已新增真实 Buddy 主循环组合等待 case：`buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required` 同时安装长历史 fixture、模型 fixture 和 ask-first permission metadata；真实图运行先通过 `run_context_compaction` 得到 `combo-permission-overflow-summary`，再让动态 Action `local_workspace_executor` 产生写入输入，运行时在执行前暂停为 `awaiting_human`。该 case 用 rule/graph_run check 验证预算字段、压缩摘要、pending permission approval、permission pause activity、关键节点和 eval metadata。
 
 后续仍需：
 
-- 为真实 Subgraph worker 执行、真实 provider/tool 失败驱动的 selector fallback，以及真实 LLM runtime provider fallback 接入增加更细的自动评测。
-- 继续把官方能力包变更接入更完整的本地 eval gate，逐步给更多官方 Action 和仍未覆盖的 Tool 补齐 `verificationCommands` 和 `verificationEvalSuites`。
+- 继续扩展完整 Buddy 主循环 eval：覆盖更多复杂跨能力组合 fallback。当前 Tool 失败恢复、动态 Subgraph 失败恢复、permission-required 暂停、provider 模型失败恢复、context overflow 压缩、context overflow 后 Tool / Subgraph fallback 组合和 context overflow 后高风险 Action permission-required 组合路径已经完成。
+- 继续把官方能力包变更接入更完整的本地 eval gate，把现有 suite seed 检查扩展为更多真实图运行、跨能力组合和 artifact 产物检查。
 
 解决方案：
 
@@ -1161,93 +1237,156 @@ TooGraph 差距：
 
 优先级：P1。
 
-## 4. 推荐实施顺序
+## 4. 实施阶段真实状态
+
+这一节用于判断后续开发应从哪里继续，而不是保留旧计划。
 
 ### 阶段 A：主循环可信度
 
-目标：让默认 Buddy 主循环具备可解释、可停止、可恢复的 Agent loop 基础。
+状态：基本完成。
 
-工作项：
+已经完成：
 
-1. `agent_loop_control` state + `agent_loop_guard` Tool。
-2. stop reason 标准化。
-3. RunDetail Agent Diagnostic 初版。
-4. `buddy_autonomous_loop` 加入 guard。
-5. 官方主循环 eval。
+1. `agent_loop_control` state 与 `agent_loop_guard` Tool 已实现。
+2. stop reason 已标准化，并通过 `agent_loop_report`、`agent_loop_stop_reason`、`agent_loop_events` 进入 run fact。
+3. 官方 `buddy_autonomous_loop` 已把能力执行结果送入 guard，再由 guard 决定继续、重试、停止或进入失败说明。
+4. RunDetail Agent Diagnostic 和 Buddy 胶囊已能展示 loop budget、capability budget、stop reason、provider/tool/permission/context 失败详情。
+5. Agent loop 已有 Tool 单测、模板结构测试、真实 graph run 回归、Buddy main loop eval、LLM runtime fallback eval、Tool runtime fallback eval，以及完整 Buddy 主循环真实 Tool 失败恢复、动态 Subgraph 失败恢复、permission-required 暂停、provider 模型失败恢复、context overflow 压缩、context overflow 后 Tool / Subgraph fallback 组合和 context overflow 后 Action permission-required 组合 eval。
 
-完成标准：
+增强效果：
 
-- Buddy run 具备 loop budget、stop reason、selection trace。
-- 失败路径能输出可读结果。
+- Buddy 主循环具备可解释的停止语义，不再只依赖图执行成功/失败状态。
+- 真实 Tool 失败后，主循环可以通过 `agent_loop_guard` 进入重试路径，由 selector 改选 fallback Tool，并在 fallback 成功后把结果整理成最终回复和 trace。
+- 动态 Subgraph 缺少必填输入这类 worker 前置失败，也会被记录为标准 Subgraph invocation，主循环可以走同一 guard / selector / fallback Tool 恢复路径。
+- 高风险动态 Action 在 ask-first 权限策略下会在执行前暂停，留下 `pending_permission_approval` 和 `permission_pause` 事实，避免 eval 或运行详情把权限等待误判为普通失败。
+- 真实 LLM provider primary 失败后，主循环可以通过通用 provider fallback 选择兼容模型，并把 fallback trace 作为 run fact 交给 eval 和 RunDetail 诊断使用。
+- 历史上下文过大时，主循环会先通过上下文压力检查进入 `buddy_context_compaction` 子图，把摘要、预算字段和 source refs 留在 run fact，再进入最终回复。
+- 在同一个 run 中，压缩后的主循环仍能继续执行动态能力；如果动态 Tool 或动态 Subgraph 失败，guard 会保留失败事实并驱动 selector 改选 fallback Tool，最终回复能同时引用压缩摘要和 fallback 结果。
+- 在同一个 run 中，压缩后的主循环如果继续进入高风险 Action 写入路径，运行时会按同一 permission policy 暂停，最终等待态仍能保留压缩摘要、selector trace、pending approval 和 permission pause 审计。
+- 后续 selector、scheduler、delegation 可以复用同一 stop reason 和 budget 诊断基础。
+
+剩余工作：
+
+- 扩展更多复杂跨能力组合恢复 eval。
 
 ### 阶段 B：记忆与召回生产化
 
-目标：让记忆召回接近 Hermes session_search + memory providers 的实用性。
+状态：核心链路基本完成，质量和覆盖继续进行中。
 
-工作项：
+已经完成：
 
-1. 标准 `context_package`。
-2. memory/message/run chunk embedding queue。
-3. Hybrid recall + rerank。
-4. Memory recall audit UI。
-5. 记忆复盘写入质量增强。
+1. 标准 `context_package` 已覆盖 session history、Buddy Home、memory、knowledge、web、page、runtime 和 capability result。
+2. Buddy message、memory entry、run output 已进入 retrieval/chunk/embedding 方向；`embedding_jobs`、`embedding_vectors`、embedding model registry 和 maintenance 模板已落地。
+3. Memory/session search 已支持 FTS、trigram、LIKE fallback、hybrid search、rerank、ranking report 和 Evidence UI。
+4. `memory_search_context_loader`、`session_search_context_loader`、`hybrid_recall_context_loader` 已把召回结果转成可审计 context package。
+5. `buddy_memory_recall_eval_core` 和 `buddy_hybrid_recall_eval_core` 已覆盖结构化记忆召回、session history + DB memory 混合召回、source refs 和预算。
 
-完成标准：
+增强效果：
 
-- 每次召回可解释。
-- 文件记忆和数据库记忆协作，不互相替代。
+- 历史记录、长期记忆和运行输出可以按 source refs 恢复，不需要在每轮 run 中复制完整对话全文。
+- 文件记忆负责稳定注入，DB 记忆负责召回、排序、审计和评测，两条线互补。
+
+剩余工作：
+
+- 扩充召回质量评测、弱语义近似去重、复杂 lineage 场景，以及更多模板对统一 loader 的接入。
 
 ### 阶段 C：能力选择与能力生态
 
-目标：让 selector 从“能选一个能力”升级为“能解释、能 fallback、能学习失败”。
+状态：进行中，核心 selector 和能力包门禁已经可用。
 
-工作项：
+已经完成：
 
-1. Capability profile。
-2. selector scoring。
-3. capability usage stats。
-4. fallback candidates。已支持 trace 展示，并在请求能力连续近期失败时自动改选更健康 fallback。
-5. 官方能力准入规范。
+1. Capability profile、permission tier、usage stats、eval status 已进入 selector catalog。
+2. `toograph_capability_selector` 输出 selection trace、score breakdown、permission summary、rejected candidates、fallback candidates 和预算变化。
+3. `capability_usage_events` 会从 run fact 投影能力使用结果，selector 可根据近期失败改选健康 fallback。
+4. 官方 Action/Tool manifest 已支持 `verificationCommands` 和 `verificationEvalSuites`；官方资产 gate 能按变更自动跑相关测试和 suite seed gate。
+5. 全量官方 Tool 包已绑定 eval suite；首批高风险 Action 包和图模板创建相关 Action 已绑定核心 eval gate。
+6. `workspace_executor_eval_core` 已用真实 `local_workspace_executor` Action 节点验证模型规划、只读搜索、state/output 映射和 Action invocation 审计。
+7. `video_segmenter_eval_core` 已用真实 `video_segmenter` Tool 节点验证视频 fixture 生成、ffmpeg 切分、artifact path 输出、state/output 映射和 Tool invocation 审计。
+8. `toograph_graph_template_creation_workflow_core` 已用真实官方模板创建工作流验证 reader/validator/writer Action 调用、模型 fixture 生成模板、隔离用户模板写入、revision 创建和 Action invocation 审计。
+9. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证动态 Tool 失败、guard 重试、selector 改选 fallback Tool、fallback Tool 成功和最终回复。
+10. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证动态 Subgraph 缺少必填输入失败、Subgraph invocation 审计、guard 重试、selector 改选 fallback Tool、fallback Tool 成功和最终回复。
+11. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证动态 Action 在 ask-first 权限策略下暂停、`pending_permission_approval` 生成、`permission_pause` activity event 和 `awaiting_human` 终态验收。
+12. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证 LLM provider primary 失败、runtime provider fallback、fallback provider 结构化输出、最终回复和 `provider_fallback_trace`。
+13. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证长历史先触发 context compaction，随后动态 Tool 失败，最终通过 guard/selector 改选 fallback Tool 完成回复的组合路径。
+14. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证长历史先触发 context compaction，随后动态 Subgraph 缺少必填输入失败，最终通过 guard/selector 改选 fallback Tool 完成回复的组合路径。
+15. `buddy_autonomous_loop_core` 已用完整 Buddy 主循环验证长历史先触发 context compaction，随后动态 Action 写入需要权限，最终进入带 pending approval 的 `awaiting_human` 等待态。
 
-完成标准：
+增强效果：
 
-- 每次能力选择有评分、拒绝理由和预算。
-- 失败后能调整选择。
+- 能力选择从黑箱下拉/模型判断升级为可解释、可审计、可被失败反馈影响的 routing。
+- 官方能力生态开始具备准入门槛：合同、权限、测试、eval 和运行审计同时存在。
+- 图模板创建从“manifest/seed 能发现”升级为“完整工作流能读模板、生成模板、校验、写入、留 revision 并被 run record 证明”。
+- Buddy 主循环的 selector 不只在单点失败时可用，也已证明能在上下文压缩后的后续 Tool / Subgraph 失败中继续恢复，或在后续高风险 Action 中按权限边界暂停。
+
+剩余工作：
+
+- 更多跨能力组合路径和更多官方能力包需要继续补真实图运行 eval。
 
 ### 阶段 D：自我改进闭环
 
-目标：让 Buddy 能把运行经验沉淀成可审查改进。
+状态：进行中，候选验证/审批/apply 主链路可用。
 
-工作项：
+已经完成：
 
-1. `improvement_candidate` schema。
-2. improvement review workflow。已完成官方验证模板、RunDetail 启动验证 run 入口、独立候选队列 UI、验证 run 关联、候选状态同步、验证产物持久化、人工决策和 command-backed apply。
-3. Action/Tool/template diff + validation + approval + apply 覆盖扩展。
-4. capability curator。已完成官方模板、自动快照 loader、官方 scheduler 种子和报告 UI。
-5. curator report UI。已完成第一版 `/curator-reports`，从标准 graph run 事实源重建报告。
+1. `improvement_candidates` 表已持久化后台复盘产出的改进候选。
+2. `buddy_improvement_review_workflow` 已能读取候选、目标 Action/模板包，生成 validation plan、proposed diff、test plan 和 approval request。
+3. RunDetail 与 `/improvements` 页面已支持候选验证、状态同步、批准、拒绝和 allowlist command-backed apply。
+4. `buddy_capability_curator` 和 `capability_curator_context_loader` 已能只读组装能力目录、使用记录、eval 覆盖和候选队列，输出 curator report、health report 和新候选。
+5. `/curator-reports` 页面已能从标准 graph run 事实源查看 curator 运行产物。
 
-完成标准：
+增强效果：
 
-- 后台复盘产生的候选能进入受控改进流程。
-- 官方能力不会被静默修改。
+- Buddy 的自我改进从“后台直接改东西”变成“生成候选、验证、审批、revision、eval”的可恢复流程。
+- 官方能力和高风险资产默认不会被静默修改。
 
-### 阶段 E：调度、委派、插件
+剩余工作：
 
-目标：追上 Hermes 的 cron、delegation、plugin 扩展能力。
+- curator 候选自动验证、更多 Action/Tool/template writer 覆盖、真实 diff 应用路径和 eval 覆盖还需扩展。
 
-工作项：
+### 阶段 E：调度与委派
 
-1. Scheduler store + API + 手动/run-due 触发 + 后台 tick + 官方 job 种子 + Scheduler 页面 + 用户自定义任务创建入口 + 失败 retry policy + 默认官方维护任务启用引导 + 本地审计投递结果。已完成第一版；外部投递 adapter 待补。
-2. Worker task packet / result package。
-3. Subgraph worker 模板。
-4. Plugin manifest 和 Plugin 页面。
-5. CLI/API entrypoint。
+状态：进行中，Scheduler 第一版和 Delegation 协议已经可用。
 
-完成标准：
+已经完成：
 
-- 能创建周期性图运行。
-- 能并发委派子任务并合并结果。
-- 插件能力能被 selector 发现。
+1. Scheduler store/API/runner/lifespan tick、官方 job seeds、Scheduler UI、自定义任务、retry policy、本地审计 delivery、权限边界和 scheduler eval 已落地。
+2. Scheduler 每次触发都会创建标准 graph run，写入 job run metadata、retry decision、delivery audit 和权限策略。
+3. Delegation 已定义 worker task packet、worker result package、worker merge review package 和 delegation board snapshot。
+4. Batch/Subgraph worker eval、worker packager/merger/board builder Tool、可见 batch workflow、RunDetail/胶囊诊断已落地。
+
+增强效果：
+
+- Cron 不再是隐藏后台逻辑，而是可审计 scheduled graph job。
+- 委派从手工拼子图升级为可检查 worker 协议，父图能合并并展示多 worker 结果。
+
+剩余工作：
+
+- Scheduler 真实外部投递 adapter 需要走审批后执行路径。
+- Delegation 还缺持久协作 board、claim/ownership、长期任务状态和更细失败恢复。
+
+### 横向阶段：Eval 与质量门禁
+
+状态：进行中，但基础设施已经显著增强。
+
+已经完成：
+
+1. Eval runner 已支持 runs、Buddy sessions、memory entries、capability usage、scheduler jobs、model runtime 和 Tool runtime fixture。
+2. 自动 checks 已覆盖 memory retrieval、hybrid recall、scheduler run、delegation worker/merge、provider fallback、graph run、Tool invocation 和 Action invocation。
+3. `llm_runtime_fallback_eval_core` 已用真实 agent 节点验证 provider fallback trace。
+4. `tool_runtime_fallback_eval_core` 已用真实 Tool 节点验证失败注入、fallback 分支和 tool invocation 审计。
+5. `workspace_executor_eval_core` 已用真实 Action 节点验证 workspace 搜索、Action 输出映射和 action invocation 审计。
+6. `video_segmenter_eval_core` 已用真实 Tool 节点验证视频 fixture 切分、artifact 输出映射和 tool invocation 审计。
+7. `npm run verify:official-assets` 已把官方模板、Action、Tool 变更和声明式 suite gate、包级测试连接起来。
+
+增强效果：
+
+- 质量门禁从“人工记得跑哪些测试”升级为“官方资产自己声明应该被哪些测试和 eval 验收”。
+- eval 不只看最终文本，还能检查 graph run 元数据、状态、节点执行、runtime trace、能力调用和权限边界。
+
+剩余工作：
+
+- 把更多 seed/manifest 级 gate 升级为真实端到端 graph run eval，优先更复杂的 Subgraph worker 组合、更多 artifact 产物检查和高风险写入类 Action。
 
 ## 5. 数据结构草案
 
@@ -1388,21 +1527,23 @@ updated_at
 
 ## 6. 验收总清单
 
-TooGraph 可以认为“追上 Hermes Agent 核心能力”的最低标准：
+TooGraph 可以认为“追上 Hermes Agent 核心能力”的最低标准，以及当前状态：
 
-- 默认 Buddy 主循环具备 loop budget、stop reason、fallback、diagnostic view。
-- 所有上下文以 context package 进入 prompt，来源和 authority 可见。
-- 历史、记忆、知识库和 run outputs 都能 hybrid recall。
-- 记忆写入有文件线和数据库线，且有 evidence、revision、去重。
-- background review 不阻塞主回复，失败可见，可重跑。
-- improvement candidates 能进入验证、diff、approval、revision、eval 流程。
-- capability selector 有评分、拒绝理由、失败反馈和预算。
-- Action/Tool/Subgraph 有统一 capability profile。
-- scheduler 能运行周期性图任务。
-- Subgraph worker 能支持委派和结果合并。
-- provider runtime 有能力矩阵、fallback、structured output repair。
-- 权限、注入扫描、secret hygiene 和 operation approval 成为通用机制。
-- 每个核心能力都有自动测试或 eval。
+| 验收项 | 当前状态 | 证据 / 说明 |
+| --- | --- | --- |
+| 默认 Buddy 主循环具备 loop budget、stop reason、fallback、diagnostic view | 基本完成 | `agent_loop_guard`、`agent_loop_control`、`agent_loop_events`、RunDetail Agent Diagnostic、Buddy 胶囊诊断、Buddy main loop eval、LLM/Tool runtime fallback eval |
+| 所有上下文以 `context_package` 进入 prompt，来源和 authority 可见 | 基本完成 | history、Buddy Home、memory、knowledge、web、page、runtime、capability result 已接入；RunDetail Context Audit 可展开来源、预算和 warnings |
+| 历史、记忆、知识库和 run outputs 能 hybrid recall | 进行中 | session/message、memory_entries、knowledge、graph outputs 已进入 retrieval 方向；memory/session/hybrid recall 可用，run output 召回和复杂 lineage 仍需增强 |
+| 记忆写入有文件线和数据库线，且有 evidence、revision、去重 | 进行中 | Buddy Home 文件线保留；DB `memory_entries` 有 source refs、revision、embedding queue、规范化/近似去重；弱语义去重和人工复核待增强 |
+| Background review 不阻塞主回复，失败可见，可重跑 | 进行中 | `buddy_background_review_runs`、后台复盘 API、RunDetail 复盘面板、手动重跑、写回摘要和 revision 聚合已完成 |
+| Improvement candidates 能进入验证、diff、approval、revision、eval 流程 | 进行中 | `improvement_candidates`、`buddy_improvement_review_workflow`、RunDetail 和 `/improvements` 的验证/批准/拒绝/apply 已完成；更广 writer/eval 覆盖待补 |
+| Capability selector 有评分、拒绝理由、失败反馈和预算 | 进行中 | selection trace、score breakdown、usage stats、permission summary、loop budget、recent failure fallback eval 已完成 |
+| Action/Tool/Subgraph 有统一 capability profile | 进行中 | catalog/profile、permission tier、verificationEvalSuites、官方 Tool 全量绑定、首批 Action gate、workspace executor、video segmenter 和 graph template creation 真实 graph run eval 已完成；Buddy 主循环已有 context overflow 后 Tool / Subgraph fallback 和 Action permission-required 组合 eval；更多复杂 Buddy 级组合 eval 待补 |
+| Scheduler 能运行周期性图任务 | 进行中 | scheduler store/API/runner/tick/UI/official seeds/retry/local audit delivery/权限边界/eval 已完成；真实外部投递 adapter 待补 |
+| Subgraph worker 能支持委派和结果合并 | 进行中 | worker task/result/merge/board 协议、Batch/Subgraph eval、可见 batch workflow、RunDetail/胶囊诊断已完成；持久 board 和 claim 语义待补 |
+| Provider runtime 有能力矩阵、fallback、structured output repair | 进行中 | Model Providers 能力矩阵、chat/structured repair/embedding/rerank fallback trace、LLM runtime fallback eval 已完成；timeout/cache/credential/per-node override 待补 |
+| 权限、注入扫描、secret hygiene 和 operation approval 成为通用机制 | 进行中 | context scanner、secret redaction、高风险阻断、artifact/model log 脱敏、operation-level approval、scheduler 权限边界和 RunDetail 审批闭环已完成 |
+| 每个核心能力都有自动测试或 eval | 进行中 | 主要核心能力已有单测、模板测试、官方 eval seed 或 graph run eval；workspace executor 已有真实 Action graph run eval；video segmenter 已有真实 Tool graph run eval；graph template creation 已有真实 workflow graph run eval；完整 Buddy 主循环已覆盖真实 Tool 失败恢复、动态 Subgraph 失败恢复、动态 Action permission-required 暂停、provider 模型失败恢复、context overflow 压缩、context overflow 后 Tool / Subgraph fallback 组合和 context overflow 后 Action permission-required 组合；更多复杂跨能力组合 eval 仍需补 |
 
 ## 7. 明确不做的事
 
@@ -1412,6 +1553,7 @@ TooGraph 可以认为“追上 Hermes Agent 核心能力”的最低标准：
 - 不把 Buddy 自我改进做成隐藏后端策略。
 - 不把完整聊天全文作为每轮 run 的递归事实源。
 - 不让召回内容、摘要或生成记忆变成更高优先级指令。
+- 本轮不开发完整 RAG ingestion、索引构建和知识问答链路；只保留 `knowledge_context_loader`、retrieval/embedding 存储、context package 和官方能力入口，作为未来 RAG 功能承载点。
 
 ## 8. Hermes 源码对照索引
 
@@ -1432,19 +1574,25 @@ TooGraph 可以认为“追上 Hermes Agent 核心能力”的最低标准：
 | 委派与 Kanban | `demo/hermes-agent/tools/delegate_tool.py`、`demo/hermes-agent/hermes_cli/kanban_db.py`、`demo/hermes-agent/tools/kanban_tools.py`、`demo/hermes-agent/hermes_cli/kanban_swarm.py` | Subgraph worker protocol；worker task/result package；并发预算；父图合并 |
 | 压缩与缓存 | `demo/hermes-agent/agent/conversation_compression.py`、`demo/hermes-agent/agent/context_compressor.py`、`demo/hermes-agent/agent/prompt_caching.py` | 压缩图输出 summary refs；run 保存 prompt/context assembly snapshot；稳定上下文只影响下一轮 |
 | 权限与安全 | `demo/hermes-agent/tools/approval.py`、`demo/hermes-agent/tools/path_security.py`、`demo/hermes-agent/tools/tirith_security.py`、`demo/hermes-agent/agent/file_safety.py`、`demo/hermes-agent/agent/redact.py`、`demo/hermes-agent/agent/message_sanitization.py` | operation-level approval；context scanner；secret 脱敏；资产保护；定时任务不绕过权限 |
-| 插件体系 | `demo/hermes-agent/hermes_cli/plugins.py`、`demo/hermes-agent/plugins/` | TooGraph plugin manifest；安装/启用/校验/升级；插件能力进入 selector |
-| 多入口与网关 | `demo/hermes-agent/gateway/run.py`、`demo/hermes-agent/gateway/session.py`、`demo/hermes-agent/gateway/platforms/`、`demo/hermes-agent/tui_gateway/` | `agent_entrypoint` 抽象；平台 session routing；CLI/API/gateway 共用 run store |
+| 多入口与网关 | `demo/hermes-agent/gateway/run.py`、`demo/hermes-agent/gateway/session.py`、`demo/hermes-agent/gateway/platforms/`、`demo/hermes-agent/tui_gateway/` | 非本文档目标；外部分支树负责，后续只做 run store、session refs、权限审计和图运行事实源接口对齐 |
 | 诊断与 TUI | `demo/hermes-agent/hermes_cli/logs.py`、`demo/hermes-agent/hermes_cli/status.py`、`demo/hermes-agent/tui_gateway/server.py`、`demo/hermes-agent/ui-tui/src/` | RunDetail/Buddy 胶囊显示关键诊断，而不是暴露 raw JSON |
 | 测试与回归 | `demo/hermes-agent/tests/` | 为每个核心 Agent 能力建立 eval suite 和包级测试 |
 
 ## 9. 下一步开发建议
 
-最合理的下一份开发计划应从阶段 A 开始：
+阶段 A 的核心事项已经落地，不再作为下一份开发计划的起点：
 
-1. 设计并实现 `agent_loop_control` state。
-2. 新增 `agent_loop_guard` Tool。
-3. 修改 `buddy_autonomous_loop`，把能力执行结果先送入 guard。
-4. RunDetail 增加 stop reason 和 loop budget 展示。
-5. 增加 Buddy main loop eval cases。
+- `agent_loop_control` state 和 `agent_loop_guard` Tool 已实现。
+- 官方 `buddy_autonomous_loop` 已接入 guard。
+- RunDetail / Buddy 胶囊已能从 run record 事实源展示 stop reason、loop budget 和诊断信息。
+- Buddy main loop、LLM runtime fallback、Tool runtime fallback，以及完整 Buddy 主循环真实 Tool 失败恢复、动态 Subgraph 失败恢复、permission-required 暂停、provider 模型失败恢复、context overflow 压缩、context overflow 后 Tool / Subgraph fallback 组合和 context overflow 后 Action permission-required 组合已具备 eval/gate 覆盖。
 
-这组工作能直接提升主循环稳定性，并为后续召回、selector、scheduler、delegation 提供共同诊断基础。
+当前最合理的下一份开发计划应围绕 Buddy 组合失败恢复、Scheduler 外部投递、Provider profile 和横向 Eval 门禁的真实端到端覆盖展开：
+
+1. 扩展完整 Buddy 主循环 eval，覆盖更多复杂跨能力组合 fallback；真实 Tool 失败恢复、动态 Subgraph 失败恢复、permission-required 暂停、provider 模型失败恢复、context overflow 压缩、context overflow 后 Tool / Subgraph fallback 组合与 context overflow 后 Action permission-required 组合路径已经完成。
+2. 扩展 scheduler 外部投递 adapter 的审批后真实执行路径，并把 delivery result 写入可审计 run record。
+3. 继续增强 provider profile：timeout、prompt cache、credential pool、per-node override 和失败恢复边界。
+4. 把 curator 候选自动验证和 graph/template/action diff 应用路径接入更多可重复 eval。
+5. 继续把官方能力包从 seed/manifest gate 升级为真实 graph run eval，优先更复杂的 subgraph worker 组合、artifact 产物和高风险写入类 Action。
+
+这组工作能继续提高 Agent 自治能力的生产可信度：不只证明单个节点或 manifest 正确，而是证明完整图运行能从真实输入、能力调用、失败恢复、artifact 产物和 run record 中被复原和验收。

@@ -1,0 +1,346 @@
+{
+  "template_id": "tool_runtime_fallback_eval",
+  "label": "Tool Runtime Fallback 评测",
+  "description": "运行真实 Tool 节点链路，验证 eval runner 能注入 Tool 运行失败、按图分支进入 fallback Tool，并把两次 Tool invocation 留在运行详情中。",
+  "default_graph_name": "Tool Runtime Fallback 评测",
+  "state_schema": {
+    "requested_model_ref": {
+      "name": "Requested Model Ref",
+      "description": "请求使用的 provider/model ref。",
+      "type": "text",
+      "value": "",
+      "color": "#2563eb",
+      "binding": null
+    },
+    "failure_event": {
+      "name": "Failure Event",
+      "description": "provider 失败事件。",
+      "type": "json",
+      "value": {},
+      "color": "#be123c",
+      "binding": null
+    },
+    "provider_candidates": {
+      "name": "Provider Candidates",
+      "description": "可选 provider/model 候选列表。",
+      "type": "json",
+      "value": [],
+      "color": "#0f766e",
+      "binding": null
+    },
+    "required_capabilities": {
+      "name": "Required Capabilities",
+      "description": "模型调用所需能力。",
+      "type": "json",
+      "value": [],
+      "color": "#7c3aed",
+      "binding": null
+    },
+    "required_permissions": {
+      "name": "Required Permissions",
+      "description": "模型调用所需权限范围。",
+      "type": "json",
+      "value": [],
+      "color": "#b45309",
+      "binding": null
+    },
+    "preserve_permission_scope": {
+      "name": "Preserve Permission Scope",
+      "description": "fallback 权限范围策略。",
+      "type": "boolean",
+      "value": true,
+      "color": "#475569",
+      "binding": null
+    },
+    "agent_loop_control": {
+      "name": "Agent Loop Control",
+      "description": "fallback Tool 的循环控制输入。",
+      "type": "json",
+      "value": {"iteration_index": 1, "max_iterations": 3, "capability_call_count": 1, "max_capability_calls": 3},
+      "color": "#334155",
+      "binding": null
+    },
+    "capability_trace": {
+      "name": "Capability Trace",
+      "description": "fallback Tool 的能力调用 trace 输入。",
+      "type": "json",
+      "value": [],
+      "color": "#64748b",
+      "binding": null
+    },
+    "selected_capability": {
+      "name": "Selected Capability",
+      "description": "fallback Tool 的能力输入。",
+      "type": "capability",
+      "value": {"kind": "tool", "key": "provider_fallback_resolver"},
+      "color": "#4f46e5",
+      "binding": null
+    },
+    "capability_result": {
+      "name": "Capability Result",
+      "description": "fallback Tool 的能力结果输入。",
+      "type": "result_package",
+      "value": {"kind": "result_package", "sourceType": "tool", "sourceKey": "provider_fallback_resolver", "status": "failed", "outputs": {}, "errorType": "eval_tool_timeout"},
+      "color": "#9333ea",
+      "binding": null
+    },
+    "context_budget_report": {
+      "name": "Context Budget Report",
+      "description": "fallback Tool 的上下文预算输入。",
+      "type": "json",
+      "value": {},
+      "color": "#475569",
+      "binding": null
+    },
+    "primary_tool_status": {
+      "name": "Primary Tool Status",
+      "description": "primary Tool 执行状态。",
+      "type": "text",
+      "value": "",
+      "color": "#be123c",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "provider_fallback_resolver",
+        "nodeId": "primary_provider_tool",
+        "fieldKey": "status",
+        "managed": true
+      }
+    },
+    "primary_selected_model_ref": {
+      "name": "Primary Selected Model Ref",
+      "description": "primary Tool 正常执行时选择的模型。",
+      "type": "text",
+      "value": "",
+      "color": "#0891b2",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "provider_fallback_resolver",
+        "nodeId": "primary_provider_tool",
+        "fieldKey": "selected_model_ref",
+        "managed": true
+      }
+    },
+    "primary_provider_fallback_trace": {
+      "name": "Primary Provider Fallback Trace",
+      "description": "primary provider_fallback_resolver 的输出 trace。",
+      "type": "json",
+      "value": {},
+      "color": "#9333ea",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "provider_fallback_resolver",
+        "nodeId": "primary_provider_tool",
+        "fieldKey": "provider_fallback_trace",
+        "managed": true
+      }
+    },
+    "fallback_agent_loop_report": {
+      "name": "Fallback Agent Loop Report",
+      "description": "fallback Tool 生成的结构化报告。",
+      "type": "json",
+      "value": {},
+      "color": "#0f766e",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "fallback_guard_tool",
+        "fieldKey": "agent_loop_report",
+        "managed": true
+      }
+    },
+    "fallback_stop_reason": {
+      "name": "Fallback Stop Reason",
+      "description": "fallback Tool 的 stop reason。",
+      "type": "text",
+      "value": "",
+      "color": "#475569",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "fallback_guard_tool",
+        "fieldKey": "agent_loop_stop_reason",
+        "managed": true
+      }
+    },
+    "fallback_reason": {
+      "name": "Fallback Reason",
+      "description": "fallback Tool 的原因说明。",
+      "type": "text",
+      "value": "",
+      "color": "#0f766e",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "agent_loop_guard",
+        "nodeId": "fallback_guard_tool",
+        "fieldKey": "reason",
+        "managed": true
+      }
+    }
+  },
+  "nodes": {
+    "input_requested_model_ref": {
+      "kind": "input",
+      "name": "请求模型",
+      "description": "提供 requested_model_ref。",
+      "ui": {"position": {"x": 80, "y": 120}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "requested_model_ref", "mode": "replace"}],
+      "config": {"value": "", "boundaryType": "text"}
+    },
+    "input_failure_event": {
+      "kind": "input",
+      "name": "失败事件",
+      "description": "提供 provider failure event。",
+      "ui": {"position": {"x": 80, "y": 340}, "collapsed": false, "size": {"width": 380, "height": 220}},
+      "reads": [],
+      "writes": [{"state": "failure_event", "mode": "replace"}],
+      "config": {"value": {}, "boundaryType": "text"}
+    },
+    "input_provider_candidates": {
+      "kind": "input",
+      "name": "候选模型",
+      "description": "提供 provider fallback candidates。",
+      "ui": {"position": {"x": 80, "y": 600}, "collapsed": false, "size": {"width": 380, "height": 240}},
+      "reads": [],
+      "writes": [{"state": "provider_candidates", "mode": "replace"}],
+      "config": {"value": [], "boundaryType": "text"}
+    },
+    "input_required_capabilities": {
+      "kind": "input",
+      "name": "能力要求",
+      "description": "提供模型调用所需能力。",
+      "ui": {"position": {"x": 80, "y": 880}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "required_capabilities", "mode": "replace"}],
+      "config": {"value": [], "boundaryType": "text"}
+    },
+    "input_required_permissions": {
+      "kind": "input",
+      "name": "权限范围",
+      "description": "提供模型调用所需权限。",
+      "ui": {"position": {"x": 80, "y": 1100}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "required_permissions", "mode": "replace"}],
+      "config": {"value": [], "boundaryType": "text"}
+    },
+    "input_preserve_permission_scope": {
+      "kind": "input",
+      "name": "权限策略",
+      "description": "提供 fallback 权限范围策略。",
+      "ui": {"position": {"x": 80, "y": 1320}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "preserve_permission_scope", "mode": "replace"}],
+      "config": {"value": true, "boundaryType": "text"}
+    },
+    "primary_provider_tool": {
+      "kind": "tool",
+      "name": "Primary Provider Tool",
+      "description": "调用 primary provider_fallback_resolver。",
+      "ui": {"position": {"x": 620, "y": 520}, "collapsed": false, "size": {"width": 500, "height": 420}},
+      "reads": [
+        {"state": "requested_model_ref", "required": true, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "provider_fallback_resolver", "fieldKey": "requested_model_ref", "managed": true}},
+        {"state": "failure_event", "required": true, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "provider_fallback_resolver", "fieldKey": "failure_event", "managed": true}},
+        {"state": "provider_candidates", "required": true, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "provider_fallback_resolver", "fieldKey": "provider_candidates", "managed": true}},
+        {"state": "required_capabilities", "required": false, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "provider_fallback_resolver", "fieldKey": "required_capabilities", "managed": true}},
+        {"state": "required_permissions", "required": false, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "provider_fallback_resolver", "fieldKey": "required_permissions", "managed": true}},
+        {"state": "preserve_permission_scope", "required": false, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "provider_fallback_resolver", "fieldKey": "preserve_permission_scope", "managed": true}}
+      ],
+      "writes": [
+        {"state": "primary_tool_status", "mode": "replace"},
+        {"state": "primary_selected_model_ref", "mode": "replace"},
+        {"state": "primary_provider_fallback_trace", "mode": "replace"}
+      ],
+      "config": {"toolKey": "provider_fallback_resolver"}
+    },
+    "route_primary_failure": {
+      "kind": "condition",
+      "name": "Primary 是否失败",
+      "description": "根据 primary Tool status 进入 fallback Tool 或直接输出 primary trace。",
+      "ui": {"position": {"x": 1260, "y": 560}, "collapsed": false, "size": {"width": 420, "height": 260}},
+      "reads": [{"state": "primary_tool_status", "required": true, "binding": null}],
+      "writes": [],
+      "config": {
+        "branches": ["true", "false", "exhausted"],
+        "loopLimit": 1,
+        "branchMapping": {"true": "true", "false": "false"},
+        "rule": {"source": "$state.primary_tool_status", "operator": "==", "value": "failed"}
+      }
+    },
+    "fallback_guard_tool": {
+      "kind": "tool",
+      "name": "Fallback Guard Tool",
+      "description": "调用 fallback agent_loop_guard，产出可审计 fallback 报告。",
+      "ui": {"position": {"x": 1840, "y": 320}, "collapsed": false, "size": {"width": 500, "height": 360}},
+      "reads": [
+        {"state": "agent_loop_control", "required": true, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "agent_loop_guard", "fieldKey": "agent_loop_control", "managed": true}},
+        {"state": "capability_trace", "required": false, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "agent_loop_guard", "fieldKey": "capability_trace", "managed": true}},
+        {"state": "selected_capability", "required": true, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "agent_loop_guard", "fieldKey": "selected_capability", "managed": true}},
+        {"state": "capability_result", "required": true, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "agent_loop_guard", "fieldKey": "capability_result", "managed": true}},
+        {"state": "context_budget_report", "required": false, "binding": {"kind": "tool_input", "actionKey": "", "toolKey": "agent_loop_guard", "fieldKey": "context_budget_report", "managed": true}}
+      ],
+      "writes": [
+        {"state": "fallback_agent_loop_report", "mode": "replace"},
+        {"state": "fallback_stop_reason", "mode": "replace"},
+        {"state": "fallback_reason", "mode": "replace"}
+      ],
+      "config": {"toolKey": "agent_loop_guard"}
+    },
+    "output_fallback_report": {
+      "kind": "output",
+      "name": "Fallback Report",
+      "description": "展示 fallback Tool 报告。",
+      "ui": {"position": {"x": 2480, "y": 320}, "collapsed": false, "size": {"width": 460, "height": 260}},
+      "reads": [{"state": "fallback_agent_loop_report", "required": true, "binding": null}],
+      "writes": [],
+      "config": {"displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": ""}
+    },
+    "output_primary_trace": {
+      "kind": "output",
+      "name": "Primary Trace",
+      "description": "展示 primary Tool 正常输出。",
+      "ui": {"position": {"x": 1840, "y": 820}, "collapsed": false, "size": {"width": 460, "height": 260}},
+      "reads": [{"state": "primary_provider_fallback_trace", "required": true, "binding": null}],
+      "writes": [],
+      "config": {"displayMode": "json", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": ""}
+    }
+  },
+  "edges": [
+    {"source": "input_requested_model_ref", "target": "primary_provider_tool"},
+    {"source": "input_failure_event", "target": "primary_provider_tool"},
+    {"source": "input_provider_candidates", "target": "primary_provider_tool"},
+    {"source": "input_required_capabilities", "target": "primary_provider_tool"},
+    {"source": "input_required_permissions", "target": "primary_provider_tool"},
+    {"source": "input_preserve_permission_scope", "target": "primary_provider_tool"},
+    {"source": "primary_provider_tool", "target": "route_primary_failure"},
+    {"source": "fallback_guard_tool", "target": "output_fallback_report"}
+  ],
+  "conditional_edges": [
+    {
+      "source": "route_primary_failure",
+      "branches": {
+        "true": "fallback_guard_tool",
+        "false": "output_primary_trace",
+        "exhausted": "fallback_guard_tool"
+      }
+    }
+  ],
+  "metadata": {
+    "category": "tool_runtime",
+    "role": "tool_runtime_fallback_eval",
+    "visible": false,
+    "capabilityDiscoverableDefault": false,
+    "tags": ["tool", "fallback", "eval"],
+    "required_tools": ["provider_fallback_resolver", "agent_loop_guard"],
+    "output_contract": [
+      {"state": "fallback_agent_loop_report", "role": "quality_report"}
+    ]
+  },
+  "source": "official",
+  "status": "active"
+}

@@ -243,6 +243,53 @@ class BuddyContextPressureToolTests(unittest.TestCase):
         self.assertEqual(result["reason"], "history_pressure")
         self.assertGreaterEqual(result["context_budget_report"]["rendered_history_chars"], 6000)
 
+    def test_pressure_check_triggers_on_context_package_source_chars_when_rendered_history_is_cropped(self) -> None:
+        module = _load_pressure_tool_module()
+
+        result = module.buddy_context_pressure_check(
+            {
+                "trigger": "preflight",
+                "conversation_history": {
+                    "kind": "context_package",
+                    "source_kind": "session",
+                    "authority": "history",
+                    "items": [],
+                    "source_refs": [
+                        {"source_kind": "buddy_message", "source_id": "msg_overflow_1", "role": "user", "ordinal": 0}
+                    ],
+                    "context_ref": {
+                        "kind": "context_assembly_ref",
+                        "source_refs": [
+                            {
+                                "source_kind": "buddy_message",
+                                "source_id": "msg_overflow_1",
+                                "role": "user",
+                                "ordinal": 0,
+                            }
+                        ],
+                    },
+                    "budget": {
+                        "max_chars": 4000,
+                        "source_chars": 18000,
+                        "used_chars": 4000,
+                        "omitted_count": 9,
+                    },
+                    "warnings": [],
+                },
+                "user_message": "继续",
+                "existing_session_summary": "",
+                "capability_result": {},
+                "public_response": "",
+            }
+        )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertTrue(result["needs_context_compaction"])
+        self.assertEqual(result["reason"], "history_pressure")
+        self.assertEqual(result["context_budget_report"]["history_source_chars"], 18000)
+        self.assertEqual(result["context_budget_report"]["history_omitted_count"], 9)
+        self.assertIn("history", result["context_budget_report"]["pressure_sources"])
+
     def test_pressure_check_does_not_repeat_raw_history_compaction_after_summary_exists(self) -> None:
         module = _load_pressure_tool_module()
 

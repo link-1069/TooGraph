@@ -54,6 +54,30 @@
       },
       "checks": [
         {
+          "kind": "graph_run",
+          "name": "delegation_worker_batch_runs_parent_template",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "delegation_worker_batch_eval_core",
+              "case_id": "delegation-worker-batch-merges-subgraph-results",
+              "target_template_id": "delegation_worker_batch_eval"
+            }
+          },
+          "required_state_keys": [
+            "worker_task_packets",
+            "worker_result_packages",
+            "worker_merge_review_package"
+          ],
+          "required_node_ids": [
+            "run_worker_batch",
+            "merge_worker_results",
+            "output_worker_merge_review"
+          ],
+          "min_node_executions": 3
+        },
+        {
           "kind": "worker_merge_review",
           "name": "delegation_worker_batch_merge_contract",
           "target": "worker_merge_review_package",

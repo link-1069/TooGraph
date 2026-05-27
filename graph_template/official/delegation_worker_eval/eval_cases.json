@@ -50,6 +50,29 @@
       },
       "checks": [
         {
+          "kind": "graph_run",
+          "name": "delegation_worker_runs_template",
+          "target": "graph_run",
+          "required_status": "completed",
+          "required_metadata": {
+            "eval": {
+              "suite_id": "delegation_worker_eval_core",
+              "case_id": "delegation-worker-packages-task-result",
+              "target_template_id": "delegation_worker_eval"
+            }
+          },
+          "required_state_keys": [
+            "worker_task_packet",
+            "worker_outputs",
+            "worker_result_package"
+          ],
+          "required_node_ids": [
+            "package_worker_result",
+            "output_worker_result_package"
+          ],
+          "min_node_executions": 2
+        },
+        {
           "kind": "delegation_worker",
           "name": "delegation_worker_result_contract",
           "target": "worker_result_package",

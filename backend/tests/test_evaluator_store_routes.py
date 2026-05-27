@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -15,8 +16,9 @@ from app.core.storage import database
 from app.core.storage.memory_store import load_memory_entry
 from app.core.storage.run_store import load_run
 from app.evaluator.checks import evaluate_case_checks
+from app.evaluator.official_seed import seed_official_eval_suites
 from app.evaluator.llm_judge import run_llm_judge
-from app.evaluator import store
+from app.evaluator import runner, store
 from app.buddy import store as buddy_store
 from app.main import app
 
@@ -85,10 +87,158 @@ def _eval_template_record() -> dict[str, object]:
     }
 
 
+def _generated_policy_template_payload(template_id: str = "eval_policy_checklist_template") -> dict[str, object]:
+    return {
+        "template_id": template_id,
+        "label": "政策清单生成模板",
+        "description": "把政策原文整理成资格初判、材料清单和办理步骤。",
+        "default_graph_name": "政策清单生成",
+        "state_schema": {
+            "policy_text": {
+                "name": "政策原文",
+                "description": "需要整理的政策文本。",
+                "type": "text",
+                "value": "",
+                "color": "#2563eb",
+            },
+            "application_checklist": {
+                "name": "办理清单",
+                "description": "资格初判、材料清单和办理步骤。",
+                "type": "markdown",
+                "value": "",
+                "color": "#16a34a",
+            },
+        },
+        "nodes": {
+            "input_policy_text": {
+                "kind": "input",
+                "name": "输入政策原文",
+                "description": "提供政策原文。",
+                "ui": {"position": {"x": 80, "y": 120}, "collapsed": False, "size": {"width": 360, "height": 180}},
+                "reads": [],
+                "writes": [{"state": "policy_text", "mode": "replace"}],
+                "config": {"value": "", "boundaryType": "text"},
+            },
+            "draft_application_checklist": {
+                "kind": "agent",
+                "name": "整理办理清单",
+                "description": "把政策原文整理成结构化办理清单。",
+                "ui": {"position": {"x": 560, "y": 100}, "collapsed": False, "size": {"width": 440, "height": 240}},
+                "reads": [{"state": "policy_text", "required": True}],
+                "writes": [{"state": "application_checklist", "mode": "replace"}],
+                "config": {
+                    "actionKey": "",
+                    "actionBindings": [],
+                    "suspendedFreeWrites": [],
+                    "actionInstructionBlocks": {},
+                    "taskInstruction": "读取政策原文，输出资格初判、材料清单和办理步骤。",
+                    "modelSource": "global",
+                    "model": "",
+                    "thinkingMode": "medium",
+                    "temperature": 0.2,
+                },
+            },
+            "output_application_checklist": {
+                "kind": "output",
+                "name": "输出办理清单",
+                "description": "展示整理后的办理清单。",
+                "ui": {"position": {"x": 1120, "y": 120}, "collapsed": False, "size": {"width": 420, "height": 220}},
+                "reads": [{"state": "application_checklist", "required": True}],
+                "writes": [],
+                "config": {"displayMode": "markdown", "persistEnabled": False, "persistFormat": "auto", "fileNameTemplate": ""},
+            },
+        },
+        "edges": [
+            {"source": "input_policy_text", "target": "draft_application_checklist"},
+            {"source": "draft_application_checklist", "target": "output_application_checklist"},
+        ],
+        "conditional_edges": [],
+        "metadata": {
+            "category": "policy",
+            "role": "generated_policy_checklist",
+            "capabilityDiscoverableDefault": True,
+            "tags": ["policy", "checklist"],
+        },
+        "source": "user",
+        "status": "active",
+    }
+
+
+def _graph_template_creation_model_fixture(template_payload: dict[str, object]) -> dict[str, object]:
+    response_payload = {
+        "toograph_graph_template_reader": {
+            "template_id": "advanced_web_research_loop",
+            "source_scope": "official",
+        },
+        "requirement_review": {
+            "needs_clarification": False,
+            "should_create_template": True,
+            "summary": "需求明确，可以创建政策办理清单图模板。",
+        },
+        "generation_brief": "创建一个输入政策文本、生成办理清单并输出 markdown 的 node_system 图模板。",
+        "graph_diff_draft": {
+            "operation": "create",
+            "template_id": template_payload["template_id"],
+            "states": ["policy_text", "application_checklist"],
+        },
+        "template_preview": "模板包含输入政策原文、整理办理清单、输出办理清单三个节点。",
+        "test_run_decision": {
+            "should_run": False,
+            "reason": "eval 只验证生成、校验和受控写入，不执行新模板试运行。",
+        },
+        "generated_template_id": template_payload["template_id"],
+        "generated_template_json": template_payload,
+        "template_test_goal": "把政策原文整理成办理清单。",
+        "toograph_graph_template_validator": {"template_json": template_payload},
+        "save_review": {
+            "approved": True,
+            "reason": "模板已通过校验，可以写入隔离的用户模板目录。",
+        },
+        "toograph_graph_template_writer": {
+            "template_json": template_payload,
+            "reason": "Eval graph template creation workflow.",
+        },
+        "final_summary": "图模板已生成、校验，并写入用户模板目录。",
+    }
+    return {
+        "model_providers": {
+            "eval-primary": {
+                "enabled": True,
+                "transport": "openai-compatible",
+                "base_url": "http://127.0.0.1:9999/v1",
+                "models": [
+                    {
+                        "model": "gpt-primary",
+                        "capabilities": {"chat": True, "structured_output": True},
+                        "permissions": ["text_generation"],
+                    }
+                ],
+            }
+        },
+        "responses": {
+            "eval-primary/gpt-primary": {
+                "content": json.dumps(response_payload, ensure_ascii=False),
+                "meta": {"response_id": "graph-template-creation-fixture"},
+            }
+        },
+    }
+
+
 def _completed_eval_graph_run() -> dict[str, object]:
     return {
         "run_id": "run_completed",
+        "graph_id": "eval_buddy_autonomous_loop_case",
+        "graph_name": "Buddy 自主主循环 / Eval case",
+        "template_id": "buddy_autonomous_loop",
         "status": "completed",
+        "runtime_backend": "langgraph",
+        "metadata": {
+            "eval": {
+                "suite_id": "buddy_autonomous_loop_core",
+                "case_id": "buddy-main-loop-selector-fallback-after-recent-failures",
+                "target_template_id": "buddy_autonomous_loop",
+            }
+        },
         "final_result": "结论引用 [1]。",
         "errors": [],
         "output_previews": [
@@ -129,9 +279,39 @@ def _completed_eval_graph_run() -> dict[str, object]:
                     },
                 }
             ],
-            "state_values": {"public_response": "结论引用 [1]。", "citations": ["kb:1"]},
+            "state_values": {
+                "public_response": "结论引用 [1]。",
+                "citations": ["kb:1"],
+                "capability_selection_trace": {
+                    "selected": {"kind": "action", "key": "web_search"},
+                    "rejected_candidates": [
+                        {
+                            "kind": "subgraph",
+                            "key": "advanced_web_research_loop",
+                            "reason": "recent_failures_fallback_preferred",
+                        }
+                    ],
+                },
+            },
         },
-        "node_executions": [],
+        "graph_snapshot": {
+            "nodes": {
+                "load_history_context": {"kind": "tool"},
+                "reply_and_select_capability": {"kind": "agent"},
+                "output_ab549b8d": {"kind": "output"},
+            }
+        },
+        "node_status_map": {
+            "load_history_context": "completed",
+            "reply_and_select_capability": "completed",
+            "output_ab549b8d": "completed",
+        },
+        "node_executions": [
+            {"node_id": "load_history_context", "node_type": "tool", "status": "completed"},
+            {"node_id": "reply_and_select_capability", "node_type": "agent", "status": "completed"},
+            {"node_id": "output_ab549b8d", "node_type": "output", "status": "completed"},
+        ],
+        "activity_events": [{"kind": "tool_call", "node_id": "load_history_context"}],
     }
 
 
@@ -207,6 +387,495 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(saved_runs[0]["metadata"]["eval"]["case_id"], "case_one")
         self.assertEqual(saved_runs[0]["metadata"]["eval"]["target_template_id"], "mock_template")
         self.assertEqual(saved_runs[0]["graph_snapshot"]["state_schema"]["prompt"]["value"], "输入材料")
+
+    def test_eval_runner_attaches_model_runtime_fixture_to_graph_metadata(self) -> None:
+        model_runtime_fixture = {
+            "model_providers": {
+                "eval-primary": {"models": [{"model": "gpt-primary"}]},
+                "eval-fallback": {"models": [{"model": "gpt-fallback"}]},
+            },
+            "failures": {"eval-primary/gpt-primary": {"message": "timeout"}},
+            "responses": {"eval-fallback/gpt-fallback": {"content": '{"answer":"fallback"}'}},
+        }
+
+        with patch("app.evaluator.runner.load_template_record", return_value=_eval_template_record()):
+            graph = runner.build_eval_case_graph_document(
+                {
+                    "eval_run_id": "evalrun_model_runtime",
+                    "suite_id": "model_runtime_suite",
+                    "target_template_id": "mock_template",
+                },
+                {
+                    "result_id": "result_model_runtime",
+                    "suite_id": "model_runtime_suite",
+                    "case_id": "case_one",
+                },
+                {
+                    "case_id": "case_one",
+                    "metadata": {"fixture_model_runtime": model_runtime_fixture},
+                },
+            )
+
+        self.assertEqual(graph.metadata["eval"]["model_runtime_fixture"], model_runtime_fixture)
+
+    def test_eval_runner_attaches_tool_runtime_fixture_to_graph_metadata(self) -> None:
+        tool_runtime_fixture = {
+            "failures": {
+                "primary_tool": {
+                    "tool_key": "provider_fallback_resolver",
+                    "error_type": "eval_tool_timeout",
+                    "message": "primary tool failed",
+                }
+            },
+            "responses": {
+                "fallback_tool": {
+                    "tool_key": "agent_loop_guard",
+                    "outputs": {"status": "succeeded", "result": {"fallback": True}},
+                }
+            },
+        }
+
+        with patch("app.evaluator.runner.load_template_record", return_value=_eval_template_record()):
+            graph = runner.build_eval_case_graph_document(
+                {
+                    "eval_run_id": "evalrun_tool_runtime",
+                    "suite_id": "tool_runtime_suite",
+                    "target_template_id": "mock_template",
+                },
+                {
+                    "result_id": "result_tool_runtime",
+                    "suite_id": "tool_runtime_suite",
+                    "case_id": "case_one",
+                },
+                {
+                    "case_id": "case_one",
+                    "metadata": {"fixture_tool_runtime": tool_runtime_fixture},
+                },
+            )
+
+        self.assertEqual(graph.metadata["eval"]["tool_runtime_fixture"], tool_runtime_fixture)
+
+    def test_eval_runner_attaches_isolated_graph_template_workspace_context(self) -> None:
+        with isolated_eval_database():
+            with patch("app.evaluator.runner.load_template_record", return_value=_eval_template_record()):
+                graph = runner.build_eval_case_graph_document(
+                    {
+                        "eval_run_id": "evalrun_graph_template_workspace",
+                        "suite_id": "graph_template_workspace_suite",
+                        "target_template_id": "mock_template",
+                    },
+                    {
+                        "result_id": "result_graph_template_workspace",
+                        "suite_id": "graph_template_workspace_suite",
+                        "case_id": "case_one",
+                    },
+                    {
+                        "case_id": "case_one",
+                        "metadata": {"fixture_graph_template_workspace": True},
+                    },
+                )
+
+            action_context = graph.metadata["action_runtime_context"]["graph_template_writer"]
+            user_templates_root = Path(action_context["user_templates_root"])
+            revision_root = Path(action_context["template_revision_root"])
+
+            self.assertTrue(user_templates_root.is_dir())
+            self.assertTrue(revision_root.is_dir())
+            self.assertTrue(str(user_templates_root).startswith(str(database.DATA_DIR)))
+            self.assertTrue(str(revision_root).startswith(str(database.DATA_DIR)))
+
+    def test_eval_runner_can_override_agent_models_for_runtime_fixture_cases(self) -> None:
+        template = _eval_template_record()
+        template["state_schema"] = {
+            **template["state_schema"],
+            "answer": {"name": "Answer", "description": "", "type": "text", "value": "", "color": "#16a34a"},
+        }
+        template["nodes"] = {
+            **template["nodes"],
+            "answer_prompt": {
+                "kind": "agent",
+                "name": "Answer Prompt",
+                "description": "",
+                "ui": {"position": {"x": 300, "y": 0}},
+                "reads": [{"state": "prompt", "required": True}],
+                "writes": [{"state": "answer", "mode": "replace"}],
+                "config": {
+                    "modelSource": "global",
+                    "model": "",
+                    "thinkingMode": "low",
+                    "temperature": 0,
+                    "taskInstruction": "Answer.",
+                },
+            },
+            "embedded_answer": {
+                "kind": "subgraph",
+                "name": "Embedded Answer",
+                "description": "",
+                "ui": {"position": {"x": 520, "y": 0}},
+                "reads": [],
+                "writes": [],
+                "config": {
+                    "graph": {
+                        "state_schema": {
+                            "inner_prompt": {
+                                "name": "Inner Prompt",
+                                "description": "",
+                                "type": "text",
+                                "value": "",
+                                "color": "#2563eb",
+                            },
+                            "inner_answer": {
+                                "name": "Inner Answer",
+                                "description": "",
+                                "type": "text",
+                                "value": "",
+                                "color": "#16a34a",
+                            },
+                        },
+                        "nodes": {
+                            "inner_answer_prompt": {
+                                "kind": "agent",
+                                "name": "Inner Answer Prompt",
+                                "description": "",
+                                "ui": {"position": {"x": 0, "y": 0}},
+                                "reads": [{"state": "inner_prompt", "required": False}],
+                                "writes": [{"state": "inner_answer", "mode": "replace"}],
+                                "config": {
+                                    "modelSource": "global",
+                                    "model": "",
+                                    "thinkingMode": "low",
+                                    "temperature": 0,
+                                    "taskInstruction": "Answer inside subgraph.",
+                                },
+                            }
+                        },
+                        "edges": [],
+                        "conditional_edges": [],
+                        "metadata": {},
+                    }
+                },
+            },
+        }
+        template["edges"] = [{"source": "input_prompt", "target": "answer_prompt"}]
+
+        with patch("app.evaluator.runner.load_template_record", return_value=template):
+            graph = runner.build_eval_case_graph_document(
+                {
+                    "eval_run_id": "evalrun_agent_model_ref",
+                    "suite_id": "agent_model_ref_suite",
+                    "target_template_id": "mock_template",
+                },
+                {
+                    "result_id": "result_agent_model_ref",
+                    "suite_id": "agent_model_ref_suite",
+                    "case_id": "case_one",
+                },
+                {
+                    "case_id": "case_one",
+                    "metadata": {"fixture_agent_model_ref": "eval-primary/gpt-primary"},
+                },
+            )
+
+        node_config = graph.model_dump(by_alias=True, mode="json")["nodes"]["answer_prompt"]["config"]
+        self.assertEqual(node_config["modelSource"], "override")
+        self.assertEqual(node_config["model"], "eval-primary/gpt-primary")
+        inner_config = graph.model_dump(by_alias=True, mode="json")["nodes"]["embedded_answer"]["config"]["graph"]["nodes"][
+            "inner_answer_prompt"
+        ]["config"]
+        self.assertEqual(inner_config["modelSource"], "override")
+        self.assertEqual(inner_config["model"], "eval-primary/gpt-primary")
+
+    def test_eval_route_runs_llm_runtime_fallback_case_with_model_fixture(self) -> None:
+        fixture = {
+            "model_providers": {
+                "eval-primary": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "http://127.0.0.1:9999/v1",
+                    "models": [
+                        {
+                            "model": "gpt-primary",
+                            "capabilities": {"chat": True, "structured_output": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
+                },
+                "eval-fallback": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "http://127.0.0.1:9998/v1",
+                    "models": [
+                        {
+                            "model": "gpt-fallback",
+                            "capabilities": {"chat": True, "structured_output": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
+                },
+            },
+            "failures": {
+                "eval-primary/gpt-primary": {
+                    "error_type": "provider_timeout",
+                    "message": "eval injected timeout",
+                }
+            },
+            "responses": {
+                "eval-fallback/gpt-fallback": {
+                    "content": "{\"public_response\":\"fallback runtime response\"}",
+                    "meta": {"response_id": "fixture-response-route"},
+                }
+            },
+        }
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "llm_runtime_fallback_route",
+                        "name": "LLM runtime fallback route",
+                        "target_template_id": "llm_runtime_fallback_eval",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/llm_runtime_fallback_route/cases",
+                    json={
+                        "case_id": "case_one",
+                        "input_values": {"prompt": "Check fallback"},
+                        "metadata": {"fixture_model_runtime": fixture},
+                        "checks": [
+                            {"kind": "schema", "target": "final_output", "required": ["public_response"]},
+                            {
+                                "kind": "provider_fallback",
+                                "target": "provider_fallback_trace",
+                                "required_requested": {"provider_id": "eval-primary", "model": "gpt-primary"},
+                                "required_selected": {"provider_id": "eval-fallback", "model": "gpt-fallback"},
+                                "required_failed": {
+                                    "provider_id": "eval-primary",
+                                    "error_type": "provider_timeout",
+                                },
+                                "required_capabilities": ["chat", "structured_output"],
+                                "required_permissions": ["text_generation"],
+                                "min_fallbacks": 1,
+                            },
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "llm_runtime_fallback_route"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertEqual(graph_run["state_values"]["public_response"], "fallback runtime response")
+        runtime_configs = [
+            execution.get("artifacts", {}).get("runtime_config", {})
+            for execution in graph_run.get("node_executions", [])
+            if isinstance(execution, dict)
+        ]
+        self.assertTrue(any(config.get("provider_fallback_used") for config in runtime_configs))
+        self.assertFalse(any("model_runtime_fixture" in config for config in runtime_configs))
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(
+            collected["final_output"]["provider_fallback_trace"]["selected"]["model_ref"],
+            "eval-fallback/gpt-fallback",
+        )
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed"])
+
+    def test_eval_route_runs_tool_runtime_fallback_case_with_tool_fixture(self) -> None:
+        fixture = {
+            "failures": {
+                "primary_provider_tool": {
+                    "tool_key": "provider_fallback_resolver",
+                    "error_type": "eval_tool_timeout",
+                    "message": "eval injected timeout",
+                    "outputs": {
+                        "status": "failed",
+                        "selected_model_ref": "",
+                        "provider_fallback_trace": {"decision": "tool_failed"},
+                    },
+                }
+            },
+            "responses": {
+                "fallback_guard_tool": {
+                    "tool_key": "agent_loop_guard",
+                    "outputs": {
+                        "status": "succeeded",
+                        "agent_loop_report": {
+                            "decision": "fallback_tool_succeeded",
+                            "primary_tool_error_type": "eval_tool_timeout",
+                        },
+                        "agent_loop_stop_reason": "",
+                        "agent_loop_should_continue": False,
+                        "agent_loop_should_retry": False,
+                        "reason": "fallback tool completed",
+                    },
+                }
+            },
+        }
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "tool_runtime_fallback_route",
+                        "name": "Tool runtime fallback route",
+                        "target_template_id": "tool_runtime_fallback_eval",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/tool_runtime_fallback_route/cases",
+                    json={
+                        "case_id": "case_one",
+                        "input_values": {
+                            "requested_model_ref": "openai/gpt-primary",
+                            "failure_event": {
+                                "model_ref": "openai/gpt-primary",
+                                "provider_id": "openai",
+                                "error_type": "provider_timeout",
+                            },
+                            "provider_candidates": [],
+                            "required_capabilities": ["chat"],
+                            "required_permissions": ["text_generation"],
+                            "preserve_permission_scope": True,
+                        },
+                        "metadata": {"fixture_tool_runtime": fixture},
+                        "checks": [
+                            {"kind": "schema", "target": "final_output", "required": ["fallback_agent_loop_report"]},
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_tool_invocations": [
+                                    {
+                                        "node_id": "primary_provider_tool",
+                                        "tool_key": "provider_fallback_resolver",
+                                        "status": "failed",
+                                        "error_type": "eval_tool_timeout",
+                                    },
+                                    {
+                                        "node_id": "fallback_guard_tool",
+                                        "tool_key": "agent_loop_guard",
+                                        "status": "succeeded",
+                                    },
+                                ],
+                                "min_tool_invocations": 2,
+                            },
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "tool_runtime_fallback_route"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertEqual(graph_run["state_values"]["primary_tool_status"], "failed")
+        tool_outputs = {
+            output["node_id"]: output
+            for output in graph_run.get("tool_outputs", [])
+            if isinstance(output, dict)
+        }
+        self.assertEqual(tool_outputs["primary_provider_tool"]["error_type"], "eval_tool_timeout")
+        self.assertEqual(tool_outputs["fallback_guard_tool"]["status"], "succeeded")
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(
+            collected["final_output"]["fallback_agent_loop_report"]["decision"],
+            "fallback_tool_succeeded",
+        )
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_live_tool_failure_fallback_case(self) -> None:
+        case_id = "buddy-main-loop-recovers-from-live-tool-failure-with-fallback"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertIn("fallback 工具", graph_run["state_values"]["public_response"])
+        tool_outputs = [
+            output
+            for output in graph_run.get("tool_outputs", [])
+            if isinstance(output, dict) and output.get("node_id") == "execute_capability"
+        ]
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "provider_fallback_resolver"
+                and output.get("status") == "failed"
+                and output.get("error_type") == "eval_tool_timeout"
+                for output in tool_outputs
+            )
+        )
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "runtime_context_loader"
+                and output.get("status") == "succeeded"
+                for output in tool_outputs
+            )
+        )
+        capability_trace = graph_run["state_values"]["capability_trace"]
+        self.assertIn("primary_failed", json.dumps(capability_trace, ensure_ascii=False))
+        self.assertIn("fallback_succeeded", json.dumps(capability_trace, ensure_ascii=False))
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_provider_model_fallback_case(self) -> None:
+        case_id = "buddy-main-loop-recovers-from-provider-model-fallback"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertIn("fallback provider", graph_run["state_values"]["public_response"])
+        runtime_configs = [
+            execution.get("artifacts", {}).get("runtime_config", {})
+            for execution in graph_run.get("node_executions", [])
+            if isinstance(execution, dict)
+        ]
+        fallback_traces = [
+            config.get("action_input_provider_fallback_trace") or config.get("provider_fallback_trace")
+            for config in runtime_configs
+            if isinstance(config, dict)
+            if config.get("action_input_provider_fallback_trace") or config.get("provider_fallback_trace")
+        ]
+        self.assertTrue(any(trace.get("selected", {}).get("model_ref") == "eval-fallback/gpt-fallback" for trace in fallback_traces))
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(
+            collected["final_output"]["provider_fallback_trace"]["selected"]["model_ref"],
+            "eval-fallback/gpt-fallback",
+        )
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed", "passed"])
 
     def test_eval_route_installs_case_fixture_source_runs_before_starting_graph(self) -> None:
         with isolated_eval_database():
@@ -628,6 +1297,906 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(collected["artifacts"]["final.md"]["path"], "backend/data/outputs/run_completed/final.md")
         self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed"])
 
+    def test_eval_route_collects_graph_run_artifact_and_evaluates_graph_run_check(self) -> None:
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.load_run", return_value=_completed_eval_graph_run()),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "collect_graph_run_eval",
+                        "name": "Collect graph run eval",
+                        "target_template_id": "buddy_autonomous_loop",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/collect_graph_run_eval/cases",
+                    json={
+                        "case_id": "case_one",
+                        "checks": [
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_template_id": "buddy_autonomous_loop",
+                                "required_metadata": {
+                                    "eval": {
+                                        "suite_id": "buddy_autonomous_loop_core",
+                                        "case_id": "buddy-main-loop-selector-fallback-after-recent-failures",
+                                    }
+                                },
+                                "required_state_keys": ["public_response", "capability_selection_trace"],
+                                "required_node_ids": ["load_history_context", "reply_and_select_capability"],
+                                "required_activity_kinds": ["tool_call"],
+                                "min_node_executions": 2,
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "collect_graph_run_eval"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_completed", "status": "running"},
+                )
+
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(collected["artifacts"]["graph_run"]["run_id"], "run_completed")
+        self.assertEqual(collected["artifacts"]["graph_run"]["template_id"], "buddy_autonomous_loop")
+        self.assertIn("capability_selection_trace", collected["artifacts"]["graph_run"]["state_keys"])
+        self.assertEqual(collected["check_results"][0]["status"], "passed")
+        self.assertEqual(collected["check_results"][0]["actual"]["missing_state_keys"], [])
+
+    def test_eval_route_collects_tool_invocations_for_graph_run_checks(self) -> None:
+        graph_run = _completed_eval_graph_run()
+        graph_run["tool_outputs"] = [
+            {
+                "node_id": "primary_tool",
+                "tool_key": "provider_fallback_resolver",
+                "status": "failed",
+                "error": "eval injected timeout",
+                "error_type": "eval_tool_timeout",
+                "duration_ms": 3,
+            },
+            {
+                "node_id": "fallback_tool",
+                "tool_key": "agent_loop_guard",
+                "status": "succeeded",
+                "error": "",
+                "error_type": "",
+                "duration_ms": 2,
+            },
+        ]
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.load_run", return_value=graph_run),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "collect_tool_invocation_eval",
+                        "name": "Collect tool invocation eval",
+                        "target_template_id": "buddy_autonomous_loop",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/collect_tool_invocation_eval/cases",
+                    json={
+                        "case_id": "case_one",
+                        "checks": [
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_tool_invocations": [
+                                    {
+                                        "node_id": "primary_tool",
+                                        "tool_key": "provider_fallback_resolver",
+                                        "status": "failed",
+                                        "error_type": "eval_tool_timeout",
+                                    },
+                                    {
+                                        "node_id": "fallback_tool",
+                                        "tool_key": "agent_loop_guard",
+                                        "status": "succeeded",
+                                    },
+                                ],
+                                "min_tool_invocations": 2,
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "collect_tool_invocation_eval"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_completed", "status": "running"},
+                )
+
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(
+            collected["artifacts"]["graph_run"]["tool_invocations"][0]["error_type"],
+            "eval_tool_timeout",
+        )
+        self.assertEqual(collected["check_results"][0]["actual"]["missing_tool_invocations"], [])
+
+    def test_eval_route_collects_subgraph_invocations_for_graph_run_checks(self) -> None:
+        graph_run = _completed_eval_graph_run()
+        graph_run["capability_outputs"] = [
+            {
+                "node_id": "execute_capability",
+                "capability_kind": "subgraph",
+                "capability_key": "advanced_web_research_loop",
+                "status": "failed",
+                "error": "Missing required input(s) for subgraph 'advanced_web_research_loop': user_question.",
+                "error_type": "missing_required_input",
+                "duration_ms": 4,
+                "child_run_id": "",
+            }
+        ]
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.load_run", return_value=graph_run),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "collect_subgraph_invocation_eval",
+                        "name": "Collect subgraph invocation eval",
+                        "target_template_id": "buddy_autonomous_loop",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/collect_subgraph_invocation_eval/cases",
+                    json={
+                        "case_id": "case_one",
+                        "checks": [
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_subgraph_invocations": [
+                                    {
+                                        "node_id": "execute_capability",
+                                        "subgraph_key": "advanced_web_research_loop",
+                                        "status": "failed",
+                                        "error_type": "missing_required_input",
+                                    }
+                                ],
+                                "min_subgraph_invocations": 1,
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "collect_subgraph_invocation_eval"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_completed", "status": "running"},
+                )
+
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(
+            collected["artifacts"]["graph_run"]["subgraph_invocations"][0]["error_type"],
+            "missing_required_input",
+        )
+        self.assertEqual(collected["check_results"][0]["actual"]["missing_subgraph_invocations"], [])
+
+    def test_eval_route_collects_awaiting_permission_graph_run_checks(self) -> None:
+        graph_run = _completed_eval_graph_run()
+        graph_run["status"] = "awaiting_human"
+        graph_run["metadata"] = {
+            "eval": {
+                "suite_id": "permission_required_eval",
+                "case_id": "case_one",
+                "target_template_id": "buddy_autonomous_loop",
+            },
+            "graph_permission_mode": "ask_first",
+            "capability_permission_policy": {"approval_required_permission_tiers": ["risky"]},
+            "pending_permission_approval": {
+                "kind": "capability_permission_approval",
+                "node_id": "execute_capability",
+                "capability_kind": "action",
+                "capability_key": "local_workspace_executor",
+                "binding_source": "capability_state",
+                "permissions": ["file_write"],
+            },
+        }
+        graph_run["activity_events"] = [
+            {
+                "kind": "permission_pause",
+                "node_id": "execute_capability",
+                "status": "awaiting_human",
+                "detail": {"action_key": "local_workspace_executor", "permissions": ["file_write"]},
+            }
+        ]
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.load_run", return_value=graph_run),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "permission_required_eval",
+                        "name": "Permission required eval",
+                        "target_template_id": "buddy_autonomous_loop",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/permission_required_eval/cases",
+                    json={
+                        "case_id": "case_one",
+                        "checks": [
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "awaiting_human",
+                                "required_metadata": {
+                                    "graph_permission_mode": "ask_first",
+                                    "pending_permission_approval": {
+                                        "kind": "capability_permission_approval",
+                                        "node_id": "execute_capability",
+                                        "capability_key": "local_workspace_executor",
+                                        "permissions": ["file_write"],
+                                    },
+                                },
+                                "required_activity_kinds": ["permission_pause"],
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "permission_required_eval"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_completed", "status": "running"},
+                )
+
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(collected["check_results"][0]["actual"]["missing_fields"], [])
+        self.assertEqual(collected["check_results"][0]["actual"]["missing_activity_kinds"], [])
+
+    def test_eval_route_runs_buddy_main_loop_permission_required_case(self) -> None:
+        case_id = "buddy-main-loop-pauses-for-action-permission-required"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "awaiting_human")
+        pending = graph_run["metadata"]["pending_permission_approval"]
+        self.assertEqual(pending["kind"], "capability_permission_approval")
+        self.assertEqual(pending["node_id"], "execute_capability")
+        self.assertEqual(pending["capability_key"], "local_workspace_executor")
+        self.assertEqual(pending["binding_source"], "capability_state")
+        self.assertEqual(pending["permissions"], ["file_write"])
+        self.assertTrue(
+            any(
+                event.get("kind") == "permission_pause"
+                and event.get("node_id") == "execute_capability"
+                and event.get("status") == "awaiting_human"
+                for event in graph_run.get("activity_events", [])
+                if isinstance(event, dict)
+            )
+        )
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_context_overflow_compaction_case(self) -> None:
+        case_id = "buddy-main-loop-compacts-context-overflow-before-reply"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        state_values = graph_run["state_values"]
+        self.assertEqual(state_values["context_budget_report"]["reason"], "history_pressure")
+        self.assertTrue(state_values["context_budget_report"]["should_compact"])
+        self.assertIn("context-overflow-summary", state_values["context_compaction_summary"])
+        self.assertIn("context overflow", state_values["public_response"])
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "buddy_context_pressure_check"
+                and output.get("node_id") == "check_context_pressure"
+                and output.get("status") == "succeeded"
+                for output in graph_run.get("tool_outputs", [])
+                if isinstance(output, dict)
+            )
+        )
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_context_overflow_then_tool_failure_fallback_case(self) -> None:
+        case_id = "buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        state_values = graph_run["state_values"]
+        self.assertGreaterEqual(state_values["context_budget_report"]["history_source_chars"], 6000)
+        self.assertEqual(state_values["context_budget_report"]["history_omitted_count"], 3)
+        self.assertIn("combo-overflow-summary", state_values["context_compaction_summary"])
+        self.assertIn("fallback 工具", state_values["public_response"])
+        self.assertIn("combo fallback context loaded", state_values["public_response"])
+        tool_outputs = [
+            output
+            for output in graph_run.get("tool_outputs", [])
+            if isinstance(output, dict) and output.get("node_id") == "execute_capability"
+        ]
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "provider_fallback_resolver"
+                and output.get("status") == "failed"
+                and output.get("error_type") == "eval_tool_timeout"
+                for output in tool_outputs
+            )
+        )
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "runtime_context_loader"
+                and output.get("status") == "succeeded"
+                for output in tool_outputs
+            )
+        )
+        capability_trace = json.dumps(state_values["capability_trace"], ensure_ascii=False)
+        self.assertIn("buddy_context_compaction", capability_trace)
+        self.assertIn("primary_failed", capability_trace)
+        self.assertIn("fallback_succeeded", capability_trace)
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_context_overflow_then_subgraph_failure_fallback_case(self) -> None:
+        case_id = "buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        state_values = graph_run["state_values"]
+        self.assertIn("combo-subgraph-overflow-summary", state_values["context_compaction_summary"])
+        self.assertIn("advanced_web_research_loop", state_values["public_response"])
+        self.assertIn("combo subgraph fallback context loaded", state_values["public_response"])
+        subgraph_outputs = [
+            output
+            for output in graph_run.get("capability_outputs", [])
+            if isinstance(output, dict)
+            and output.get("node_id") == "execute_capability"
+            and output.get("capability_kind") == "subgraph"
+        ]
+        self.assertTrue(
+            any(
+                output.get("capability_key") == "advanced_web_research_loop"
+                and output.get("status") == "failed"
+                and output.get("error_type") == "missing_required_input"
+                for output in subgraph_outputs
+            )
+        )
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "runtime_context_loader"
+                and output.get("status") == "succeeded"
+                for output in graph_run.get("tool_outputs", [])
+                if isinstance(output, dict)
+            )
+        )
+        capability_trace = json.dumps(state_values["capability_trace"], ensure_ascii=False)
+        self.assertIn("buddy_context_compaction", capability_trace)
+        self.assertIn("subgraph_failed", capability_trace)
+        self.assertIn("fallback_succeeded", capability_trace)
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_context_overflow_then_permission_pause_case(self) -> None:
+        case_id = "buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "awaiting_human")
+        state_values = graph_run["state_values"]
+        self.assertIn("combo-permission-overflow-summary", state_values["context_compaction_summary"])
+        self.assertIn("local_workspace_executor", state_values["public_response"])
+        self.assertIn("权限", state_values["public_response"])
+        pending = graph_run["metadata"]["pending_permission_approval"]
+        self.assertEqual(pending["kind"], "capability_permission_approval")
+        self.assertEqual(pending["node_id"], "execute_capability")
+        self.assertEqual(pending["capability_key"], "local_workspace_executor")
+        self.assertEqual(pending["permissions"], ["file_write"])
+        self.assertTrue(
+            any(
+                event.get("kind") == "permission_pause"
+                and event.get("node_id") == "execute_capability"
+                and event.get("status") == "awaiting_human"
+                for event in graph_run.get("activity_events", [])
+                if isinstance(event, dict)
+            )
+        )
+        capability_trace = json.dumps(state_values["capability_trace"], ensure_ascii=False)
+        self.assertIn("buddy_context_compaction", capability_trace)
+        self.assertIn("permission_required_expected", capability_trace)
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed"])
+
+    def test_eval_route_runs_buddy_main_loop_subgraph_failure_fallback_case(self) -> None:
+        case_id = "buddy-main-loop-recovers-from-subgraph-failure-with-fallback"
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                seed_official_eval_suites()
+                run_response = client.post("/api/evals/runs", json={"suite_id": "buddy_autonomous_loop_core"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/{case_id}/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertIn("fallback 工具", graph_run["state_values"]["public_response"])
+        subgraph_outputs = [
+            output
+            for output in graph_run.get("capability_outputs", [])
+            if isinstance(output, dict)
+            and output.get("node_id") == "execute_capability"
+            and output.get("capability_kind") == "subgraph"
+        ]
+        self.assertTrue(
+            any(
+                output.get("capability_key") == "advanced_web_research_loop"
+                and output.get("status") == "failed"
+                and output.get("error_type") == "missing_required_input"
+                for output in subgraph_outputs
+            )
+        )
+        self.assertTrue(
+            any(
+                output.get("tool_key") == "runtime_context_loader"
+                and output.get("status") == "succeeded"
+                for output in graph_run.get("tool_outputs", [])
+                if isinstance(output, dict)
+            )
+        )
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed", "passed", "passed", "passed"])
+
+    def test_eval_route_runs_workspace_executor_action_case_with_model_fixture(self) -> None:
+        fixture = {
+            "model_providers": {
+                "eval-primary": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "http://127.0.0.1:9999/v1",
+                    "models": [
+                        {
+                            "model": "gpt-primary",
+                            "capabilities": {"chat": True, "structured_output": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
+                }
+            },
+            "responses": {
+                "eval-primary/gpt-primary": {
+                    "content": "{\"local_workspace_executor\":{\"operation\":\"search\",\"path\":\"docs/hermes-agent-capability-parity-roadmap.md\",\"content\":\"\",\"query\":\"Tool runtime fallback\",\"old_string\":\"\",\"new_string\":\"\",\"replace_all\":false,\"expected_sha256\":\"\",\"expected_mtime_ns\":\"\",\"args\":{}}}",
+                    "meta": {"response_id": "workspace-action-fixture"},
+                }
+            },
+        }
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "workspace_executor_route",
+                        "name": "Workspace executor route",
+                        "target_template_id": "workspace_executor_eval",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/workspace_executor_route/cases",
+                    json={
+                        "case_id": "case_one",
+                        "input_values": {
+                            "workspace_request": "在路线图里搜索 Tool runtime fallback 的记录。"
+                        },
+                        "metadata": {"fixture_model_runtime": fixture},
+                        "checks": [
+                            {
+                                "kind": "schema",
+                                "target": "final_output",
+                                "required": ["workspace_success", "workspace_result"],
+                            },
+                            {
+                                "kind": "rule",
+                                "target": "workspace_result",
+                                "must_include": ["Tool runtime fallback"],
+                            },
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_action_invocations": [
+                                    {
+                                        "node_id": "run_workspace_search",
+                                        "action_key": "local_workspace_executor",
+                                        "status": "succeeded",
+                                    }
+                                ],
+                                "min_action_invocations": 1,
+                            },
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "workspace_executor_route"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertEqual(graph_run["state_values"]["workspace_success"], True)
+        action_outputs = {
+            output["node_id"]: output
+            for output in graph_run.get("action_outputs", [])
+            if isinstance(output, dict)
+        }
+        self.assertEqual(action_outputs["run_workspace_search"]["action_key"], "local_workspace_executor")
+        self.assertEqual(action_outputs["run_workspace_search"]["inputs"]["operation"], "search")
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(collected["check_results"][2]["actual"]["missing_action_invocations"], [])
+
+    def test_eval_route_runs_graph_template_creation_workflow_with_action_fixtures(self) -> None:
+        template_payload = _generated_policy_template_payload("eval_policy_checklist_template")
+        fixture = _graph_template_creation_model_fixture(template_payload)
+
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "graph_template_creation_route",
+                        "name": "Graph template creation route",
+                        "target_template_id": "toograph_graph_template_creation_workflow",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/graph_template_creation_route/cases",
+                    json={
+                        "case_id": "case_one",
+                        "input_values": {
+                            "template_request": "创建政策办理清单图模板。",
+                            "target_template_id": "advanced_web_research_loop",
+                            "capability_gap": {
+                                "requested_capability": "policy_document_to_application_checklist_graph",
+                                "risk": "template_creation",
+                            },
+                        },
+                        "metadata": {
+                            "fixture_agent_model_ref": "eval-primary/gpt-primary",
+                            "fixture_model_runtime": fixture,
+                            "fixture_graph_template_workspace": True,
+                        },
+                        "checks": [
+                            {
+                                "kind": "schema",
+                                "target": "final_output",
+                                "required": [
+                                    "generated_template_json",
+                                    "validation_report",
+                                    "write_template_result",
+                                    "final_summary",
+                                ],
+                            },
+                            {
+                                "kind": "rule",
+                                "target": "write_template_result",
+                                "must_include": ["eval_policy_checklist_template", "gtrev_"],
+                            },
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_state_keys": [
+                                    "generated_template_json",
+                                    "validation_report",
+                                    "write_template_result",
+                                    "written_template_revision_id",
+                                ],
+                                "required_output_keys": ["final_summary"],
+                                "required_action_invocations": [
+                                    {
+                                        "node_id": "read_existing_template",
+                                        "action_key": "toograph_graph_template_reader",
+                                        "status": "succeeded",
+                                    },
+                                    {
+                                        "node_id": "validate_template_json",
+                                        "action_key": "toograph_graph_template_validator",
+                                        "status": "succeeded",
+                                    },
+                                    {
+                                        "node_id": "write_template_json",
+                                        "action_key": "toograph_graph_template_writer",
+                                        "status": "succeeded",
+                                    },
+                                ],
+                                "min_action_invocations": 3,
+                            },
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "graph_template_creation_route"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+            action_context = graph_run["metadata"]["action_runtime_context"]["graph_template_writer"]
+            written_template = (
+                Path(action_context["user_templates_root"])
+                / "eval_policy_checklist_template"
+                / "template.json"
+            )
+            revision_files = list(
+                (Path(action_context["template_revision_root"]) / "eval_policy_checklist_template").glob("*.json")
+            )
+            written_template_exists = written_template.is_file()
+            revision_count = len(revision_files)
+
+        self.assertEqual(graph_run["status"], "completed")
+        self.assertTrue(written_template_exists)
+        self.assertGreaterEqual(revision_count, 1)
+        self.assertEqual(graph_run["state_values"]["validation_success"], True)
+        self.assertEqual(graph_run["state_values"]["write_template_success"], True)
+        self.assertEqual(graph_run["state_values"]["written_template_id"], "eval_policy_checklist_template")
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(collected["check_results"][2]["actual"]["missing_action_invocations"], [])
+
+    def test_eval_route_runs_video_segmenter_tool_case_with_video_fixture(self) -> None:
+        with isolated_eval_database():
+            with TestClient(app) as client:
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "video_segmenter_route",
+                        "name": "Video segmenter route",
+                        "target_template_id": "video_segmenter_eval",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/video_segmenter_route/cases",
+                    json={
+                        "case_id": "case_one",
+                        "metadata": {
+                            "fixture_video_files": [
+                                {
+                                    "state_key": "source_video",
+                                    "filename": "source.mp4",
+                                    "duration_seconds": 1.2,
+                                }
+                            ]
+                        },
+                        "checks": [
+                            {
+                                "kind": "schema",
+                                "target": "final_output",
+                                "required": ["video_segments"],
+                            },
+                            {
+                                "kind": "rule",
+                                "target": "video_segments",
+                                "must_include": ["segment_000.mp4"],
+                            },
+                            {
+                                "kind": "graph_run",
+                                "target": "graph_run",
+                                "required_status": "completed",
+                                "required_tool_invocations": [
+                                    {
+                                        "node_id": "segment_video",
+                                        "tool_key": "video_segmenter",
+                                        "status": "succeeded",
+                                    }
+                                ],
+                                "min_tool_invocations": 1,
+                            },
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "video_segmenter_route"})
+                eval_run_id = run_response.json()["eval_run_id"]
+
+                start_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/run")
+                graph_run_id = start_response.json()["graph_run_id"]
+                graph_run = load_run(graph_run_id)
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(graph_run["status"], "completed")
+        segments = graph_run["state_values"]["video_segments"]
+        self.assertGreaterEqual(len(segments), 1)
+        self.assertTrue(str(segments[0]["local_path"]).endswith("segment_000.mp4"))
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(collected["status"], "passed")
+        self.assertEqual(collected["check_results"][2]["actual"]["missing_tool_invocations"], [])
+
+    def test_eval_route_collects_provider_fallback_trace_from_graph_run_runtime_config(self) -> None:
+        trace = {
+            "kind": "provider_fallback_trace",
+            "decision": "fallback_selected",
+            "fallback_used": True,
+            "requested": {
+                "provider_id": "eval-primary",
+                "model": "gpt-primary",
+                "model_ref": "eval-primary/gpt-primary",
+            },
+            "selected": {
+                "provider_id": "eval-fallback",
+                "model": "gpt-fallback",
+                "model_ref": "eval-fallback/gpt-fallback",
+            },
+            "failed_candidates": [
+                {
+                    "provider_id": "eval-primary",
+                    "model": "gpt-primary",
+                    "model_ref": "eval-primary/gpt-primary",
+                    "error_type": "provider_timeout",
+                }
+            ],
+            "fallback_candidates": [
+                {
+                    "provider_id": "eval-fallback",
+                    "model": "gpt-fallback",
+                    "model_ref": "eval-fallback/gpt-fallback",
+                    "reason": "compatible_fallback",
+                }
+            ],
+            "required_capabilities": ["chat", "structured_output"],
+            "required_permissions": ["text_generation"],
+        }
+        graph_run = _completed_eval_graph_run()
+        graph_run["node_executions"][1]["artifacts"] = {"runtime_config": {"provider_fallback_trace": trace}}
+
+        with isolated_eval_database():
+            with (
+                patch("app.evaluator.collector.load_run", return_value=graph_run),
+                TestClient(app) as client,
+            ):
+                client.post(
+                    "/api/evals/suites",
+                    json={
+                        "suite_id": "collect_provider_fallback_eval",
+                        "name": "Collect provider fallback eval",
+                        "target_template_id": "buddy_autonomous_loop",
+                    },
+                )
+                client.post(
+                    "/api/evals/suites/collect_provider_fallback_eval/cases",
+                    json={
+                        "case_id": "case_one",
+                        "checks": [
+                            {
+                                "kind": "provider_fallback",
+                                "target": "provider_fallback_trace",
+                                "required_requested": {"provider_id": "eval-primary", "model": "gpt-primary"},
+                                "required_selected": {"provider_id": "eval-fallback", "model": "gpt-fallback"},
+                                "required_failed": {
+                                    "provider_id": "eval-primary",
+                                    "error_type": "provider_timeout",
+                                },
+                                "required_capabilities": ["chat", "structured_output"],
+                                "required_permissions": ["text_generation"],
+                                "min_fallbacks": 1,
+                            }
+                        ],
+                    },
+                )
+                run_response = client.post("/api/evals/runs", json={"suite_id": "collect_provider_fallback_eval"})
+                eval_run_id = run_response.json()["eval_run_id"]
+                client.post(
+                    f"/api/evals/runs/{eval_run_id}/cases/case_one/result",
+                    json={"graph_run_id": "run_completed", "status": "running"},
+                )
+
+                collect_response = client.post(f"/api/evals/runs/{eval_run_id}/cases/case_one/collect")
+
+        self.assertEqual(collect_response.status_code, 200)
+        collected = collect_response.json()
+        self.assertEqual(
+            collected["final_output"]["provider_fallback_trace"]["selected"]["model_ref"],
+            "eval-fallback/gpt-fallback",
+        )
+        self.assertEqual(
+            collected["artifacts"]["graph_run"]["provider_fallback_traces"][0]["selected"]["model_ref"],
+            "eval-fallback/gpt-fallback",
+        )
+        self.assertEqual([check["status"] for check in collected["check_results"]], ["passed"])
+
     def test_eval_route_collect_can_opt_into_llm_judge_checks(self) -> None:
         def fake_create_judge_runner():
             return lambda **_kwargs: {
@@ -747,6 +2316,214 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(results[1]["actual"]["found"], True)
         self.assertEqual(results[2]["actual"]["forbidden_found"], [])
         self.assertEqual(results[3]["actual"]["citation_count"], 2)
+
+    def test_eval_check_executor_rule_checks_can_match_structured_target_keys(self) -> None:
+        case = {
+            "case_id": "structured_report",
+            "checks": [
+                {
+                    "kind": "rule",
+                    "name": "Report records budget fields",
+                    "target": "graph_run.state_values.context_budget_report",
+                    "must_include": ["history_source_chars", "history_omitted_count", "history_pressure"],
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={},
+            artifacts={
+                "graph_run": {
+                    "state_values": {
+                        "context_budget_report": {
+                            "history_source_chars": 6056,
+                            "history_omitted_count": 3,
+                            "reason": "history_pressure",
+                        }
+                    }
+                }
+            },
+        )
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["actual"]["missing"], [])
+
+    def test_eval_check_executor_evaluates_graph_run_contract(self) -> None:
+        case = {
+            "case_id": "buddy_e2e_run_contract",
+            "checks": [
+                {
+                    "kind": "graph_run",
+                    "name": "Buddy graph run contract",
+                    "target": "graph_run",
+                    "required_status": "completed",
+                    "required_template_id": "buddy_autonomous_loop",
+                    "required_metadata": {"eval": {"suite_id": "buddy_autonomous_loop_core"}},
+                    "required_state_keys": ["public_response", "capability_selection_trace"],
+                    "required_node_ids": ["reply_and_select_capability"],
+                    "required_activity_kinds": ["tool_call"],
+                    "min_node_executions": 2,
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={},
+            artifacts={
+                "graph_run": {
+                    "run_id": "run_completed",
+                    "status": "completed",
+                    "template_id": "buddy_autonomous_loop",
+                    "metadata": {"eval": {"suite_id": "buddy_autonomous_loop_core"}},
+                    "state_keys": ["public_response", "capability_selection_trace"],
+                    "node_ids": ["load_history_context", "reply_and_select_capability"],
+                    "activity_kinds": ["tool_call"],
+                    "node_execution_count": 3,
+                }
+            },
+        )
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["actual"]["missing_state_keys"], [])
+        self.assertEqual(results[0]["actual"]["missing_node_ids"], [])
+
+    def test_eval_check_executor_evaluates_graph_run_tool_invocation_contract(self) -> None:
+        case = {
+            "case_id": "tool_runtime_fallback_contract",
+            "checks": [
+                {
+                    "kind": "graph_run",
+                    "target": "graph_run",
+                    "required_status": "completed",
+                    "required_tool_invocations": [
+                        {
+                            "node_id": "primary_tool",
+                            "tool_key": "provider_fallback_resolver",
+                            "status": "failed",
+                            "error_type": "eval_tool_timeout",
+                        },
+                        {
+                            "node_id": "fallback_tool",
+                            "tool_key": "agent_loop_guard",
+                            "status": "succeeded",
+                        },
+                    ],
+                    "min_tool_invocations": 2,
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={},
+            artifacts={
+                "graph_run": {
+                    "status": "completed",
+                    "tool_invocations": [
+                        {
+                            "node_id": "primary_tool",
+                            "tool_key": "provider_fallback_resolver",
+                            "status": "failed",
+                            "error_type": "eval_tool_timeout",
+                        },
+                        {
+                            "node_id": "fallback_tool",
+                            "tool_key": "agent_loop_guard",
+                            "status": "succeeded",
+                            "error_type": "",
+                        },
+                    ],
+                }
+            },
+        )
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["actual"]["missing_tool_invocations"], [])
+
+    def test_eval_check_executor_evaluates_graph_run_action_invocation_contract(self) -> None:
+        case = {
+            "case_id": "workspace_action_contract",
+            "checks": [
+                {
+                    "kind": "graph_run",
+                    "target": "graph_run",
+                    "required_status": "completed",
+                    "required_action_invocations": [
+                        {
+                            "node_id": "run_workspace_search",
+                            "action_key": "local_workspace_executor",
+                            "status": "succeeded",
+                        }
+                    ],
+                    "min_action_invocations": 1,
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={},
+            artifacts={
+                "graph_run": {
+                    "status": "completed",
+                    "action_invocations": [
+                        {
+                            "node_id": "run_workspace_search",
+                            "action_key": "local_workspace_executor",
+                            "status": "succeeded",
+                            "error_type": "",
+                        }
+                    ],
+                }
+            },
+        )
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["actual"]["missing_action_invocations"], [])
+
+    def test_eval_check_executor_evaluates_graph_run_subgraph_invocation_contract(self) -> None:
+        case = {
+            "case_id": "subgraph_failure_contract",
+            "checks": [
+                {
+                    "kind": "graph_run",
+                    "target": "graph_run",
+                    "required_status": "completed",
+                    "required_subgraph_invocations": [
+                        {
+                            "node_id": "execute_capability",
+                            "subgraph_key": "advanced_web_research_loop",
+                            "status": "failed",
+                            "error_type": "missing_required_input",
+                        }
+                    ],
+                    "min_subgraph_invocations": 1,
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={},
+            artifacts={
+                "graph_run": {
+                    "status": "completed",
+                    "subgraph_invocations": [
+                        {
+                            "node_id": "execute_capability",
+                            "subgraph_key": "advanced_web_research_loop",
+                            "status": "failed",
+                            "error_type": "missing_required_input",
+                        }
+                    ],
+                }
+            },
+        )
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["actual"]["missing_subgraph_invocations"], [])
 
     def test_eval_check_executor_evaluates_knowledge_retrieval_quality(self) -> None:
         case = {

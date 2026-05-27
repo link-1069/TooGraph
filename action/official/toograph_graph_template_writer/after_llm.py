@@ -2,9 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
+import sys
 from typing import Any
 from uuid import uuid4
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_ROOT = REPO_ROOT / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 from pydantic import ValidationError
 
@@ -14,7 +21,6 @@ from app.core.schemas.node_system import NodeSystemGraphPayload, NodeSystemTempl
 from app.core.storage.readable_names import is_safe_storage_name
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 USER_TEMPLATES_ROOT = REPO_ROOT / "graph_template" / "user"
 OFFICIAL_TEMPLATES_ROOT = REPO_ROOT / "graph_template" / "official"
 TEMPLATE_REVISION_ROOT = REPO_ROOT / "backend" / "data" / "template_revisions"
@@ -40,11 +46,12 @@ def toograph_graph_template_writer(**action_inputs: Any) -> dict[str, Any]:
     template_id = template.template_id.strip()
     if not is_safe_storage_name(template_id):
         return _failed("invalid_template_id", "template_id must be a safe folder name.")
-    if (OFFICIAL_TEMPLATES_ROOT / template_id / TEMPLATE_FILE_NAME).exists():
+    user_templates_root, official_templates_root, template_revision_root = _resolve_template_roots()
+    if (official_templates_root / template_id / TEMPLATE_FILE_NAME).exists():
         return _failed("official_template_collision", f"Refusing to overwrite official template `{template_id}`.")
 
     template_data = template.model_dump(by_alias=True, mode="json", exclude={"status"})
-    target_path = USER_TEMPLATES_ROOT / template_id / TEMPLATE_FILE_NAME
+    target_path = user_templates_root / template_id / TEMPLATE_FILE_NAME
     previous_template = _read_previous_template(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     target_path.write_text(json.dumps(template_data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -54,6 +61,7 @@ def toograph_graph_template_writer(**action_inputs: Any) -> dict[str, Any]:
         previous_template=previous_template,
         next_template=template_data,
         reason=reason,
+        revision_root=template_revision_root,
     )
     display_path = f"graph_template/user/{template_id}/{TEMPLATE_FILE_NAME}"
     return {
@@ -134,6 +142,7 @@ def _record_template_revision(
     previous_template: dict[str, Any] | None,
     next_template: dict[str, Any],
     reason: str,
+    revision_root: Path | None = None,
 ) -> dict[str, Any]:
     revision_id = f"gtrev_{uuid4().hex[:12]}"
     operation = "update" if previous_template is not None else "create"
@@ -148,10 +157,48 @@ def _record_template_revision(
         "reason": reason,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    revision_dir = TEMPLATE_REVISION_ROOT / template_id
+    revision_dir = (revision_root or TEMPLATE_REVISION_ROOT) / template_id
     revision_dir.mkdir(parents=True, exist_ok=True)
     (revision_dir / f"{revision_id}.json").write_text(json.dumps(revision, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return revision
+
+
+def _resolve_template_roots() -> tuple[Path, Path, Path]:
+    runtime_context = _read_action_runtime_context()
+    writer_context = runtime_context.get("graph_template_writer") if isinstance(runtime_context.get("graph_template_writer"), dict) else {}
+    return (
+        _path_override(writer_context.get("user_templates_root"), USER_TEMPLATES_ROOT),
+        _path_override(writer_context.get("official_templates_root"), OFFICIAL_TEMPLATES_ROOT),
+        _path_override(writer_context.get("template_revision_root"), TEMPLATE_REVISION_ROOT),
+    )
+
+
+def _read_action_runtime_context() -> dict[str, Any]:
+    raw = os.environ.get("TOOGRAPH_ACTION_RUNTIME_CONTEXT", "")
+    if raw:
+        return _decode_runtime_context(raw)
+    context_file = os.environ.get("TOOGRAPH_ACTION_RUNTIME_CONTEXT_FILE", "")
+    if context_file:
+        try:
+            return _decode_runtime_context(Path(context_file).read_text(encoding="utf-8"))
+        except OSError:
+            return {}
+    return {}
+
+
+def _decode_runtime_context(raw: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _path_override(value: Any, default: Path) -> Path:
+    text = str(value or "").strip()
+    if not text:
+        return default
+    return Path(text).expanduser().resolve()
 
 
 def _build_template_diff(previous: dict[str, Any] | None, next_template: dict[str, Any]) -> list[dict[str, Any]]:

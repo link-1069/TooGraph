@@ -47,10 +47,15 @@ class OfficialEvalSeedTests(unittest.TestCase):
                 "buddy_improvement_review_workflow_core",
                 "buddy_memory_recall_eval_core",
                 "embedding_maintenance_core",
+                "llm_runtime_fallback_eval_core",
                 "provider_fallback_eval_core",
                 "scheduler_retry_delivery_eval_core",
+                "tool_runtime_fallback_eval_core",
+                "video_segmenter_eval_core",
+                "workspace_executor_eval_core",
                 "toograph_page_operation_workflow_core",
                 "toograph_action_creation_workflow_core",
+                "toograph_graph_template_creation_workflow_core",
                 "advanced_web_research_loop_core",
                 "policy_navigator_agent_lightweight",
             }
@@ -60,6 +65,38 @@ class OfficialEvalSeedTests(unittest.TestCase):
             selector_case = store.load_eval_case(
                 "buddy_autonomous_loop_core",
                 "buddy-main-loop-selector-fallback-after-recent-failures",
+            )
+            buddy_live_fallback_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-recovers-from-live-tool-failure-with-fallback",
+            )
+            buddy_provider_fallback_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-recovers-from-provider-model-fallback",
+            )
+            buddy_subgraph_fallback_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-recovers-from-subgraph-failure-with-fallback",
+            )
+            buddy_permission_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-pauses-for-action-permission-required",
+            )
+            buddy_context_overflow_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-compacts-context-overflow-before-reply",
+            )
+            buddy_context_overflow_tool_combo_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure",
+            )
+            buddy_context_overflow_subgraph_combo_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure",
+            )
+            buddy_context_overflow_permission_combo_case = store.load_eval_case(
+                "buddy_autonomous_loop_core",
+                "buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required",
             )
             review_case = store.load_eval_case(
                 "buddy_autonomous_review_core",
@@ -113,6 +150,22 @@ class OfficialEvalSeedTests(unittest.TestCase):
                 "provider_fallback_eval_core",
                 "provider-fallback-selects-compatible-model",
             )
+            tool_runtime_fallback_case = store.load_eval_case(
+                "tool_runtime_fallback_eval_core",
+                "tool-runtime-fallback-routes-to-fallback-tool",
+            )
+            workspace_executor_case = store.load_eval_case(
+                "workspace_executor_eval_core",
+                "workspace-executor-searches-roadmap-through-action",
+            )
+            video_segmenter_case = store.load_eval_case(
+                "video_segmenter_eval_core",
+                "video-segmenter-splits-fixture-video-through-tool",
+            )
+            graph_template_case = store.load_eval_case(
+                "toograph_graph_template_creation_workflow_core",
+                "graph-template-creation-requires-user-template-write-and-validation",
+            )
             action_case = store.load_eval_case("toograph_action_creation_workflow_core", "action-creation-clarifies-unsafe-write")
             policy_case = store.load_eval_case(
                 "policy_navigator_agent_lightweight",
@@ -125,11 +178,211 @@ class OfficialEvalSeedTests(unittest.TestCase):
         self.assertEqual(buddy_case["checks"][0]["kind"], "schema")
         self.assertEqual(buddy_case["checks"][1]["kind"], "llm_judge")
         self.assertEqual(buddy_case["checks"][1]["details"]["original_kind"], "rule")
-        self.assertEqual(selector_case["checks"][0]["kind"], "capability_selection")
-        self.assertEqual(selector_case["checks"][0]["required_selected"], {"kind": "action", "key": "web_search"})
+        selector_graph_run_check = next(check for check in selector_case["checks"] if check["kind"] == "graph_run")
+        selector_selection_check = next(check for check in selector_case["checks"] if check["kind"] == "capability_selection")
+        self.assertEqual(
+            selector_graph_run_check["required_metadata"]["eval"]["target_template_id"],
+            "buddy_autonomous_loop",
+        )
+        self.assertEqual(selector_selection_check["required_selected"], {"kind": "action", "key": "web_search"})
         self.assertEqual(
             selector_case["metadata"]["fixture_capability_usage_entries"][0]["capability"]["key"],
             "advanced_web_research_loop",
+        )
+        self.assertEqual(buddy_live_fallback_case["metadata"]["fixture_agent_model_ref"], "eval-primary/gpt-primary")
+        live_fallback_graph_run_check = next(
+            check for check in buddy_live_fallback_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "provider_fallback_resolver",
+                "status": "failed",
+                "error_type": "eval_tool_timeout",
+            },
+            live_fallback_graph_run_check["required_tool_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            live_fallback_graph_run_check["required_tool_invocations"],
+        )
+        self.assertEqual(
+            buddy_provider_fallback_case["metadata"]["fixture_model_runtime"]["failures"]["eval-primary/gpt-primary"][
+                "error_type"
+            ],
+            "provider_timeout",
+        )
+        provider_fallback_check = next(
+            check for check in buddy_provider_fallback_case["checks"] if check["kind"] == "provider_fallback"
+        )
+        self.assertEqual(
+            provider_fallback_check["required_selected"],
+            {"provider_id": "eval-fallback", "model": "gpt-fallback"},
+        )
+        self.assertEqual(
+            provider_fallback_check["required_requested"],
+            {"provider_id": "eval-primary", "model": "gpt-primary"},
+        )
+        subgraph_graph_run_check = next(
+            check for check in buddy_subgraph_fallback_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "subgraph_key": "advanced_web_research_loop",
+                "status": "failed",
+                "error_type": "missing_required_input",
+            },
+            subgraph_graph_run_check["required_subgraph_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            subgraph_graph_run_check["required_tool_invocations"],
+        )
+        permission_graph_run_check = next(
+            check for check in buddy_permission_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            buddy_permission_case["metadata"]["fixture_graph_metadata"]["capability_permission_policy"],
+            {"approval_required_permission_tiers": ["risky"]},
+        )
+        self.assertEqual(permission_graph_run_check["required_status"], "awaiting_human")
+        self.assertEqual(
+            permission_graph_run_check["required_metadata"]["pending_permission_approval"]["capability_key"],
+            "local_workspace_executor",
+        )
+        self.assertEqual(
+            permission_graph_run_check["required_metadata"]["pending_permission_approval"]["permissions"],
+            ["file_write"],
+        )
+        context_overflow_graph_run_check = next(
+            check for check in buddy_context_overflow_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            buddy_context_overflow_case["metadata"]["fixture_graph_metadata"]["runtime_context"],
+            {
+                "buddy_session_id": "session_eval_context_overflow",
+                "buddy_current_message_id": "msg_eval_context_overflow_current",
+            },
+        )
+        self.assertEqual(
+            buddy_context_overflow_case["metadata"]["fixture_buddy_sessions"][0]["session_id"],
+            "session_eval_context_overflow",
+        )
+        self.assertIn("run_context_compaction", context_overflow_graph_run_check["required_node_ids"])
+        self.assertIn("context_compaction_report", context_overflow_graph_run_check["required_state_keys"])
+        self.assertIn(
+            {
+                "node_id": "check_context_pressure",
+                "tool_key": "buddy_context_pressure_check",
+                "status": "succeeded",
+            },
+            context_overflow_graph_run_check["required_tool_invocations"],
+        )
+        combo_graph_run_check = next(
+            check for check in buddy_context_overflow_tool_combo_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            buddy_context_overflow_tool_combo_case["metadata"]["fixture_graph_metadata"]["runtime_context"],
+            {
+                "buddy_session_id": "session_eval_context_overflow_tool_combo",
+                "buddy_current_message_id": "msg_eval_context_overflow_tool_combo_current",
+            },
+        )
+        self.assertEqual(
+            buddy_context_overflow_tool_combo_case["metadata"]["fixture_buddy_sessions"][0]["session_id"],
+            "session_eval_context_overflow_tool_combo",
+        )
+        self.assertIn("fixture_tool_runtime", buddy_context_overflow_tool_combo_case["metadata"])
+        self.assertIn("run_context_compaction", combo_graph_run_check["required_node_ids"])
+        self.assertIn("execute_capability", combo_graph_run_check["required_node_ids"])
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "provider_fallback_resolver",
+                "status": "failed",
+                "error_type": "eval_tool_timeout",
+            },
+            combo_graph_run_check["required_tool_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            combo_graph_run_check["required_tool_invocations"],
+        )
+        combo_subgraph_graph_run_check = next(
+            check for check in buddy_context_overflow_subgraph_combo_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            buddy_context_overflow_subgraph_combo_case["metadata"]["fixture_graph_metadata"]["runtime_context"],
+            {
+                "buddy_session_id": "session_eval_context_overflow_subgraph_combo",
+                "buddy_current_message_id": "msg_eval_context_overflow_subgraph_combo_current",
+            },
+        )
+        self.assertEqual(
+            buddy_context_overflow_subgraph_combo_case["metadata"]["fixture_buddy_sessions"][0]["session_id"],
+            "session_eval_context_overflow_subgraph_combo",
+        )
+        self.assertIn("fixture_tool_runtime", buddy_context_overflow_subgraph_combo_case["metadata"])
+        self.assertIn("run_context_compaction", combo_subgraph_graph_run_check["required_node_ids"])
+        self.assertIn("execute_capability", combo_subgraph_graph_run_check["required_node_ids"])
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "subgraph_key": "advanced_web_research_loop",
+                "status": "failed",
+                "error_type": "missing_required_input",
+            },
+            combo_subgraph_graph_run_check["required_subgraph_invocations"],
+        )
+        self.assertIn(
+            {
+                "node_id": "execute_capability",
+                "tool_key": "runtime_context_loader",
+                "status": "succeeded",
+            },
+            combo_subgraph_graph_run_check["required_tool_invocations"],
+        )
+        combo_permission_graph_run_check = next(
+            check for check in buddy_context_overflow_permission_combo_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            buddy_context_overflow_permission_combo_case["metadata"]["fixture_graph_metadata"]["runtime_context"],
+            {
+                "buddy_session_id": "session_eval_context_overflow_permission_combo",
+                "buddy_current_message_id": "msg_eval_context_overflow_permission_combo_current",
+            },
+        )
+        self.assertEqual(
+            buddy_context_overflow_permission_combo_case["metadata"]["fixture_graph_metadata"]["graph_permission_mode"],
+            "ask_first",
+        )
+        self.assertEqual(
+            buddy_context_overflow_permission_combo_case["metadata"]["fixture_buddy_sessions"][0]["session_id"],
+            "session_eval_context_overflow_permission_combo",
+        )
+        self.assertEqual(combo_permission_graph_run_check["required_status"], "awaiting_human")
+        self.assertIn("run_context_compaction", combo_permission_graph_run_check["required_node_ids"])
+        self.assertIn("execute_capability", combo_permission_graph_run_check["required_node_ids"])
+        self.assertEqual(
+            combo_permission_graph_run_check["required_metadata"]["pending_permission_approval"]["capability_key"],
+            "local_workspace_executor",
+        )
+        self.assertEqual(
+            combo_permission_graph_run_check["required_metadata"]["pending_permission_approval"]["permissions"],
+            ["file_write"],
         )
         self.assertEqual(review_case["metadata"]["fixture_runs"][0]["run_id"], "run_eval_buddy_review_source")
         self.assertEqual(compaction_case["input_values"]["current_session_id"], "session_eval_compaction")
@@ -163,13 +416,25 @@ class OfficialEvalSeedTests(unittest.TestCase):
             ],
             ["risky"],
         )
-        self.assertEqual(delegation_case["checks"][0]["kind"], "delegation_worker")
+        delegation_worker_check = next(check for check in delegation_case["checks"] if check["kind"] == "delegation_worker")
+        delegation_graph_run_check = next(check for check in delegation_case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(delegation_worker_check["target"], "worker_result_package")
+        self.assertEqual(delegation_graph_run_check["required_metadata"]["eval"]["target_template_id"], "delegation_worker_eval")
         self.assertEqual(delegation_case["input_values"]["worker_task_packet"]["task_id"], "worker_eval_research_1")
-        self.assertEqual(delegation_batch_case["checks"][0]["kind"], "worker_merge_review")
-        self.assertEqual(delegation_batch_case["checks"][0]["target"], "worker_merge_review_package")
+        delegation_batch_check = next(
+            check for check in delegation_batch_case["checks"] if check["kind"] == "worker_merge_review"
+        )
+        delegation_batch_graph_run_check = next(
+            check for check in delegation_batch_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            delegation_batch_graph_run_check["required_metadata"]["eval"]["target_template_id"],
+            "delegation_worker_batch_eval",
+        )
+        self.assertEqual(delegation_batch_check["target"], "worker_merge_review_package")
         self.assertEqual(delegation_batch_case["input_values"]["worker_statuses"], ["succeeded", "failed"])
         self.assertEqual(delegation_batch_case["input_values"]["worker_budget_usages"][1]["used_steps"], 3)
-        self.assertIn("worker_budget_exhausted", delegation_batch_case["checks"][0]["required_terms"])
+        self.assertIn("worker_budget_exhausted", delegation_batch_check["required_terms"])
         self.assertEqual(delegation_board_case["checks"][0]["kind"], "schema")
         self.assertEqual(delegation_board_case["checks"][0]["target"], "delegation_board_snapshot")
         self.assertIn("columns.blocked", delegation_board_case["checks"][0]["required"])
@@ -178,8 +443,54 @@ class OfficialEvalSeedTests(unittest.TestCase):
             "session_eval_hybrid_history",
             [fixture["session_id"] for fixture in hybrid_recall_case["metadata"]["fixture_buddy_sessions"]],
         )
-        self.assertEqual(provider_fallback_case["checks"][0]["kind"], "provider_fallback")
+        provider_graph_run_check = next(check for check in provider_fallback_case["checks"] if check["kind"] == "graph_run")
+        provider_fallback_check = next(
+            check for check in provider_fallback_case["checks"] if check["kind"] == "provider_fallback"
+        )
+        self.assertEqual(provider_graph_run_check["required_metadata"]["eval"]["target_template_id"], "provider_fallback_eval")
+        self.assertEqual(provider_fallback_check["required_selected"], {"provider_id": "local", "model": "backup-model"})
         self.assertEqual(provider_fallback_case["input_values"]["requested_model_ref"], "openai/gpt-primary")
+        tool_runtime_graph_run_check = next(
+            check for check in tool_runtime_fallback_case["checks"] if check["kind"] == "graph_run"
+        )
+        self.assertEqual(
+            tool_runtime_graph_run_check["required_tool_invocations"][0]["error_type"],
+            "eval_tool_timeout",
+        )
+        self.assertEqual(
+            tool_runtime_fallback_case["metadata"]["fixture_tool_runtime"]["responses"]["fallback_guard_tool"][
+                "tool_key"
+            ],
+            "agent_loop_guard",
+        )
+        workspace_graph_run_check = next(check for check in workspace_executor_case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(
+            workspace_graph_run_check["required_action_invocations"][0]["action_key"],
+            "local_workspace_executor",
+        )
+        self.assertEqual(
+            workspace_executor_case["metadata"]["fixture_model_runtime"]["responses"]["eval-primary/gpt-primary"][
+                "meta"
+            ]["response_id"],
+            "workspace-action-fixture",
+        )
+        video_graph_run_check = next(check for check in video_segmenter_case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(video_graph_run_check["required_tool_invocations"][0]["tool_key"], "video_segmenter")
+        self.assertEqual(
+            video_segmenter_case["metadata"]["fixture_video_files"][0]["state_key"],
+            "source_video",
+        )
+        graph_template_graph_run_check = next(check for check in graph_template_case["checks"] if check["kind"] == "graph_run")
+        self.assertEqual(
+            [item["action_key"] for item in graph_template_graph_run_check["required_action_invocations"]],
+            [
+                "toograph_graph_template_reader",
+                "toograph_graph_template_validator",
+                "toograph_graph_template_writer",
+            ],
+        )
+        self.assertEqual(graph_template_case["metadata"]["fixture_agent_model_ref"], "eval-primary/gpt-primary")
+        self.assertTrue(graph_template_case["metadata"]["fixture_graph_template_workspace"])
         self.assertEqual(action_case["metadata"]["template_id"], "toograph_action_creation_workflow")
         self.assertIn("policy_sources", policy_case["input_values"])
         self.assertEqual(policy_case["checks"][0]["kind"], "llm_judge")
@@ -279,6 +590,54 @@ class OfficialEvalSeedTests(unittest.TestCase):
 
         self.assertEqual(case["checks"][0]["kind"], "capability_selection")
         self.assertEqual(case["checks"][0]["required_selected"], {"kind": "action", "key": "web_search_backup"})
+
+    def test_seed_official_eval_suites_keeps_executable_graph_run_checks(self) -> None:
+        with isolated_eval_database(), tempfile.TemporaryDirectory() as temp_dir:
+            template_root = Path(temp_dir) / "official"
+            template_dir = template_root / "graph_run_quality_template"
+            template_dir.mkdir(parents=True)
+            (template_dir / "template.json").write_text(
+                """
+                {
+                  "template_id": "graph_run_quality_template",
+                  "label": "Graph Run Quality Template",
+                  "description": "Fixture template for graph run eval checks.",
+                  "metadata": {"category": "test"}
+                }
+                """,
+                encoding="utf-8",
+            )
+            (template_dir / "eval_cases.json").write_text(
+                """
+                {
+                  "suite_id": "graph_run_quality_template_official",
+                  "cases": [
+                    {
+                      "case_id": "graph-run-contract",
+                      "checks": [
+                        {
+                          "kind": "graph_run",
+                          "target": "graph_run",
+                          "required_status": "completed",
+                          "required_template_id": "graph_run_quality_template",
+                          "required_state_keys": ["public_response"],
+                          "required_node_ids": ["reply"],
+                          "min_node_executions": 1
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            seed_official_eval_suites(template_root)
+            case = store.load_eval_case("graph_run_quality_template_official", "graph-run-contract")
+
+        self.assertEqual(case["checks"][0]["kind"], "graph_run")
+        self.assertEqual(case["checks"][0]["required_template_id"], "graph_run_quality_template")
+        self.assertEqual(case["checks"][0]["required_state_keys"], ["public_response"])
 
     def test_seed_official_eval_suites_keeps_executable_scheduler_run_checks(self) -> None:
         with isolated_eval_database(), tempfile.TemporaryDirectory() as temp_dir:

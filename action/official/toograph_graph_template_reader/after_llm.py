@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 from typing import Any
-
-from app.core.storage.readable_names import is_safe_storage_name
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+BACKEND_ROOT = REPO_ROOT / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+from app.core.storage.readable_names import is_safe_storage_name
+
 OFFICIAL_TEMPLATES_ROOT = REPO_ROOT / "graph_template" / "official"
 USER_TEMPLATES_ROOT = REPO_ROOT / "graph_template" / "user"
 TEMPLATE_FILE_NAME = "template.json"

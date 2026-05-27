@@ -6,6 +6,7 @@
   "version": "0.1.0",
   "timeoutSeconds": 600,
   "permissions": ["subprocess", "file_read", "file_write"],
+  "verificationEvalSuites": ["game_creative_factory_official", "video_segmenter_eval_core"],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

@@ -6,6 +6,7 @@
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
+  "verificationEvalSuites": ["policy_navigator_agent_lightweight"],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

@@ -1,0 +1,122 @@
+{
+  "template_id": "workspace_executor_eval",
+  "label": "Workspace Executor 评测",
+  "description": "运行真实 local_workspace_executor Action，验证模型规划、Action 执行、state/output 映射和 graph run Action invocation 审计。",
+  "default_graph_name": "Workspace Executor 评测",
+  "state_schema": {
+    "workspace_request": {
+      "name": "Workspace Request",
+      "description": "要在本地工作区执行的只读评测请求。",
+      "type": "text",
+      "value": "",
+      "color": "#2563eb",
+      "binding": null
+    },
+    "workspace_success": {
+      "name": "Workspace Success",
+      "description": "local_workspace_executor 执行是否成功。",
+      "type": "boolean",
+      "value": false,
+      "color": "#0f766e",
+      "binding": {
+        "kind": "action_output",
+        "actionKey": "local_workspace_executor",
+        "nodeId": "run_workspace_search",
+        "fieldKey": "success",
+        "managed": true
+      }
+    },
+    "workspace_result": {
+      "name": "Workspace Result",
+      "description": "local_workspace_executor 返回的只读搜索结果。",
+      "type": "markdown",
+      "value": "",
+      "color": "#9333ea",
+      "binding": {
+        "kind": "action_output",
+        "actionKey": "local_workspace_executor",
+        "nodeId": "run_workspace_search",
+        "fieldKey": "result",
+        "managed": true
+      }
+    }
+  },
+  "nodes": {
+    "input_workspace_request": {
+      "kind": "input",
+      "name": "工作区请求",
+      "description": "提供要执行的 workspace_request。",
+      "ui": {"position": {"x": 80, "y": 140}, "collapsed": false, "size": {"width": 380, "height": 180}},
+      "reads": [],
+      "writes": [{"state": "workspace_request", "mode": "replace"}],
+      "config": {"value": "", "boundaryType": "text"}
+    },
+    "run_workspace_search": {
+      "kind": "agent",
+      "name": "运行工作区搜索",
+      "description": "调用 local_workspace_executor 执行一次只读搜索，并把 success/result 映射回 state。",
+      "ui": {"position": {"x": 620, "y": 120}, "collapsed": false, "size": {"width": 520, "height": 280}},
+      "reads": [
+        {
+          "state": "workspace_request",
+          "required": true,
+          "binding": {
+            "kind": "action_input",
+            "actionKey": "local_workspace_executor",
+            "fieldKey": "workspace_request",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [
+        {"state": "workspace_success", "mode": "replace"},
+        {"state": "workspace_result", "mode": "replace"}
+      ],
+      "config": {
+        "actionKey": "local_workspace_executor",
+        "actionBindings": [
+          {
+            "actionKey": "local_workspace_executor",
+            "outputMapping": {
+              "success": "workspace_success",
+              "result": "workspace_result"
+            }
+          }
+        ],
+        "actionInstructionBlocks": {},
+        "taskInstruction": "根据 workspace_request 规划一次本地工作区只读搜索。operation 使用 search，path 使用仓库内相对路径，query 使用要查找的文本。把 Action 返回的 success 和 result 写入 workspace_success 与 workspace_result。",
+        "modelSource": "override",
+        "model": "eval-primary/gpt-primary",
+        "thinkingMode": "off",
+        "temperature": 0
+      }
+    },
+    "output_workspace_result": {
+      "kind": "output",
+      "name": "工作区搜索结果",
+      "description": "展示 workspace_result。",
+      "ui": {"position": {"x": 1260, "y": 130}, "collapsed": false, "size": {"width": 460, "height": 260}},
+      "reads": [{"state": "workspace_result", "required": true, "binding": null}],
+      "writes": [],
+      "config": {"displayMode": "markdown", "persistEnabled": false, "persistFormat": "auto", "fileNameTemplate": ""}
+    }
+  },
+  "edges": [
+    {"source": "input_workspace_request", "target": "run_workspace_search"},
+    {"source": "run_workspace_search", "target": "output_workspace_result"}
+  ],
+  "conditional_edges": [],
+  "metadata": {
+    "category": "workspace",
+    "role": "workspace_executor_eval",
+    "visible": false,
+    "capabilityDiscoverableDefault": false,
+    "tags": ["workspace", "action", "eval"],
+    "requiredActions": ["local_workspace_executor"],
+    "output_contract": [
+      {"state": "workspace_result", "role": "quality_report"}
+    ]
+  },
+  "source": "official",
+  "status": "active"
+}

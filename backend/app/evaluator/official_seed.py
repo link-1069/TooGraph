@@ -87,6 +87,22 @@ EXECUTABLE_PROVIDER_FALLBACK_KEYS = {
     "forbidden_terms",
     "min_fallbacks",
 }
+EXECUTABLE_GRAPH_RUN_KEYS = {
+    "required_status",
+    "required_graph_id",
+    "required_template_id",
+    "required_runtime_backend",
+    "required_metadata",
+    "required_state_keys",
+    "required_output_keys",
+    "required_node_ids",
+    "required_activity_kinds",
+    "required_tool_invocations",
+    "required_action_invocations",
+    "min_node_executions",
+    "min_tool_invocations",
+    "min_action_invocations",
+}
 
 
 def seed_official_eval_suites(template_root: str | Path | None = None) -> dict[str, Any]:
@@ -240,6 +256,8 @@ def _is_executable_check(record: dict[str, Any], kind: str) -> bool:
         return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_DELEGATION_WORKER_KEYS)
     if kind in {"provider_fallback", "model_provider_fallback", "provider_fallback_trace"}:
         return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_PROVIDER_FALLBACK_KEYS)
+    if kind in {"graph_run", "graph_run_contract"}:
+        return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_GRAPH_RUN_KEYS)
     return False
 
 

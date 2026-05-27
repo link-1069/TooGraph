@@ -17,7 +17,12 @@ VALID_TRIGGERS = {"preflight", "capability_result", "overflow_recovery", "backgr
 def buddy_context_pressure_check(payload: dict[str, Any] | None) -> dict[str, Any]:
     inputs = payload if isinstance(payload, dict) else {}
     trigger = _normalize_trigger(inputs.get("trigger"), inputs.get("capability_result"))
-    rendered_history_chars = _text_length(inputs.get("conversation_history"))
+    conversation_history = inputs.get("conversation_history")
+    history_budget = _context_budget(conversation_history)
+    rendered_history_chars = _text_length(conversation_history)
+    history_source_chars = max(rendered_history_chars, _non_negative_int(history_budget.get("source_chars"), 0))
+    history_used_chars = max(rendered_history_chars, _non_negative_int(history_budget.get("used_chars"), 0))
+    history_omitted_count = _non_negative_int(history_budget.get("omitted_count"), 0)
     user_message_chars = _text_length(inputs.get("user_message"))
     existing_session_summary_chars = _text_length(inputs.get("existing_session_summary"))
     context_compaction_summary_chars = _text_length(inputs.get("context_compaction_summary"))
@@ -33,6 +38,9 @@ def buddy_context_pressure_check(payload: dict[str, Any] | None) -> dict[str, An
     pressure_sources = _resolve_pressure_sources(
         trigger=trigger,
         rendered_history_chars=rendered_history_chars,
+        history_source_chars=history_source_chars,
+        history_omitted_count=history_omitted_count,
+        context_compaction_summary_chars=context_compaction_summary_chars,
         session_summary_chars=session_summary_chars,
         capability_result_chars=capability_result_chars,
         public_response_chars=public_response_chars,
@@ -44,6 +52,9 @@ def buddy_context_pressure_check(payload: dict[str, Any] | None) -> dict[str, An
         "version": 1,
         "trigger": trigger,
         "rendered_history_chars": rendered_history_chars,
+        "history_source_chars": history_source_chars,
+        "history_used_chars": history_used_chars,
+        "history_omitted_count": history_omitted_count,
         "user_message_chars": user_message_chars,
         "existing_session_summary_chars": existing_session_summary_chars,
         "context_compaction_summary_chars": context_compaction_summary_chars,
@@ -77,13 +88,20 @@ def _resolve_pressure_sources(
     *,
     trigger: str,
     rendered_history_chars: int,
+    history_source_chars: int,
+    history_omitted_count: int,
+    context_compaction_summary_chars: int,
     session_summary_chars: int,
     capability_result_chars: int,
     public_response_chars: int,
     thresholds: dict[str, int],
 ) -> list[str]:
     sources: list[str] = []
-    if rendered_history_chars >= thresholds["rendered_history_chars"]:
+    has_history_overflow = (
+        rendered_history_chars >= thresholds["rendered_history_chars"]
+        or (history_omitted_count > 0 and history_source_chars >= thresholds["rendered_history_chars"])
+    )
+    if has_history_overflow and context_compaction_summary_chars <= 0:
         sources.append("history")
     if (
         capability_result_chars >= thresholds["capability_result_chars"]
@@ -160,6 +178,26 @@ def _repo_root() -> Path:
     if configured:
         return Path(configured).expanduser().resolve()
     return Path(__file__).resolve().parents[3]
+
+
+def _context_budget(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    budget = value.get("budget")
+    if isinstance(budget, dict):
+        return budget
+    context_ref = value.get("context_ref")
+    if isinstance(context_ref, dict) and isinstance(context_ref.get("budget"), dict):
+        return context_ref["budget"]
+    return {}
+
+
+def _non_negative_int(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
 
 
 def main() -> None:
