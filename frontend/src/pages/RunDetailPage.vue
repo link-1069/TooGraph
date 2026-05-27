@@ -637,6 +637,135 @@
                 </li>
               </ul>
             </div>
+            <div v-if="agentDiagnostic.delegationWorker.visible" class="run-detail__capability-selection run-detail__delegation-worker">
+              <h4>{{ t("runDetail.delegationWorker") }}</h4>
+              <dl class="run-detail__diagnostic-facts">
+                <div v-if="agentDiagnostic.delegationWorker.taskId">
+                  <dt>{{ t("runDetail.delegationWorkerTask") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationWorker.taskId }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.status">
+                  <dt>{{ t("runDetail.delegationWorkerStatus") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationWorker.status }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.summary">
+                  <dt>{{ t("runDetail.delegationWorkerSummary") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationWorker.summary }}</dd>
+                </div>
+              </dl>
+              <div v-if="agentDiagnostic.delegationWorker.evidenceLabels.length > 0" class="run-detail__badges">
+                <span v-for="label in agentDiagnostic.delegationWorker.evidenceLabels" :key="label">{{ label }}</span>
+              </div>
+              <div
+                v-if="agentDiagnostic.delegationWorker.outputLabels.length > 0 || agentDiagnostic.delegationWorker.artifactLabels.length > 0 || agentDiagnostic.delegationWorker.sourceRefLabels.length > 0"
+                class="run-detail__capability-candidates"
+              >
+                <div v-if="agentDiagnostic.delegationWorker.outputLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerOutputs") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationWorker.outputLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.artifactLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerArtifacts") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationWorker.artifactLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.sourceRefLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerSources") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationWorker.sourceRefLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.workerRunLinks.length > 0 || agentDiagnostic.delegationWorker.workerRunLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerRuns") }}</strong>
+                  <template v-if="agentDiagnostic.delegationWorker.workerRunLinks.length > 0">
+                    <RouterLink
+                      v-for="link in agentDiagnostic.delegationWorker.workerRunLinks"
+                      :key="link.runId"
+                      class="run-detail__inline-link"
+                      :to="link.href"
+                    >
+                      {{ link.label }}<span v-if="link.status"> · {{ link.status }}</span>
+                    </RouterLink>
+                  </template>
+                  <template v-else>
+                    <span v-for="label in agentDiagnostic.delegationWorker.workerRunLabels" :key="label">{{ label }}</span>
+                  </template>
+                </div>
+              </div>
+              <div
+                v-if="agentDiagnostic.delegationWorker.budgetLabels.length > 0 || agentDiagnostic.delegationWorker.capabilityLabels.length > 0 || agentDiagnostic.delegationWorker.followupLabels.length > 0"
+                class="run-detail__capability-candidates"
+              >
+                <div v-if="agentDiagnostic.delegationWorker.budgetLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerBudget") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationWorker.budgetLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.capabilityLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerCapabilities") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationWorker.capabilityLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationWorker.followupLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationWorkerFollowups") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationWorker.followupLabels" :key="label">{{ label }}</span>
+                </div>
+              </div>
+              <ul v-if="agentDiagnostic.delegationWorker.errorLabels.length > 0" class="run-detail__diagnostic-warnings">
+                <li v-for="label in agentDiagnostic.delegationWorker.errorLabels" :key="label" class="run-detail__diagnostic-warning">
+                  {{ label }}
+                </li>
+              </ul>
+            </div>
+            <div v-if="agentDiagnostic.delegationBoard.visible" class="run-detail__capability-selection run-detail__delegation-board">
+              <h4>{{ t("runDetail.delegationBoard") }}</h4>
+              <dl class="run-detail__diagnostic-facts">
+                <div v-if="agentDiagnostic.delegationBoard.boardId">
+                  <dt>{{ t("runDetail.delegationBoardId") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationBoard.boardId }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.delegationBoard.title">
+                  <dt>{{ t("runDetail.delegationBoardTitle") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationBoard.title }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.delegationBoard.status">
+                  <dt>{{ t("runDetail.delegationBoardStatus") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationBoard.status }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.delegationBoard.cardCount > 0">
+                  <dt>{{ t("runDetail.delegationBoardCards") }}</dt>
+                  <dd>{{ agentDiagnostic.delegationBoard.cardCount }}</dd>
+                </div>
+              </dl>
+              <div v-if="agentDiagnostic.delegationBoard.evidenceLabels.length > 0" class="run-detail__badges">
+                <span v-for="label in agentDiagnostic.delegationBoard.evidenceLabels" :key="label">{{ label }}</span>
+              </div>
+              <div
+                v-if="agentDiagnostic.delegationBoard.statusLabels.length > 0 || agentDiagnostic.delegationBoard.blockedLabels.length > 0 || agentDiagnostic.delegationBoard.reviewLabels.length > 0"
+                class="run-detail__capability-candidates"
+              >
+                <div v-if="agentDiagnostic.delegationBoard.statusLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationBoardColumns") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationBoard.statusLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationBoard.blockedLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationBoardBlocked") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationBoard.blockedLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationBoard.reviewLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationBoardReview") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationBoard.reviewLabels" :key="label">{{ label }}</span>
+                </div>
+              </div>
+              <div
+                v-if="agentDiagnostic.delegationBoard.nextActionLabels.length > 0 || agentDiagnostic.delegationBoard.sourceRefLabels.length > 0"
+                class="run-detail__capability-candidates"
+              >
+                <div v-if="agentDiagnostic.delegationBoard.nextActionLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationBoardNextActions") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationBoard.nextActionLabels" :key="label">{{ label }}</span>
+                </div>
+                <div v-if="agentDiagnostic.delegationBoard.sourceRefLabels.length > 0">
+                  <strong>{{ t("runDetail.delegationBoardSources") }}</strong>
+                  <span v-for="label in agentDiagnostic.delegationBoard.sourceRefLabels" :key="label">{{ label }}</span>
+                </div>
+              </div>
+            </div>
             <ul v-if="agentDiagnostic.warnings.length > 0" class="run-detail__diagnostic-warnings">
               <li v-for="warning in agentDiagnostic.warnings" :key="warning" class="run-detail__diagnostic-warning">
                 {{ warning }}

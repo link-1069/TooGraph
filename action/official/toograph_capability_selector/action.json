@@ -5,6 +5,7 @@
   "description": "根据当前 LLM 节点可见的图状态和 before_llm.py 提供的启用能力目录，判断是否还需要调用一个动态 Action、Subgraph、Tool；不需要时返回 none。",
   "llmInstruction": "根据当前图状态判断本轮是否还需要调用能力；所有连接到本 LLM 节点的普通 state 都是可用上下文，stateInputSchema 只是提示用户可连接哪些信息，不代表唯一输入。如果当前状态已经足够回复用户，或上一轮 result_package/capability_review 表明能力已成功产出可用结果且不需要继续调用能力，输出 {\"kind\":\"none\"}。需要一个显式能力完成下一步时，读取 Action Pre-LLM Context 中按 Subgraphs、Actions、Tools 分区列出的当前启用能力目录，并选择一个互斥 capability。目录包含 key、description、selection metadata 和历史反馈摘要，用于判断覆盖范围、输出完整性、权限层级、eval 覆盖和近期表现。输出 llmOutputSchema.capability。选择优先级：subgraph > action > tool；当多个能力都能完成当前下一步时，选择优先级最高、覆盖最完整、权限层级和历史反馈最合适的一个。kind 必须是 subgraph、action、tool 或 none；选择能力时 key 必须完全来自对应分区；没有合适能力或不需要能力时输出 {\"kind\":\"none\"}，不需要 reason。本节点只输出单个 capability 对象；能力执行和候选审计由运行时与 after_llm 完成。",
   "version": "3.3.0",
+  "verificationEvalSuites": ["buddy_autonomous_loop_core"],
   "timeoutSeconds": 30,
   "permissions": [],
   "stateInputSchema": [

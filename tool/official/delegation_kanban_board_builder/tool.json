@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "delegation_kanban_board_builder",
+  "name": "Delegation Kanban Board Builder",
+  "description": "Builds a deterministic delegation_board_snapshot from worker_task_packet, worker_result_package, and worker_merge_review_package records so long-running delegated work can be inspected as a Kanban-style board.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "verificationEvalSuites": ["delegation_kanban_board_eval_core"],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "board_id",
+      "name": "Board ID",
+      "valueType": "text",
+      "description": "Stable board identifier."
+    },
+    {
+      "key": "board_title",
+      "name": "Board Title",
+      "valueType": "text",
+      "description": "Human-readable board title."
+    },
+    {
+      "key": "worker_task_packets",
+      "name": "Worker Task Packets",
+      "valueType": "json",
+      "description": "List of worker_task_packet records to project onto cards."
+    },
+    {
+      "key": "worker_result_packages",
+      "name": "Worker Result Packages",
+      "valueType": "json",
+      "description": "Optional worker_result_package records."
+    },
+    {
+      "key": "worker_merge_review_package",
+      "name": "Worker Merge Review Package",
+      "valueType": "json",
+      "description": "Optional parent worker_merge_review_package with workers, risk flags, retry attempts, and budget review."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Builder execution status."
+    },
+    {
+      "key": "delegation_board_snapshot",
+      "name": "Delegation Board Snapshot",
+      "valueType": "json",
+      "description": "Kanban-style board snapshot with columns, cards, counts, source refs, and next actions."
+    },
+    {
+      "key": "kanban_board_report",
+      "name": "Kanban Board Report",
+      "valueType": "markdown",
+      "description": "Short human-readable report for run details and output nodes."
+    }
+  ]
+}

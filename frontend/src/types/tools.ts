@@ -1,3 +1,5 @@
+import type { VerificationCommand } from "./verification.ts";
+
 export type ToolIoField = {
   key: string;
   name: string;
@@ -20,6 +22,8 @@ export type ToolDefinition = {
   version: string;
   permissions: string[];
   runtime: ToolRuntimeSpec;
+  verificationCommands?: VerificationCommand[];
+  verificationEvalSuites?: string[];
   inputSchema: ToolIoField[];
   outputSchema: ToolIoField[];
   sourceScope: string;

@@ -1,3 +1,5 @@
+import type { VerificationCommand } from "./verification.ts";
+
 export type ActionIoField = {
   key: string;
   name: string;
@@ -32,6 +34,8 @@ export type ActionDefinition = {
   capabilityPolicy: ActionCapabilityPolicies;
   permissions: string[];
   runtime: ActionRuntimeSpec;
+  verificationCommands?: VerificationCommand[];
+  verificationEvalSuites?: string[];
   stateInputSchema?: ActionIoField[];
   llmOutputSchema: ActionIoField[];
   stateOutputSchema: ActionIoField[];

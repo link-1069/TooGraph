@@ -34,6 +34,13 @@ class ProviderFallbackResolverToolTests(unittest.TestCase):
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Provider Fallback Resolver")
         self.assertIn("provider_fallback_trace", definition.description)
+        self.assertEqual(len(definition.verification_commands), 1)
+        self.assertEqual(definition.verification_commands[0].command, "python")
+        self.assertEqual(
+            definition.verification_commands[0].args,
+            ["-m", "unittest", "backend.tests.test_provider_fallback_resolver"],
+        )
+        self.assertEqual(definition.verification_eval_suites, ["provider_fallback_eval_core"])
         self.assertIn("provider_fallback_resolver", get_tool_registry(include_disabled=True).keys())
 
     def test_tool_outputs_provider_fallback_trace(self) -> None:

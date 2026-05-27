@@ -5,6 +5,7 @@
   "description": "当经过 Buddy 自主复盘或人工确认，需要把低风险 Buddy Home 写回命令应用到长期文件并保留可恢复 revision 时使用。",
   "llmInstruction": "根据上游自主复盘结果生成 commands 数组。命令集合限定为 memory_document.update、user_context.update、session_summary.update、buddy_identity.update、capability_usage_stats.update。memory_document.update 更新完整 MEMORY.md 内容，user_context.update 更新完整 USER.md 内容，payload 均包含 content。buddy_identity.update 更新 SOUL.md 中的伙伴名字、人设、语气、回复风格或显示偏好。capability_usage_stats.update 记录本轮实际使用过的 Action 或 Subgraph，payload 包含 capability(kind/key/name)、success、run_id、summary、可选 duration_ms，或 entries 数组。运行时通过 Buddy command/store 写入并生成 revision。",
   "version": "1.0.0",
+  "verificationEvalSuites": ["buddy_autonomous_review_core", "buddy_context_compaction_core"],
   "timeoutSeconds": 30,
   "permissions": ["buddy_home_write"],
   "metadata": {

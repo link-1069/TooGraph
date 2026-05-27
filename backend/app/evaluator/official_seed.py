@@ -230,7 +230,13 @@ def _is_executable_check(record: dict[str, Any], kind: str) -> bool:
         return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_CAPABILITY_SELECTION_KEYS)
     if kind in {"scheduler_run", "scheduled_graph_job_run"}:
         return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_SCHEDULER_RUN_KEYS)
-    if kind in {"delegation_worker", "worker_result", "worker_result_package"}:
+    if kind in {
+        "delegation_worker",
+        "worker_result",
+        "worker_result_package",
+        "worker_merge_review",
+        "worker_merge_review_package",
+    }:
         return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_DELEGATION_WORKER_KEYS)
     if kind in {"provider_fallback", "model_provider_fallback", "provider_fallback_trace"}:
         return any(_has_concrete_value(record.get(key)) for key in EXECUTABLE_PROVIDER_FALLBACK_KEYS)

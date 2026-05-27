@@ -128,6 +128,16 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.failedLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.rejectedLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.fallbackLabels/);
+  assert.match(componentSource, /agentDiagnostic\.delegationWorker\.visible/);
+  assert.match(componentSource, /agentDiagnostic\.delegationWorker\.taskId/);
+  assert.match(componentSource, /agentDiagnostic\.delegationWorker\.outputLabels/);
+  assert.match(componentSource, /agentDiagnostic\.delegationWorker\.workerRunLinks/);
+  assert.match(componentSource, /agentDiagnostic\.delegationWorker\.workerRunLabels/);
+  assert.match(componentSource, /agentDiagnostic\.delegationWorker\.budgetLabels/);
+  assert.match(componentSource, /agentDiagnostic\.delegationBoard\.visible/);
+  assert.match(componentSource, /agentDiagnostic\.delegationBoard\.boardId/);
+  assert.match(componentSource, /agentDiagnostic\.delegationBoard\.statusLabels/);
+  assert.match(componentSource, /agentDiagnostic\.delegationBoard\.nextActionLabels/);
   assert.match(componentSource, /agentDiagnostic\.permissionApproval\.visible/);
   assert.match(componentSource, /agentDiagnostic\.permissionApproval\.actionable/);
   assert.match(componentSource, /agentDiagnostic\.permissionApproval\.capabilityRef/);
@@ -142,6 +152,10 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /run-detail__diagnostic-warnings/);
   assert.match(componentSource, /run-detail__diagnostic-warning/);
   assert.match(componentSource, /t\("runDetail\.providerFallback"\)/);
+  assert.match(componentSource, /t\("runDetail\.delegationWorker"\)/);
+  assert.match(componentSource, /t\("runDetail\.delegationWorkerRuns"\)/);
+  assert.match(componentSource, /t\("runDetail\.delegationBoard"\)/);
+  assert.match(componentSource, /t\("runDetail\.delegationBoardNextActions"\)/);
   assert.match(componentSource, /t\("runDetail\.agentDiagnostic"\)/);
 });
 

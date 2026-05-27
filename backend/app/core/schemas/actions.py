@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.schemas.verification import VerificationCommand
+
 
 class ActionSourceScope(str, Enum):
     INSTALLED = "installed"
@@ -69,6 +71,11 @@ class ActionDefinition(BaseModel):
     )
     permissions: list[str] = Field(default_factory=list)
     runtime: ActionRuntimeSpec = Field(default_factory=ActionRuntimeSpec)
+    verification_commands: list[VerificationCommand] = Field(
+        default_factory=list,
+        alias="verificationCommands",
+    )
+    verification_eval_suites: list[str] = Field(default_factory=list, alias="verificationEvalSuites")
     state_input_schema: list[ActionIoField] = Field(default_factory=list, alias="stateInputSchema")
     llm_output_schema: list[ActionIoField] = Field(default_factory=list, alias="llmOutputSchema")
     state_output_schema: list[ActionIoField] = Field(default_factory=list, alias="stateOutputSchema")

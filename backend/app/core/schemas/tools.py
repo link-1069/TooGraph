@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.schemas.verification import VerificationCommand
+
 
 class ToolSourceScope(str, Enum):
     INSTALLED = "installed"
@@ -44,6 +46,11 @@ class ToolDefinition(BaseModel):
     version: str = ""
     permissions: list[str] = Field(default_factory=list)
     runtime: ToolRuntimeSpec = Field(default_factory=ToolRuntimeSpec)
+    verification_commands: list[VerificationCommand] = Field(
+        default_factory=list,
+        alias="verificationCommands",
+    )
+    verification_eval_suites: list[str] = Field(default_factory=list, alias="verificationEvalSuites")
     input_schema: list[ToolIoField] = Field(default_factory=list, alias="inputSchema")
     output_schema: list[ToolIoField] = Field(default_factory=list, alias="outputSchema")
     source_scope: ToolSourceScope = Field(default=ToolSourceScope.INSTALLED, alias="sourceScope")

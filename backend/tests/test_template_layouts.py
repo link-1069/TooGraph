@@ -105,6 +105,9 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_hybrid_recall_eval",
                 "buddy_improvement_review_workflow",
                 "buddy_memory_recall_eval",
+                "delegation_kanban_board_eval",
+                "delegation_worker_batch_eval",
+                "delegation_worker_batch_workflow",
                 "delegation_worker_eval",
                 "ecommerce_review_mining_agent",
                 "embedding_maintenance",
@@ -129,6 +132,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_capability_curator",
                 "buddy_context_compaction",
                 "buddy_improvement_review_workflow",
+                "delegation_worker_batch_workflow",
                 "embedding_maintenance",
                 "toograph_page_operation_workflow",
             ],
@@ -393,6 +397,130 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(product_template["default_graph_name"], "产品竞品研究助手")
         self.assertIn("PRD 草稿", product_template["description"])
         self.assertIs(product_template["capabilityDiscoverable"], False)
+
+    def test_delegation_worker_batch_eval_runs_subgraph_workers_and_merges_results(self) -> None:
+        template = load_template_record("delegation_worker_batch_eval")
+        nodes = template["nodes"]
+        state_schema = template["state_schema"]
+
+        self.assertEqual(template["metadata"]["role"], "delegation_worker_batch_eval")
+        self.assertEqual(
+            template["metadata"]["requiredTools"],
+            ["delegation_worker_result_packager", "delegation_worker_result_merger"],
+        )
+        self.assertIs(template["capabilityDiscoverable"], False)
+
+        batch_node = nodes["run_worker_batch"]
+        self.assertEqual(batch_node["kind"], "batch")
+        self.assertEqual(batch_node["config"]["workerSource"], "subgraph")
+        self.assertEqual(batch_node["config"]["maxConcurrency"], 2)
+        self.assertEqual(batch_node["config"]["continueOnError"], True)
+        self.assertEqual(
+            batch_node["config"]["inputModes"],
+            {
+                "worker_task_packets": "batch",
+                "worker_outputs_list": "batch",
+                "worker_statuses": "batch",
+                "worker_budget_usages": "batch",
+            },
+        )
+        self.assertEqual(batch_node["writes"], [{"state": "worker_result_packages", "mode": "replace"}])
+
+        worker_graph = batch_node["config"]["subgraphWorker"]["graph"]
+        self.assertEqual(worker_graph["nodes"]["package_worker_result"]["kind"], "tool")
+        self.assertEqual(
+            worker_graph["nodes"]["package_worker_result"]["config"]["toolKey"],
+            "delegation_worker_result_packager",
+        )
+        budget_read = next(
+            read for read in worker_graph["nodes"]["package_worker_result"]["reads"]
+            if read["binding"]["fieldKey"] == "budget_usage"
+        )
+        self.assertEqual(budget_read["state"], "worker_budget_usage")
+        self.assertEqual(worker_graph["nodes"]["output_worker_result_package"]["kind"], "output")
+
+        merge_node = nodes["merge_worker_results"]
+        self.assertEqual(merge_node["kind"], "tool")
+        self.assertEqual(merge_node["config"]["toolKey"], "delegation_worker_result_merger")
+        self.assertEqual(
+            _read_contracts(merge_node["writes"]),
+            [
+                {"state": "worker_merge_status", "mode": "replace"},
+                {"state": "worker_merge_review_package", "mode": "replace"},
+                {"state": "merge_review_report", "mode": "replace"},
+            ],
+        )
+        self.assertEqual(
+            state_schema["worker_merge_review_package"]["binding"]["toolKey"],
+            "delegation_worker_result_merger",
+        )
+        self.assertIn({"source": "run_worker_batch", "target": "merge_worker_results"}, template["edges"])
+        self.assertIn({"source": "merge_worker_results", "target": "output_worker_merge_review"}, template["edges"])
+
+    def test_delegation_worker_batch_workflow_exposes_reusable_board_workflow(self) -> None:
+        template = load_template_record("delegation_worker_batch_workflow")
+        nodes = template["nodes"]
+        state_schema = template["state_schema"]
+
+        self.assertEqual(template["metadata"]["role"], "delegation_worker_batch_workflow")
+        self.assertEqual(
+            template["metadata"]["requiredTools"],
+            [
+                "delegation_worker_result_packager",
+                "delegation_worker_result_merger",
+                "delegation_kanban_board_builder",
+            ],
+        )
+        self.assertIs(template["metadata"]["visible"], True)
+        self.assertIs(template["capabilityDiscoverable"], False)
+        self.assertEqual(nodes["run_worker_batch"]["kind"], "batch")
+        self.assertEqual(nodes["merge_worker_results"]["config"]["toolKey"], "delegation_worker_result_merger")
+        self.assertEqual(nodes["build_delegation_board"]["kind"], "tool")
+        self.assertEqual(nodes["build_delegation_board"]["config"]["toolKey"], "delegation_kanban_board_builder")
+        self.assertEqual(
+            _read_contracts(nodes["build_delegation_board"]["writes"]),
+            [
+                {"state": "kanban_builder_status", "mode": "replace"},
+                {"state": "delegation_board_snapshot", "mode": "replace"},
+                {"state": "kanban_board_report", "mode": "replace"},
+            ],
+        )
+        self.assertEqual(
+            state_schema["delegation_board_snapshot"]["binding"]["toolKey"],
+            "delegation_kanban_board_builder",
+        )
+        self.assertEqual(
+            [item["state"] for item in template["metadata"]["outputContract"]],
+            ["worker_merge_review_package", "delegation_board_snapshot", "kanban_board_report"],
+        )
+        self.assertIn({"source": "merge_worker_results", "target": "build_delegation_board"}, template["edges"])
+        self.assertIn({"source": "build_delegation_board", "target": "output_delegation_board"}, template["edges"])
+        self.assertIn({"source": "build_delegation_board", "target": "output_kanban_board_report"}, template["edges"])
+
+    def test_delegation_kanban_board_eval_builds_board_snapshot(self) -> None:
+        template = load_template_record("delegation_kanban_board_eval")
+        nodes = template["nodes"]
+        state_schema = template["state_schema"]
+
+        self.assertEqual(template["metadata"]["role"], "delegation_kanban_board_eval")
+        self.assertEqual(template["metadata"]["requiredTools"], ["delegation_kanban_board_builder"])
+        self.assertIs(template["capabilityDiscoverable"], False)
+        self.assertEqual(nodes["build_delegation_board"]["kind"], "tool")
+        self.assertEqual(nodes["build_delegation_board"]["config"]["toolKey"], "delegation_kanban_board_builder")
+        self.assertEqual(
+            _read_contracts(nodes["build_delegation_board"]["writes"]),
+            [
+                {"state": "kanban_builder_status", "mode": "replace"},
+                {"state": "delegation_board_snapshot", "mode": "replace"},
+                {"state": "kanban_board_report", "mode": "replace"},
+            ],
+        )
+        self.assertEqual(
+            state_schema["delegation_board_snapshot"]["binding"]["toolKey"],
+            "delegation_kanban_board_builder",
+        )
+        self.assertIn({"source": "input_worker_task_packets", "target": "build_delegation_board"}, template["edges"])
+        self.assertIn({"source": "build_delegation_board", "target": "output_delegation_board"}, template["edges"])
 
     def test_page_operation_template_instruction_hides_self_surface_details(self) -> None:
         template = load_template_record("toograph_page_operation_workflow")

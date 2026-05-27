@@ -88,7 +88,7 @@ Buddy / Agent entry
 | Capability Selector 与能力路由 | `model_tools.py`、`tools/registry.py`、`toolsets.py` | selector 不只选择能力，还记录候选评分、拒绝理由、权限和 fallback | 统一 capability profile；selector 输出 score breakdown、rejected candidates、permission summary；失败写 usage event 供下一次选择参考 | capability profile、usage events、selection trace | P1 |
 | Action / Tool / Subgraph 生态 | `tools/*`、`plugins/*`、`toolsets.py` | 官方能力覆盖常用低层操作，每个能力有合同、权限、失败模式和测试 | Core Tools、Workspace Actions、Web Actions、Knowledge Tools、Graph Actions、Buddy Actions 分层建设；manifest 增强 permissions/scopes/artifacts/eval | capability catalog、能力准入规范、官方能力包 | P1-P2 |
 | Scheduler / Cron / 后台任务 | `cron/jobs.py`、`cron/scheduler.py`、`tools/cronjob_tools.py` | 定时任务是 scheduled graph job，每次运行都是可审计 graph run | 建 `scheduled_graph_jobs` 和 job runs；后台 tick 到点创建图运行；支持暂停、立即运行、失败记录、retry policy、delivery target | Scheduler store/runtime/UI、job run history | P2 |
-| Delegation / Subagents / Kanban | `tools/delegate_tool.py`、`hermes_cli/kanban_db.py`、`tools/kanban_tools.py` | 委派表达为 Subgraph worker，主图负责拆分、预算、合并结果 | 定义 `worker_task_packet` 和 `worker_result_package`；Subgraph worker 模板执行受限能力；merge/review 节点聚合 | worker packet/result schema、worker run links、并发预算 | P2-P3 |
+| Delegation / Subagents / Kanban | `tools/delegate_tool.py`、`hermes_cli/kanban_db.py`、`tools/kanban_tools.py` | 委派表达为 Subgraph worker，主图负责拆分、预算、合并结果和长期 board 投影 | 定义 `worker_task_packet`、`worker_result_package`、`worker_merge_review_package` 和 `delegation_board_snapshot`；Subgraph worker 模板执行受限能力；merge/review 节点聚合；board builder 投影长期任务状态 | worker packet/result schema、worker run links、并发预算、board snapshot | P2-P3 |
 | Provider Runtime 与模型能力矩阵 | `providers/base.py`、`hermes_cli/runtime_provider.py`、`agent/model_metadata.py`、`agent/transports/*` | 所有模型调用走同一 resolver，知道 provider 能力、fallback、repair trace | 扩展 provider profile；LLM、Action planning、review、scheduler、embedding/rerank 共用 runtime resolver；结构化输出 repair + fallback | provider capability matrix、fallback policy、repair trace | P2 |
 | 上下文压缩与 Prompt Cache | `agent/conversation_compression.py`、`agent/context_compressor.py`、`agent/prompt_caching.py` | 压缩是可审计图分支，摘要带 source refs，稳定上下文不反复破坏缓存 | 标准化压缩输出；保存 prompt snapshot 的引用而不是递归全文；复盘写入只影响下一轮 | compression report、summary revision、budget panel | P1 |
 | 权限、安全与注入防护 | `tools/approval.py`、`tools/path_security.py`、`tools/tirith_security.py`、`agent/file_safety.py`、`agent/redact.py` | 高风险副作用、注入风险和 secret 暴露都有通用 guardrail | context scanner 检查外部内容；operation-level approval；官方资产保护；run record 脱敏；定时任务不绕过权限 | context scanner、permission profile、approval audit | P1-P2 |
@@ -704,8 +704,16 @@ TooGraph 差距：
 
 - 已新增 `delegation_worker_result_packager` Tool，作为 worker 协议边界的确定性低层 primitive：输入 `worker_task_packet`、worker outputs、状态、摘要和预算使用量，输出标准 `worker_result_package`。
 - `worker_task_packet` 初版字段已覆盖 `task_id`、`goal`、`context_package_refs`、`allowed_capabilities`、`budget` 和 `expected_output_schema`；`worker_result_package` 初版字段已覆盖 `task_id`、`status`、`summary`、`outputs`、`artifacts`、`errors`、`followups`、`source_refs`、`allowed_capabilities` 和 `budget`。
+- 已新增 `delegation_worker_result_merger` Tool，作为父图 merge/review 的确定性低层 primitive：输入多个 `worker_result_package`、merge goal、expected output schema 和 review policy，输出标准 `worker_merge_review_package` 与 `merge_review_report`，包含状态计数、合并 outputs、artifact/error/followup 聚合、worker run links、预算总计、预算耗尽详情、retry attempts、risk flags 和推荐下一步。
 - 已新增官方隐藏模板 `delegation_worker_eval` 和 `delegation_worker_eval_core` eval suite，用 `delegation_worker` 自动 check 验证 worker result 的 task id、状态、输出键、source refs 和关键文本。
-- 后续仍需把该协议接入真实 Subgraph worker 执行、并发预算、worker run links、结果 merge/review 节点和 RunDetail/Buddy 胶囊展示。
+- 已新增官方隐藏模板 `delegation_worker_batch_eval` 和 `delegation_worker_batch_eval_core` eval suite，用真实 Batch 节点嵌入 Subgraph worker 并发处理多个 `worker_task_packet`，再用 `delegation_worker_result_merger` 产出父图 `worker_merge_review_package`；后端运行回归会实际执行该模板并验证 child run、`batch_subgraph_worker` invocation、`maxConcurrency=2`、预算耗尽、retry attempts 和合并复盘结果。
+- 已新增 `delegation_kanban_board_builder` Tool 和官方隐藏模板 `delegation_kanban_board_eval` / `delegation_kanban_board_eval_core`，把 `worker_task_packet`、`worker_result_package` 和 `worker_merge_review_package` 投影为标准 `delegation_board_snapshot`，包含 lanes、columns、cards、source refs、risk flags 和 next actions；这是 Hermes Kanban/board 能力在 TooGraph 图 state 中的确定性合同。
+- 已新增可见官方模板 `delegation_worker_batch_workflow`，把 Batch/Subgraph worker、`delegation_worker_result_merger` 和 `delegation_kanban_board_builder` 串成可复用主图工作流；该模板输出 `worker_merge_review_package`、`delegation_board_snapshot` 和 `kanban_board_report`，让用户可以直接从模板库运行或复制改造委派批次流程。
+- `worker_merge_review` / `worker_merge_review_package` 已接入 eval 的结构化 check 和官方 eval seed 保留规则，后续模板可直接用确定性检查验证父图合并结果，而不是退回 LLM judge。
+- RunDetail Agent Diagnostic 已能从 run state 或节点输出中的 `worker_result_package` 重组 worker task id、状态、摘要、输出、artifact、source refs、worker run links、预算、允许能力、followup 和错误；worker run links 可来自 package 中的 child/worker run id、`graph_run` source ref 和 `RunDetail.children` 中的 `batch_subgraph_worker` 子运行。
+- Buddy 胶囊会在对应节点 artifact labels 中显示 worker task、状态、输出、worker run、预算和允许能力，仍然只按 output 边界分段。
+- RunDetail Agent Diagnostic 已能从 run state 或节点输出中的 `delegation_board_snapshot` 重组 board id、标题、状态、卡片数、blocked/review cards、columns、source refs 和 next actions；Buddy 胶囊会在对应节点 artifact labels 中显示 board id、状态、卡片数、列计数和下一步动作，仍然只按 output 边界分段。
+- 后续仍需补齐持久化协作 board/claim 语义和更细的 provider/tool 失败恢复策略。
 
 解决方案：
 
@@ -728,19 +736,30 @@ TooGraph 差距：
    - 输入 task packet。
    - 执行受限能力。
    - 输出 result package。
+   - 通过 Batch 节点记录 child run、item index、item label 和 `batch_subgraph_worker` invocation。
 4. 新增 merge/review 节点：
    - 合并多个 worker result。
-   - 去重冲突。
-   - 输出最终回答或下一轮任务。
+   - 聚合状态、预算、worker run links、artifact、error 和 followup。
+   - 根据 expected output schema、review policy、预算耗尽和 retry attempts 产出 risk flags。
+   - 输出最终回答依据或下一轮任务建议。
 5. UI：
    - RunDetail 以 worker group 展示并发任务。
    - Buddy 胶囊显示子任务数量、状态、失败。
+   - RunDetail 和 Buddy 胶囊从同一 `delegation_board_snapshot` 事实源投影 Kanban board 状态、blocked/review cards 和 next actions。
+6. Kanban/board：
+   - 将 worker task、result、merge review 投影成 `delegation_board_snapshot`。
+   - 用 board columns 表达 todo、blocked、review、done。
+   - 用 next actions 给父图或后续调度提供可审计下一步。
 
 验收标准：
 
-- 一个主图能并发运行多个子任务并合并结果。
+- 一个主图能并发运行多个子任务并用标准 `worker_merge_review_package` 合并结果。
 - 每个子任务有独立 run id 和预算。
 - 超预算、失败、部分成功都有可读汇总。
+- 官方隐藏 batch eval 模板能作为回归入口实际执行 Batch/Subgraph worker 编排。
+- 官方隐藏 board eval 模板能把 worker 状态投影成 `delegation_board_snapshot` 并通过 eval 验证 blocked/review columns 与 next actions。
+- 官方可见委派工作流模板能直接复用 Batch/Subgraph worker、merge review 和 board snapshot 投影。
+- RunDetail 和 Buddy 胶囊能从同一 `delegation_board_snapshot` 事实源显示 board 状态、列计数和 next actions。
 
 优先级：P2-P3。
 
@@ -1084,20 +1103,27 @@ TooGraph 差距：
 - Eval runner 已支持 case 级 `metadata.fixture_runs`，启动 eval case 前会把声明的 source run fixture 写入统一 graph run store；复盘、压缩和改进验证类模板可以通过真实 `source_run_id` 从 run 事实源恢复上下文。
 - Eval runner 已支持 case 级 `metadata.fixture_buddy_sessions`，能把 Buddy session/message fixture 写入统一 DB 并投影到 retrieval，供 session search 和 hybrid recall eval 形成可重复输入。
 - Eval runner 已支持 case 级 `metadata.fixture_memory_entries`，能把结构化记忆 fixture 写入统一 DB 并投影到 retrieval，供 memory recall eval 形成可重复输入。
-- 官方 eval seed 已覆盖 `buddy_autonomous_review_core`、`buddy_context_compaction_core`、`embedding_maintenance_core`、`buddy_memory_recall_eval_core`、`buddy_hybrid_recall_eval_core`、`buddy_capability_curator_core`、`buddy_improvement_review_workflow_core` 和 `delegation_worker_eval_core`，加上既有 Buddy 主循环、页面操作、Action 创建、Web research 和业务模板 eval，核心 Buddy 后台能力已有可发现回归入口。
+- 官方 eval seed 已覆盖 `buddy_autonomous_review_core`、`buddy_context_compaction_core`、`embedding_maintenance_core`、`buddy_memory_recall_eval_core`、`buddy_hybrid_recall_eval_core`、`buddy_capability_curator_core`、`buddy_improvement_review_workflow_core`、`delegation_worker_eval_core`、`delegation_worker_batch_eval_core` 和 `delegation_kanban_board_eval_core`，加上既有 Buddy 主循环、页面操作、Action 创建、Web research 和业务模板 eval，核心 Buddy 后台能力已有可发现回归入口。
 - 新增的 eval cases 覆盖后台复盘产物、上下文压缩摘要、Embedding 维护计数、能力整理报告和改进候选审批请求；定性规则仍通过 LLM judge 跑，结构化输出通过 schema check 跑。
 - 新增 `memory_retrieval` 自动 check，用确定性方式验证 memory ids、source refs、required terms、forbidden terms 和上下文预算，让记忆召回质量不完全依赖 LLM judge。
 - 新增 `capability_selection` 自动 check 和 case 级 `fixture_capability_usage_entries`，Buddy 主循环 eval 已能覆盖“能力近期失败后 selector 改选健康 fallback，并留下结构化拒绝原因”的回归场景。
 - 新增 `scheduler_run` 自动 check、`scheduler_run_context_loader` Tool 和 `scheduler_retry_delivery_eval_core`，调度 retry/delivery 现在可以通过 eval 中心验证，而不只依赖 scheduler store 单元测试。
 - `scheduler_run_context_loader` 会同时读取关联 graph run 的权限 metadata；`scheduler_run` 自动 check 已支持验证 `graph_permission_mode`、`permission_policy`、`scheduled_graph_permission_policy_source` 和 `pending_permission_approval`，官方 scheduler eval case 现在覆盖后台调度运行的 risky 审批边界。
-- 新增 `delegation_worker` 自动 check、`delegation_worker_result_packager` Tool 和 `delegation_worker_eval_core`，委派 worker packet/result 协议已有可重复评测入口。
+- 新增 `delegation_worker` / `worker_merge_review` 自动 check、`delegation_worker_result_packager` / `delegation_worker_result_merger` / `delegation_kanban_board_builder` Tool 和 delegation eval suites，委派 worker packet/result/merge review/board snapshot 协议已有可重复评测入口。
 - 新增 `hybrid_recall` 自动 check、`hybrid_recall_context_loader` Tool 和 `buddy_hybrid_recall_eval_core`，session/history + DB memory 的混合召回已有可重复评测入口。
 - 新增 `provider_fallback` 自动 check、`provider_fallback_resolver` Tool 和 `provider_fallback_eval_core`，provider/model fallback 选择合同已有可重复评测入口。
+- 新增本地 `npm run verify:official-assets` gate：脚本会从当前 Git diff 识别 `graph_template/official/`、`action/official/` 和 `tool/official/` 变更，自动运行 `git diff --check` 以及模板布局/官方 eval seed、Action manifest/协议、Tool catalog/runtime 等相关检查，使官方模板和能力包变更不再只靠人工选择 suite。
+- 官方模板变更门禁已能读取同目录 `eval_cases.json` 中声明的 suite，并追加执行 `scripts/official_eval_suite_gate.py <suite_id>`。该专项 gate 会在隔离数据库中重新 seed 官方 eval suite，验证目标 suite 可发现、包含 case，且每个 case 有 `case_id` 和自动 check 配置。
+- 官方 Action/Tool 能力包变更门禁已能按包 key 自动发现 `backend/tests/test_<key>_action.py`、`backend/tests/test_<key>_tool.py` 或 `backend/tests/test_<key>.py`，并追加运行对应包级专项测试，让能力包改动不再只依赖通用 manifest/catalog/runtime 合同测试。
+- 官方 Action/Tool manifest schema、后端 catalog 和前端类型已正式承载 `verificationCommands` 声明式专项门禁；本地 gate 会在不经过 shell 的前提下执行受限命令。`provider_fallback_resolver` 已用该字段把核心 resolver unittest 纳入 Tool 包变更门禁，覆盖 manifest/catalog/runtime 合同测试之外的实现语义。
+- 官方 Action/Tool manifest schema、后端 catalog 和前端类型已正式承载 `verificationEvalSuites`；本地 gate 会根据能力包声明自动追加 `scripts/official_eval_suite_gate.py <suite_id>`。`provider_fallback_resolver` 已绑定 `provider_fallback_eval_core`，能力包变更会同时验证 Tool 包合同、核心 resolver unittest 和对应官方 eval suite seed/case/check 合同。
+- 高风险官方 Tool 包已开始批量绑定对应 eval suite：`embedding_job_processor -> embedding_maintenance_core`、`hybrid_recall_context_loader -> buddy_hybrid_recall_eval_core`、`scheduler_run_context_loader -> scheduler_retry_delivery_eval_core`、`delegation_worker_result_packager -> delegation_worker_eval_core`、`delegation_worker_result_merger -> delegation_worker_batch_eval_core`、`delegation_kanban_board_builder -> delegation_kanban_board_eval_core`。这些 Tool 的代码或 manifest 变更现在会自动触发相应 suite gate。
+- 首批高风险官方 Action 包已绑定对应 eval suite：`toograph_capability_selector -> buddy_autonomous_loop_core`、`toograph_page_operator -> toograph_page_operation_workflow_core`、`toograph_action_builder` / `toograph_script_tester -> toograph_action_creation_workflow_core`、`web_search -> advanced_web_research_loop_core`、`buddy_home_writer -> buddy_autonomous_review_core` / `buddy_context_compaction_core`、`buddy_memory_writer -> buddy_autonomous_review_core` / `buddy_memory_recall_eval_core`、`buddy_session_recall -> buddy_hybrid_recall_eval_core` / `buddy_memory_recall_eval_core`。这些 Action 的代码或 manifest 变更现在会自动触发对应 suite gate，并由包级测试锁定 manifest 绑定。
 
 后续仍需：
 
 - 为真实 Subgraph worker 执行、真实 provider/tool 失败驱动的 selector fallback，以及真实 LLM runtime provider fallback 接入增加更细的自动评测。
-- 把官方模板变更和能力包变更接入明确的本地 eval gate，而不是只依赖人工选择运行 suite。
+- 继续把官方能力包变更接入更完整的本地 eval gate，逐步给更多官方 Action 和仍未覆盖的 Tool 补齐 `verificationCommands` 和 `verificationEvalSuites`。
 
 解决方案：
 

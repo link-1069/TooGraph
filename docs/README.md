@@ -1,6 +1,6 @@
 # TooGraph 长期代码事实与路线图
 
-最后整理日期：2026-05-27。
+最后整理日期：2026-05-28。
 
 本文是 `docs/` 下的长期参考总入口。它的维护原则是：先看代码、官方模板 JSON、Action manifest 和测试，再写结论；已经完成的事情写成事实，未完成的事情写成路线图，历史计划只保留仍然有效的细节。独立专题路线图可以作为长期参考文档保留，但必须从本文或相关代码路径可发现。
 
@@ -456,6 +456,16 @@ operation:
 - 每个模板应有目标用户、输入 schema、Graph State、节点流程、Action/Subgraph 列表、权限说明、失败边界和 output contract。
 - 需要用户补充信息时，通过最终输出询问并结束本轮；下一轮从普通输入和历史上下文读取补充。
 - 涉及政策、求职、商业、合规或营销建议时，必须保留来源、限制条件、不确定项和人工确认提示。
+
+本地 gate：
+
+- 修改 `graph_template/official/`、`action/official/` 或 `tool/official/` 后，运行 `npm run verify:official-assets`。
+- 该命令会从当前 Git diff 识别官方模板、Action 和 Tool 变更，自动选择模板布局/官方 eval seed、Action manifest/协议、Tool catalog/runtime 等最小相关检查，并始终运行 `git diff --check`。
+- 如果变更的官方模板目录包含 `eval_cases.json`，该命令还会读取其中的 suite id，并在隔离数据库中验证对应官方 eval suite 已 seed、包含 case，且每个 case 有自动 check 配置。
+- 如果变更的官方 Action/Tool 包存在对应 `backend/tests/test_<key>_action.py`、`backend/tests/test_<key>_tool.py` 或 `backend/tests/test_<key>.py`，该命令会自动追加包级专项 unittest。
+- 官方 Action/Tool manifest 可以声明 `verificationCommands`，后端 catalog 和前端类型会保留该字段，用于补充包级专项门禁；当前 gate 只执行受限命令且不经过 shell。
+- 官方 Action/Tool manifest 可以声明 `verificationEvalSuites`，后端 catalog 和前端类型会保留该字段；当前 gate 会自动追加对应官方 eval suite 的 seed 和 case/check 合同校验。
+- 当前核心官方 Action 和高风险 Tool 已开始把所属能力链路绑定到 `verificationEvalSuites`，因此主循环、页面操作、Action 创建、Web research、复盘写入、召回、embedding、scheduler、delegation 和 provider fallback 相关能力包变更会自动触发对应 suite gate。
 
 官方业务模板完整模式仍待补齐：
 

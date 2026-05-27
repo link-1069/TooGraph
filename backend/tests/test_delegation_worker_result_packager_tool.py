@@ -34,6 +34,7 @@ class DelegationWorkerResultPackagerToolTests(unittest.TestCase):
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Delegation Worker Result Packager")
         self.assertIn("worker_task_packet", definition.description)
+        self.assertEqual(definition.verification_eval_suites, ["delegation_worker_eval_core"])
         self.assertIn("delegation_worker_result_packager", get_tool_registry(include_disabled=True).keys())
 
     def test_packager_outputs_worker_result_package_with_task_packet_refs(self) -> None:

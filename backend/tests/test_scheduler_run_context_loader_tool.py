@@ -66,6 +66,7 @@ class SchedulerRunContextLoaderToolTests(unittest.TestCase):
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Scheduler Run Context Loader")
         self.assertIn("scheduled graph job", definition.description)
+        self.assertEqual(definition.verification_eval_suites, ["scheduler_retry_delivery_eval_core"])
         self.assertIn("scheduler_run_context_loader", get_tool_registry(include_disabled=True).keys())
 
     def test_loader_outputs_retry_delivery_report_with_redacted_target(self) -> None:

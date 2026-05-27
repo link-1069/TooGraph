@@ -129,6 +129,50 @@ class ActionManifestContractTests(unittest.TestCase):
         self.assertTrue(definition.capability_policy.default.selectable)
         self.assertFalse(definition.capability_policy.default.requires_approval)
 
+    def test_native_manifest_exposes_verification_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            action_dir = Path(temp_dir) / "verify_action_package"
+            action_dir.mkdir()
+            payload = _ready_manifest("verify_action_package")
+            payload["verificationCommands"] = [
+                {
+                    "name": "Action package tests",
+                    "command": "python",
+                    "args": ["-m", "unittest", "backend.tests.test_verify_action_package"],
+                }
+            ]
+            manifest = _write_manifest(action_dir, payload)
+            (action_dir / "run.py").write_text("print('{}')\n", encoding="utf-8")
+
+            definition = _parse_native_action_manifest(manifest, ActionSourceScope.INSTALLED).definition
+
+        self.assertEqual(len(definition.verification_commands), 1)
+        command = definition.verification_commands[0]
+        self.assertEqual(command.name, "Action package tests")
+        self.assertEqual(command.command, "python")
+        self.assertEqual(command.args, ["-m", "unittest", "backend.tests.test_verify_action_package"])
+        self.assertEqual(
+            definition.model_dump(by_alias=True)["verificationCommands"][0]["args"],
+            ["-m", "unittest", "backend.tests.test_verify_action_package"],
+        )
+
+    def test_native_manifest_exposes_verification_eval_suites(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            action_dir = Path(temp_dir) / "verify_action_eval"
+            action_dir.mkdir()
+            payload = _ready_manifest("verify_action_eval")
+            payload["verificationEvalSuites"] = ["verify_action_eval_core"]
+            manifest = _write_manifest(action_dir, payload)
+            (action_dir / "run.py").write_text("print('{}')\n", encoding="utf-8")
+
+            definition = _parse_native_action_manifest(manifest, ActionSourceScope.INSTALLED).definition
+
+        self.assertEqual(definition.verification_eval_suites, ["verify_action_eval_core"])
+        self.assertEqual(
+            definition.model_dump(by_alias=True)["verificationEvalSuites"],
+            ["verify_action_eval_core"],
+        )
+
     def test_native_manifest_exposes_state_input_schema_separately_from_llm_parameters(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             action_dir = Path(temp_dir) / "page_operator"

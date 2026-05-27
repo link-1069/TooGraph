@@ -42,6 +42,7 @@ class TooGraphScriptTesterActionTests(unittest.TestCase):
         self.assertEqual(definition.action_key, "toograph_script_tester")
         self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
         self.assertEqual(definition.llm_node_blockers, [])
+        self.assertEqual(definition.verification_eval_suites, ["toograph_action_creation_workflow_core"])
         self.assertEqual(definition.permissions, ["file_write", "subprocess"])
         self.assertFalse(definition.capability_policy.default.requires_approval)
         self.assertEqual([field.key for field in definition.state_input_schema], ["script_requirement"])

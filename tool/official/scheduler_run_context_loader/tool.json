@@ -6,6 +6,7 @@
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
+  "verificationEvalSuites": ["scheduler_retry_delivery_eval_core"],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

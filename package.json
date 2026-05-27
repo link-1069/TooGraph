@@ -2,7 +2,8 @@
   "name": "toograph",
   "private": true,
   "scripts": {
-    "start": "node scripts/start.mjs"
+    "start": "node scripts/start.mjs",
+    "verify:official-assets": "node scripts/official-asset-gate.mjs --run"
   },
   "devDependencies": {
     "playwright": "^1.60.0"

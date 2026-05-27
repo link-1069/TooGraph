@@ -429,6 +429,162 @@ test("buildAgentDiagnostic summarizes provider fallback trace from node runtime 
   assert.deepEqual(diagnostic.providerFallback.warnings, ["repair provider fallback used"]);
 });
 
+test("buildAgentDiagnostic summarizes delegation worker result packages from run state", () => {
+  const diagnostic = buildAgentDiagnostic(
+    createRun({
+      artifacts: {
+        state_values: {
+          worker_result_package: {
+            kind: "worker_result_package",
+            task_id: "task_research",
+            status: "succeeded",
+            summary: "Collected evidence and drafted notes.",
+            outputs: {
+              research_notes: { name: "Research notes", type: "markdown", value: "notes" },
+            },
+            artifacts: [{ path: "runs/run_1/research.md" }],
+            errors: [],
+            followups: ["Review citations"],
+            source_refs: [
+              { source_kind: "context_package", source_id: "ctx_1" },
+              { source_kind: "graph_run", source_id: "run_worker_from_ref" },
+            ],
+            allowed_capabilities: [{ kind: "tool", key: "web_search" }],
+            budget: { used_steps: 3, max_steps: 5 },
+            child_run_id: "run_worker_from_package",
+            child_run_status: "completed",
+          },
+        },
+      },
+      children: [
+        {
+          run_id: "run_worker_child_a",
+          graph_name: "Research Worker",
+          status: "completed",
+          runtime_backend: "langgraph",
+          lifecycle: { updated_at: "2026-05-27T00:00:00Z", resume_count: 0 },
+          checkpoint_metadata: { available: false },
+          revision_round: 0,
+          started_at: "2026-05-27T00:00:00Z",
+          parent_run_id: "run_1",
+          root_run_id: "run_1",
+          parent_node_id: "delegate_research",
+          invocation_kind: "batch_subgraph_worker",
+          invocation_key: "research_worker",
+          run_depth: 1,
+          run_path: ["run_1", "run_worker_child_a"],
+          batch_group_id: "delegate_research",
+          batch_item_index: 0,
+          batch_item_label: "article-a",
+        },
+      ],
+    }),
+  );
+
+  assert.equal(diagnostic.visible, true);
+  assert.deepEqual(diagnostic.delegationWorker, {
+    visible: true,
+    taskId: "task_research",
+    status: "succeeded",
+    summary: "Collected evidence and drafted notes.",
+    outputLabels: ["output: research_notes (markdown)"],
+    artifactLabels: ["artifact: runs/run_1/research.md"],
+    errorLabels: [],
+    followupLabels: ["followup: Review citations"],
+    sourceRefLabels: ["source: context_package:ctx_1"],
+    workerRunLabels: [
+      "run: run_worker_from_package completed",
+      "run: run_worker_from_ref",
+      "run: run_worker_child_a completed",
+    ],
+    workerRunLinks: [
+      { runId: "run_worker_from_package", label: "run_worker_from_package", href: "/runs/run_worker_from_package", status: "completed" },
+      { runId: "run_worker_from_ref", label: "run_worker_from_ref", href: "/runs/run_worker_from_ref", status: "" },
+      { runId: "run_worker_child_a", label: "Research Worker", href: "/runs/run_worker_child_a", status: "completed" },
+    ],
+    budgetLabels: ["budget: used_steps=3", "budget: max_steps=5"],
+    capabilityLabels: ["capability: tool:web_search"],
+    evidenceLabels: [
+      "worker: task_research",
+      "status: succeeded",
+      "output: research_notes (markdown)",
+      "run: run_worker_from_package completed",
+      "run: run_worker_from_ref",
+      "run: run_worker_child_a completed",
+      "budget: used_steps=3",
+      "budget: max_steps=5",
+      "capability: tool:web_search",
+    ],
+  });
+});
+
+test("buildAgentDiagnostic summarizes delegation board snapshots from run state", () => {
+  const diagnostic = buildAgentDiagnostic(
+    createRun({
+      artifacts: {
+        state_values: {
+          delegation_board_snapshot: {
+            kind: "delegation_board_snapshot",
+            board_id: "hermes_parity_delegation",
+            title: "Hermes parity delegation work",
+            status: "blocked",
+            status_counts: { blocked: 1, review: 1 },
+            cards: [
+              {
+                task_id: "worker_eval_research_1",
+                lane: "review",
+                worker_status: "succeeded",
+                retry_attempts: 2,
+              },
+              {
+                task_id: "worker_eval_research_2",
+                lane: "blocked",
+                worker_status: "partial",
+                block_reason: "budget_exhausted",
+                recommended_next_action: "tighten_budget_or_split_task",
+              },
+            ],
+            next_actions: [
+              {
+                task_id: "worker_eval_research_2",
+                lane: "blocked",
+                action: "tighten_budget_or_split_task",
+                reason: "budget_exhausted",
+              },
+            ],
+            source_refs: [
+              { source_kind: "graph_run", source_id: "run_worker_1" },
+              { source_kind: "graph_run", source_id: "run_worker_2" },
+            ],
+          },
+        },
+      },
+    }),
+  );
+
+  assert.equal(diagnostic.visible, true);
+  assert.deepEqual(diagnostic.delegationBoard, {
+    visible: true,
+    boardId: "hermes_parity_delegation",
+    title: "Hermes parity delegation work",
+    status: "blocked",
+    cardCount: 2,
+    statusLabels: ["lane: blocked=1", "lane: review=1"],
+    blockedLabels: ["blocked: worker_eval_research_2 (budget_exhausted)"],
+    reviewLabels: ["review: worker_eval_research_1"],
+    nextActionLabels: ["next: worker_eval_research_2=tighten_budget_or_split_task"],
+    sourceRefLabels: ["source: graph_run:run_worker_1", "source: graph_run:run_worker_2"],
+    evidenceLabels: [
+      "board: hermes_parity_delegation",
+      "status: blocked",
+      "cards: 2",
+      "lane: blocked=1",
+      "lane: review=1",
+      "next: worker_eval_research_2=tighten_budget_or_split_task",
+    ],
+  });
+});
+
 test("buildAgentDiagnostic falls back to cycle summary", () => {
   const diagnostic = buildAgentDiagnostic(
     createRun({

@@ -13,6 +13,7 @@
       "taskTags": ["web", "news", "public_sources"]
     }
   },
+  "verificationEvalSuites": ["advanced_web_research_loop_core"],
   "timeoutSeconds": 300,
   "permissions": ["network", "secret_read", "browser_automation"],
   "stateInputSchema": [

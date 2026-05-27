@@ -6,6 +6,14 @@
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
+  "verificationEvalSuites": ["provider_fallback_eval_core"],
+  "verificationCommands": [
+    {
+      "name": "Provider fallback resolver core tests",
+      "command": "python",
+      "args": ["-m", "unittest", "backend.tests.test_provider_fallback_resolver"]
+    }
+  ],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

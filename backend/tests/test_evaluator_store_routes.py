@@ -1272,6 +1272,62 @@ class EvaluatorStoreRouteTests(unittest.TestCase):
         self.assertEqual(results[0]["actual"]["missing_source_refs"], [])
         self.assertEqual(results[0]["actual"]["forbidden_terms_found"], [])
 
+    def test_eval_check_executor_evaluates_worker_merge_review_package(self) -> None:
+        case = {
+            "case_id": "delegation_worker_merge_quality",
+            "checks": [
+                {
+                    "kind": "worker_merge_review",
+                    "name": "Worker merge review package",
+                    "target": "worker_merge_review_package",
+                    "required_status": "partial",
+                    "required_output_keys": ["findings"],
+                    "required_source_refs": [
+                        {"source_kind": "graph_run", "source_id": "run_worker_1"}
+                    ],
+                    "required_terms": ["retry_failed_workers", "research_1", "research_2"],
+                }
+            ],
+        }
+
+        results = evaluate_case_checks(
+            case,
+            final_output={
+                "worker_merge_review_package": {
+                    "kind": "worker_merge_review_package",
+                    "status": "partial",
+                    "summary": "Merged research_1 and research_2 worker results.",
+                    "worker_count": 2,
+                    "status_counts": {"failed": 1, "succeeded": 1},
+                    "outputs": {
+                        "findings": {
+                            "name": "Findings",
+                            "type": "markdown",
+                            "values": [
+                                {
+                                    "task_id": "research_1",
+                                    "status": "succeeded",
+                                    "value": "Use worker_task_packet and worker_result_package.",
+                                }
+                            ],
+                        }
+                    },
+                    "source_refs": [{"source_kind": "graph_run", "source_id": "run_worker_1"}],
+                    "review": {
+                        "needs_review": True,
+                        "risk_flags": ["worker_failed:research_2"],
+                        "recommended_next_action": "retry_failed_workers",
+                    },
+                }
+            },
+            artifacts={},
+        )
+
+        self.assertEqual(results[0]["status"], "passed")
+        self.assertEqual(results[0]["score"], 1.0)
+        self.assertEqual(results[0]["actual"]["missing_output_keys"], [])
+        self.assertEqual(results[0]["actual"]["missing_source_refs"], [])
+
     def test_eval_check_executor_evaluates_provider_fallback_trace(self) -> None:
         case = {
             "case_id": "provider_fallback_quality",

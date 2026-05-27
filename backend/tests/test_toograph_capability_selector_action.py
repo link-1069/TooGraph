@@ -25,6 +25,7 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
 
         self.assertEqual(manifest["actionKey"], "toograph_capability_selector")
         self.assertEqual(manifest["timeoutSeconds"], 30)
+        self.assertEqual(manifest.get("verificationEvalSuites"), ["buddy_autonomous_loop_core"])
         self.assertEqual(
             [field["key"] for field in manifest.get("stateInputSchema", [])],
             ["current_requirement", "agent_loop_control"],

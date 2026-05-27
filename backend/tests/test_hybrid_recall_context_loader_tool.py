@@ -61,6 +61,7 @@ class HybridRecallContextLoaderToolTests(unittest.TestCase):
         self.assertEqual(definition.name, "Hybrid Recall Context Loader")
         self.assertIn("memory_entries", definition.description)
         self.assertIn("buddy_messages", definition.description)
+        self.assertEqual(definition.verification_eval_suites, ["buddy_hybrid_recall_eval_core"])
         self.assertIn("hybrid_recall_context_loader", get_tool_registry(include_disabled=True).keys())
 
     def test_loader_outputs_combined_session_and_memory_context_package(self) -> None:

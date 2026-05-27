@@ -40,6 +40,8 @@ class OfficialEvalSeedTests(unittest.TestCase):
                 "buddy_autonomous_review_core",
                 "buddy_capability_curator_core",
                 "buddy_context_compaction_core",
+                "delegation_kanban_board_eval_core",
+                "delegation_worker_batch_eval_core",
                 "delegation_worker_eval_core",
                 "buddy_hybrid_recall_eval_core",
                 "buddy_improvement_review_workflow_core",
@@ -94,6 +96,14 @@ class OfficialEvalSeedTests(unittest.TestCase):
             delegation_case = store.load_eval_case(
                 "delegation_worker_eval_core",
                 "delegation-worker-packages-task-result",
+            )
+            delegation_batch_case = store.load_eval_case(
+                "delegation_worker_batch_eval_core",
+                "delegation-worker-batch-merges-subgraph-results",
+            )
+            delegation_board_case = store.load_eval_case(
+                "delegation_kanban_board_eval_core",
+                "delegation-kanban-board-projects-worker-state",
             )
             hybrid_recall_case = store.load_eval_case(
                 "buddy_hybrid_recall_eval_core",
@@ -155,6 +165,14 @@ class OfficialEvalSeedTests(unittest.TestCase):
         )
         self.assertEqual(delegation_case["checks"][0]["kind"], "delegation_worker")
         self.assertEqual(delegation_case["input_values"]["worker_task_packet"]["task_id"], "worker_eval_research_1")
+        self.assertEqual(delegation_batch_case["checks"][0]["kind"], "worker_merge_review")
+        self.assertEqual(delegation_batch_case["checks"][0]["target"], "worker_merge_review_package")
+        self.assertEqual(delegation_batch_case["input_values"]["worker_statuses"], ["succeeded", "failed"])
+        self.assertEqual(delegation_batch_case["input_values"]["worker_budget_usages"][1]["used_steps"], 3)
+        self.assertIn("worker_budget_exhausted", delegation_batch_case["checks"][0]["required_terms"])
+        self.assertEqual(delegation_board_case["checks"][0]["kind"], "schema")
+        self.assertEqual(delegation_board_case["checks"][0]["target"], "delegation_board_snapshot")
+        self.assertIn("columns.blocked", delegation_board_case["checks"][0]["required"])
         self.assertEqual(hybrid_recall_case["checks"][0]["kind"], "hybrid_recall")
         self.assertIn(
             "session_eval_hybrid_history",
@@ -351,6 +369,53 @@ class OfficialEvalSeedTests(unittest.TestCase):
 
         self.assertEqual(case["checks"][0]["kind"], "delegation_worker")
         self.assertEqual(case["checks"][0]["required_task_id"], "worker_eval_research_1")
+
+    def test_seed_official_eval_suites_keeps_executable_worker_merge_review_checks(self) -> None:
+        with isolated_eval_database(), tempfile.TemporaryDirectory() as temp_dir:
+            template_root = Path(temp_dir) / "official"
+            template_dir = template_root / "delegation_merge_quality_template"
+            template_dir.mkdir(parents=True)
+            (template_dir / "template.json").write_text(
+                """
+                {
+                  "template_id": "delegation_merge_quality_template",
+                  "label": "Delegation Merge Quality Template",
+                  "description": "Fixture template for delegation merge eval checks.",
+                  "metadata": {"category": "test"}
+                }
+                """,
+                encoding="utf-8",
+            )
+            (template_dir / "eval_cases.json").write_text(
+                """
+                {
+                  "suite_id": "delegation_merge_quality_template_official",
+                  "cases": [
+                    {
+                      "case_id": "delegation-worker-merge-quality",
+                      "checks": [
+                        {
+                          "kind": "worker_merge_review",
+                          "target": "worker_merge_review_package",
+                          "required_status": "partial",
+                          "required_output_keys": ["findings"]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            seed_official_eval_suites(template_root)
+            case = store.load_eval_case(
+                "delegation_merge_quality_template_official",
+                "delegation-worker-merge-quality",
+            )
+
+        self.assertEqual(case["checks"][0]["kind"], "worker_merge_review")
+        self.assertEqual(case["checks"][0]["target"], "worker_merge_review_package")
 
     def test_seed_official_eval_suites_keeps_executable_hybrid_recall_checks(self) -> None:
         with isolated_eval_database(), tempfile.TemporaryDirectory() as temp_dir:

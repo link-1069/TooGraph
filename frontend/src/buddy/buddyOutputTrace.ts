@@ -1,6 +1,8 @@
 import type { ConditionalEdge, GraphEdge, GraphNode, GraphPayload } from "../types/node-system.ts";
 import type { NodeExecutionDetail, RunDetail } from "../types/run.ts";
 import { listCapabilitySelectionTraceLabels } from "../lib/capabilitySelectionTrace.ts";
+import { listDelegationBoardTraceLabels } from "../lib/delegationBoardDiagnostic.ts";
+import { listDelegationWorkerTraceLabels } from "../lib/delegationWorkerDiagnostic.ts";
 import { summarizeVirtualOperationActivity, type VirtualOperationGraphRevision } from "../lib/virtual-operation-activity.ts";
 import type { BuddyPublicOutputBinding } from "./buddyPublicOutput.ts";
 
@@ -1187,6 +1189,8 @@ function buildAgentLoopArtifactLabels(execution: NodeExecutionDetail, agentLoopE
     ...buildAgentLoopEventArtifactLabels(agentLoopEvents),
     ...buildAgentLoopReportArtifactLabels(report),
     ...buildCapabilitySelectionArtifactLabels(execution, outputs),
+    ...buildDelegationWorkerArtifactLabels(execution, outputs),
+    ...buildDelegationBoardArtifactLabels(execution, outputs),
   ].filter(Boolean));
 }
 
@@ -1266,6 +1270,22 @@ function buildCapabilitySelectionArtifactLabels(
     outputs?.capability_selection_trace ?? stateWriteTrace,
     outputs?.capability_selection_reason ?? outputs?.selection_reason ?? stateWriteReason,
   );
+}
+
+function buildDelegationWorkerArtifactLabels(
+  execution: NodeExecutionDetail,
+  outputs: Record<string, unknown> | null,
+) {
+  const stateWritePackage = findStateWriteValue(execution, "worker_result_package");
+  return listDelegationWorkerTraceLabels(outputs?.worker_result_package ?? stateWritePackage);
+}
+
+function buildDelegationBoardArtifactLabels(
+  execution: NodeExecutionDetail,
+  outputs: Record<string, unknown> | null,
+) {
+  const stateWriteBoard = findStateWriteValue(execution, "delegation_board_snapshot");
+  return listDelegationBoardTraceLabels(outputs?.delegation_board_snapshot ?? stateWriteBoard);
 }
 
 function findStateWriteValue(execution: NodeExecutionDetail, stateKey: string) {

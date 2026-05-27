@@ -40,7 +40,13 @@ def evaluate_case_checks(
             results.append(_evaluate_capability_selection_check(check_record, expected, output, artifact_map))
         elif kind in {"scheduler_run", "scheduled_graph_job_run"}:
             results.append(_evaluate_scheduler_run_check(check_record, expected, output, artifact_map))
-        elif kind in {"delegation_worker", "worker_result", "worker_result_package"}:
+        elif kind in {
+            "delegation_worker",
+            "worker_result",
+            "worker_result_package",
+            "worker_merge_review",
+            "worker_merge_review_package",
+        }:
             results.append(_evaluate_delegation_worker_check(check_record, expected, output, artifact_map))
         elif kind in {"provider_fallback", "model_provider_fallback", "provider_fallback_trace"}:
             results.append(_evaluate_provider_fallback_check(check_record, expected, output, artifact_map))
