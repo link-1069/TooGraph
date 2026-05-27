@@ -35,6 +35,7 @@ def _read_contracts(reads: list[dict]) -> list[dict]:
 
 BUDDY_SUPPORT_TEMPLATE_IDS = {
     "buddy_autonomous_review",
+    "buddy_capability_curator",
     "buddy_context_compaction",
     "buddy_improvement_review_workflow",
 }
@@ -99,6 +100,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "ai_news_digest_to_wechat_article",
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
+                "buddy_capability_curator",
                 "buddy_context_compaction",
                 "buddy_improvement_review_workflow",
                 "ecommerce_review_mining_agent",
@@ -119,6 +121,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "advanced_web_research_loop",
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
+                "buddy_capability_curator",
                 "buddy_context_compaction",
                 "buddy_improvement_review_workflow",
                 "embedding_maintenance",
@@ -315,6 +318,13 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "input_model_ref", "target": "process_embedding_jobs"}, embedding_template["edges"])
         self.assertIn({"source": "input_limit", "target": "process_embedding_jobs"}, embedding_template["edges"])
         self.assertIn({"source": "process_embedding_jobs", "target": "output_embedding_report"}, embedding_template["edges"])
+
+        curator_template = templates["buddy_capability_curator"]
+        self.assertEqual(curator_template["source"], "official")
+        self.assertEqual(curator_template["label"], "能力库整理")
+        self.assertEqual(curator_template["default_graph_name"], "能力库整理")
+        self.assertEqual(curator_template["metadata"]["role"], "buddy_capability_curator")
+        self.assertIs(curator_template["capabilityDiscoverable"], False)
 
         page_operation_template = templates["toograph_page_operation_workflow"]
         self.assertEqual(page_operation_template["source"], "official")
@@ -3489,6 +3499,180 @@ class TemplateLayoutTests(unittest.TestCase):
                     if key not in {"template_id", "label", "description", "default_graph_name", "source"}
                 },
                 "graph_id": "test_buddy_improvement_review_workflow",
+                "name": template["default_graph_name"],
+            }
+        )
+        validation = validate_graph(graph)
+        self.assertEqual([issue.model_dump() for issue in validation.issues], [])
+        self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
+
+    def test_buddy_capability_curator_template_contract(self) -> None:
+        template = load_template_record("buddy_capability_curator")
+        states = template["state_schema"]
+        nodes = template["nodes"]
+
+        self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
+        self.assertEqual(template["metadata"]["origin"], "buddy")
+        self.assertEqual(template["metadata"]["role"], "buddy_capability_curator")
+        self.assertEqual(template["metadata"]["category"], "buddy_improvement")
+        self.assertNotIn("internal", template["metadata"])
+        self.assertIs(template["capabilityDiscoverable"], False)
+        self.assertEqual(template["label"], "能力库整理")
+        self.assertEqual(template["metadata"]["requiredActions"], [])
+        self.assertEqual(template["metadata"]["requiredTools"], ["capability_curator_context_loader"])
+        self.assertEqual(template["metadata"]["permissions"], [])
+        self.assertEqual(
+            template["metadata"]["outputContract"],
+            [
+                {"state": "curator_report", "role": "report", "label": "Capability curator report"},
+                {"state": "improvement_candidates", "role": "candidate_queue", "label": "Improvement candidates"},
+                {"state": "scheduler_recommendation", "role": "scheduler_plan", "label": "Scheduler readiness"},
+            ],
+        )
+        template_text = json.dumps(template, ensure_ascii=False)
+        for discouraged_prompt_fragment in ["你已绑定", "不要", "不得", "Do not", "must not"]:
+            self.assertNotIn(discouraged_prompt_fragment, template_text)
+        self.assertEqual(
+            set(states),
+            {
+                "curator_scope",
+                "capability_catalog_snapshot",
+                "capability_usage_snapshot",
+                "eval_snapshot",
+                "existing_candidates_snapshot",
+                "curator_context_report",
+                "capability_health_report",
+                "curator_report",
+                "improvement_candidates",
+                "scheduler_recommendation",
+            },
+        )
+        self.assertEqual(states["curator_scope"]["type"], "json")
+        self.assertEqual(states["capability_catalog_snapshot"]["type"], "json")
+        self.assertEqual(states["capability_usage_snapshot"]["type"], "json")
+        self.assertEqual(states["eval_snapshot"]["type"], "json")
+        self.assertEqual(states["existing_candidates_snapshot"]["type"], "json")
+        self.assertEqual(states["curator_context_report"]["type"], "json")
+        self.assertEqual(states["capability_health_report"]["type"], "json")
+        self.assertEqual(states["curator_report"]["type"], "markdown")
+        self.assertEqual(states["improvement_candidates"]["type"], "json")
+        self.assertEqual(states["scheduler_recommendation"]["type"], "json")
+        self.assertEqual(states["capability_catalog_snapshot"]["binding"]["toolKey"], "capability_curator_context_loader")
+        self.assertEqual(states["capability_usage_snapshot"]["binding"]["fieldKey"], "capability_usage_snapshot")
+        self.assertEqual(states["eval_snapshot"]["binding"]["fieldKey"], "eval_snapshot")
+        self.assertEqual(states["existing_candidates_snapshot"]["binding"]["fieldKey"], "existing_candidates_snapshot")
+        self.assertEqual(states["curator_context_report"]["binding"]["fieldKey"], "curator_context_report")
+
+        self.assertEqual(
+            [node_id for node_id, node in nodes.items() if node["kind"] == "input"],
+            ["input_curator_scope"],
+        )
+        self.assertEqual(
+            [node_id for node_id, node in nodes.items() if node["kind"] == "output"],
+            [
+                "output_curator_report",
+                "output_improvement_candidates",
+                "output_scheduler_recommendation",
+            ],
+        )
+
+        loader_node = nodes["load_curator_context"]
+        self.assertEqual(loader_node["kind"], "tool")
+        self.assertEqual(loader_node["config"]["toolKey"], "capability_curator_context_loader")
+        self.assertEqual(
+            _read_contracts(loader_node["reads"]),
+            [
+                {
+                    "state": "curator_scope",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "capability_curator_context_loader",
+                        "fieldKey": "curator_scope",
+                        "managed": True,
+                    },
+                },
+            ],
+        )
+        self.assertEqual(
+            loader_node["writes"],
+            [
+                {"state": "capability_catalog_snapshot", "mode": "replace"},
+                {"state": "capability_usage_snapshot", "mode": "replace"},
+                {"state": "eval_snapshot", "mode": "replace"},
+                {"state": "existing_candidates_snapshot", "mode": "replace"},
+                {"state": "curator_context_report", "mode": "replace"},
+            ],
+        )
+
+        analyze_node = nodes["analyze_capability_health"]
+        self.assertEqual(analyze_node["kind"], "agent")
+        self.assertEqual(
+            _read_contracts(analyze_node["reads"]),
+            [
+                {"state": "curator_scope", "required": True},
+                {"state": "capability_catalog_snapshot", "required": True},
+                {"state": "capability_usage_snapshot", "required": True},
+                {"state": "eval_snapshot", "required": True},
+                {"state": "existing_candidates_snapshot", "required": True},
+                {"state": "curator_context_report", "required": False},
+            ],
+        )
+        self.assertEqual(
+            analyze_node["writes"],
+            [
+                {"state": "capability_health_report", "mode": "replace"},
+                {"state": "curator_report", "mode": "replace"},
+            ],
+        )
+        self.assertIn("duplicate_groups", analyze_node["config"]["taskInstruction"])
+        self.assertIn("missing_tests", analyze_node["config"]["taskInstruction"])
+        self.assertIn("high_failure_capabilities", analyze_node["config"]["taskInstruction"])
+
+        candidate_node = nodes["draft_curator_candidates"]
+        self.assertEqual(candidate_node["kind"], "agent")
+        self.assertEqual(
+            _read_contracts(candidate_node["reads"]),
+            [
+                {"state": "curator_scope", "required": True},
+                {"state": "capability_health_report", "required": True},
+                {"state": "curator_report", "required": True},
+                {"state": "existing_candidates_snapshot", "required": False},
+            ],
+        )
+        self.assertEqual(
+            candidate_node["writes"],
+            [
+                {"state": "improvement_candidates", "mode": "replace"},
+                {"state": "scheduler_recommendation", "mode": "replace"},
+            ],
+        )
+        self.assertIn("improvement_candidate", candidate_node["config"]["taskInstruction"])
+        self.assertIn("buddy_improvement_review_workflow", candidate_node["config"]["taskInstruction"])
+        self.assertIn("scheduler_recommendation", candidate_node["config"]["taskInstruction"])
+
+        self.assertEqual(
+            template["edges"],
+            [
+                {"source": "input_curator_scope", "target": "load_curator_context"},
+                {"source": "load_curator_context", "target": "analyze_capability_health"},
+                {"source": "analyze_capability_health", "target": "draft_curator_candidates"},
+                {"source": "draft_curator_candidates", "target": "output_curator_report"},
+                {"source": "draft_curator_candidates", "target": "output_improvement_candidates"},
+                {"source": "draft_curator_candidates", "target": "output_scheduler_recommendation"},
+            ],
+        )
+        self.assertEqual(template["conditional_edges"], [])
+
+        graph = NodeSystemGraphPayload.model_validate(
+            {
+                **{
+                    key: value
+                    for key, value in template.items()
+                    if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+                },
+                "graph_id": "test_buddy_capability_curator",
                 "name": template["default_graph_name"],
             }
         )

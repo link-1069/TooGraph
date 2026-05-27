@@ -204,6 +204,8 @@ class RunSummary(BaseModel):
     batch_item_label: str = ""
     graph_id: str | None = None
     graph_name: str
+    template_id: str = ""
+    template_version: str = ""
     status: str
     restorable_snapshot_available: bool = False
     run_snapshot_options: list[RunSnapshotOption] = Field(default_factory=list)

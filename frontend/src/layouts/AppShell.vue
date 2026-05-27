@@ -105,6 +105,36 @@
           <span class="app-shell__link-label">{{ t("nav.evals") }}</span>
         </RouterLink>
         <RouterLink
+          to="/scheduler"
+          class="app-shell__link"
+          data-virtual-affordance-id="app.nav.scheduler"
+          data-virtual-affordance-label="调度任务"
+          data-virtual-affordance-role="navigation-link"
+          data-virtual-affordance-zone="app-shell"
+          data-virtual-affordance-actions="click"
+          data-virtual-affordance-path-after-click="/scheduler"
+          :class="{ 'app-shell__link--active': activeNavigationSection === 'scheduler' }"
+          :title="t('nav.scheduler')"
+        >
+          <ElIcon class="app-shell__link-icon"><Timer /></ElIcon>
+          <span class="app-shell__link-label">{{ t("nav.scheduler") }}</span>
+        </RouterLink>
+        <RouterLink
+          to="/curator-reports"
+          class="app-shell__link"
+          data-virtual-affordance-id="app.nav.curatorReports"
+          :data-virtual-affordance-label="t('nav.curatorReports')"
+          data-virtual-affordance-role="navigation-link"
+          data-virtual-affordance-zone="app-shell"
+          data-virtual-affordance-actions="click"
+          data-virtual-affordance-path-after-click="/curator-reports"
+          :class="{ 'app-shell__link--active': activeNavigationSection === 'curatorReports' }"
+          :title="t('nav.curatorReports')"
+        >
+          <ElIcon class="app-shell__link-icon"><DataBoard /></ElIcon>
+          <span class="app-shell__link-label">{{ t("nav.curatorReports") }}</span>
+        </RouterLink>
+        <RouterLink
           to="/knowledge"
           class="app-shell__link"
           data-virtual-affordance-id="app.nav.knowledge"
@@ -210,6 +240,21 @@
           <span class="app-shell__link-label">{{ t("nav.modelLogs") }}</span>
         </RouterLink>
         <RouterLink
+          to="/evidence"
+          class="app-shell__link"
+          data-virtual-affordance-id="app.nav.evidenceSearch"
+          :data-virtual-affordance-label="t('nav.evidenceSearch')"
+          data-virtual-affordance-role="navigation-link"
+          data-virtual-affordance-zone="app-shell"
+          data-virtual-affordance-actions="click"
+          data-virtual-affordance-path-after-click="/evidence"
+          :class="{ 'app-shell__link--active': activeNavigationSection === 'evidenceSearch' }"
+          :title="t('nav.evidenceSearch')"
+        >
+          <ElIcon class="app-shell__link-icon"><DocumentChecked /></ElIcon>
+          <span class="app-shell__link-label">{{ t("nav.evidenceSearch") }}</span>
+        </RouterLink>
+        <RouterLink
           to="/settings"
           class="app-shell__link"
           data-virtual-affordance-id="app.nav.settings"
@@ -245,11 +290,14 @@ import {
   Collection,
   CollectionTag,
   DataAnalysis,
+  DataBoard,
   DataLine,
+  DocumentChecked,
   Opportunity,
   Reading,
   Setting,
   Tickets,
+  Timer,
   TrendCharts,
 } from "@element-plus/icons-vue";
 import { computed, onMounted, ref, watch } from "vue";

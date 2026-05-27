@@ -843,6 +843,8 @@ def _build_run_state(
             "batch_item_label": run.get("batch_item_label") or "",
             "graph_id": run.get("graph_id"),
             "graph_name": run.get("graph_name") or "",
+            "template_id": run.get("template_id") or "",
+            "template_version": run.get("template_version") or "",
             "status": run.get("status") or "",
             "runtime_backend": run.get("runtime_backend") or "",
             "current_node_id": run.get("current_node_id"),

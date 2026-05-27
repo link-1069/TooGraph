@@ -283,6 +283,65 @@ def list_chat_sessions_endpoint(include_deleted: bool = Query(default=False)) ->
     return store.list_chat_sessions(include_deleted=include_deleted)
 
 
+@router.get("/search/sessions")
+def search_chat_sessions_endpoint(
+    query: str = Query(default=""),
+    current_session_id: str | None = Query(default=None),
+    limit: int = Query(default=10, ge=1, le=50),
+    window: int = Query(default=5, ge=0, le=20),
+    sort: str | None = Query(default=None),
+) -> dict[str, Any]:
+    return store.search_chat_sessions(
+        query=query,
+        current_session_id=current_session_id,
+        limit=limit,
+        window=window,
+        sort=sort,
+    )
+
+
+@router.get("/search/run-context")
+def search_run_context_endpoint(
+    run_id: str = Query(min_length=1),
+    query: str = Query(default=""),
+    limit: int = Query(default=25, ge=1, le=100),
+) -> dict[str, Any]:
+    try:
+        return store.search_run_context(run_id, query=query, limit=limit)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Run not found") from exc
+
+
+@router.get("/search/memories")
+def search_memories_endpoint(
+    query: str = Query(default=""),
+    embedding_model_ref: str = Query(default=""),
+    scope_kind: str = Query(default=""),
+    scope_id: str = Query(default=""),
+    layer: str = Query(default=""),
+    memory_type: str = Query(default=""),
+    status: str = Query(default="active"),
+    limit: int = Query(default=10, ge=1, le=50),
+) -> dict[str, Any]:
+    try:
+        return store.search_memories(
+            query=query,
+            embedding_model_ref=embedding_model_ref,
+            scope_kind=scope_kind,
+            scope_id=scope_id,
+            layer=layer,
+            memory_type=memory_type,
+            status=status,
+            limit=limit,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/sessions")
 def create_chat_session_endpoint(payload: BuddySessionPayload) -> dict[str, Any]:
     return store.create_chat_session(

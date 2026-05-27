@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "capability_curator_context_loader",
+  "name": "Capability Curator Context Loader",
+  "description": "Builds the capability catalog, usage, eval, and existing candidate snapshots used by the Buddy capability curator template.",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputSchema": [
+    {
+      "key": "curator_scope",
+      "name": "Curator Scope",
+      "valueType": "json",
+      "description": "Optional scope object with lookback_days, candidate_limit, include_official, include_user, and focus fields."
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "status",
+      "name": "Status",
+      "valueType": "text",
+      "description": "Loader status."
+    },
+    {
+      "key": "curator_scope",
+      "name": "Curator Scope",
+      "valueType": "json",
+      "description": "Normalized curator scope."
+    },
+    {
+      "key": "capability_catalog_snapshot",
+      "name": "Capability Catalog Snapshot",
+      "valueType": "json",
+      "description": "Action, Tool, and template capability catalog snapshot."
+    },
+    {
+      "key": "capability_usage_snapshot",
+      "name": "Capability Usage Snapshot",
+      "valueType": "json",
+      "description": "Recent capability usage events and grouped counters."
+    },
+    {
+      "key": "eval_snapshot",
+      "name": "Eval Snapshot",
+      "valueType": "json",
+      "description": "Official template eval suite coverage snapshot."
+    },
+    {
+      "key": "existing_candidates_snapshot",
+      "name": "Existing Candidates Snapshot",
+      "valueType": "json",
+      "description": "Current improvement candidate queue snapshot."
+    },
+    {
+      "key": "curator_context_report",
+      "name": "Curator Context Report",
+      "valueType": "json",
+      "description": "Source counts and loader warnings."
+    }
+  ]
+}

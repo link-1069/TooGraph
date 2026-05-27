@@ -16,33 +16,42 @@ test("router exposes first-class management pages for presets and actions", () =
   assert.match(routerSource, /const GraphLibraryPage = \(\) => import\("@\/pages\/GraphLibraryPage\.vue"\);/);
   assert.match(routerSource, /const KnowledgePage = \(\) => import\("@\/pages\/KnowledgePage\.vue"\);/);
   assert.match(routerSource, /const EvalsPage = \(\) => import\("@\/pages\/EvalsPage\.vue"\);/);
+  assert.match(routerSource, /const SchedulerPage = \(\) => import\("@\/pages\/SchedulerPage\.vue"\);/);
+  assert.match(routerSource, /const CuratorReportsPage = \(\) => import\("@\/pages\/CuratorReportsPage\.vue"\);/);
   assert.match(routerSource, /const PresetsPage = \(\) => import\("@\/pages\/PresetsPage\.vue"\);/);
   assert.match(routerSource, /const ActionsPage = \(\) => import\("@\/pages\/ActionsPage\.vue"\);/);
   assert.match(routerSource, /const ImprovementCandidatesPage = \(\) => import\("@\/pages\/ImprovementCandidatesPage\.vue"\);/);
   assert.match(routerSource, /const ModelProvidersPage = \(\) => import\("@\/pages\/ModelProvidersPage\.vue"\);/);
   assert.match(routerSource, /const ModelLogsPage = \(\) => import\("@\/pages\/ModelLogsPage\.vue"\);/);
+  assert.match(routerSource, /const EvidenceSearchPage = \(\) => import\("@\/pages\/EvidenceSearchPage\.vue"\);/);
   assert.match(routerSource, /const BuddyPage = \(\) => import\("@\/pages\/BuddyPage\.vue"\);/);
   assert.match(routerSource, /\{ path: "\/library", component: GraphLibraryPage \}/);
   assert.match(routerSource, /\{ path: "\/knowledge", component: KnowledgePage \}/);
   assert.match(routerSource, /\{ path: "\/evals", component: EvalsPage \}/);
+  assert.match(routerSource, /\{ path: "\/scheduler", component: SchedulerPage \}/);
+  assert.match(routerSource, /\{ path: "\/curator-reports", component: CuratorReportsPage \}/);
   assert.match(routerSource, /\{ path: "\/buddy", component: BuddyPage \}/);
   assert.match(routerSource, /\{ path: "\/presets", component: PresetsPage \}/);
   assert.match(routerSource, /\{ path: "\/actions", component: ActionsPage \}/);
   assert.match(routerSource, /\{ path: "\/improvements", component: ImprovementCandidatesPage \}/);
   assert.match(routerSource, /\{ path: "\/models", component: ModelProvidersPage \}/);
   assert.match(routerSource, /\{ path: "\/model-logs", component: ModelLogsPage \}/);
+  assert.match(routerSource, /\{ path: "\/evidence", component: EvidenceSearchPage \}/);
 });
 
 test("router lazy-loads page components to keep the production entry chunk small", () => {
   for (const pageName of [
     "EditorPage",
     "EvalsPage",
+    "SchedulerPage",
+    "CuratorReportsPage",
     "GraphLibraryPage",
     "KnowledgePage",
     "HomePage",
     "BuddyPage",
     "ModelLogsPage",
     "ModelProvidersPage",
+    "EvidenceSearchPage",
     "PresetsPage",
     "RunDetailPage",
     "RunsPage",

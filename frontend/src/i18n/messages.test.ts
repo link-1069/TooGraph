@@ -41,6 +41,32 @@ test("i18n messages preserve product and technical proper nouns", () => {
   assert.match(messages["en-US"].settings.openAiCompatibleProvider, /OpenAI/);
 });
 
+test("i18n messages expose scheduler management labels", () => {
+  assert.equal(messages["zh-CN"].nav.scheduler, "调度任务");
+  assert.equal(messages["zh-CN"].scheduler.title, "图调度任务");
+  assert.equal(messages["zh-CN"].scheduler.createJob, "新建任务");
+  assert.equal(messages["zh-CN"].scheduler.runNow, "立即运行");
+  assert.equal(messages["zh-CN"].scheduler.deliveryTarget, "投递目标");
+  assert.doesNotMatch(messages["zh-CN"].scheduler.deliveryTargetPlaceholder, /[{}]/);
+  assert.equal(messages["en-US"].nav.scheduler, "Scheduler");
+  assert.equal(messages["en-US"].scheduler.title, "Graph Scheduler");
+  assert.equal(messages["en-US"].scheduler.createJob, "New job");
+  assert.equal(messages["en-US"].scheduler.runNow, "Run now");
+  assert.equal(messages["en-US"].scheduler.deliveryTarget, "Delivery target");
+  assert.doesNotMatch(messages["en-US"].scheduler.deliveryTargetPlaceholder, /[{}]/);
+});
+
+test("i18n messages expose capability curator report labels", () => {
+  assert.equal(messages["zh-CN"].nav.curatorReports, "能力报告");
+  assert.equal(messages["zh-CN"].curatorReports.title, "能力整理报告");
+  assert.equal(messages["zh-CN"].curatorReports.report, "整理报告");
+  assert.equal(messages["zh-CN"].curatorReports.schedulerRecommendation, "调度建议");
+  assert.equal(messages["en-US"].nav.curatorReports, "Capability Reports");
+  assert.equal(messages["en-US"].curatorReports.title, "Capability Curator Reports");
+  assert.equal(messages["en-US"].curatorReports.report, "Curator report");
+  assert.equal(messages["en-US"].curatorReports.schedulerRecommendation, "Scheduler recommendation");
+});
+
 test("Preset management labels localize node families in Chinese", () => {
   assert.equal(messages["zh-CN"].presets.agents, "LLM 预设");
   assert.equal(messages["zh-CN"].presets.input, "输入");

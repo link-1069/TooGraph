@@ -394,6 +394,8 @@ TooGraph 差距：
 - 已新增候选 approve / reject 决策 API 和 RunDetail 操作入口；人工决策会写入 `decision`、`decided_at` 和 `status_reason`，只推进候选状态。
 - 已新增候选 apply API 和 RunDetail 操作入口；状态为 `approved` 且带 `has_apply_command` 的候选会读取验证产物中的 `approval_request.apply_command`，通过 allowlist Buddy command 执行改动，记录 `applied_revision_id`、`applied_command` 和 `applied_at`，并把候选标记为 `applied`。
 - 已新增独立改进候选队列页面 `/improvements`，集中展示所有候选，支持状态筛选、搜索、来源/验证 run 跳转、验证、状态同步、批准、拒绝和可应用候选的 apply。
+- 已新增官方 `capability_curator_context_loader` Tool，只读组装 Action/Tool/template 能力目录、`capability_usage_events`、官方 eval 覆盖和 `improvement_candidates` 队列快照。
+- 官方 `buddy_capability_curator` 模板已接入该 loader；用户只输入整理范围，图运行时自动生成能力目录、使用记录、eval、已有候选和 loader 报告，再输出能力健康报告、curator report、improvement candidates 和 scheduler recommendation。
 
 解决方案：
 
@@ -424,7 +426,8 @@ TooGraph 差距：
    - 运行 validator/test 或生成人工验证清单。
    - 输出 approval request。
 3. 新增官方模板 `buddy_capability_curator`。
-   - 扫描 Action、Tool、Subgraph、template、memory、eval 使用记录。
+   - 已完成官方模板和 `capability_curator_context_loader`，整理范围作为唯一手动输入，能力目录、使用记录、eval 和已有候选快照由 Tool 组装。
+   - 后续通过 scheduler 定期触发该图模板。
    - 找到失败率高、重复、长期未用、说明过期、缺少测试的能力。
    - 输出 curator report 和 improvement candidates。
 4. 应用改动。
@@ -440,7 +443,7 @@ TooGraph 差距：
 
 - `improvement_candidates` 表。已完成基础表、复盘投影、查询 API、RunDetail 状态展示、验证 run 关联、验证结果状态同步、验证产物投影、人工决策记录和 command-backed apply 记录。
 - `buddy_improvement_review_workflow` 官方模板。已完成验证模板、可选 `approval_request.apply_command` 产出和从候选启动验证 run 的入口。
-- `buddy_capability_curator` 官方模板。
+- `buddy_capability_curator` 官方模板和 `capability_curator_context_loader` Tool。已完成自动快照组装；后续补齐 scheduler 和 report 页面。
 - Candidate Review UI。已完成 RunDetail 候选入口和独立 `/improvements` 候选队列。
 - Candidate approve/reject/apply API 已完成；后续重点是扩大 apply writer 覆盖范围。
 - Curator report 页面。
@@ -588,6 +591,17 @@ TooGraph 差距：
 
 - 缺少通用 scheduled graph job。
 - 后台任务需要成为标准 graph run，并进入运行记录与审计系统。
+
+当前落地进展：
+
+- 已新增统一数据库表 `scheduled_graph_jobs` 与 `scheduled_graph_job_runs`，保存任务定义、模板引用、输入绑定、调度表达式、启用状态、最近 run、下次运行时间和每次触发历史。
+- 已新增 scheduler store，支持创建 `manual`、`interval` 和 `cron` 类型 job；interval 已支持 `PT6H`、`30m`、`3600s` 等表达式，并可查询 due jobs。
+- 已新增 Scheduler API：创建/列表/详情、启停、手动触发、run-due 触发、job run history。
+- 已新增 scheduler runner，触发时会从 `template_id` 加载模板，把 `input_bindings` 应用到 input state，创建标准 LangGraph run，并写入 `graph_runs` 与 `scheduled_graph_job_runs`。
+- Scheduler run 的 metadata 会携带 `scheduled_graph_job`、`scheduled_graph_job_id`、`scheduled_graph_job_run_id` 和触发原因；RunDetail 已返回 `template_id` / `template_version` 便于追溯。
+- 已新增 scheduler service，FastAPI lifespan 启动后会开启后台 tick；tick 查询 due jobs，并通过标准 scheduler runner 创建 graph run。可用 `TOOGRAPH_SCHEDULER_DISABLED=1` 禁用本地 tick，`TOOGRAPH_SCHEDULER_POLL_INTERVAL_SECONDS` 调整轮询间隔。
+- 已新增官方 scheduled job 种子：`official_buddy_capability_curator` 每周建议运行 `buddy_capability_curator`，`official_embedding_maintenance` 每小时建议运行 `embedding_maintenance`。两者默认禁用，启动时只保证可发现，不会自动消耗模型或执行后台任务；用户启用后才会进入 scheduler tick。
+- 后续仍需实现 Scheduler 页面、失败重试、投递目标和默认任务启用入口。
 
 解决方案：
 
@@ -1112,8 +1126,8 @@ TooGraph 差距：
 1. 完成 background review input/output 可视化。
 2. 建 `improvement_candidates` 表。已完成基础表、后台复盘投影和查询 API。
 3. 新增 `buddy_improvement_review_workflow`。已完成官方验证模板。
-4. 新增 candidate review UI。已完成 RunDetail 候选验证入口；仍需独立候选队列和状态推进 UI。
-5. 让 candidate 进入 diff、test、approval、apply。
+4. 新增 candidate review UI。已完成 RunDetail 候选验证入口和独立 `/improvements` 候选队列；后续重点是扩大 writer 覆盖和 curator report。
+5. 让 candidate 进入 diff、test、approval、apply。已完成基础 approve/reject/apply 链路；后续补齐 Action、Tool、Subgraph、模板 writer 的受控应用路径。
 
 完成标志：
 
@@ -1123,9 +1137,9 @@ TooGraph 差距：
 
 目标：后台能力维护和复杂任务并行化。
 
-1. 建 scheduled graph jobs。
-2. 新增 `buddy_capability_curator`。
-3. 建 curator report。
+1. 建 scheduled graph jobs。已完成第一版数据库表、store、API、手动触发、run-due 触发、后台 tick 和官方 job 种子；UI、默认任务启用入口和重试/投递策略待补。
+2. 将已完成的 `buddy_capability_curator` + `capability_curator_context_loader` 接入 scheduled graph job。当前已有默认禁用的官方种子 job，可通过 Scheduler API 启用或手动触发；页面入口待补。
+3. 建 curator report 页面。
 4. 建 worker subgraph 和 task packet。
 5. 建 task board 与 worker run links。
 
@@ -1322,7 +1336,25 @@ timezone TEXT NOT NULL DEFAULT 'UTC'
 enabled INTEGER NOT NULL DEFAULT 1
 last_run_id TEXT
 next_run_at TEXT
+runtime_overrides_json TEXT NOT NULL DEFAULT '{}'
 delivery_target_json TEXT NOT NULL DEFAULT '{}'
+metadata_json TEXT NOT NULL DEFAULT '{}'
+created_at TEXT NOT NULL
+updated_at TEXT NOT NULL
+```
+
+### `scheduled_graph_job_runs`
+
+```text
+job_run_id TEXT PRIMARY KEY
+job_id TEXT NOT NULL
+run_id TEXT NOT NULL DEFAULT ''
+trigger_reason TEXT NOT NULL DEFAULT ''
+status TEXT NOT NULL DEFAULT 'queued'
+error TEXT NOT NULL DEFAULT ''
+started_at TEXT NOT NULL DEFAULT ''
+completed_at TEXT NOT NULL DEFAULT ''
+metadata_json TEXT NOT NULL DEFAULT '{}'
 created_at TEXT NOT NULL
 updated_at TEXT NOT NULL
 ```
@@ -1355,12 +1387,36 @@ updated_at TEXT NOT NULL
    - 已完成应用成功后写 `applied_revision_id`、`applied_command`、`applied_at` 并把候选标记为 `applied`。
    - 已完成独立候选队列 UI。
    - 下一步扩展 Action、Tool、Subgraph、模板 writer 覆盖。
-3. 新增 `buddy_capability_curator` 官方模板。
-   - 先支持手动运行。
-   - 后续接 scheduler。
-4. 建 hybrid recall 的最小生产链路。
+2. 扩展 `buddy_capability_curator` 自动化链路。
+   - 已完成官方模板和能力目录/使用记录/eval 快照 loader。
+   - 下一步接 scheduled graph jobs 和 curator report 页面。
+3. 建 hybrid recall 的最小生产链路。
    - FTS + embedding jobs + recall report。
-5. 建 scheduled graph jobs。
+4. 建 scheduled graph jobs。
    - 用 curator 和 embedding maintenance 作为第一批 job。
+5. 建 eval gate。
+   - 主循环、召回、selector、候选 apply 和 curator 至少各有一组固定 fixture。
 
 完成以上切片后，TooGraph 就会从“能产出改进建议”进入“能验证、审批、应用、复盘改进”的闭环阶段，这是 Hermes 自进化能力中最关键的分水岭。
+
+## 24. 开发执行规则
+
+这份文档进入开发阶段时，按同一套落地顺序推进每个差距点，避免只做局部 UI 或只做隐藏后端逻辑：
+
+1. 先定义合同。
+   - 明确新增 state schema、数据库事实表、Action/Tool manifest、Graph template 输入输出、run record 投影和权限边界。
+   - 写最小合同测试，确认旧协议不会被重新引入。
+2. 再做事实源。
+   - 运行事实进入统一数据库或 revision store。
+   - UI、胶囊、复盘、召回和 diagnostics 都从同一事实源重组显示。
+3. 再接官方图模板。
+   - Agent 智能流程落在模板、Subgraph、Tool、Action 串联中。
+   - 后端只提供 primitives、store、validator、runtime 和 command/revision path。
+4. 再补 UI 和审计。
+   - 用户能看到输入 state、来源 refs、能力选择、运行结果、错误、审批对象和 revision。
+   - Buddy 胶囊维持 output 边界分段，复杂细节进入可展开诊断或 RunDetail。
+5. 最后加 eval。
+   - 每个差距点至少有一个固定 fixture 证明能力可回归。
+   - 自我改进相关改动必须能说明验证方式，再进入批准或应用。
+
+开发优先级仍按 P0 -> P1 -> P2 -> P3 推进。P0 负责主循环可信度和上下文可审计；P1 负责历史、记忆、召回、selector、诊断和 eval；P2 负责 curator、scheduler、自我改进闭环；P3 负责插件、多入口和更大生态。

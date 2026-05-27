@@ -122,6 +122,8 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /agentDiagnostic\.capabilitySelection\.visible/);
   assert.match(componentSource, /agentDiagnostic\.capabilitySelection\.rejectedLabels/);
   assert.match(componentSource, /agentDiagnostic\.capabilitySelection\.fallbackLabels/);
+  assert.match(componentSource, /run-detail__diagnostic-warnings/);
+  assert.match(componentSource, /run-detail__diagnostic-warning/);
   assert.match(componentSource, /t\("runDetail\.agentDiagnostic"\)/);
 });
 

@@ -38,6 +38,7 @@ PENDING_RESUME_METADATA_KEYS = (
 def list_runs_endpoint(
     graph_name: str = Query(default=""),
     status: str = Query(default=""),
+    template_id: str = Query(default=""),
     include_internal: bool = Query(default=False),
 ) -> list[RunSummary]:
     raw_runs = list_runs()
@@ -56,11 +57,14 @@ def list_runs_endpoint(
     ]
     graph_name_query = graph_name.strip().lower()
     status_query = status.strip().lower()
+    template_id_query = template_id.strip().lower()
 
     if graph_name_query:
         runs = [run for run in runs if graph_name_query in run.graph_name.lower()]
     if status_query:
         runs = [run for run in runs if run.status.lower() == status_query]
+    if template_id_query:
+        runs = [run for run in runs if run.template_id.lower() == template_id_query]
 
     return runs
 

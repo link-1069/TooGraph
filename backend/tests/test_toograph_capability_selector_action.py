@@ -434,6 +434,75 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
         self.assertEqual(trace["score_breakdown"]["selected"]["recent_failure_count"], 1)
         self.assertEqual(trace["fallback_candidates"][0]["score"]["recent_failure_count"], 2)
 
+    def test_after_llm_selects_fallback_when_requested_capability_has_repeated_recent_failures(self) -> None:
+        selector = _load_selector_module(SELECTOR_AFTER_LLM_PATH, "toograph_capability_selector_after_failure_fallback_test")
+
+        result = selector.normalize_selected_capability(
+            {"kind": "action", "key": "raw_search", "reason": "Need current public sources."},
+            catalog={
+                "subgraphs": [],
+                "actions": [
+                    {
+                        "kind": "action",
+                        "key": "raw_search",
+                        "description": "Search raw public sources.",
+                        "granularity": "atomic",
+                        "covers": ["web_research"],
+                        "produces": ["raw_results"],
+                    },
+                    {
+                        "kind": "action",
+                        "key": "web_search_backup",
+                        "description": "Search public sources with the backup provider.",
+                        "granularity": "atomic",
+                        "covers": ["web_research"],
+                        "produces": ["raw_results"],
+                    },
+                ],
+                "tools": [],
+            },
+            usage_stats={
+                "capabilities": {
+                    "action:raw_search": {
+                        "kind": "action",
+                        "key": "raw_search",
+                        "use_count": 5,
+                        "success_count": 2,
+                        "failure_count": 3,
+                        "recent_runs": [
+                            {"run_id": "run_failed_3", "success": False},
+                            {"run_id": "run_failed_2", "success": False},
+                            {"run_id": "run_failed_1", "success": False},
+                        ],
+                    },
+                    "action:web_search_backup": {
+                        "kind": "action",
+                        "key": "web_search_backup",
+                        "use_count": 4,
+                        "success_count": 4,
+                        "failure_count": 0,
+                        "recent_runs": [
+                            {"run_id": "run_ok_2", "success": True},
+                            {"run_id": "run_ok_1", "success": True},
+                        ],
+                    },
+                }
+            },
+        )
+
+        self.assertEqual(result["capability"]["kind"], "action")
+        self.assertEqual(result["capability"]["key"], "web_search_backup")
+        self.assertTrue(result["needs_capability"])
+        trace = result["capability_selection_trace"]
+        self.assertEqual(trace["requested"], {"kind": "action", "key": "raw_search"})
+        self.assertEqual(trace["selected"], {"kind": "action", "key": "web_search_backup"})
+        self.assertEqual(trace["rejected_candidates"][0]["key"], "raw_search")
+        self.assertEqual(trace["rejected_candidates"][0]["reason"], "recent_failures_fallback_preferred")
+        self.assertEqual(trace["score_breakdown"]["selected"]["recent_failure_count"], 0)
+        self.assertEqual(trace["usage_summary"]["selected"]["success_rate"], 1.0)
+        self.assertEqual(trace["fallback_candidates"][0]["key"], "raw_search")
+        self.assertEqual(trace["fallback_candidates"][0]["reason"], "original_candidate")
+
     def test_after_llm_validates_and_normalizes_selected_capability(self) -> None:
         selector = _load_selector_module(SELECTOR_AFTER_LLM_PATH, "toograph_capability_selector_after_validate_test")
 

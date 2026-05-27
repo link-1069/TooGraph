@@ -25,6 +25,10 @@ test("resolvePrimaryNavigationSection keeps graph editor detail routes inside th
   assert.equal(resolvePrimaryNavigationSection("/knowledge/docs"), "knowledge");
   assert.equal(resolvePrimaryNavigationSection("/evals"), "evals");
   assert.equal(resolvePrimaryNavigationSection("/evals/suite_a"), "evals");
+  assert.equal(resolvePrimaryNavigationSection("/scheduler"), "scheduler");
+  assert.equal(resolvePrimaryNavigationSection("/scheduler/jobs"), "scheduler");
+  assert.equal(resolvePrimaryNavigationSection("/curator-reports"), "curatorReports");
+  assert.equal(resolvePrimaryNavigationSection("/curator-reports/run_123"), "curatorReports");
   assert.equal(resolvePrimaryNavigationSection("/buddy"), "buddy");
   assert.equal(resolvePrimaryNavigationSection("/buddy/memories"), "buddy");
   assert.equal(resolvePrimaryNavigationSection("/presets"), "presets");
@@ -33,6 +37,8 @@ test("resolvePrimaryNavigationSection keeps graph editor detail routes inside th
   assert.equal(resolvePrimaryNavigationSection("/improvements/cand_1"), "improvements");
   assert.equal(resolvePrimaryNavigationSection("/models"), "models");
   assert.equal(resolvePrimaryNavigationSection("/model-logs"), "modelLogs");
+  assert.equal(resolvePrimaryNavigationSection("/evidence"), "evidenceSearch");
+  assert.equal(resolvePrimaryNavigationSection("/evidence/run_123"), "evidenceSearch");
   assert.equal(resolvePrimaryNavigationSection("/runs"), "runs");
   assert.equal(resolvePrimaryNavigationSection("/runs/run_123"), "runs");
   assert.equal(resolvePrimaryNavigationSection("/settings"), "settings");

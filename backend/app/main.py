@@ -16,6 +16,7 @@ from app.api.routes_model_logs import router as model_logs_router
 from app.api.routes_operation_journal import router as operation_journal_router
 from app.api.routes_presets import router as presets_router
 from app.api.routes_runs import router as runs_router
+from app.api.routes_scheduler import router as scheduler_router
 from app.api.routes_settings import router as settings_router
 from app.api.routes_actions import router as actions_router
 from app.api.routes_capability_artifacts import router as capability_artifacts_router
@@ -25,6 +26,8 @@ from app.buddy.store import initialize_buddy_home
 from app.core.runtime.run_recovery import mark_interrupted_active_runs
 from app.core.storage.database import initialize_storage
 from app.evaluator.official_seed import seed_official_eval_suites
+from app.scheduler.official_seed import seed_official_scheduled_graph_jobs
+from app.scheduler.service import start_scheduler_service, stop_scheduler_service
 from app.tools.openai_codex_client import restore_pending_codex_browser_login_sessions
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -34,6 +37,7 @@ FRONTEND_DIST_DIR = Path(os.environ.get("TOOGRAPH_FRONTEND_DIST", ROOT_DIR / "fr
 def startup() -> None:
     initialize_storage()
     seed_official_eval_suites()
+    seed_official_scheduled_graph_jobs()
     initialize_buddy_home()
     mark_interrupted_active_runs()
     restore_pending_codex_browser_login_sessions()
@@ -42,7 +46,11 @@ def startup() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     startup()
-    yield
+    start_scheduler_service()
+    try:
+        yield
+    finally:
+        stop_scheduler_service()
 
 
 def _frontend_file_path(dist_dir: Path, full_path: str) -> Path | None:
@@ -104,6 +112,7 @@ app.include_router(model_logs_router)
 app.include_router(operation_journal_router)
 app.include_router(presets_router)
 app.include_router(runs_router)
+app.include_router(scheduler_router)
 app.include_router(settings_router)
 app.include_router(capability_artifacts_router)
 app.include_router(actions_router)

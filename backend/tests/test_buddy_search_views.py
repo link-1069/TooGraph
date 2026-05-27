@@ -1,0 +1,290 @@
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from fastapi.testclient import TestClient
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.buddy import store
+from app.core.storage import database
+from app.core.storage.context_assembly_store import create_context_assembly
+from app.core.storage.run_store import save_run
+from app.main import app
+
+
+class BuddySearchViewTests(unittest.TestCase):
+    def test_search_sessions_returns_lineage_aware_message_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+                patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"),
+            ):
+                database.initialize_storage()
+                current = store.create_chat_session({"title": "当前会话"}, changed_by="user", change_reason="test")
+                current_child = store.create_chat_session(
+                    {"title": "当前分支", "parent_session_id": current["session_id"]},
+                    changed_by="user",
+                    change_reason="test",
+                )
+                other = store.create_chat_session({"title": "证据会话"}, changed_by="user", change_reason="test")
+                store.append_chat_message(
+                    current_child["session_id"],
+                    {"role": "user", "content": "当前分支里的 evidence-alpha 不应被召回"},
+                    changed_by="user",
+                    change_reason="test",
+                )
+                hit_message = store.append_chat_message(
+                    other["session_id"],
+                    {"role": "assistant", "content": "这里保存了 evidence-alpha 的历史结论。"},
+                    changed_by="buddy",
+                    change_reason="test",
+                )
+
+                result = store.search_chat_sessions(
+                    query="evidence-alpha",
+                    current_session_id=current["session_id"],
+                    limit=5,
+                )
+
+        self.assertEqual(result["kind"], "buddy_session_search")
+        self.assertEqual(result["query"], "evidence-alpha")
+        self.assertEqual(result["session_count"], 1)
+        self.assertEqual(result["sessions"][0]["session_id"], other["session_id"])
+        self.assertEqual(result["sessions"][0]["match_message_id"], hit_message["message_id"])
+        self.assertIn(hit_message["message_id"], result["message_ids"])
+        self.assertIn("evidence-alpha", result["sessions"][0]["snippet"])
+
+    def test_search_run_context_expands_context_package_sources_from_run_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+                patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"),
+            ):
+                database.initialize_storage()
+                session = store.create_chat_session({"title": "来源会话"}, changed_by="user", change_reason="test")
+                message = store.append_chat_message(
+                    session["session_id"],
+                    {"role": "assistant", "content": "stable-source 是可复用证据。"},
+                    changed_by="buddy",
+                    change_reason="test",
+                )
+                context_ref = create_context_assembly(
+                    target_state_key="conversation_history",
+                    renderer_key="buddy_history_context_loader",
+                    renderer_version="1",
+                    rendered_text="历史证据：stable-source 是可复用证据。",
+                    sources=[
+                        {
+                            "source_kind": "buddy_message",
+                            "source_id": message["message_id"],
+                            "role": "assistant",
+                            "label": "历史消息",
+                            "metadata": {"session_id": session["session_id"], "authority": "history"},
+                        }
+                    ],
+                    budget={"used_chars": 24},
+                )
+                save_run(
+                    {
+                        "run_id": "run_context_search",
+                        "graph_id": "graph_context_search",
+                        "graph_name": "Run Context Search",
+                        "status": "completed",
+                        "started_at": "2026-05-28T00:00:00Z",
+                        "completed_at": "2026-05-28T00:00:01Z",
+                        "state_values": {
+                            "conversation_history": {
+                                "kind": "context_package",
+                                "source_kind": "session",
+                                "authority": "history",
+                                "items": [],
+                                "context_ref": context_ref,
+                            }
+                        },
+                        "state_snapshot": {
+                            "values": {
+                                "conversation_history": {
+                                    "kind": "context_package",
+                                    "source_kind": "session",
+                                    "authority": "history",
+                                    "items": [],
+                                    "context_ref": context_ref,
+                                }
+                            }
+                        },
+                    }
+                )
+
+                result = store.search_run_context("run_context_search", query="stable-source", limit=10)
+
+        self.assertEqual(result["kind"], "run_context_search")
+        self.assertEqual(result["run_id"], "run_context_search")
+        self.assertEqual(result["match_count"], 1)
+        match = result["matches"][0]
+        self.assertEqual(match["state_key"], "conversation_history")
+        self.assertEqual(match["assembly_id"], context_ref["assembly_id"])
+        self.assertEqual(match["source_kind"], "buddy_message")
+        self.assertEqual(match["source_id"], message["message_id"])
+        self.assertIn("stable-source", match["snippet"])
+        self.assertEqual(match["metadata"]["session_id"], session["session_id"])
+
+    def test_buddy_search_routes_expose_session_and_run_context_views(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+                patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"),
+                TestClient(app) as client,
+            ):
+                database.initialize_storage()
+                session = store.create_chat_session({"title": "API 证据"}, changed_by="user", change_reason="test")
+                store.append_chat_message(
+                    session["session_id"],
+                    {"role": "user", "content": "api-evidence 在这里"},
+                    changed_by="user",
+                    change_reason="test",
+                )
+                context_ref = create_context_assembly(
+                    target_state_key="runtime_context",
+                    renderer_key="runtime_context_loader",
+                    renderer_version="1",
+                    rendered_text="api-context-evidence",
+                    sources=[
+                        {
+                            "source_kind": "runtime_context_item",
+                            "source_id": "runtime:key",
+                            "label": "runtime key",
+                            "metadata": {"key": "runtime_key", "value": "api-context-evidence"},
+                        }
+                    ],
+                )
+                save_run(
+                    {
+                        "run_id": "run_context_api",
+                        "graph_id": "graph_context_api",
+                        "graph_name": "Run Context API",
+                        "status": "completed",
+                        "started_at": "2026-05-28T00:00:00Z",
+                        "state_values": {"runtime_context": context_ref},
+                        "state_snapshot": {"values": {"runtime_context": context_ref}},
+                    }
+                )
+
+                sessions_response = client.get("/api/buddy/search/sessions", params={"query": "api-evidence"})
+                context_response = client.get(
+                    "/api/buddy/search/run-context",
+                    params={"run_id": "run_context_api", "query": "api-context-evidence"},
+                )
+
+        self.assertEqual(sessions_response.status_code, 200)
+        self.assertEqual(context_response.status_code, 200)
+        self.assertEqual(sessions_response.json()["session_count"], 1)
+        self.assertEqual(context_response.json()["match_count"], 1)
+
+    def test_search_memories_returns_retrieval_scores_sources_and_embedding_models(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+                patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"),
+            ):
+                database.initialize_storage()
+                from app.core.storage.embedding_store import (
+                    build_local_text_embedding,
+                    register_embedding_model,
+                    upsert_embedding_vector,
+                )
+                from app.core.storage.memory_store import create_memory_entry
+                from app.core.storage.database import get_connection
+
+                model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
+                memory = create_memory_entry(
+                    scope_kind="buddy_session",
+                    scope_id="session_memory_search",
+                    layer="long_term",
+                    memory_type="preference",
+                    title="召回偏好",
+                    content="用户希望 memory-search-evidence 使用 embedding 召回并展示证据来源。",
+                    sources=[{"source_kind": "buddy_message", "source_id": "msg_memory_search"}],
+                    confidence=0.8,
+                    salience=0.7,
+                )
+                with get_connection() as connection:
+                    chunk = connection.execute(
+                        "SELECT chunk_id, content_hash FROM retrieval_chunks WHERE source_id = ?",
+                        (memory["memory_id"],),
+                    ).fetchone()
+                upsert_embedding_vector(
+                    str(chunk["chunk_id"]),
+                    model["embedding_model_id"],
+                    build_local_text_embedding(memory["content"], dimensions=16),
+                    str(chunk["content_hash"]),
+                )
+
+                result = store.search_memories(
+                    query="memory-search-evidence embedding",
+                    embedding_model_ref=model["embedding_model_id"],
+                    limit=5,
+                )
+
+        self.assertEqual(result["kind"], "memory_search")
+        self.assertEqual(result["embedding_model_ref"], model["embedding_model_id"])
+        self.assertEqual(result["match_count"], 1)
+        self.assertEqual(result["memories"][0]["memory_id"], memory["memory_id"])
+        self.assertEqual(result["memories"][0]["sources"][0]["source_kind"], "buddy_message")
+        self.assertEqual(result["memories"][0]["retrieval"]["mode"], "hybrid")
+        self.assertGreater(result["memories"][0]["retrieval"]["vector_score"], 0)
+        self.assertEqual(result["embedding_models"][0]["embedding_model_id"], model["embedding_model_id"])
+        self.assertIn("query_ids", result["report"])
+
+    def test_buddy_search_routes_expose_memory_search_view(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+                patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"),
+                TestClient(app) as client,
+            ):
+                database.initialize_storage()
+                from app.core.storage.memory_store import create_memory_entry
+
+                memory = create_memory_entry(
+                    scope_kind="buddy",
+                    scope_id="default",
+                    layer="long_term",
+                    memory_type="preference",
+                    title="API 记忆",
+                    content="api-memory-evidence 应该通过只读 API 展开。",
+                )
+
+                response = client.get(
+                    "/api/buddy/search/memories",
+                    params={"query": "api-memory-evidence", "limit": 5},
+                )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["kind"], "memory_search")
+        self.assertEqual(payload["memory_count"], 1)
+        self.assertEqual(payload["memories"][0]["memory_id"], memory["memory_id"])
+
+
+if __name__ == "__main__":
+    unittest.main()

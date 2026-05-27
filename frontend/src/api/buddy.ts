@@ -9,8 +9,11 @@ import type {
   BuddyMemoryReviewTemplateBinding,
   BuddyMemoryDocument,
   BuddyIdentity,
+  BuddyMemorySearchResult,
   BuddyRevision,
+  BuddyRunContextSearchResult,
   BuddyRunTemplateBinding,
+  BuddySessionSearchResult,
   BuddySessionSummary,
   BuddyUserContextDocument,
 } from "../types/buddy.ts";
@@ -208,6 +211,97 @@ export function appendBuddyChatMessage(
   },
 ) {
   return apiPost<BuddyChatMessageRecord>(`/api/buddy/sessions/${encodeURIComponent(sessionId)}/messages`, payload);
+}
+
+export function searchBuddyChatSessions(
+  filters: {
+    query?: string;
+    currentSessionId?: string;
+    limit?: number;
+    window?: number;
+    sort?: string;
+  } = {},
+  init?: Pick<RequestInit, "signal">,
+) {
+  const params = new URLSearchParams();
+  if (filters.query) {
+    params.set("query", filters.query);
+  }
+  if (filters.currentSessionId) {
+    params.set("current_session_id", filters.currentSessionId);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
+  if (filters.window !== undefined) {
+    params.set("window", String(filters.window));
+  }
+  if (filters.sort) {
+    params.set("sort", filters.sort);
+  }
+  const query = params.toString();
+  return apiGet<BuddySessionSearchResult>(`/api/buddy/search/sessions${query ? `?${query}` : ""}`, init);
+}
+
+export function searchBuddyRunContext(
+  filters: {
+    runId: string;
+    query?: string;
+    limit?: number;
+  },
+  init?: Pick<RequestInit, "signal">,
+) {
+  const params = new URLSearchParams();
+  params.set("run_id", filters.runId);
+  if (filters.query) {
+    params.set("query", filters.query);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
+  return apiGet<BuddyRunContextSearchResult>(`/api/buddy/search/run-context?${params.toString()}`, init);
+}
+
+export function searchBuddyMemories(
+  filters: {
+    query?: string;
+    embeddingModelRef?: string;
+    scopeKind?: string;
+    scopeId?: string;
+    layer?: string;
+    memoryType?: string;
+    status?: string;
+    limit?: number;
+  } = {},
+  init?: Pick<RequestInit, "signal">,
+) {
+  const params = new URLSearchParams();
+  if (filters.query) {
+    params.set("query", filters.query);
+  }
+  if (filters.embeddingModelRef) {
+    params.set("embedding_model_ref", filters.embeddingModelRef);
+  }
+  if (filters.scopeKind) {
+    params.set("scope_kind", filters.scopeKind);
+  }
+  if (filters.scopeId) {
+    params.set("scope_id", filters.scopeId);
+  }
+  if (filters.layer) {
+    params.set("layer", filters.layer);
+  }
+  if (filters.memoryType) {
+    params.set("memory_type", filters.memoryType);
+  }
+  if (filters.status) {
+    params.set("status", filters.status);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
+  const query = params.toString();
+  return apiGet<BuddyMemorySearchResult>(`/api/buddy/search/memories${query ? `?${query}` : ""}`, init);
 }
 
 export function fetchBuddyRevisions(targetType?: string, targetId?: string) {

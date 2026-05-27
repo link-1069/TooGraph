@@ -468,7 +468,11 @@
                 </div>
               </div>
             </div>
-            <p v-for="warning in agentDiagnostic.warnings" :key="warning" class="run-detail__muted">{{ warning }}</p>
+            <ul v-if="agentDiagnostic.warnings.length > 0" class="run-detail__diagnostic-warnings">
+              <li v-for="warning in agentDiagnostic.warnings" :key="warning" class="run-detail__diagnostic-warning">
+                {{ warning }}
+              </li>
+            </ul>
           </article>
 
           <article v-if="cycleVisualization.hasCycle" class="run-detail__panel">
@@ -1677,6 +1681,26 @@ function statusBadgeClass(status: string) {
   background: rgba(255, 255, 255, 0.58);
   color: rgba(60, 41, 20, 0.68);
   font-family: var(--toograph-font-mono);
+}
+
+.run-detail__diagnostic-warnings {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-detail__diagnostic-warning {
+  border: 1px solid rgba(185, 28, 28, 0.14);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(254, 242, 242, 0.72);
+  color: rgba(127, 29, 29, 0.82);
+  font-family: var(--toograph-font-mono);
+  font-size: 0.84rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .run-detail__tree-count,

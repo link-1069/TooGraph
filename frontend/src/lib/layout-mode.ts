@@ -5,12 +5,15 @@ export type PrimaryNavigationSection =
   | "graphLibrary"
   | "knowledge"
   | "evals"
+  | "scheduler"
+  | "curatorReports"
   | "buddy"
   | "presets"
   | "actions"
   | "improvements"
   | "models"
   | "modelLogs"
+  | "evidenceSearch"
   | "runs"
   | "settings";
 
@@ -43,6 +46,12 @@ export function resolvePrimaryNavigationSection(pathname: string): PrimaryNaviga
   if (pathname === "/evals" || pathname.startsWith("/evals/")) {
     return "evals";
   }
+  if (pathname === "/scheduler" || pathname.startsWith("/scheduler/")) {
+    return "scheduler";
+  }
+  if (pathname === "/curator-reports" || pathname.startsWith("/curator-reports/")) {
+    return "curatorReports";
+  }
   if (pathname === "/buddy" || pathname.startsWith("/buddy/")) {
     return "buddy";
   }
@@ -60,6 +69,9 @@ export function resolvePrimaryNavigationSection(pathname: string): PrimaryNaviga
   }
   if (pathname === "/model-logs" || pathname.startsWith("/model-logs/")) {
     return "modelLogs";
+  }
+  if (pathname === "/evidence" || pathname.startsWith("/evidence/")) {
+    return "evidenceSearch";
   }
   if (pathname === "/runs" || pathname.startsWith("/runs/")) {
     return "runs";

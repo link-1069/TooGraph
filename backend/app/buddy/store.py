@@ -35,6 +35,8 @@ DEFAULT_RECALL_BOOKEND = 3
 DEFAULT_RECALL_WINDOW = 5
 MAX_RECALL_LIMIT = 50
 MAX_RECALL_WINDOW = 20
+MAX_RUN_CONTEXT_SEARCH_LIMIT = 100
+MAX_MEMORY_SEARCH_LIMIT = 50
 MAX_BUDDY_HOME_FILE_CONTENT_CHARS = 200_000
 HIDDEN_SESSION_SOURCES = {"tool"}
 BACKGROUND_REVIEW_STATUSES = {"queued", "running", "paused", "awaiting_human", "completed", "failed", "cancelled", "skipped"}
@@ -1031,6 +1033,259 @@ def recall_chat_messages(
     return _recall_chat_messages_browse(limit=normalized_limit)
 
 
+def search_chat_sessions(
+    *,
+    query: str = "",
+    current_session_id: str | None = None,
+    limit: int = 10,
+    window: int = DEFAULT_RECALL_WINDOW,
+    role_filter: Any = None,
+    sort: str | None = None,
+) -> dict[str, Any]:
+    recall = recall_chat_messages(
+        mode="discover" if str(query or "").strip() else "browse",
+        query=query,
+        limit=limit,
+        window=window,
+        role_filter=role_filter,
+        sort=sort,
+        current_session_id=current_session_id,
+    )
+    sessions = list(recall.get("sessions") or [])
+    message_ids: list[str] = []
+    for session in sessions:
+        for message_id in session.get("hit_message_ids") or []:
+            normalized_message_id = str(message_id or "").strip()
+            if normalized_message_id and normalized_message_id not in message_ids:
+                message_ids.append(normalized_message_id)
+        for message in session.get("messages") or []:
+            normalized_message_id = str((message or {}).get("message_id") or "").strip()
+            if normalized_message_id and normalized_message_id not in message_ids:
+                message_ids.append(normalized_message_id)
+    return {
+        "kind": "buddy_session_search",
+        "query": str(recall.get("query") or query or ""),
+        "hit_count": int(recall.get("hit_count") or 0),
+        "session_count": int(recall.get("session_count") or len(sessions)),
+        "message_ids": message_ids,
+        "sessions": sessions,
+    }
+
+
+def search_run_context(run_id: str, *, query: str = "", limit: int = 25) -> dict[str, Any]:
+    from app.core.storage.context_assembly_store import (
+        expand_context_assembly_ref,
+        expand_context_package,
+        is_context_assembly_ref,
+        is_context_package,
+    )
+    from app.core.storage.run_store import load_run
+
+    normalized_run_id = str(run_id or "").strip()
+    if not normalized_run_id:
+        raise KeyError(normalized_run_id)
+    run = load_run(normalized_run_id)
+    normalized_query = str(query or "").strip()
+    normalized_limit = _bounded_int(limit, default=25, minimum=1, maximum=MAX_RUN_CONTEXT_SEARCH_LIMIT)
+    matches: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str, str]] = set()
+
+    def append_match(
+        *,
+        state_key: str,
+        node_id: str = "",
+        output_key: str = "",
+        package: dict[str, Any] | None = None,
+        assembly: dict[str, Any] | None = None,
+        text: str = "",
+        source: dict[str, Any] | None = None,
+        warnings: list[Any] | None = None,
+    ) -> None:
+        nonlocal matches
+        if len(matches) >= normalized_limit:
+            return
+        assembly = assembly or {}
+        package = package or {}
+        source = source or {}
+        searchable_text = "\n".join(
+            [
+                str(text or ""),
+                str(source.get("label") or ""),
+                str(source.get("source_kind") or ""),
+                str(source.get("source_id") or ""),
+                _json_dumps(source.get("metadata") or {}),
+            ]
+        )
+        if normalized_query and normalized_query.lower() not in searchable_text.lower():
+            return
+        key = (
+            state_key,
+            str(assembly.get("assembly_id") or ""),
+            str(source.get("source_kind") or ""),
+            str(source.get("source_id") or ""),
+            str(source.get("source_revision_id") or ""),
+            str(source.get("label") or ""),
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        matches.append(
+            {
+                "run_id": normalized_run_id,
+                "state_key": state_key,
+                "node_id": node_id,
+                "output_key": output_key,
+                "package_kind": str(package.get("kind") or ""),
+                "package_source_kind": str(package.get("source_kind") or ""),
+                "authority": str(package.get("authority") or _coerce_dict(source.get("metadata")).get("authority") or ""),
+                "assembly_id": str(assembly.get("assembly_id") or ""),
+                "target_state_key": str(assembly.get("target_state_key") or ""),
+                "renderer_key": str(assembly.get("renderer_key") or ""),
+                "renderer_version": str(assembly.get("renderer_version") or ""),
+                "source_kind": str(source.get("source_kind") or ""),
+                "source_id": str(source.get("source_id") or ""),
+                "source_revision_id": str(source.get("source_revision_id") or ""),
+                "role": str(source.get("role") or ""),
+                "label": str(source.get("label") or ""),
+                "metadata": _coerce_dict(source.get("metadata")),
+                "snippet": _make_text_snippet(searchable_text, tokens=[normalized_query] if normalized_query else []),
+                "warnings": list(warnings or []),
+            }
+        )
+
+    for context_value in _iter_run_context_values(run):
+        state_key = context_value["state_key"]
+        value = context_value["value"]
+        node_id = context_value["node_id"]
+        output_key = context_value["output_key"]
+        try:
+            if is_context_package(value):
+                expanded = expand_context_package(value)
+                assembly = expanded.get("assembly") if isinstance(expanded.get("assembly"), dict) else {}
+                sources = list(assembly.get("sources") or [])
+                if sources:
+                    for source in sources:
+                        append_match(
+                            state_key=state_key,
+                            node_id=node_id,
+                            output_key=output_key,
+                            package=value,
+                            assembly=assembly,
+                            text=str(expanded.get("text") or ""),
+                            source=source if isinstance(source, dict) else {},
+                            warnings=list(expanded.get("warnings") or []),
+                        )
+                else:
+                    append_match(
+                        state_key=state_key,
+                        node_id=node_id,
+                        output_key=output_key,
+                        package=value,
+                        assembly=assembly,
+                        text=str(expanded.get("text") or ""),
+                        source={
+                            "source_kind": str(value.get("source_kind") or "context_package"),
+                            "source_id": str(value.get("id") or state_key),
+                            "label": str(value.get("title") or state_key),
+                            "metadata": {"authority": value.get("authority")},
+                        },
+                        warnings=list(expanded.get("warnings") or []),
+                    )
+            elif is_context_assembly_ref(value):
+                expanded = expand_context_assembly_ref(value)
+                assembly = expanded.get("assembly") if isinstance(expanded.get("assembly"), dict) else {}
+                for source in list(assembly.get("sources") or []):
+                    append_match(
+                        state_key=state_key,
+                        node_id=node_id,
+                        output_key=output_key,
+                        assembly=assembly,
+                        text=str(expanded.get("text") or ""),
+                        source=source if isinstance(source, dict) else {},
+                        warnings=list(expanded.get("warnings") or []),
+                    )
+        except Exception as exc:
+            append_match(
+                state_key=state_key,
+                node_id=node_id,
+                output_key=output_key,
+                text=str(value),
+                source={
+                    "source_kind": "context_resolution_error",
+                    "source_id": state_key,
+                    "label": state_key,
+                    "metadata": {"error": str(exc)},
+                },
+                warnings=[{"code": "context_resolution_error", "message": str(exc)}],
+            )
+
+    return {
+        "kind": "run_context_search",
+        "run_id": normalized_run_id,
+        "query": normalized_query,
+        "match_count": len(matches),
+        "matches": matches,
+    }
+
+
+def search_memories(
+    *,
+    query: str = "",
+    embedding_model_ref: str = "",
+    scope_kind: str = "",
+    scope_id: str = "",
+    layer: str = "",
+    memory_type: str = "",
+    status: str = "active",
+    limit: int = 10,
+) -> dict[str, Any]:
+    from app.core.storage.embedding_store import list_embedding_models
+    from app.core.storage.memory_store import recall_memories
+
+    normalized_query = str(query or "").strip()
+    normalized_embedding_model_ref = str(embedding_model_ref or "").strip()
+    normalized_limit = _bounded_int(limit, default=10, minimum=1, maximum=MAX_MEMORY_SEARCH_LIMIT)
+    filters = {
+        key: value
+        for key, value in {
+            "scope_kind": str(scope_kind or "").strip(),
+            "scope_id": str(scope_id or "").strip(),
+            "layer": str(layer or "").strip(),
+            "memory_type": str(memory_type or "").strip(),
+            "status": str(status or "active").strip(),
+            "embedding_model_ref": normalized_embedding_model_ref,
+        }.items()
+        if value
+    }
+    memories = recall_memories(normalized_query, filters=filters, limit=normalized_limit)
+    embedding_models = list_embedding_models(enabled_only=False)
+    retrieval_modes: dict[str, int] = {}
+    query_ids: list[str] = []
+    for memory in memories:
+        retrieval = _coerce_dict(memory.get("retrieval"))
+        mode = str(retrieval.get("mode") or "browse")
+        retrieval_modes[mode] = retrieval_modes.get(mode, 0) + 1
+        query_id = str(retrieval.get("query_id") or "").strip()
+        if query_id and query_id not in query_ids:
+            query_ids.append(query_id)
+    return {
+        "kind": "memory_search",
+        "query": normalized_query,
+        "embedding_model_ref": normalized_embedding_model_ref,
+        "match_count": len(memories),
+        "memory_count": len(memories),
+        "embedding_models": embedding_models,
+        "memories": memories,
+        "report": {
+            "mode": "hybrid" if normalized_embedding_model_ref else ("keyword" if normalized_query else "browse"),
+            "filters": {key: value for key, value in filters.items() if key != "embedding_model_ref"},
+            "embedding_model_ref": normalized_embedding_model_ref,
+            "retrieval_modes": retrieval_modes,
+            "query_ids": query_ids,
+        },
+    }
+
+
 def append_chat_message(
     session_id: str,
     payload: dict[str, Any],
@@ -1680,6 +1935,53 @@ def _make_text_snippet(content: str, *, tokens: list[str]) -> str:
     return content[:120]
 
 
+def _iter_run_context_values(run: dict[str, Any]) -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
+    for state_key, value in _coerce_dict(run.get("state_values")).items():
+        values.append({"state_key": str(state_key), "node_id": "", "output_key": "", "value": value})
+    state_snapshot_values = _coerce_dict(_coerce_dict(run.get("state_snapshot")).get("values"))
+    for state_key, value in state_snapshot_values.items():
+        values.append({"state_key": str(state_key), "node_id": "", "output_key": "", "value": value})
+    for event in run.get("state_events") or []:
+        if not isinstance(event, dict):
+            continue
+        values.append(
+            {
+                "state_key": str(event.get("state_key") or ""),
+                "node_id": str(event.get("node_id") or ""),
+                "output_key": str(event.get("output_key") or ""),
+                "value": event.get("value"),
+            }
+        )
+    for execution in run.get("node_executions") or []:
+        if not isinstance(execution, dict):
+            continue
+        artifacts = _coerce_dict(execution.get("artifacts"))
+        context_report = _coerce_dict(artifacts.get("context_assembly_report"))
+        for reference in context_report.get("references") or context_report.get("items") or []:
+            if isinstance(reference, dict):
+                values.append(
+                    {
+                        "state_key": str(reference.get("state_key") or reference.get("key") or ""),
+                        "node_id": str(execution.get("node_id") or ""),
+                        "output_key": str(reference.get("output_key") or ""),
+                        "value": reference.get("value") or reference.get("context_ref") or reference,
+                    }
+                )
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in values:
+        state_key = str(item.get("state_key") or "")
+        if not state_key:
+            continue
+        fingerprint = _json_dumps(item)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        deduped.append(item)
+    return deduped
+
+
 def _fts_order_by_sql(sort: str) -> str:
     if sort == "newest":
         return "ORDER BY bm.created_at DESC, rank"
@@ -1711,6 +2013,10 @@ def _normalize_role_filter(value: Any) -> tuple[str, ...]:
         candidates = []
     roles = tuple(role for role in candidates if role in allowed)
     return roles or ("user", "assistant")
+
+
+def _coerce_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _resolve_session_lineage_root(session_id: str) -> str:

@@ -256,6 +256,8 @@ export type RunSummary = {
   batch_item_label?: string;
   graph_id?: string | null;
   graph_name: string;
+  template_id?: string;
+  template_version?: string;
   status: string;
   restorable_snapshot_available?: boolean;
   run_snapshot_options?: RunSnapshotOption[];

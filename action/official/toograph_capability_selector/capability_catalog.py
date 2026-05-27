@@ -28,6 +28,7 @@ GRANULARITY_PRIORITY = {
     "agentic_workflow": 3,
 }
 FINAL_RESULT_OUTPUTS = {"final_response", "public_response", "answer", "response"}
+RECENT_FAILURE_FALLBACK_THRESHOLD = 2
 RISKY_PERMISSIONS = {
     "file_write",
     "file_delete",
@@ -196,7 +197,7 @@ def normalize_selected_capability(
             budget_context=resolved_budget_context,
         )
     original_candidate = candidate
-    candidate = _prefer_higher_level_capability(candidate, resolved_catalog)
+    candidate, replacement_reason = _select_preferred_capability(candidate, resolved_catalog)
     kind = _text(candidate.get("kind")).lower()
     key = _text(candidate.get("key"))
     selected_ref = _requested_capability_ref(kind, key)
@@ -219,6 +220,7 @@ def normalize_selected_capability(
         selected=selected_ref,
         selected_item=candidate,
         original_candidate=original_candidate,
+        replacement_reason=replacement_reason,
         catalog=resolved_catalog,
         reason=selection_reason,
         permission_policy=resolved_permission_policy,
@@ -608,6 +610,50 @@ def _prefer_higher_level_capability(candidate: dict[str, Any], catalog: dict[str
     return max(eligible, key=_capability_preference_score)
 
 
+def _select_preferred_capability(candidate: dict[str, Any], catalog: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    higher_level = _prefer_higher_level_capability(candidate, catalog)
+    if higher_level is not candidate:
+        return higher_level, "higher_level_capability_preferred"
+    failure_fallback = _prefer_healthier_fallback_capability(candidate, catalog)
+    if failure_fallback is not candidate:
+        return failure_fallback, "recent_failures_fallback_preferred"
+    return candidate, ""
+
+
+def _prefer_healthier_fallback_capability(candidate: dict[str, Any], catalog: dict[str, Any]) -> dict[str, Any]:
+    candidate_usage = _usage_feedback_from_item(candidate)
+    candidate_recent_failures = _non_negative_int(candidate_usage.get("recent_failure_count"))
+    if candidate_recent_failures < RECENT_FAILURE_FALLBACK_THRESHOLD:
+        return candidate
+
+    candidate_terms = _term_set(candidate.get("covers")) or _capability_terms(candidate)
+    if not candidate_terms:
+        return candidate
+    candidate_success_rate = _usage_success_rate_for_fallback(candidate_usage)
+    eligible: list[dict[str, Any]] = []
+    for item in _iter_catalog_items(catalog):
+        if item.get("kind") == candidate.get("kind") and item.get("key") == candidate.get("key"):
+            continue
+        item_terms = _term_set(item.get("covers")) or _capability_terms(item)
+        if not candidate_terms.intersection(item_terms):
+            continue
+        item_usage = _usage_feedback_from_item(item)
+        if _non_negative_int(item_usage.get("recent_failure_count")) >= candidate_recent_failures:
+            continue
+        item_success_rate = _usage_success_rate_for_fallback(item_usage)
+        if item_success_rate < candidate_success_rate:
+            continue
+        eligible.append(item)
+    if not eligible:
+        return candidate
+    return max(eligible, key=_capability_preference_score)
+
+
+def _usage_success_rate_for_fallback(usage: dict[str, Any]) -> float:
+    success_rate = usage.get("success_rate")
+    return float(success_rate) if isinstance(success_rate, float) else 0.0
+
+
 def _produces_more_complete_result(item: dict[str, Any], candidate: dict[str, Any]) -> bool:
     item_produces = _term_set(item.get("produces"))
     candidate_produces = _term_set(candidate.get("produces"))
@@ -726,6 +772,7 @@ def _build_selection_trace(
     selected: dict[str, str],
     selected_item: dict[str, Any],
     original_candidate: dict[str, Any],
+    replacement_reason: str = "",
     catalog: dict[str, Any],
     reason: str,
     permission_policy: dict[str, Any] | None = None,
@@ -740,7 +787,7 @@ def _build_selection_trace(
             {
                 "kind": _text(original_candidate.get("kind")),
                 "key": _text(original_candidate.get("key")),
-                "reason": "higher_level_capability_preferred",
+                "reason": replacement_reason or "higher_level_capability_preferred",
                 "score": _score_capability(original_candidate),
             }
         )

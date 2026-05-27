@@ -59,6 +59,7 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     _ensure_knowledge_schema(connection)
     _ensure_eval_schema(connection)
     _ensure_graph_run_schema(connection)
+    _ensure_scheduler_schema(connection)
     _ensure_buddy_schema(connection)
     _ensure_context_assembly_schema(connection)
     _ensure_retrieval_schema(connection)
@@ -575,6 +576,56 @@ def _ensure_graph_run_schema(connection: sqlite3.Connection) -> None:
         """
     )
     _ensure_column(connection, "graph_runs", "detail_json", "TEXT NOT NULL DEFAULT '{}'")
+
+
+def _ensure_scheduler_schema(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS scheduled_graph_jobs (
+            job_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            template_id TEXT NOT NULL,
+            input_bindings_json TEXT NOT NULL DEFAULT '{}',
+            schedule_kind TEXT NOT NULL DEFAULT 'manual',
+            schedule_expr TEXT NOT NULL DEFAULT '',
+            timezone TEXT NOT NULL DEFAULT 'UTC',
+            enabled INTEGER NOT NULL DEFAULT 1,
+            last_run_id TEXT NOT NULL DEFAULT '',
+            next_run_at TEXT NOT NULL DEFAULT '',
+            runtime_overrides_json TEXT NOT NULL DEFAULT '{}',
+            delivery_target_json TEXT NOT NULL DEFAULT '{}',
+            retry_policy_json TEXT NOT NULL DEFAULT '{}',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scheduled_graph_jobs_due
+            ON scheduled_graph_jobs(enabled, next_run_at);
+        CREATE INDEX IF NOT EXISTS idx_scheduled_graph_jobs_template
+            ON scheduled_graph_jobs(template_id, updated_at);
+
+        CREATE TABLE IF NOT EXISTS scheduled_graph_job_runs (
+            job_run_id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES scheduled_graph_jobs(job_id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL DEFAULT '',
+            trigger_reason TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'queued',
+            error TEXT NOT NULL DEFAULT '',
+            started_at TEXT NOT NULL DEFAULT '',
+            completed_at TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scheduled_graph_job_runs_job
+            ON scheduled_graph_job_runs(job_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_scheduled_graph_job_runs_run
+            ON scheduled_graph_job_runs(run_id);
+        """
+    )
+    _ensure_column(connection, "scheduled_graph_jobs", "retry_policy_json", "TEXT NOT NULL DEFAULT '{}'")
 
 
 def _ensure_buddy_schema(connection: sqlite3.Connection) -> None:

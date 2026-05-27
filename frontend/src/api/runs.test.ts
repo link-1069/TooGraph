@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cancelRun, fetchRun, fetchRunTree, resumeRun } from "./runs.ts";
+import { cancelRun, fetchRun, fetchRuns, fetchRunTree, resumeRun } from "./runs.ts";
 
 const originalFetch = globalThis.fetch;
 
@@ -114,6 +114,30 @@ test("fetchRunTree requests the nested run tree endpoint", async () => {
 
   assert.equal(requestedUrl, "/api/runs/run-1/tree");
   assert.equal(requestSignal, controller.signal);
+
+  globalThis.fetch = originalFetch;
+});
+
+test("fetchRuns can request curator template runs and internal scheduled runs", async () => {
+  let requestedUrl = "";
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify([]), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+  }) as typeof fetch;
+
+  await fetchRuns({
+    templateId: " buddy_capability_curator ",
+    status: " completed ",
+    includeInternal: true,
+  });
+
+  assert.equal(requestedUrl, "/api/runs?status=completed&template_id=buddy_capability_curator&include_internal=true");
 
   globalThis.fetch = originalFetch;
 });

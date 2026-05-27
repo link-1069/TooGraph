@@ -1,0 +1,504 @@
+{
+  "template_id": "buddy_capability_curator",
+  "label": "能力库整理",
+  "description": "整理 Action、Tool、Subgraph 和图模板能力库，生成能力健康报告、改进候选和后续调度建议；本模板只产出报告和候选，不应用改动。",
+  "default_graph_name": "能力库整理",
+  "state_schema": {
+    "curator_scope": {
+      "name": "整理范围",
+      "description": "本次整理的能力范围、时间窗口、来源范围和优先关注项。",
+      "type": "json",
+      "value": {
+        "capability_kinds": [
+          "action",
+          "tool",
+          "subgraph",
+          "template"
+        ],
+        "lookback_days": 30,
+        "include_official": true,
+        "include_user": true,
+        "focus": [
+          "failure_rate",
+          "duplicate_capabilities",
+          "missing_tests",
+          "missing_docs",
+          "stale_capabilities"
+        ]
+      },
+      "color": "#7c3aed",
+      "binding": null
+    },
+    "capability_catalog_snapshot": {
+      "name": "能力目录快照",
+      "description": "Action、Tool、Subgraph 和图模板的目录快照，包含 key、kind、description、permissions、schemas、metadata 和测试信息。",
+      "type": "json",
+      "value": {},
+      "color": "#2563eb",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "capability_curator_context_loader",
+        "nodeId": "load_curator_context",
+        "fieldKey": "capability_catalog_snapshot",
+        "managed": true
+      }
+    },
+    "capability_usage_snapshot": {
+      "name": "能力使用快照",
+      "description": "能力使用事件、失败率、最近 run、用户修正和 artifact 结果摘要。",
+      "type": "json",
+      "value": {},
+      "color": "#0f766e",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "capability_curator_context_loader",
+        "nodeId": "load_curator_context",
+        "fieldKey": "capability_usage_snapshot",
+        "managed": true
+      }
+    },
+    "eval_snapshot": {
+      "name": "Eval 快照",
+      "description": "官方模板、Action、Tool、selector 和召回相关 eval 覆盖与最近结果。",
+      "type": "json",
+      "value": {},
+      "color": "#0891b2",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "capability_curator_context_loader",
+        "nodeId": "load_curator_context",
+        "fieldKey": "eval_snapshot",
+        "managed": true
+      }
+    },
+    "existing_candidates_snapshot": {
+      "name": "已有候选快照",
+      "description": "当前 improvement_candidates 队列摘要，用于合并重复建议和延续已存在候选。",
+      "type": "json",
+      "value": {},
+      "color": "#9333ea",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "capability_curator_context_loader",
+        "nodeId": "load_curator_context",
+        "fieldKey": "existing_candidates_snapshot",
+        "managed": true
+      }
+    },
+    "curator_context_report": {
+      "name": "Curator 上下文报告",
+      "description": "能力整理上下文 loader 的来源数量和 warnings。",
+      "type": "json",
+      "value": {},
+      "color": "#475569",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "capability_curator_context_loader",
+        "nodeId": "load_curator_context",
+        "fieldKey": "curator_context_report",
+        "managed": true
+      }
+    },
+    "capability_health_report": {
+      "name": "能力健康报告",
+      "description": "结构化能力健康报告，包含评分、重复能力、失败能力、缺测试、缺文档、权限和高优先级差距。",
+      "type": "json",
+      "value": {},
+      "color": "#b45309",
+      "binding": null
+    },
+    "curator_report": {
+      "name": "Curator 报告",
+      "description": "面向用户的能力库整理报告，说明健康状态、证据、风险和推荐切片。",
+      "type": "markdown",
+      "value": "",
+      "color": "#0369a1",
+      "binding": null
+    },
+    "improvement_candidates": {
+      "name": "改进候选",
+      "description": "本次 curator 产出的 improvement_candidate 数组，可进入 buddy_improvement_review_workflow 验证。",
+      "type": "json",
+      "value": [],
+      "color": "#7c3aed",
+      "binding": null
+    },
+    "scheduler_recommendation": {
+      "name": "调度建议",
+      "description": "后续接入 scheduled graph jobs 时的运行周期、输入准备和 readiness 建议。",
+      "type": "json",
+      "value": {},
+      "color": "#475569",
+      "binding": null
+    }
+  },
+  "nodes": {
+    "input_curator_scope": {
+      "kind": "input",
+      "name": "输入整理范围",
+      "description": "配置本次 curator 的整理范围和关注重点。",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 80
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 240
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "curator_scope",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": {
+          "capability_kinds": [
+            "action",
+            "tool",
+            "subgraph",
+            "template"
+          ],
+          "lookback_days": 30,
+          "include_official": true,
+          "include_user": true,
+          "focus": [
+            "failure_rate",
+            "duplicate_capabilities",
+            "missing_tests",
+            "missing_docs",
+            "stale_capabilities"
+          ]
+        },
+        "boundaryType": "json"
+      }
+    },
+    "load_curator_context": {
+      "kind": "tool",
+      "name": "加载整理上下文",
+      "description": "调用 capability_curator_context_loader 读取能力目录、使用事件、eval 覆盖和已有候选。",
+      "ui": {
+        "position": {
+          "x": 620,
+          "y": 80
+        },
+        "collapsed": false,
+        "size": {
+          "width": 500,
+          "height": 320
+        }
+      },
+      "reads": [
+        {
+          "state": "curator_scope",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "capability_curator_context_loader",
+            "fieldKey": "curator_scope",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [
+        {
+          "state": "capability_catalog_snapshot",
+          "mode": "replace"
+        },
+        {
+          "state": "capability_usage_snapshot",
+          "mode": "replace"
+        },
+        {
+          "state": "eval_snapshot",
+          "mode": "replace"
+        },
+        {
+          "state": "existing_candidates_snapshot",
+          "mode": "replace"
+        },
+        {
+          "state": "curator_context_report",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "toolKey": "capability_curator_context_loader"
+      }
+    },
+    "analyze_capability_health": {
+      "kind": "agent",
+      "name": "分析能力健康",
+      "description": "根据目录、使用记录和 eval 快照生成能力健康报告。",
+      "ui": {
+        "position": {
+          "x": 620,
+          "y": 560
+        },
+        "collapsed": false,
+        "size": {
+          "width": 520,
+          "height": 360
+        }
+      },
+      "reads": [
+        {
+          "state": "curator_scope",
+          "required": true
+        },
+        {
+          "state": "capability_catalog_snapshot",
+          "required": true
+        },
+        {
+          "state": "capability_usage_snapshot",
+          "required": true
+        },
+        {
+          "state": "eval_snapshot",
+          "required": true
+        },
+        {
+          "state": "existing_candidates_snapshot",
+          "required": true
+        },
+        {
+          "state": "curator_context_report",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "capability_health_report",
+          "mode": "replace"
+        },
+        {
+          "state": "curator_report",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "actionKey": "",
+        "actionBindings": [],
+        "actionInstructionBlocks": {},
+        "taskInstruction": "读取 curator_scope、capability_catalog_snapshot、capability_usage_snapshot、eval_snapshot、existing_candidates_snapshot。写 capability_health_report JSON：summary、capability_scores、duplicate_groups、stale_capabilities、high_failure_capabilities、missing_tests、missing_docs、missing_permissions、priority_gaps、evidence_refs。写 curator_report Markdown，按能力健康、风险、重复能力、缺测试、缺文档、低使用、高失败和推荐切片组织，并为每条结论附 source refs。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "high",
+        "temperature": 0.1
+      }
+    },
+    "draft_curator_candidates": {
+      "kind": "agent",
+      "name": "生成改进候选",
+      "description": "把健康报告转成可验证的 improvement candidates 和调度建议。",
+      "ui": {
+        "position": {
+          "x": 1260,
+          "y": 560
+        },
+        "collapsed": false,
+        "size": {
+          "width": 520,
+          "height": 360
+        }
+      },
+      "reads": [
+        {
+          "state": "curator_scope",
+          "required": true
+        },
+        {
+          "state": "capability_health_report",
+          "required": true
+        },
+        {
+          "state": "curator_report",
+          "required": true
+        },
+        {
+          "state": "existing_candidates_snapshot",
+          "required": false
+        }
+      ],
+      "writes": [
+        {
+          "state": "improvement_candidates",
+          "mode": "replace"
+        },
+        {
+          "state": "scheduler_recommendation",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "actionKey": "",
+        "actionBindings": [],
+        "actionInstructionBlocks": {},
+        "taskInstruction": "根据 capability_health_report 和 curator_report 写 improvement_candidates JSON 数组。每个候选使用 improvement_candidate 合同：candidate_id、kind、source_run_id、review_id、review_run_id、target_ref、evidence_refs、risk_level、expected_benefit、proposed_change_summary、approval_required、payload、status。kind 可用 action_revision、tool_revision、template_revision、subgraph_proposal、eval_case、docs_update、policy_suggestion、memory。候选聚焦可验证、可审查、可通过 buddy_improvement_review_workflow 继续验证的改动。写 scheduler_recommendation JSON：recommended_interval、next_scope、dry_run、required_inputs、readiness、candidate_backlog_policy。",
+        "modelSource": "global",
+        "model": "",
+        "thinkingMode": "medium",
+        "temperature": 0.1
+      }
+    },
+    "output_curator_report": {
+      "kind": "output",
+      "name": "输出 Curator 报告",
+      "description": "展示能力库健康报告。",
+      "ui": {
+        "position": {
+          "x": 1900,
+          "y": 120
+        },
+        "collapsed": false,
+        "size": {
+          "width": 460,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "curator_report",
+          "required": true,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "markdown",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    },
+    "output_improvement_candidates": {
+      "kind": "output",
+      "name": "输出改进候选",
+      "description": "展示可进入验证流程的 improvement candidates。",
+      "ui": {
+        "position": {
+          "x": 1900,
+          "y": 520
+        },
+        "collapsed": false,
+        "size": {
+          "width": 460,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "improvement_candidates",
+          "required": true,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    },
+    "output_scheduler_recommendation": {
+      "kind": "output",
+      "name": "输出调度建议",
+      "description": "展示后续 scheduled graph job 接入建议。",
+      "ui": {
+        "position": {
+          "x": 1900,
+          "y": 920
+        },
+        "collapsed": false,
+        "size": {
+          "width": 460,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "scheduler_recommendation",
+          "required": true,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "input_curator_scope",
+      "target": "load_curator_context"
+    },
+    {
+      "source": "load_curator_context",
+      "target": "analyze_capability_health"
+    },
+    {
+      "source": "analyze_capability_health",
+      "target": "draft_curator_candidates"
+    },
+    {
+      "source": "draft_curator_candidates",
+      "target": "output_curator_report"
+    },
+    {
+      "source": "draft_curator_candidates",
+      "target": "output_improvement_candidates"
+    },
+    {
+      "source": "draft_curator_candidates",
+      "target": "output_scheduler_recommendation"
+    }
+  ],
+  "conditional_edges": [],
+  "metadata": {
+    "category": "buddy_improvement",
+    "templateVersion": "2026-05-27",
+    "graphProtocol": "node_system",
+    "origin": "buddy",
+    "role": "buddy_capability_curator",
+    "capabilityDiscoverableDefault": false,
+    "description": "整理 TooGraph 能力库，生成能力健康报告、改进候选和 scheduler 接入建议。",
+    "requiredActions": [],
+    "requiredTools": [
+      "capability_curator_context_loader"
+    ],
+    "permissions": [],
+    "outputContract": [
+      {
+        "state": "curator_report",
+        "role": "report",
+        "label": "Capability curator report"
+      },
+      {
+        "state": "improvement_candidates",
+        "role": "candidate_queue",
+        "label": "Improvement candidates"
+      },
+      {
+        "state": "scheduler_recommendation",
+        "role": "scheduler_plan",
+        "label": "Scheduler readiness"
+      }
+    ]
+  }
+}

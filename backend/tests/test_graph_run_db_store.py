@@ -244,6 +244,72 @@ def test_save_run_projects_agent_loop_events_from_guard_state_events(tmp_path: P
     assert detail.agent_loop_events[0].budget_snapshot["capability_call_count"] == 4
 
 
+def test_save_run_projects_standard_failure_agent_loop_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_temp_run_store(tmp_path, monkeypatch)
+    run = _run_state("run_agent_loop_failure_events", "2026-05-26T00:00:00Z")
+    run["status"] = "completed"
+    failure_events = [
+        ("provider_failed", "rate_limit", "Provider returned 429."),
+        ("permission_required", "approval_required", "Network access requires approval."),
+        ("context_budget_exhausted", "context_over_budget", "Context remains too large after compression."),
+    ]
+    state_events: list[dict[str, object]] = []
+    for index, (stop_reason, error_type, error_message) in enumerate(failure_events, start=1):
+        state_events.extend(
+            [
+                {
+                    "node_id": "guard_agent_loop",
+                    "state_key": "agent_loop_control",
+                    "output_key": "agent_loop_control",
+                    "mode": "replace",
+                    "value": {
+                        "iteration_index": index,
+                        "max_iterations": 6,
+                        "capability_call_count": index,
+                        "max_capability_calls": 4,
+                    },
+                    "sequence": index * 10,
+                    "created_at": f"2026-05-26T00:01:0{index}Z",
+                },
+                {
+                    "node_id": "guard_agent_loop",
+                    "state_key": "agent_loop_report",
+                    "output_key": "agent_loop_report",
+                    "mode": "replace",
+                    "value": {
+                        "decision": "stop",
+                        "stop_reason": stop_reason,
+                        "selected_capability_ref": "action:web_search",
+                        "error_type": error_type,
+                        "error_message": error_message,
+                    },
+                    "sequence": index * 10 + 1,
+                    "created_at": f"2026-05-26T00:01:1{index}Z",
+                },
+            ]
+        )
+    run["state_events"] = state_events
+
+    run_store.save_run(run)
+
+    loaded = run_store.load_run("run_agent_loop_failure_events")
+    detail = RunDetail.model_validate(loaded)
+
+    assert [event["stop_reason"] for event in loaded["agent_loop_events"]] == [
+        "provider_failed",
+        "permission_required",
+        "context_budget_exhausted",
+    ]
+    assert [event.stop_reason for event in detail.agent_loop_events] == [
+        "provider_failed",
+        "permission_required",
+        "context_budget_exhausted",
+    ]
+    assert detail.agent_loop_events[0].budget_snapshot["capability_call_count"] == 1
+    assert detail.agent_loop_events[0].detail["error_type"] == "rate_limit"
+    assert detail.agent_loop_events[1].detail["error_message"] == "Network access requires approval."
+
+
 def test_list_runs_sorts_by_started_at_then_run_id_desc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _prepare_temp_run_store(tmp_path, monkeypatch)
     run_store.save_run(_run_state("run_a", "2026-05-26T00:00:02Z"))

@@ -173,6 +173,121 @@ export type BuddyChatMessageRecord = {
   updated_at: string;
 };
 
+export type BuddySessionSearchResult = {
+  kind: "buddy_session_search";
+  query: string;
+  hit_count: number;
+  session_count: number;
+  message_ids: string[];
+  sessions: Array<BuddyChatSession & {
+    lineage_root_session_id?: string;
+    matched_role?: string;
+    match_message_id?: string;
+    snippet?: string;
+    bookend_start?: BuddyChatMessageRecord[];
+    messages?: BuddyChatMessageRecord[];
+    bookend_end?: BuddyChatMessageRecord[];
+    messages_before?: number;
+    messages_after?: number;
+    has_more_before?: boolean;
+    has_more_after?: boolean;
+    hit_message_ids?: string[];
+  }>;
+};
+
+export type BuddyRunContextSearchMatch = {
+  run_id: string;
+  state_key: string;
+  node_id: string;
+  output_key: string;
+  package_kind: string;
+  package_source_kind: string;
+  authority: string;
+  assembly_id: string;
+  target_state_key: string;
+  renderer_key: string;
+  renderer_version: string;
+  source_kind: string;
+  source_id: string;
+  source_revision_id: string;
+  role: string;
+  label: string;
+  metadata: Record<string, unknown>;
+  snippet: string;
+  warnings: Array<Record<string, unknown>>;
+};
+
+export type BuddyRunContextSearchResult = {
+  kind: "run_context_search";
+  run_id: string;
+  query: string;
+  match_count: number;
+  matches: BuddyRunContextSearchMatch[];
+};
+
+export type BuddyEmbeddingModelRecord = {
+  embedding_model_id: string;
+  provider_key: string;
+  model: string;
+  dimensions: number;
+  distance_metric: string;
+  vector_format: string;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  model_ref: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BuddyMemorySearchEntry = {
+  memory_id: string;
+  scope_kind: string;
+  scope_id: string;
+  layer: string;
+  memory_type: string;
+  status: string;
+  title: string;
+  content: string;
+  confidence: number;
+  salience: number;
+  latest_revision_id: string;
+  metadata: Record<string, unknown>;
+  sources: Array<{
+    source_kind: string;
+    source_id: string;
+    source_revision_id: string;
+    source_locator: Record<string, unknown>;
+    metadata: Record<string, unknown>;
+  }>;
+  revisions: Array<{
+    revision_id: string;
+    revision_number: number;
+    operation: string;
+    created_at: string;
+  }>;
+  snippet?: string;
+  score?: number;
+  source_ref?: Record<string, unknown>;
+  retrieval?: Record<string, unknown>;
+};
+
+export type BuddyMemorySearchResult = {
+  kind: "memory_search";
+  query: string;
+  embedding_model_ref: string;
+  match_count: number;
+  memory_count: number;
+  embedding_models: BuddyEmbeddingModelRecord[];
+  memories: BuddyMemorySearchEntry[];
+  report: {
+    mode: string;
+    filters: Record<string, unknown>;
+    embedding_model_ref: string;
+    retrieval_modes: Record<string, number>;
+    query_ids: string[];
+  };
+};
+
 export type BuddyRevision = {
   revision_id: string;
   target_type: string;

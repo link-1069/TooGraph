@@ -81,6 +81,22 @@ test("AppShell exposes eval suite management as a primary sidebar destination", 
   assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DataAnalysis \/><\/ElIcon>/);
 });
 
+test("AppShell exposes scheduled graph jobs as a primary sidebar destination", () => {
+  assert.match(componentSource, /import \{[\s\S]*Timer[\s\S]*\} from "@element-plus\/icons-vue";/);
+  assert.match(componentSource, /to="\/scheduler"[\s\S]*activeNavigationSection === 'scheduler'[\s\S]*t\("nav\.scheduler"\)/);
+  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.scheduler"/);
+  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/scheduler"/);
+  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Timer \/><\/ElIcon>/);
+});
+
+test("AppShell exposes capability curator reports as a primary sidebar destination", () => {
+  assert.match(componentSource, /import \{[\s\S]*DataBoard[\s\S]*\} from "@element-plus\/icons-vue";/);
+  assert.match(componentSource, /to="\/curator-reports"[\s\S]*activeNavigationSection === 'curatorReports'[\s\S]*t\("nav\.curatorReports"\)/);
+  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.curatorReports"/);
+  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/curator-reports"/);
+  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DataBoard \/><\/ElIcon>/);
+});
+
 test("AppShell exposes knowledge management as a primary sidebar destination", () => {
   assert.match(componentSource, /import \{[\s\S]*Reading[\s\S]*\} from "@element-plus\/icons-vue";/);
   assert.match(componentSource, /to="\/knowledge"[\s\S]*activeNavigationSection === 'knowledge'[\s\S]*t\("nav\.knowledge"\)/);
@@ -124,6 +140,14 @@ test("AppShell exposes model request logs as a primary sidebar destination", () 
   assert.match(componentSource, /import \{[\s\S]*Tickets[\s\S]*\} from "@element-plus\/icons-vue";/);
   assert.match(componentSource, /to="\/model-logs"[\s\S]*activeNavigationSection === 'modelLogs'[\s\S]*t\("nav\.modelLogs"\)/);
   assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Tickets \/><\/ElIcon>/);
+});
+
+test("AppShell exposes evidence search as a primary sidebar destination", () => {
+  assert.match(componentSource, /import \{[\s\S]*DocumentChecked[\s\S]*\} from "@element-plus\/icons-vue";/);
+  assert.match(componentSource, /to="\/evidence"[\s\S]*activeNavigationSection === 'evidenceSearch'[\s\S]*t\("nav\.evidenceSearch"\)/);
+  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.evidenceSearch"/);
+  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/evidence"/);
+  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DocumentChecked \/><\/ElIcon>/);
 });
 
 test("AppShell registers only non-buddy navigation affordances for virtual page operations", () => {

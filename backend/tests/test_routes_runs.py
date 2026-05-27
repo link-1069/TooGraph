@@ -77,11 +77,13 @@ def _run_summary(
     internal: bool = False,
     role: str = "buddy_autonomous_review",
     started_at: str = "2026-05-11T07:28:47Z",
+    template_id: str = "",
 ) -> dict:
     return {
         "run_id": run_id,
         "graph_id": None,
         "graph_name": "自主复盘" if internal else "伙伴自主循环",
+        "template_id": template_id,
         "status": "completed",
         "started_at": started_at,
         "completed_at": "2026-05-11T07:29:05Z",
@@ -168,6 +170,35 @@ class RunRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([run["run_id"] for run in response.json()], ["run_hidden", "run_review", "run_compaction", "run_visible"])
+
+    def test_run_list_filters_by_template_id(self) -> None:
+        with _temporary_run_database():
+            run_store.save_run(
+                _run_summary(
+                    "run_curator_latest",
+                    template_id="buddy_capability_curator",
+                    started_at="2026-05-11T07:28:50Z",
+                )
+            )
+            run_store.save_run(
+                _run_summary(
+                    "run_other",
+                    template_id="buddy_autonomous_loop",
+                    started_at="2026-05-11T07:28:49Z",
+                )
+            )
+            run_store.save_run(
+                _run_summary(
+                    "run_curator_old",
+                    template_id="buddy_capability_curator",
+                    started_at="2026-05-11T07:28:48Z",
+                )
+            )
+            with TestClient(app) as client:
+                response = client.get("/api/runs", params={"template_id": "buddy_capability_curator"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([run["run_id"] for run in response.json()], ["run_curator_latest", "run_curator_old"])
 
     def test_get_run_detail_includes_direct_child_run_summaries(self) -> None:
         root = _run_summary("run_root")

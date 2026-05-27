@@ -43,7 +43,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     stateValues.capability_selection_reason,
   );
   const selectedCapabilityRef = textFromUnknown(report.selected_capability_ref) || capabilitySelection.selectedRef;
-  const warnings = Array.isArray(report.warnings) ? report.warnings.map(textFromUnknown).filter(Boolean) : [];
+  const warnings = diagnosticWarningsFromReport(report);
   const hasLoopEvidence = Boolean(
     decision
     || iterationIndex !== null
@@ -124,8 +124,18 @@ function reportFromAgentLoopEvent(event: NonNullable<RunDetail["agent_loop_event
     selected_capability_ref:
       textFromUnknown(detail.selected_capability_ref)
       || (capabilityKind && capabilityKey ? `${capabilityKind}:${capabilityKey}` : ""),
+    error_type: textFromUnknown(detail.error_type),
+    error_message: textFromUnknown(detail.error_message),
     warnings: Array.isArray(detail.warnings) ? detail.warnings : Array.isArray(budget.warnings) ? budget.warnings : [],
   };
+}
+
+function diagnosticWarningsFromReport(report: Record<string, unknown>) {
+  const warnings = Array.isArray(report.warnings) ? report.warnings.map(textFromUnknown).filter(Boolean) : [];
+  const errorType = textFromUnknown(report.error_type);
+  const errorMessage = textFromUnknown(report.error_message);
+  const errorDetail = errorType && errorMessage ? `${errorType}: ${errorMessage}` : errorMessage || errorType;
+  return [...warnings, errorDetail].filter(Boolean).filter((item, index, items) => items.indexOf(item) === index);
 }
 
 function normalizeCycleStopReason(value: unknown) {

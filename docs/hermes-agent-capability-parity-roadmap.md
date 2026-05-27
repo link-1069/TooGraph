@@ -1,6 +1,6 @@
 # TooGraph 追上 Hermes Agent 能力路线图
 
-最后整理日期：2026-05-27。
+最后整理日期：2026-05-28。
 
 本文是一个独立长期路线图，目标是把 `demo/hermes-agent/` 中已经成熟的通用 Agent 能力，翻译成 TooGraph 的图优先架构。这里的“追上”不是复制 Hermes 的实现形状，而是在 TooGraph 中实现同等级能力：
 
@@ -87,7 +87,7 @@ Buddy / Agent entry
 | 自我改进与 Curator | `agent/curator.py`、`hermes_cli/curator.py` | 运行经验变成可审查候选，候选经过 diff、验证、approval、revision | 定义 `improvement_candidate`；新增 improvement workflow 和 capability curator；官方资产只生成候选，应用改动走 revision | improvement candidates、curator report、eval case | P2 |
 | Capability Selector 与能力路由 | `model_tools.py`、`tools/registry.py`、`toolsets.py` | selector 不只选择能力，还记录候选评分、拒绝理由、权限和 fallback | 统一 capability profile；selector 输出 score breakdown、rejected candidates、permission summary；失败写 usage event 供下一次选择参考 | capability profile、usage events、selection trace | P1 |
 | Action / Tool / Subgraph 生态 | `tools/*`、`plugins/*`、`toolsets.py` | 官方能力覆盖常用低层操作，每个能力有合同、权限、失败模式和测试 | Core Tools、Workspace Actions、Web Actions、Knowledge Tools、Graph Actions、Buddy Actions 分层建设；manifest 增强 permissions/scopes/artifacts/eval | capability catalog、能力准入规范、官方能力包 | P1-P2 |
-| Scheduler / Cron / 后台任务 | `cron/jobs.py`、`cron/scheduler.py`、`tools/cronjob_tools.py` | 定时任务是 scheduled graph job，每次运行都是可审计 graph run | 建 `scheduled_graph_jobs` 和 job runs；后台 tick 到点创建图运行；支持暂停、立即运行、失败记录、delivery target | Scheduler store/runtime/UI、job run history | P2 |
+| Scheduler / Cron / 后台任务 | `cron/jobs.py`、`cron/scheduler.py`、`tools/cronjob_tools.py` | 定时任务是 scheduled graph job，每次运行都是可审计 graph run | 建 `scheduled_graph_jobs` 和 job runs；后台 tick 到点创建图运行；支持暂停、立即运行、失败记录、retry policy、delivery target | Scheduler store/runtime/UI、job run history | P2 |
 | Delegation / Subagents / Kanban | `tools/delegate_tool.py`、`hermes_cli/kanban_db.py`、`tools/kanban_tools.py` | 委派表达为 Subgraph worker，主图负责拆分、预算、合并结果 | 定义 `worker_task_packet` 和 `worker_result_package`；Subgraph worker 模板执行受限能力；merge/review 节点聚合 | worker packet/result schema、worker run links、并发预算 | P2-P3 |
 | Provider Runtime 与模型能力矩阵 | `providers/base.py`、`hermes_cli/runtime_provider.py`、`agent/model_metadata.py`、`agent/transports/*` | 所有模型调用走同一 resolver，知道 provider 能力、fallback、repair trace | 扩展 provider profile；LLM、Action planning、review、scheduler、embedding/rerank 共用 runtime resolver；结构化输出 repair + fallback | provider capability matrix、fallback policy、repair trace | P2 |
 | 上下文压缩与 Prompt Cache | `agent/conversation_compression.py`、`agent/context_compressor.py`、`agent/prompt_caching.py` | 压缩是可审计图分支，摘要带 source refs，稳定上下文不反复破坏缓存 | 标准化压缩输出；保存 prompt snapshot 的引用而不是递归全文；复盘写入只影响下一轮 | compression report、summary revision、budget panel | P1 |
@@ -120,7 +120,10 @@ TooGraph 差距：
 - `RunDetail` API schema 已显式返回 `agent_loop_events`；RunDetail Agent Diagnostic 会优先读取这些投影事实来还原 stop reason、decision、iteration budget、capability budget、能力引用和 warnings。
 - Buddy 胶囊运行树已可从同一 `agent_loop_events` 事实源给对应节点补充 stop、decision 和 capability budget 标签；胶囊分段逻辑仍只按 output 边界决定，不会因为循环诊断事实创建额外胶囊。
 - RunDetail Agent Diagnostic 已把标准 stop reason 接入统一用户可见解释文案，覆盖 `provider_failed`、`permission_required`、`context_budget_exhausted` 以及其他 Agent loop 停止原因；页面显示本地化标题、说明、原始 stop reason、循环预算和能力预算。
-- 后续仍需为 provider_failed、permission_required、context_budget_exhausted 补齐真实运行 fixture 或端到端 UI 场景，验证这些状态从运行时产生、数据库投影、API 返回到页面展示的完整链路。
+- `agent_loop_events` 存储 fixture 已覆盖 `provider_failed`、`permission_required`、`context_budget_exhausted`，验证保存 run、数据库投影、加载 `RunDetail` schema 时能保留标准 stop reason、预算快照和结构化错误详情。
+- RunDetail Agent Diagnostic 模型测试已覆盖投影事件中的 provider 失败详情，会把 `error_type` / `error_message` 与 warnings 一起作为用户可见诊断证据重组。
+- RunDetail 页面结构测试已覆盖 Agent Diagnostic 的独立 warning list，页面会把这些由运行事实重组出的错误详情作为可扫描诊断证据展示。
+- 后续仍需补齐真实图运行端到端场景，验证这些状态从运行时产生、API 返回到页面展示的完整链路。
 
 解决方案：
 
@@ -230,14 +233,17 @@ Hermes 能力：
 TooGraph 差距：
 
 - Buddy messages 已存在，但 session lineage、context assembly refs、run refs、summary refs 和搜索投影还需要更系统地使用。
-- 当前 UI 还没有一个清晰的“历史查询/证据展开”视图。
+- 证据搜索已具备只读查询入口，下一步差距集中在 embedding 混合检索和更完整的 summary/source refs 投影。
 
 当前进展：
 
 - `buddy_sessions`、`buddy_messages`、`buddy_message_revisions`、`buddy_message_run_refs` 已进入统一数据库，消息 FTS 和 trigram FTS 会随消息写入更新。
 - `buddy_session_recall` 已能用 FTS/trigram/LIKE fallback 发现历史消息，并默认排除当前 session lineage，召回结果输出 `context_package`。
 - 已新增官方 `session_search_context_loader` Tool，把显式历史搜索 query 转成 `source_kind=session`、`authority=history` 的 `context_package`；结果包含 message ids、session lineage、hit snippets、source refs、预算和 warnings，可从 `buddy_messages` 原子事实重新展开。
-- 后续仍需补齐面向 UI/API 的 `search_sessions`、`search_run_context` 视图，并把历史查询/证据展开做成可交互页面。
+- 已新增面向 UI/API 的只读搜索视图：`/api/buddy/search/sessions` 复用 Buddy message FTS、lineage 去重和当前会话谱系排除，返回 session snippets、bookends、hit message ids；`/api/buddy/search/run-context` 从 graph run 的 `state_values`、`state_snapshot`、`state_events` 和 context assembly refs 展开某次 run 实际使用过的上下文来源。
+- 前端 API/types 已能直接调用 session evidence search 和 run context evidence search。
+- 已新增 `/evidence` 证据搜索页：左侧检索 Buddy 会话历史，展示 session lineage、hit message ids、bookends 和消息窗口；右侧按 run id 展开运行上下文来源，展示 `assembly_id`、`target_state_key`、source refs、renderer、authority 和 metadata，并可跳转 Run Detail。
+- 后续仍需接入 embedding 混合检索，并让 session summary/source refs 在搜索结果中更完整地展开。
 
 解决方案：
 
@@ -264,6 +270,7 @@ TooGraph 差距：
 
 - 给定一条回答，可以追溯到哪些 message、summary、run、memory 参与了上下文。
 - 搜索能返回 message snippets、bookends、session lineage 和 run refs。
+- UI 能从一级导航进入证据搜索，按 query 或 run id 检查原子消息与 context assembly 来源。
 - 压缩后的会话仍能展开到被摘要覆盖的原始消息引用。
 
 优先级：P1。
@@ -290,7 +297,10 @@ TooGraph 差距：
 - 已新增官方 `embedding_model_registry` Tool，用于通过可审计图运行注册、启用和列出 embedding models。
 - 记忆写入和更新后会根据 enabled embedding models 自动生成 dirty queue；内容更新会把旧 content hash 的 pending/running job 标记为 superseded，并为新内容排队。
 - 已新增官方 `embedding_maintenance` 模板，把 `embedding_job_processor` 包装为可审计图运行，输出处理明细和完成数量。
-- 仍需补齐 embedding model 选择 UI、调度触发和 rebuild UI。
+- 已新增只读记忆证据搜索 API：`/api/buddy/search/memories`。它直接读取 `memory_entries`、source refs、latest revision、embedding model registry 和 hybrid recall audit，供 UI 和后续 Agent 诊断使用。
+- `/evidence` 证据搜索页已加入长期记忆面板，支持关键词检索、embedding model 选择、来源 refs、latest revision、metadata 和 retrieval audit 展开；历史、记忆和 run context 现在可以在同一页面交叉核验。
+- Scheduler 页面已把官方 `embedding_maintenance` 维护任务作为一等引导展示，用户可以直接启用或立即运行该任务，让 embedding dirty queue 通过标准 graph run 被处理。
+- 仍需补齐 embedding rebuild UI、rerank/eval 报告和更细的记忆去重策略。
 
 解决方案：
 
@@ -415,7 +425,10 @@ TooGraph 差距：
 - 已新增候选 approve / reject 决策 API 和 RunDetail 操作入口；人工决策会写入 `decision`、`decided_at`、`status_reason`，只推进候选状态。
 - 已新增候选 apply API 和 RunDetail 操作入口；状态为 `approved` 且带 `has_apply_command` 的候选可读取验证产物中的 `approval_request.apply_command`，通过 allowlist Buddy command 执行改动，写入可恢复 revision，并把候选标记为 `applied`。
 - 已新增独立改进候选队列页面 `/improvements`，集中展示所有候选，支持状态筛选、搜索、来源/验证 run 跳转、验证、状态同步、批准、拒绝和可应用候选的 apply。
-- 后续仍需补齐更广的 Action / Tool / template writer 覆盖、curator 周期整理模板和 scheduler。
+- 已新增官方 `capability_curator_context_loader` Tool，会只读组装 Action/Tool/template 能力目录、`capability_usage_events`、官方 eval 覆盖和 `improvement_candidates` 队列快照。
+- 官方 `buddy_capability_curator` 模板已接入该 loader：用户只输入整理范围，图运行时自动生成 `capability_catalog_snapshot`、`capability_usage_snapshot`、`eval_snapshot`、`existing_candidates_snapshot` 和 `curator_context_report`，再输出 `capability_health_report`、`curator_report`、`improvement_candidates` 和 `scheduler_recommendation`。模板只产出报告和候选，不应用改动。
+- 已新增独立能力整理报告页 `/curator-reports`：页面通过 `template_id=buddy_capability_curator` 查询标准 run records，直接从 run detail 的 `state_snapshot` 和 output previews 还原 `curator_report`、`capability_health_report`、`improvement_candidates` 和 `scheduler_recommendation`，并保留跳转源运行详情和调度页入口。
+- 后续仍需补齐更广的 Action / Tool / template writer 覆盖，以及把 curator 产出的候选更系统地接入 writer/eval 覆盖扩展。
 
 解决方案：
 
@@ -435,7 +448,8 @@ TooGraph 差距：
    - 运行 validator/test。
    - 输出 approval request。
 3. 新增官方模板：`buddy_capability_curator`。
-   - 定期扫描 Action/Tool/Subgraph/template 使用记录。
+   - 已完成官方模板和 `capability_curator_context_loader`，整理范围作为唯一手动输入，能力目录、使用记录、eval 和候选快照由 Tool 组装。
+   - 后续通过 scheduler 定期触发该图模板。
    - 识别低质量、重复、失败率高、过期说明。
    - 输出整理候选和报告。
 4. revision 策略：
@@ -481,7 +495,8 @@ TooGraph 差距：
 - `buddy_autonomous_review` 已新增 `capability_usage_update_plan` 分支，通过图内 `buddy_home_writer` 显式应用 `capability_usage_stats.update`，从源 run 的 `capability_result` / `capability_review` / run record 中把实际能力成功或失败写入统计。
 - 官方 `buddy_autonomous_loop` 已把 `agent_loop_control` 作为 `toograph_capability_selector` 的 managed Action input 注入；selector trace 会写入 `budget_after_call`，RunDetail Agent Diagnostic 与 Buddy 胶囊 evidence labels 可显示能力调用预算、剩余额度和耗尽状态。
 - 统一数据库已新增 `capability_usage_events` 运行时事实投影；保存 graph run 时会从 Action、Tool 和动态 Subgraph 调用记录生成能力使用事件，`capability_usage_stats` 读取时会合并这些事实，使 selector 的历史反馈不再只依赖后台复盘 LLM 提取。
-- 后续仍需把更多选择原因、fallback 决策和失败恢复结果投影成结构化事件，并把能力失败后的自动 fallback 评估纳入端到端测试。
+- selector 已根据 runtime `capability_usage_stats` 评估近期失败：当 LLM 请求的能力连续近期失败，并且同覆盖范围内存在更健康的候选时，`toograph_capability_selector` 会改选 fallback，并在 `capability_selection_trace.rejected_candidates` 中以 `recent_failures_fallback_preferred` 记录原请求；RunDetail 和 Buddy 胶囊可直接展示该结构化拒绝原因。
+- 后续仍需把更多运行时失败恢复结果投影成结构化事件，并把能力失败后的自动 fallback 评估扩展到完整 Buddy 图运行端到端测试。
 
 解决方案：
 
@@ -589,6 +604,24 @@ TooGraph 差距：
 - 后台复盘存在，但没有通用 scheduler。
 - 周期任务、知识库重建、memory cleanup、eval、curator 都需要手动触发。
 
+当前进展：
+
+- 已新增统一数据库表 `scheduled_graph_jobs` 和 `scheduled_graph_job_runs`，记录模板、输入绑定、调度表达式、启用状态、最近 run、下次运行时间和每次触发历史。
+- 已新增 `app.scheduler.store`，支持创建 `manual` / `interval` / `cron` 形态的 scheduled graph job；当前 interval 支持 `PT6H`、`30m`、`3600s` 这类表达式，并能查询 due jobs。
+- 已新增 Scheduler API：`/api/scheduler/jobs`、`/api/scheduler/jobs/{job_id}/run`、`/api/scheduler/jobs/run-due`、`/api/scheduler/jobs/{job_id}/runs` 和启停接口。
+- 已新增 scheduler runner，手动触发或 run-due 触发时会从 `template_id` 加载模板，应用 `input_bindings` 到 input state，创建标准 LangGraph run，写入 `graph_runs`，并把 job / job run metadata 写入 run snapshot。
+- `RunSummary` / `RunDetail` 已显式返回 `template_id` 和 `template_version`，方便从调度历史、RunDetail 和后续 UI 直接追溯模板来源。
+- 已新增 scheduler service，FastAPI lifespan 启动后会开启后台 tick；tick 查询 due jobs，并通过标准 scheduler runner 创建 graph run。可用 `TOOGRAPH_SCHEDULER_DISABLED=1` 禁用本地 tick，`TOOGRAPH_SCHEDULER_POLL_INTERVAL_SECONDS` 调整轮询间隔。
+- 已新增官方 scheduled job 种子：`official_buddy_capability_curator` 每周建议运行 `buddy_capability_curator`，`official_embedding_maintenance` 每小时建议运行 `embedding_maintenance`。两者默认禁用，启动时只保证可发现，不会自动消耗模型或执行后台任务；用户启用后才会进入 scheduler tick。
+- 已新增 `/scheduler` 调度任务管理页面：默认加载包含禁用官方种子的任务列表，展示任务概览、输入绑定、运行覆盖、元数据、最近 job run，并提供启停、立即运行和跳转 graph run 详情入口。
+- `/scheduler` 已提供用户自定义任务创建入口：用户可选择 active 图模板、填写任务名、调度类型、调度表达式、时区和 input bindings JSON；创建结果仍写入 `scheduled_graph_jobs`，每次触发仍生成标准 graph run。
+- 已新增一等 `retry_policy`：调度任务可配置最大尝试次数、重试延迟和 backoff；定时运行失败后会在 `metadata.scheduler_retry_pending` 中记录下一次 retry，下一次 tick 会生成 `trigger_reason=retry` 的标准 graph run，并在 job run metadata 中保留 attempt、parent run 和 retry decision。
+- Scheduler 页面已新增官方维护任务启用引导，把 `official_embedding_maintenance` 和 `official_buddy_capability_curator` 从普通任务列表中提升为后台能力入口；禁用时显示启用入口，启用后显示立即运行入口，操作仍走现有 Scheduler API 并生成标准 graph run。
+- 已新增第一版 `delivery_target` 投递审计：终态 job run 会把 `local_audit` / `job_run_metadata` 投递结果写入 `scheduled_graph_job_runs.metadata.delivery_result`，结果包含 job、job run、graph run 引用、触发原因、终态状态和脱敏后的 target；暂不支持的外部 target 会记录为 `skipped` 和 `unsupported_delivery_target`，不产生隐藏平台副作用。
+- Scheduler 创建表单已暴露 `delivery_target` JSON 输入，用户创建任务时可指定本地审计投递目标。
+- 已新增 `/curator-reports` 能力整理报告页，供 Scheduler 触发的 `official_buddy_capability_curator` run 通过模板索引集中查看报告、候选和调度建议。
+- 后续仍需补齐外部投递 adapter。
+
 解决方案：
 
 1. 新增 scheduler store：
@@ -601,10 +634,12 @@ TooGraph 差距：
    - `input_bindings`
    - `runtime_overrides`
    - `delivery_target`
+   - `retry_policy`
 2. 新增 scheduler runtime：
    - 应用启动后后台 tick。
    - 到点创建 graph run。
    - run 完成后写 job run record。
+   - 失败后按 retry policy 创建下一次可审计 graph run。
 3. job 类型：
    - Buddy memory review cleanup。
    - capability curator。
@@ -622,7 +657,7 @@ TooGraph 差距：
 验收标准：
 
 - 可以创建一个每日运行的复盘或知识库重建任务。
-- 每次定时运行都有 run record、失败原因、下次运行时间。
+- 每次定时运行和 retry 都有 run record、失败原因、attempt metadata 和下次运行时间。
 - 关闭 job 不删除历史。
 
 优先级：P2。
@@ -1033,7 +1068,7 @@ TooGraph 差距：
 1. Capability profile。
 2. selector scoring。
 3. capability usage stats。
-4. fallback candidates。
+4. fallback candidates。已支持 trace 展示，并在请求能力连续近期失败时自动改选更健康 fallback。
 5. 官方能力准入规范。
 
 完成标准：
@@ -1050,8 +1085,8 @@ TooGraph 差距：
 1. `improvement_candidate` schema。
 2. improvement review workflow。已完成官方验证模板、RunDetail 启动验证 run 入口、独立候选队列 UI、验证 run 关联、候选状态同步、验证产物持久化、人工决策和 command-backed apply。
 3. Action/Tool/template diff + validation + approval + apply 覆盖扩展。
-4. capability curator。
-5. curator report UI。
+4. capability curator。已完成官方模板、自动快照 loader、官方 scheduler 种子和报告 UI。
+5. curator report UI。已完成第一版 `/curator-reports`，从标准 graph run 事实源重建报告。
 
 完成标准：
 
@@ -1064,7 +1099,7 @@ TooGraph 差距：
 
 工作项：
 
-1. Scheduler store + runtime。
+1. Scheduler store + API + 手动/run-due 触发 + 后台 tick + 官方 job 种子 + Scheduler 页面 + 用户自定义任务创建入口 + 失败 retry policy + 默认官方维护任务启用引导 + 本地审计投递结果。已完成第一版；外部投递 adapter 待补。
 2. Worker task packet / result package。
 3. Subgraph worker 模板。
 4. Plugin manifest 和 Plugin 页面。
@@ -1149,20 +1184,41 @@ updated_at
 ### `scheduled_graph_jobs`
 
 ```text
-id
+job_id
 name
-enabled
-schedule_json
-timezone
 template_id
 input_bindings_json
-runtime_overrides_json
-permission_policy_json
-delivery_target_json
+schedule_kind
+schedule_expr
+timezone
+enabled
+last_run_id
 next_run_at
+runtime_overrides_json
+delivery_target_json
+retry_policy_json
+metadata_json
 created_at
 updated_at
 ```
+
+### `scheduled_graph_job_runs`
+
+```text
+job_run_id
+job_id
+run_id
+trigger_reason
+status
+error
+started_at
+completed_at
+metadata_json
+created_at
+updated_at
+```
+
+`metadata_json.delivery_result` 记录终态投递审计，包含投递 kind、状态、job/run 引用、触发原因、终态状态和脱敏 target。
 
 ### `improvement_candidates`
 

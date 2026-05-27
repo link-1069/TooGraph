@@ -110,6 +110,47 @@ test("buildAgentDiagnostic reads loop evidence from projected agent loop events"
   assert.deepEqual(diagnostic.warnings, ["budget reached"]);
 });
 
+test("buildAgentDiagnostic surfaces structured failure detail from projected agent loop events", () => {
+  const diagnostic = buildAgentDiagnostic(
+    createRun({
+      agent_loop_events: [
+        {
+          event_id: "loop_event_provider_failed",
+          run_id: "run_1",
+          node_id: "guard_agent_loop",
+          iteration_index: 2,
+          event_kind: "stop",
+          capability_kind: "action",
+          capability_key: "web_search",
+          stop_reason: "provider_failed",
+          budget_snapshot: {
+            iteration_index: 2,
+            max_iterations: 6,
+            capability_call_count: 1,
+            max_capability_calls: 4,
+          },
+          detail: {
+            decision: "stop",
+            selected_capability_ref: "action:web_search",
+            error_type: "rate_limit",
+            error_message: "Provider returned 429.",
+            warnings: ["provider call failed"],
+          },
+          created_at: "2026-05-26T00:01:01Z",
+        },
+      ],
+    }),
+  );
+
+  assert.equal(diagnostic.visible, true);
+  assert.equal(diagnostic.stopReason, "provider_failed");
+  assert.equal(diagnostic.stopReasonTitleKey, "runDetail.agentStopReasons.provider_failed.title");
+  assert.equal(diagnostic.iterationLabel, "2 / 6");
+  assert.equal(diagnostic.capabilityBudgetLabel, "1 / 4");
+  assert.equal(diagnostic.selectedCapabilityRef, "action:web_search");
+  assert.deepEqual(diagnostic.warnings, ["provider call failed", "rate_limit: Provider returned 429."]);
+});
+
 test("buildAgentDiagnostic maps standard stop reasons to user-facing explanation keys", () => {
   const reasons = ["provider_failed", "permission_required", "context_budget_exhausted"] as const;
 

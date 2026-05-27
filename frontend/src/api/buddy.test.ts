@@ -19,6 +19,9 @@ import {
   fetchBuddyUserContextDocument,
   linkBuddyImprovementCandidateValidationRun,
   restoreBuddyRevision,
+  searchBuddyChatSessions,
+  searchBuddyMemories,
+  searchBuddyRunContext,
   syncBuddyImprovementCandidateValidationStatus,
   decideBuddyImprovementCandidate,
   applyBuddyImprovementCandidate,
@@ -351,5 +354,62 @@ test("buddy API manages chat sessions and messages directly", async () => {
   });
   assert.equal(requests[5].method, "DELETE");
   assert.equal(requests[5].url, "/api/buddy/sessions/session_1");
+  globalThis.fetch = originalFetch;
+});
+
+test("buddy API searches session evidence and run context evidence", async () => {
+  const requests: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requests.push(String(input));
+    return new Response(JSON.stringify({ kind: "search", sessions: [], matches: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await searchBuddyChatSessions({
+    query: "alpha evidence",
+    currentSessionId: "session_current",
+    limit: 7,
+    window: 2,
+    sort: "newest",
+  });
+  await searchBuddyRunContext({
+    runId: "run_1",
+    query: "context evidence",
+    limit: 12,
+  });
+
+  assert.deepEqual(requests, [
+    "/api/buddy/search/sessions?query=alpha+evidence&current_session_id=session_current&limit=7&window=2&sort=newest",
+    "/api/buddy/search/run-context?run_id=run_1&query=context+evidence&limit=12",
+  ]);
+  globalThis.fetch = originalFetch;
+});
+
+test("buddy API searches memory evidence with embedding model filters", async () => {
+  const requests: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requests.push(String(input));
+    return new Response(JSON.stringify({ kind: "memory_search", memories: [] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await searchBuddyMemories({
+    query: "memory evidence",
+    embeddingModelRef: "emodel_local_hashing",
+    scopeKind: "buddy",
+    scopeId: "default",
+    layer: "long_term",
+    memoryType: "preference",
+    status: "active",
+    limit: 9,
+  });
+
+  assert.deepEqual(requests, [
+    "/api/buddy/search/memories?query=memory+evidence&embedding_model_ref=emodel_local_hashing&scope_kind=buddy&scope_id=default&layer=long_term&memory_type=preference&status=active&limit=9",
+  ]);
   globalThis.fetch = originalFetch;
 });
