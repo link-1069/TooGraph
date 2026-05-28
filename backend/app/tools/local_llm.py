@@ -479,6 +479,7 @@ def _request_local_chat_completion(
     request_payload: dict[str, Any],
     *,
     on_delta: Callable[[str], None] | None = None,
+    request_timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     base_url = get_local_llm_base_url()
     if not base_url:
@@ -498,7 +499,11 @@ def _request_local_chat_completion(
     try:
         payload, sent_payload, stream_fallback_error, _used_stream = post_streaming_json_with_fallback(
             stream_url=f"{base_url}/chat/completions",
-            timeout_sec=get_local_llm_request_timeout_seconds(),
+            timeout_sec=normalize_request_timeout_seconds(
+                request_timeout_seconds
+                if request_timeout_seconds is not None
+                else get_local_llm_request_timeout_seconds()
+            ),
             headers=headers,
             stream_payload=stream_payload,
             fallback_payload=fallback_payload,
@@ -539,7 +544,13 @@ def _chat_with_local_model_with_meta(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
+    normalized_request_timeout_seconds = normalize_request_timeout_seconds(
+        request_timeout_seconds
+        if request_timeout_seconds is not None
+        else get_local_llm_request_timeout_seconds()
+    )
     request_attachments = inline_provider_image_attachments(input_attachments)
     request_payload: dict[str, Any] = {
         "model": model or get_default_text_model(),
@@ -578,12 +589,21 @@ def _chat_with_local_model_with_meta(
     started_at = time.monotonic()
     logged_request_payload = request_payload
     response_payload: dict[str, Any] = {}
+
+    def request_completion(payload: dict[str, Any], *, delta_callback: Callable[[str], None] | None = None) -> dict[str, Any]:
+        request_kwargs: dict[str, Any] = {}
+        if delta_callback is not None:
+            request_kwargs["on_delta"] = delta_callback
+        if request_timeout_seconds is not None:
+            request_kwargs["request_timeout_seconds"] = normalized_request_timeout_seconds
+        return _request_local_chat_completion(payload, **request_kwargs)
+
     try:
         try:
             response_payload = (
-                _request_local_chat_completion(request_payload, on_delta=on_delta)
+                request_completion(request_payload, delta_callback=on_delta)
                 if on_delta is not None
-                else _request_local_chat_completion(request_payload)
+                else request_completion(request_payload)
             )
         except Exception as exc:
             if not structured_output_schema or not should_retry_without_native_structured_output(exc):
@@ -596,9 +616,9 @@ def _chat_with_local_model_with_meta(
                 f"{exc}"
             )
             response_payload = (
-                _request_local_chat_completion(retry_payload, on_delta=on_delta)
+                request_completion(retry_payload, delta_callback=on_delta)
                 if on_delta is not None
-                else _request_local_chat_completion(retry_payload)
+                else request_completion(retry_payload)
             )
         content, reasoning = _extract_chat_completion_text(response_payload)
         stream_fallback = response_payload.get("_stream_fallback")
@@ -609,7 +629,7 @@ def _chat_with_local_model_with_meta(
             retry_payload = dict(logged_request_payload)
             retry_payload.pop("max_tokens", None)
             logged_request_payload = retry_payload
-            response_payload = _request_local_chat_completion(retry_payload)
+            response_payload = request_completion(retry_payload)
             content, reasoning = _extract_chat_completion_text(response_payload)
             warnings.append(
                 "The provider exhausted max_tokens before returning final content. Retried once without a max_tokens limit."
@@ -620,7 +640,7 @@ def _chat_with_local_model_with_meta(
             for key in thinking_request_payload:
                 retry_payload.pop(key, None)
             logged_request_payload = retry_payload
-            response_payload = _request_local_chat_completion(retry_payload)
+            response_payload = request_completion(retry_payload)
             content, reasoning = _extract_chat_completion_text(response_payload)
             used_thinking = False
             warnings.append(
@@ -665,6 +685,7 @@ def _chat_with_local_model_with_meta(
                         on_delta=on_delta,
                         input_attachments=fallback_attachments,
                         structured_output_schema=structured_output_schema,
+                        request_timeout_seconds=request_timeout_seconds,
                     )
                 except Exception as fallback_exc:
                     raise RuntimeError(
@@ -702,7 +723,7 @@ def _chat_with_local_model_with_meta(
         "base_url": get_local_llm_base_url(),
         "model": response_payload.get("model") or request_payload["model"],
         "provider_id": provider_id,
-        "request_timeout_seconds": get_local_llm_request_timeout_seconds(),
+        "request_timeout_seconds": normalized_request_timeout_seconds,
         "temperature": temperature,
         "thinking_enabled": used_thinking,
         "thinking_level": resolved_thinking_level,

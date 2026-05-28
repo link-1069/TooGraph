@@ -345,6 +345,7 @@ def build_llm_prompt_snapshot(
     action_keys: list[str] | None = None,
     subgraph_keys: list[str] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    provider_cache_policy: str | None = "default",
 ) -> dict[str, Any]:
     system_prompt_text = str(system_prompt or "")
     user_prompt_text = str(user_prompt or "")
@@ -387,6 +388,7 @@ def build_llm_prompt_snapshot(
             context_refs=context_refs,
             action_keys=resolved_action_keys,
             subgraph_keys=resolved_subgraph_keys,
+            provider_cache_policy=provider_cache_policy,
         ),
     }
 
@@ -403,6 +405,7 @@ def build_prompt_cache_policy(
     context_refs: list[dict[str, Any]],
     action_keys: list[str],
     subgraph_keys: list[str],
+    provider_cache_policy: str | None = "default",
 ) -> dict[str, Any]:
     invalidators: list[str] = []
     if input_state_keys:
@@ -414,6 +417,7 @@ def build_prompt_cache_policy(
     if subgraph_keys:
         invalidators.append("subgraph_keys")
 
+    requested_policy = normalize_provider_cache_policy(provider_cache_policy)
     eligible = bool(stable_prefix_chars) and not invalidators
     if not stable_prefix_chars:
         reason = "empty_stable_prefix"
@@ -422,12 +426,21 @@ def build_prompt_cache_policy(
     else:
         reason = "hash_only_stable_prefix"
 
+    mode = "audit_only"
+    provider_cache_control = "not_applied"
+    if requested_policy == "disabled":
+        eligible = False
+        reason = "node_provider_cache_policy_disabled"
+        mode = "disabled"
+        provider_cache_control = "disabled"
+
     return {
         "kind": "prompt_cache_policy",
         "version": 1,
         "storage": "hash_and_metadata",
-        "mode": "audit_only",
-        "provider_cache_control": "not_applied",
+        "mode": mode,
+        "requested_policy": requested_policy,
+        "provider_cache_control": provider_cache_control,
         "reuse_scope": "phase_stable_prefix",
         "stable_prefix_hash": stable_prefix_hash,
         "stable_prefix_chars": stable_prefix_chars,
@@ -445,6 +458,34 @@ def build_prompt_cache_policy(
         "reason": reason,
         "invalidators": invalidators,
     }
+
+
+def normalize_provider_cache_policy(policy: str | None) -> str:
+    value = str(policy or "default").strip().lower()
+    if value in {"default", "disabled", "prefer"}:
+        return value
+    return "default"
+
+
+def apply_provider_prompt_cache_result(
+    snapshot: dict[str, Any],
+    provider_result: Any,
+) -> dict[str, Any]:
+    if not isinstance(provider_result, dict) or not provider_result:
+        return snapshot
+    prompt_cache_policy = snapshot.get("prompt_cache_policy")
+    if not isinstance(prompt_cache_policy, dict):
+        return snapshot
+
+    next_policy = dict(prompt_cache_policy)
+    for key in ("mode", "provider_cache_control", "reason"):
+        value = provider_result.get(key)
+        if isinstance(value, str) and value.strip():
+            next_policy[key] = value.strip()
+    usage = provider_result.get("usage")
+    if isinstance(usage, dict) and usage:
+        next_policy["provider_usage"] = dict(usage)
+    return {**snapshot, "prompt_cache_policy": next_policy}
 
 
 def collect_prompt_snapshot_context_refs(input_values: dict[str, Any]) -> list[dict[str, Any]]:

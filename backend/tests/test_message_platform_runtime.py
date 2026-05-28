@@ -421,7 +421,7 @@ def test_runtime_sends_next_placeholder_when_buddy_visible_stream_starts_next_me
         ]
 
 
-def test_runtime_does_not_send_final_reply_parts_after_visible_stream_returns() -> None:
+def test_runtime_does_not_send_private_response_parts_after_visible_stream_returns() -> None:
     with _temporary_message_platform_store():
         store.upsert_platform_binding(
             {

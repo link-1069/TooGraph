@@ -237,6 +237,240 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(saved_payload["model_providers"]["local"]["request_timeout_seconds"], 42.5)
 
+    def test_update_settings_persists_provider_credential_pool(self) -> None:
+        saved_payload: dict = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.update(payload)
+            return payload
+
+        with patch("app.api.routes_settings.load_app_settings", return_value={}):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}):
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/api/settings",
+                            json={
+                                "model": {
+                                    "text_model_ref": "openai/gpt-4.1",
+                                    "video_model_ref": "openai/gpt-4.1",
+                                },
+                                "agent_runtime_defaults": {
+                                    "model": "openai/gpt-4.1",
+                                    "thinking_enabled": False,
+                                    "thinking_level": "off",
+                                    "temperature": 0.2,
+                                },
+                                "model_providers": {
+                                    "openai": {
+                                        "label": "OpenAI",
+                                        "transport": "openai-compatible",
+                                        "base_url": "https://api.openai.com/v1",
+                                        "api_key": "",
+                                        "enabled": True,
+                                        "auth_header": "Authorization",
+                                        "auth_scheme": "Bearer",
+                                        "credential_pool": [
+                                            {
+                                                "credential_id": " primary ",
+                                                "status": "active",
+                                                "cooldown_until": None,
+                                                "failure_count": 0,
+                                            },
+                                            {
+                                                "credential_id": "backup",
+                                                "status": "cooling_down",
+                                                "cooldown_until": "2026-06-01T12:00:00Z",
+                                                "failure_count": 3,
+                                            },
+                                            {
+                                                "credential_id": "primary",
+                                                "status": "disabled",
+                                                "failure_count": 8,
+                                            },
+                                        ],
+                                        "models": [{"model": "gpt-4.1", "label": "GPT 4.1", "modalities": ["text"]}],
+                                    }
+                                },
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            saved_payload["model_providers"]["openai"]["credential_pool"],
+            [
+                {
+                    "credential_id": "primary",
+                    "status": "active",
+                    "cooldown_until": None,
+                    "failure_count": 0,
+                },
+                {
+                    "credential_id": "backup",
+                    "status": "cooling_down",
+                    "cooldown_until": "2026-06-01T12:00:00Z",
+                    "failure_count": 3,
+                },
+            ],
+        )
+
+    def test_update_settings_preserves_provider_credential_pool_api_keys_when_payload_omits_them(self) -> None:
+        existing_settings = {
+            "model_providers": {
+                "openai": {
+                    "label": "OpenAI",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.openai.com/v1",
+                    "enabled": True,
+                    "credential_pool": [
+                        {
+                            "credential_id": "primary",
+                            "api_key": "sk-primary",
+                            "status": "active",
+                            "cooldown_until": None,
+                            "failure_count": 0,
+                        },
+                        {
+                            "credential_id": "backup",
+                            "api_key": "sk-backup",
+                            "status": "cooling_down",
+                            "cooldown_until": "2026-06-01T12:00:00Z",
+                            "failure_count": 2,
+                        },
+                    ],
+                    "models": [{"model": "gpt-4.1", "label": "GPT 4.1", "modalities": ["text"]}],
+                }
+            }
+        }
+        saved_payload: dict = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.update(payload)
+            return payload
+
+        with patch("app.api.routes_settings.load_app_settings", return_value=existing_settings):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}):
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/api/settings",
+                            json={
+                                "model": {
+                                    "text_model_ref": "openai/gpt-4.1",
+                                    "video_model_ref": "openai/gpt-4.1",
+                                },
+                                "agent_runtime_defaults": {
+                                    "model": "openai/gpt-4.1",
+                                    "thinking_enabled": False,
+                                    "thinking_level": "off",
+                                    "temperature": 0.2,
+                                },
+                                "model_providers": {
+                                    "openai": {
+                                        "label": "OpenAI",
+                                        "transport": "openai-compatible",
+                                        "base_url": "https://api.openai.com/v1",
+                                        "api_key": "",
+                                        "enabled": True,
+                                        "auth_header": "Authorization",
+                                        "auth_scheme": "Bearer",
+                                        "credential_pool": [
+                                            {
+                                                "credential_id": "primary",
+                                                "status": "active",
+                                                "cooldown_until": None,
+                                                "failure_count": 0,
+                                            },
+                                            {
+                                                "credential_id": "backup",
+                                                "status": "active",
+                                                "cooldown_until": None,
+                                                "failure_count": 0,
+                                            },
+                                        ],
+                                        "models": [{"model": "gpt-4.1", "label": "GPT 4.1", "modalities": ["text"]}],
+                                    }
+                                },
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(saved_payload["model_providers"]["openai"]["credential_pool"][0]["api_key"], "sk-primary")
+        self.assertEqual(saved_payload["model_providers"]["openai"]["credential_pool"][1]["api_key"], "sk-backup")
+        self.assertEqual(saved_payload["model_providers"]["openai"]["credential_pool"][1]["status"], "active")
+
+    def test_update_settings_preserves_existing_model_pricing_when_payload_omits_it(self) -> None:
+        existing_settings = {
+            "model_providers": {
+                "openai": {
+                    "label": "OpenAI",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-openai",
+                    "enabled": True,
+                    "models": [
+                        {
+                            "model": "gpt-4.1",
+                            "label": "GPT 4.1",
+                            "modalities": ["text"],
+                            "pricing": {
+                                "input_per_million_usd": 2.0,
+                                "output_per_million_usd": 8.0,
+                            },
+                        }
+                    ],
+                }
+            }
+        }
+        saved_payload: dict = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.update(payload)
+            return payload
+
+        with patch("app.api.routes_settings.load_app_settings", return_value=existing_settings):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}):
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/api/settings",
+                            json={
+                                "model": {
+                                    "text_model_ref": "openai/gpt-4.1",
+                                    "video_model_ref": "openai/gpt-4.1",
+                                },
+                                "agent_runtime_defaults": {
+                                    "model": "openai/gpt-4.1",
+                                    "thinking_enabled": False,
+                                    "thinking_level": "off",
+                                    "temperature": 0.2,
+                                },
+                                "model_providers": {
+                                    "openai": {
+                                        "label": "OpenAI",
+                                        "transport": "openai-compatible",
+                                        "base_url": "https://api.openai.com/v1",
+                                        "api_key": "",
+                                        "enabled": True,
+                                        "auth_header": "Authorization",
+                                        "auth_scheme": "Bearer",
+                                        "models": [
+                                            {"model": "gpt-4.1", "label": "GPT 4.1", "modalities": ["text"]}
+                                        ],
+                                    }
+                                },
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            saved_payload["model_providers"]["openai"]["models"][0]["pricing"],
+            {
+                "input_per_million_usd": 2.0,
+                "output_per_million_usd": 8.0,
+            },
+        )
+
     def test_update_settings_allows_empty_model_refs_when_no_models_are_available(self) -> None:
         saved_payload: dict = {}
 
@@ -541,6 +775,65 @@ class SettingsModelProviderTests(unittest.TestCase):
         local_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "local")
         self.assertEqual(local_provider["models"][0]["capabilities"], {"chat": False, "rerank": True})
         self.assertEqual(local_provider["models"][0]["permissions"], ["rerank"])
+
+    def test_catalog_exposes_provider_credential_pool_metadata(self) -> None:
+        saved_settings = {
+            "text_model_ref": "openai/gpt-4.1",
+            "video_model_ref": "openai/gpt-4.1",
+            "model_providers": {
+                "openai": {
+                    "label": "OpenAI",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.openai.com/v1",
+                    "enabled": True,
+                    "credential_pool": [
+                        {
+                            "credential_id": "primary",
+                            "api_key": "sk-primary",
+                            "status": "active",
+                            "cooldown_until": None,
+                            "failure_count": 0,
+                        },
+                        {
+                            "credential_id": "backup",
+                            "api_key": "sk-backup",
+                            "status": "cooling_down",
+                            "cooldown_until": "2026-06-01T12:00:00Z",
+                            "failure_count": 2,
+                        },
+                    ],
+                    "models": [{"model": "gpt-4.1", "label": "GPT 4.1"}],
+                }
+            },
+        }
+
+        from app.core import model_catalog
+
+        with patch.object(model_catalog, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_catalog, "get_local_gateway_runtime_config", return_value=None):
+                with patch.object(model_catalog, "get_local_route_model_names", return_value=[]):
+                    catalog = model_catalog.build_model_catalog(force_refresh=False)
+
+        provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "openai")
+        self.assertTrue(provider["configured"])
+        self.assertTrue(provider["api_key_configured"])
+        self.assertEqual(
+            provider["credential_pool"],
+            [
+                {
+                    "credential_id": "primary",
+                    "status": "active",
+                    "cooldown_until": None,
+                    "failure_count": 0,
+                },
+                {
+                    "credential_id": "backup",
+                    "status": "cooling_down",
+                    "cooldown_until": "2026-06-01T12:00:00Z",
+                    "failure_count": 2,
+                },
+            ],
+        )
 
 
 if __name__ == "__main__":

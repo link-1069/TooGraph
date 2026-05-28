@@ -211,6 +211,15 @@ test("ModelProvidersPage hides engineering provider fields inside advanced setti
   assert.match(pageSource, /v-else[\s\S]*settings\.providerBaseUrl/);
 });
 
+test("ModelProvidersPage surfaces credential pool metadata in advanced settings", () => {
+  assert.match(pageSource, /settings\.providerCredentialPool/);
+  assert.match(pageSource, /settings\.providerCredentialPoolEmpty/);
+  assert.match(pageSource, /class="model-providers-page__credential-pool"/);
+  assert.match(pageSource, /v-for="credential in provider\.credential_pool"/);
+  assert.match(pageSource, /providerCredentialPoolSummary\(provider\)/);
+  assert.match(pageSource, /function providerCredentialPoolSummary\(provider: ProviderDraft\)/);
+});
+
 test("ModelProvidersPage makes browser OAuth the normal ChatGPT login flow", () => {
   assert.match(pageSource, /handleStartCodexBrowserLogin/);
   assert.match(pageSource, /startOpenAICodexBrowserAuth/);

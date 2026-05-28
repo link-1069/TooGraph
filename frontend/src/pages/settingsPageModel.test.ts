@@ -159,6 +159,68 @@ test("provider drafts preserve model capabilities and permissions", () => {
   assert.equal(payload.local.request_timeout_seconds, 33);
 });
 
+test("provider drafts preserve credential pool metadata", () => {
+  const drafts = buildProviderDraftsFromSettings({
+    model: {
+      text_model: "gpt-4.1",
+      text_model_ref: "openai/gpt-4.1",
+      video_model: "gpt-4.1",
+      video_model_ref: "openai/gpt-4.1",
+    },
+    model_catalog: {
+      provider_templates: [],
+      providers: [
+        {
+          provider_id: "openai",
+          label: "OpenAI",
+          description: "OpenAI",
+          transport: "openai-compatible",
+          configured: true,
+          enabled: true,
+          base_url: "https://api.openai.com/v1",
+          credential_pool: [
+            {
+              credential_id: "primary",
+              status: "active",
+              cooldown_until: null,
+              failure_count: 0,
+            },
+            {
+              credential_id: "backup",
+              status: "cooling_down",
+              cooldown_until: "2026-06-01T12:00:00Z",
+              failure_count: 2,
+            },
+          ],
+          models: [{ model_ref: "openai/gpt-4.1", model: "gpt-4.1", label: "GPT 4.1" }],
+          example_model_refs: [],
+        },
+      ],
+    },
+    revision: { max_revision_round: 1 },
+    evaluator: { default_score_threshold: 7.8, routes: [] },
+    tools: [],
+  });
+
+  assert.deepEqual(drafts.openai.credential_pool, [
+    {
+      credential_id: "primary",
+      status: "active",
+      cooldown_until: null,
+      failure_count: 0,
+    },
+    {
+      credential_id: "backup",
+      status: "cooling_down",
+      cooldown_until: "2026-06-01T12:00:00Z",
+      failure_count: 2,
+    },
+  ]);
+
+  const payload = buildProviderSavePayload(drafts);
+  assert.deepEqual(payload.openai.credential_pool, drafts.openai.credential_pool);
+});
+
 test("buildProviderDraftsFromSettings keeps saved Codex login providers visible before auth completes", () => {
   const drafts = buildProviderDraftsFromSettings({
     model: {

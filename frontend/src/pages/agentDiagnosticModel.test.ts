@@ -429,6 +429,75 @@ test("buildAgentDiagnostic summarizes provider fallback trace from node runtime 
   assert.deepEqual(diagnostic.providerFallback.warnings, ["repair provider fallback used"]);
 });
 
+test("buildAgentDiagnostic summarizes provider profile from node runtime config", () => {
+  const diagnostic = buildAgentDiagnostic(
+    createRun({
+      node_executions: [
+        {
+          node_id: "agent",
+          node_type: "agent",
+          status: "success",
+          duration_ms: 1200,
+          input_summary: "",
+          output_summary: "",
+          warnings: [],
+          errors: [],
+          artifacts: {
+            inputs: {},
+            outputs: {},
+            family: "agent",
+            state_reads: [],
+            state_writes: [],
+            runtime_config: {
+              provider_profile: {
+                request_timeout_seconds: 12.5,
+                cache_policy: "disabled",
+                cost_budget: { limit_usd: 1.25, window: "run" },
+                rate_profile: { requests_per_minute: 30, tokens_per_minute: 12000, concurrency: 2 },
+              },
+              provider_request_timeout_seconds: 12.5,
+              provider_cache_policy: "disabled",
+              provider_cost_budget: { limit_usd: 1.25, window: "run" },
+              provider_rate_profile: { requests_per_minute: 30, tokens_per_minute: 12000, concurrency: 2 },
+              prompt_snapshots: [
+                {
+                  kind: "llm_prompt_snapshot",
+                  phase: "agent_response",
+                  prompt_cache_policy: {
+                    kind: "prompt_cache_policy",
+                    requested_policy: "disabled",
+                    mode: "disabled",
+                    provider_cache_control: "disabled",
+                    eligible: false,
+                    reason: "node_provider_cache_policy_disabled",
+                  },
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.equal(diagnostic.visible, true);
+  assert.deepEqual(diagnostic.providerProfile, {
+    visible: true,
+    requestTimeoutLabel: "12.5s",
+    cachePolicyLabel: "disabled",
+    cacheDecisionLabel: "disabled / disabled / ineligible (node_provider_cache_policy_disabled)",
+    costBudgetLabel: "$1.25 / run",
+    rateProfileLabel: "30 rpm, 12000 tpm, concurrency 2",
+    evidenceLabels: [
+      "timeout: 12.5s",
+      "cache policy: disabled",
+      "cache decision: disabled / disabled / ineligible (node_provider_cache_policy_disabled)",
+      "cost budget: $1.25 / run",
+      "rate: 30 rpm, 12000 tpm, concurrency 2",
+    ],
+  });
+});
+
 test("buildAgentDiagnostic summarizes delegation worker result packages from run state", () => {
   const diagnostic = buildAgentDiagnostic(
     createRun({

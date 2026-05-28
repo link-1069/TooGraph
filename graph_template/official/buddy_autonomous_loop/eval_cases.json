@@ -379,7 +379,7 @@
         },
         {
           "kind": "rule",
-          "name": "buddy_live_tool_fallback_final_reply_mentions_recovery",
+          "name": "buddy_live_tool_fallback_public_response_mentions_recovery",
           "target": "graph_run.state_values.public_response",
           "must_include": [
             "provider_fallback_resolver",
@@ -532,7 +532,7 @@
         },
         {
           "kind": "rule",
-          "name": "buddy_provider_fallback_final_reply_mentions_provider_recovery",
+          "name": "buddy_provider_fallback_public_response_mentions_provider_recovery",
           "target": "graph_run.state_values.public_response",
           "must_include": [
             "fallback provider",
@@ -729,7 +729,7 @@
         },
         {
           "kind": "rule",
-          "name": "context_overflow_final_reply_uses_compaction_summary",
+          "name": "context_overflow_public_response_uses_compaction_summary",
           "target": "graph_run.state_values.public_response",
           "must_include": [
             "context overflow",
@@ -972,7 +972,7 @@
         },
         {
           "kind": "rule",
-          "name": "combo_final_reply_mentions_compaction_and_fallback",
+          "name": "combo_public_response_mentions_compaction_and_fallback",
           "target": "graph_run.state_values.public_response",
           "must_include": [
             "combo-overflow-summary",
@@ -1253,7 +1253,7 @@
         },
         {
           "kind": "rule",
-          "name": "combo_subgraph_final_reply_mentions_compaction_and_fallback",
+          "name": "combo_subgraph_public_response_mentions_compaction_and_fallback",
           "target": "graph_run.state_values.public_response",
           "must_include": [
             "combo-subgraph-overflow-summary",
@@ -1822,7 +1822,7 @@
         },
         {
           "kind": "rule",
-          "name": "buddy_subgraph_fallback_final_reply_mentions_recovery",
+          "name": "buddy_subgraph_fallback_public_response_mentions_recovery",
           "target": "graph_run.state_values.public_response",
           "must_include": [
             "advanced_web_research_loop",

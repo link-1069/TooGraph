@@ -9,6 +9,8 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.context_security import redact_context_secrets
+from app.core.model_provider_costs import build_provider_cost_estimate, normalize_provider_model_pricing
+from app.core.model_provider_rates import build_provider_rate_decision
 from app.core.runtime.model_call_context import get_model_call_context
 from app.core.storage.database import get_connection
 from app.core.storage.settings_store import load_app_settings, save_app_settings
@@ -38,6 +40,15 @@ def append_model_request_log(
 
     safe_request = sanitize_payload_for_log(request_raw)
     safe_response = sanitize_payload_for_log(response_raw)
+    provider_cost_estimate = build_provider_cost_estimate(
+        _extract_usage(safe_response),
+        call_context.get("provider_pricing"),
+        call_context.get("provider_cost_budget"),
+    )
+    provider_rate_decision = build_provider_rate_decision(
+        _extract_usage(safe_response),
+        call_context.get("provider_rate_profile"),
+    )
     now = datetime.now(timezone.utc)
     normalized_duration_ms = max(0, int(duration_ms))
     started_at = (now - timedelta(milliseconds=normalized_duration_ms)).isoformat()
@@ -52,11 +63,20 @@ def append_model_request_log(
         "status_code": status_code,
         "request_kind": detect_request_kind(safe_request, str(path or "")),
     }
+    if provider_rate_decision:
+        metadata["provider_rate_decision"] = provider_rate_decision
     normalized_error = _sanitize_log_text(str(error or "").strip())
     error_payload = {"message": normalized_error} if normalized_error else {}
 
     try:
         with get_connection() as connection:
+            if provider_cost_estimate:
+                metadata["provider_cost_estimate"] = _apply_provider_cost_budget_window(
+                    connection,
+                    call_context=call_context,
+                    provider_cost_estimate=provider_cost_estimate,
+                    completed_at=now,
+                )
             connection.execute(
                 """
                 INSERT INTO graph_model_calls (
@@ -123,6 +143,7 @@ def append_model_request_log(
             "request_raw": safe_request,
             "response_raw": safe_response,
             **call_context,
+            **metadata,
         }
     )
 
@@ -217,6 +238,190 @@ def save_model_log_retention_settings(*, max_root_runs: int) -> dict[str, int]:
     except Exception:
         pass
     return saved
+
+
+def evaluate_provider_cost_budget_preflight(
+    call_context: dict[str, Any],
+    cost_budget: Any,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    budget = cost_budget if isinstance(cost_budget, dict) else {}
+    limit_usd = _normalize_optional_float(budget.get("limit_usd") or budget.get("limitUsd"))
+    budget_window = _text(budget.get("window") or "run").lower()
+    if limit_usd is None or budget_window not in {"node", "run", "day", "month"}:
+        return {}
+    normalized_context = call_context if isinstance(call_context, dict) else {}
+    if not _text(normalized_context.get("run_id")):
+        return {}
+    completed_at = now or datetime.now(timezone.utc)
+    with get_connection() as connection:
+        previous_window_cost = _previous_provider_cost_window_total_usd(
+            connection,
+            call_context=normalized_context,
+            budget_window=budget_window,
+            completed_at=completed_at,
+        )
+    status = "blocked" if previous_window_cost >= limit_usd else "within_budget"
+    return {
+        "kind": "provider_cost_budget_preflight",
+        "version": 1,
+        "mode": "enforce_existing_window",
+        "currency": "USD",
+        "status": status,
+        "reason": "provider_cost_budget_already_exhausted" if status == "blocked" else "provider_cost_budget_window_available",
+        "budget_limit_usd": limit_usd,
+        "budget_window": budget_window,
+        "previous_window_cost_usd": previous_window_cost,
+        "budget_window_scope": _provider_cost_budget_window_scope(
+            call_context=normalized_context,
+            budget_window=budget_window,
+            completed_at=completed_at,
+        ),
+    }
+
+
+def _apply_provider_cost_budget_window(
+    connection: Any,
+    *,
+    call_context: dict[str, Any],
+    provider_cost_estimate: dict[str, Any],
+    completed_at: datetime,
+) -> dict[str, Any]:
+    if provider_cost_estimate.get("status") != "estimated":
+        return provider_cost_estimate
+    current_cost = _normalize_optional_float(provider_cost_estimate.get("estimated_cost_usd"))
+    budget_limit = _normalize_optional_float(provider_cost_estimate.get("budget_limit_usd"))
+    budget_window = _text(provider_cost_estimate.get("budget_window") or "run").lower()
+    if current_cost is None or budget_limit is None or budget_window not in {"node", "run", "day", "month"}:
+        return provider_cost_estimate
+
+    previous_window_cost = _previous_provider_cost_window_total_usd(
+        connection,
+        call_context=call_context,
+        budget_window=budget_window,
+        completed_at=completed_at,
+    )
+    cumulative_cost = _round_usd(previous_window_cost + current_cost)
+    cumulative_status = "over_budget" if cumulative_cost > budget_limit else "within_budget"
+    result = dict(provider_cost_estimate)
+    result["single_call_budget_status"] = result.get("budget_status")
+    result["previous_window_cost_usd"] = previous_window_cost
+    result["cumulative_cost_usd"] = cumulative_cost
+    result["cumulative_budget_status"] = cumulative_status
+    result["budget_status"] = cumulative_status
+    result["budget_window_scope"] = _provider_cost_budget_window_scope(
+        call_context=call_context,
+        budget_window=budget_window,
+        completed_at=completed_at,
+    )
+    return result
+
+
+def _previous_provider_cost_window_total_usd(
+    connection: Any,
+    *,
+    call_context: dict[str, Any],
+    budget_window: str,
+    completed_at: datetime,
+) -> float:
+    if budget_window == "node":
+        rows = connection.execute(
+            """
+            SELECT metadata_json
+            FROM graph_model_calls
+            WHERE run_id = ? AND COALESCE(node_id, '') = ?
+            """,
+            (
+                _text(call_context.get("run_id")),
+                _text(call_context.get("node_id")),
+            ),
+        ).fetchall()
+    elif budget_window == "run":
+        root_run_id = _text(call_context.get("root_run_id")) or _text(call_context.get("run_id"))
+        rows = connection.execute(
+            """
+            SELECT graph_model_calls.metadata_json AS metadata_json
+            FROM graph_model_calls
+            JOIN graph_runs ON graph_runs.run_id = graph_model_calls.run_id
+            WHERE COALESCE(graph_runs.root_run_id, graph_model_calls.run_id) = ?
+            """,
+            (root_run_id,),
+        ).fetchall()
+    else:
+        start, end = _provider_cost_time_window_bounds(budget_window, completed_at)
+        rows = connection.execute(
+            """
+            SELECT metadata_json
+            FROM graph_model_calls
+            WHERE completed_at >= ? AND completed_at < ?
+            """,
+            (_format_datetime(start), _format_datetime(end)),
+        ).fetchall()
+    return _round_usd(sum(_provider_cost_estimate_usd(_loads(row["metadata_json"], {})) for row in rows))
+
+
+def _provider_cost_estimate_usd(metadata: Any) -> float:
+    payload = metadata if isinstance(metadata, dict) else {}
+    estimate = payload.get("provider_cost_estimate")
+    if not isinstance(estimate, dict):
+        return 0.0
+    if estimate.get("status") != "estimated":
+        return 0.0
+    cost = _normalize_optional_float(estimate.get("estimated_cost_usd"))
+    return cost if cost is not None else 0.0
+
+
+def _provider_cost_budget_window_scope(
+    *,
+    call_context: dict[str, Any],
+    budget_window: str,
+    completed_at: datetime,
+) -> dict[str, Any]:
+    if budget_window == "node":
+        return {
+            "window": "node",
+            "run_id": _text(call_context.get("run_id")),
+            "node_id": _text(call_context.get("node_id")),
+        }
+    if budget_window == "run":
+        return {
+            "window": "run",
+            "root_run_id": _text(call_context.get("root_run_id")) or _text(call_context.get("run_id")),
+        }
+    start, end = _provider_cost_time_window_bounds(budget_window, completed_at)
+    return {
+        "window": budget_window,
+        "started_at": _format_datetime(start),
+        "ended_before": _format_datetime(end),
+    }
+
+
+def _provider_cost_time_window_bounds(budget_window: str, completed_at: datetime) -> tuple[datetime, datetime]:
+    normalized_completed_at = _normalize_datetime(completed_at)
+    if budget_window == "month":
+        start = normalized_completed_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+        return start, end
+    start = normalized_completed_at.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start, start + timedelta(days=1)
+
+
+def _normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _format_datetime(value: datetime) -> str:
+    return _normalize_datetime(value).replace(microsecond=0).isoformat()
+
+
+def _round_usd(value: float) -> float:
+    return round(float(value), 12)
 
 
 def build_model_log_run_trees(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -343,13 +548,14 @@ def _hydrate_db_model_call(row: Any) -> dict[str, Any]:
         if isinstance(metadata.get("run_path"), list)
         else _loads(payload.get("joined_run_path_json"), []),
     }
+    _append_provider_context_fields(entry, metadata)
     return _hydrate_log_entry(entry)
 
 
 def _hydrate_log_entry(entry: dict[str, Any]) -> dict[str, Any]:
     request_raw = entry.get("request_raw") if isinstance(entry.get("request_raw"), dict) else {}
     response_raw = entry.get("response_raw") if isinstance(entry.get("response_raw"), dict) else {}
-    return {
+    payload = {
         "id": str(entry.get("id") or ""),
         "timestamp": str(entry.get("timestamp") or ""),
         "started_at": str(entry.get("started_at") or ""),
@@ -382,6 +588,8 @@ def _hydrate_log_entry(entry: dict[str, Any]) -> dict[str, Any]:
         "graph_name": str(entry.get("graph_name") or ""),
         "run_path": list(entry.get("run_path") or []),
     }
+    _append_provider_context_fields(payload, entry)
+    return payload
 
 
 def _build_tree_for_run(run_node: dict[str, Any], entries_by_run: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
@@ -517,7 +725,7 @@ def _group_entries_by_run(entries: list[dict[str, Any]]) -> dict[str, list[dict[
 
 def _normalize_model_call_context(context: dict[str, Any]) -> dict[str, Any]:
     payload = context if isinstance(context, dict) else {}
-    return {
+    normalized = {
         "run_id": _text(payload.get("run_id")),
         "root_run_id": _text(payload.get("root_run_id")) or _text(payload.get("run_id")),
         "parent_run_id": _text(payload.get("parent_run_id")),
@@ -532,6 +740,42 @@ def _normalize_model_call_context(context: dict[str, Any]) -> dict[str, Any]:
         "run_path": _normalize_string_list(payload.get("run_path")),
         "subgraph_path": _normalize_string_list(payload.get("subgraph_path")),
     }
+    _append_provider_context_fields(normalized, payload)
+    return normalized
+
+
+def _append_provider_context_fields(target: dict[str, Any], source: dict[str, Any]) -> None:
+    request_timeout_seconds = _normalize_optional_float(source.get("provider_request_timeout_seconds"))
+    if request_timeout_seconds is not None:
+        target["provider_request_timeout_seconds"] = request_timeout_seconds
+    provider_cache_policy = _text(source.get("provider_cache_policy"))
+    if provider_cache_policy:
+        target["provider_cache_policy"] = provider_cache_policy
+    provider_pricing = normalize_provider_model_pricing(source.get("provider_pricing"))
+    if provider_pricing:
+        target["provider_pricing"] = provider_pricing
+    for key in (
+        "provider_profile",
+        "provider_cache_decision",
+        "provider_cost_budget",
+        "provider_rate_profile",
+        "provider_credential",
+        "provider_cost_estimate",
+        "provider_rate_decision",
+    ):
+        value = source.get(key)
+        if isinstance(value, dict) and value:
+            target[key] = sanitize_payload_for_log(value)
+
+
+def _normalize_optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def build_display_messages(request_raw: dict[str, Any]) -> list[dict[str, str]]:

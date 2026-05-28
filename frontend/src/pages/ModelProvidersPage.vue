@@ -449,6 +449,27 @@
                               @change="handleProviderDraftChange"
                             />
                           </label>
+                          <div class="model-providers-page__credential-pool" :aria-label="t('settings.providerCredentialPool')">
+                            <div class="model-providers-page__credential-pool-heading">
+                              <span class="model-providers-page__provider-field-label">{{ t("settings.providerCredentialPool") }}</span>
+                              <strong>{{ providerCredentialPoolSummary(provider) }}</strong>
+                            </div>
+                            <div v-if="provider.credential_pool.length > 0" class="model-providers-page__credential-pool-list">
+                              <div
+                                v-for="credential in provider.credential_pool"
+                                :key="`${provider.provider_id}-credential-${credential.credential_id}`"
+                                class="model-providers-page__credential-pool-row"
+                              >
+                                <span>{{ credential.credential_id }}</span>
+                                <span>{{ credential.status }}</span>
+                                <span>{{ t("settings.providerCredentialFailures", { count: credential.failure_count }) }}</span>
+                                <span v-if="credential.cooldown_until">
+                                  {{ t("settings.providerCredentialCooldown", { time: credential.cooldown_until }) }}
+                                </span>
+                              </div>
+                            </div>
+                            <p v-else class="model-providers-page__hint">{{ t("settings.providerCredentialPoolEmpty") }}</p>
+                          </div>
                         </div>
                       </details>
                       <div class="model-providers-page__provider-editor-footer">
@@ -733,6 +754,15 @@
                         @change="handleProviderDraftChange"
                       />
                     </label>
+                    <div class="model-providers-page__credential-pool" :aria-label="t('settings.providerCredentialPool')">
+                      <div class="model-providers-page__credential-pool-heading">
+                        <span>{{ t("settings.providerCredentialPool") }}</span>
+                        <strong>{{ providerCredentialPoolSummary(providerEditorDraft) }}</strong>
+                      </div>
+                      <p v-if="providerEditorDraft.credential_pool.length === 0" class="model-providers-page__hint">
+                        {{ t("settings.providerCredentialPoolEmpty") }}
+                      </p>
+                    </div>
                   </div>
                 </details>
 
@@ -936,6 +966,7 @@ function buildProviderDraftFromTemplate(provider: SettingsModelProvider): Provid
     requires_login: Boolean(provider.requires_login),
     auth_status: provider.auth_status,
     request_timeout_seconds: provider.request_timeout_seconds ?? 180,
+    credential_pool: provider.credential_pool ?? [],
     api_key: "",
     api_key_configured: Boolean(provider.api_key_configured),
     discovered_models: modelNames,
@@ -1225,6 +1256,16 @@ function providerAuthStatusLabel(provider: ProviderDraft) {
     return t("settings.codexLoginExpired");
   }
   return t("settings.codexNotLoggedIn");
+}
+
+function providerCredentialPoolSummary(provider: ProviderDraft) {
+  const credentials = provider.credential_pool ?? [];
+  if (credentials.length === 0) {
+    return t("settings.providerCredentialPoolEmpty");
+  }
+  const active = credentials.filter((credential) => credential.status === "active").length;
+  const cooling = credentials.filter((credential) => credential.status === "cooling_down").length;
+  return t("settings.providerCredentialPoolSummary", { count: credentials.length, active, cooling });
 }
 
 function ensureCodexProviderDraft() {
@@ -2532,6 +2573,53 @@ onBeforeUnmount(() => {
   color: rgb(154, 52, 18);
   cursor: pointer;
   font-weight: 650;
+}
+
+.model-providers-page__credential-pool {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(154, 52, 18, 0.1);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.model-providers-page__credential-pool-heading,
+.model-providers-page__credential-pool-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.model-providers-page__credential-pool-heading strong {
+  color: var(--toograph-text-strong);
+  font-size: 0.78rem;
+}
+
+.model-providers-page__credential-pool-list {
+  display: grid;
+  gap: 6px;
+}
+
+.model-providers-page__credential-pool-row {
+  grid-template-columns: minmax(80px, 1fr) auto auto minmax(0, 1fr);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(255, 248, 240, 0.62);
+  color: rgba(60, 41, 20, 0.7);
+  font-size: 0.76rem;
+  font-weight: 720;
+}
+
+.model-providers-page__credential-pool-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-providers-page__switch {

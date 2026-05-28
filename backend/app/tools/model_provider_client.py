@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 import tempfile
 from typing import Any, Callable
 
 import httpx
 
 from app.core.provider_fallback import resolve_provider_fallback
+from app.core.model_provider_costs import build_provider_cost_estimate, provider_model_pricing
+from app.core.model_provider_credentials import (
+    has_configured_provider_credential,
+    select_provider_credential,
+    update_provider_credential_pool_after_call,
+)
+from app.core.model_provider_rates import build_provider_rate_decision
 from app.core.model_provider_templates import (
     TRANSPORT_ANTHROPIC_MESSAGES,
     TRANSPORT_CODEX_RESPONSES,
@@ -14,8 +22,9 @@ from app.core.model_provider_templates import (
     get_provider_template,
     normalize_transport,
 )
-from app.core.storage.settings_store import load_app_settings
-from app.core.storage.model_log_store import append_model_request_log
+from app.core.storage.settings_store import load_app_settings, save_app_settings
+from app.core.storage.model_log_store import append_model_request_log, evaluate_provider_cost_budget_preflight
+from app.core.runtime.model_call_context import get_model_call_context, use_model_call_context
 from app.core.thinking_levels import (
     THINKING_LEVEL_HIGH,
     THINKING_LEVEL_OFF,
@@ -50,6 +59,15 @@ from app.tools.model_provider_http import (
 
 def _append_model_request_log_safely(**kwargs: Any) -> None:
     append_model_request_log_safely(**kwargs, log_writer=append_model_request_log)
+
+
+class ProviderCostBudgetExceeded(RuntimeError):
+    def __init__(self, decision: dict[str, Any]) -> None:
+        self.decision = dict(decision)
+        reason = str(decision.get("reason") or "provider_cost_budget_exceeded").strip()
+        previous_cost = decision.get("previous_window_cost_usd")
+        limit = decision.get("budget_limit_usd")
+        super().__init__(f"{reason}: previous_window_cost_usd={previous_cost} budget_limit_usd={limit}")
 
 
 def discover_provider_models(
@@ -128,6 +146,7 @@ def _chat_anthropic(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     return model_provider_anthropic.chat_anthropic(
@@ -144,6 +163,7 @@ def _chat_anthropic(
         post_streaming_json_with_fallback_fn=post_streaming_json_with_fallback,
         on_delta=on_delta,
         input_attachments=input_attachments,
+        prompt_cache_policy=prompt_cache_policy,
         request_timeout_seconds=normalize_request_timeout_seconds(request_timeout_seconds),
     )
 
@@ -558,6 +578,7 @@ def chat_with_model_provider(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     normalized_transport = normalize_transport(transport)
@@ -603,6 +624,7 @@ def chat_with_model_provider(
                 on_delta=on_delta,
                 input_attachments=attachments,
                 structured_output_schema=structured_output_schema,
+                prompt_cache_policy=prompt_cache_policy,
                 request_timeout_seconds=normalized_timeout_seconds,
             )
     elif normalized_transport == TRANSPORT_GEMINI_GENERATE_CONTENT:
@@ -666,6 +688,7 @@ def chat_with_model_provider(
         )
     if structured_output_schema and not meta.get("structured_output_strategy"):
         meta["structured_output_strategy"] = "prompt_validation"
+    _ensure_provider_prompt_cache_result(meta, normalized_transport, prompt_cache_policy)
     meta["warnings"] = warnings
     meta.setdefault("thinking_enabled", False)
     meta.setdefault("thinking_level", resolved_thinking_level)
@@ -712,6 +735,55 @@ def _prepare_request_attachments_for_transport(
     return input_attachments
 
 
+def _ensure_provider_prompt_cache_result(
+    meta: dict[str, Any],
+    transport: str,
+    prompt_cache_policy: dict[str, Any] | None,
+) -> None:
+    if not isinstance(prompt_cache_policy, dict):
+        return
+    if str(prompt_cache_policy.get("requested_policy") or "").strip().lower() != "prefer":
+        return
+    if isinstance(meta.get("provider_prompt_cache_result"), dict):
+        return
+
+    result: dict[str, Any] = {
+        "kind": "provider_prompt_cache_result",
+        "version": 1,
+        "requested_policy": "prefer",
+        "eligible": bool(prompt_cache_policy.get("eligible")),
+    }
+    for key in ("stable_prefix_hash", "cache_key"):
+        value = prompt_cache_policy.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+    if not prompt_cache_policy.get("eligible"):
+        result.update(
+            {
+                "mode": "not_applied",
+                "provider_cache_control": "not_applied",
+                "reason": str(prompt_cache_policy.get("reason") or "prompt_cache_policy_ineligible"),
+            }
+        )
+    elif transport != TRANSPORT_ANTHROPIC_MESSAGES:
+        result.update(
+            {
+                "mode": "not_supported",
+                "provider_cache_control": "not_supported",
+                "reason": "provider_prompt_cache_control_not_supported",
+            }
+        )
+    else:
+        result.update(
+            {
+                "mode": "not_applied",
+                "provider_cache_control": "not_applied",
+                "reason": "anthropic_prompt_cache_control_not_applied",
+            }
+        )
+    meta["provider_prompt_cache_result"] = result
+
+
 def _split_model_ref(model_ref: str) -> tuple[str, str]:
     provider_id, model_name = model_ref.split("/", 1) if "/" in model_ref else ("local", model_ref)
     return provider_id.strip() or "local", model_name.strip()
@@ -736,9 +808,16 @@ def _provider_auth_scheme(provider_config: dict[str, Any], template: dict[str, A
     return str(auth_scheme or "")
 
 
-def _provider_request_timeout_seconds(provider_config: dict[str, Any], template: dict[str, Any]) -> float:
+def _provider_request_timeout_seconds(
+    provider_config: dict[str, Any],
+    template: dict[str, Any],
+    *,
+    override: float | None = None,
+) -> float:
     return normalize_request_timeout_seconds(
-        provider_config.get("request_timeout_seconds") or template.get("request_timeout_seconds")
+        override
+        if override is not None
+        else provider_config.get("request_timeout_seconds") or template.get("request_timeout_seconds")
     )
 
 
@@ -857,6 +936,11 @@ def _chat_with_model_ref_once(
     input_attachments: list[dict[str, Any]] | None,
     structured_output_schema: dict[str, Any] | None,
     model_runtime_fixture: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
+    provider_cost_budget: dict[str, Any] | None = None,
+    provider_rate_profile: dict[str, Any] | None = None,
+    request_timeout_seconds: float | None = None,
+    persist_credential_state: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     provider_id, model_name = _split_model_ref(model_ref)
     fixture_result = _resolve_model_runtime_fixture_result(
@@ -885,28 +969,72 @@ def _chat_with_model_ref_once(
             on_delta=on_delta,
             input_attachments=input_attachments,
             structured_output_schema=structured_output_schema,
+            request_timeout_seconds=request_timeout_seconds,
         )
 
     template, provider_config = _provider_config_from_saved(provider_id, saved_providers)
-    return chat_with_model_provider(
+    api_key, provider_credential = select_provider_credential(provider_config)
+    provider_pricing = provider_model_pricing(provider_config, model_name)
+    provider_context: dict[str, Any] = {}
+    if provider_credential:
+        provider_context["provider_credential"] = provider_credential
+    if provider_pricing:
+        provider_context["provider_pricing"] = provider_pricing
+    if isinstance(provider_cost_budget, dict) and provider_cost_budget:
+        provider_context["provider_cost_budget"] = dict(provider_cost_budget)
+    if isinstance(provider_rate_profile, dict) and provider_rate_profile:
+        provider_context["provider_rate_profile"] = dict(provider_rate_profile)
+    _enforce_provider_cost_budget_preflight(provider_context, provider_cost_budget)
+    provider_credential_state_update: dict[str, Any] = {}
+    try:
+        with use_model_call_context(**provider_context) if provider_context else nullcontext():
+            content, meta = chat_with_model_provider(
+                provider_id=provider_id,
+                transport=str(provider_config.get("transport") or template["transport"]),
+                base_url=str(provider_config.get("base_url") or template["base_url"]),
+                api_key=api_key,
+                model=model_name,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                thinking_enabled=thinking_enabled,
+                thinking_level=thinking_level,
+                auth_header=str(provider_config.get("auth_header") or template.get("auth_header") or "Authorization"),
+                auth_scheme=_provider_auth_scheme(provider_config, template),
+                request_timeout_seconds=_provider_request_timeout_seconds(provider_config, template, override=request_timeout_seconds),
+                on_delta=on_delta,
+                input_attachments=input_attachments,
+                structured_output_schema=structured_output_schema,
+                prompt_cache_policy=prompt_cache_policy,
+            )
+    except Exception:
+        _record_provider_credential_call_result(
+            provider_id=provider_id,
+            provider_credential=provider_credential,
+            success=False,
+            persist_credential_state=persist_credential_state,
+        )
+        raise
+    provider_credential_state_update = _record_provider_credential_call_result(
         provider_id=provider_id,
-        transport=str(provider_config.get("transport") or template["transport"]),
-        base_url=str(provider_config.get("base_url") or template["base_url"]),
-        api_key=str(provider_config.get("api_key") or ""),
-        model=model_name,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        thinking_enabled=thinking_enabled,
-        thinking_level=thinking_level,
-        auth_header=str(provider_config.get("auth_header") or template.get("auth_header") or "Authorization"),
-        auth_scheme=_provider_auth_scheme(provider_config, template),
-        request_timeout_seconds=_provider_request_timeout_seconds(provider_config, template),
-        on_delta=on_delta,
-        input_attachments=input_attachments,
-        structured_output_schema=structured_output_schema,
+        provider_credential=provider_credential,
+        success=True,
+        persist_credential_state=persist_credential_state,
     )
+    if provider_credential:
+        meta = {**meta, "provider_credential": provider_credential}
+    if provider_credential_state_update:
+        meta = {**meta, "provider_credential_state_update": provider_credential_state_update}
+    if "provider_cost_estimate" not in meta:
+        provider_cost_estimate = build_provider_cost_estimate(meta.get("usage"), provider_pricing, provider_cost_budget)
+        if provider_cost_estimate:
+            meta = {**meta, "provider_cost_estimate": provider_cost_estimate}
+    if "provider_rate_decision" not in meta:
+        provider_rate_decision = build_provider_rate_decision(meta.get("usage"), provider_rate_profile)
+        if provider_rate_decision:
+            meta = {**meta, "provider_rate_decision": provider_rate_decision}
+    return content, meta
 
 
 def _provider_requires_api_key(provider_id: str, provider_config: dict[str, Any]) -> bool:
@@ -920,10 +1048,43 @@ def _provider_requires_api_key(provider_id: str, provider_config: dict[str, Any]
     return True
 
 
+def _enforce_provider_cost_budget_preflight(provider_context: dict[str, Any], provider_cost_budget: Any) -> None:
+    if not isinstance(provider_cost_budget, dict) or not provider_cost_budget:
+        return
+    call_context = {**get_model_call_context(), **provider_context}
+    decision = evaluate_provider_cost_budget_preflight(call_context, provider_cost_budget)
+    if decision.get("status") == "blocked":
+        raise ProviderCostBudgetExceeded(decision)
+
+
+def _record_provider_credential_call_result(
+    *,
+    provider_id: str,
+    provider_credential: dict[str, Any],
+    success: bool,
+    persist_credential_state: bool,
+) -> dict[str, Any]:
+    if not persist_credential_state:
+        return {}
+    credential_id = str(provider_credential.get("credential_id") or "").strip()
+    if not credential_id or provider_credential.get("source") != "credential_pool":
+        return {}
+    settings = load_app_settings()
+    updated_settings, event = update_provider_credential_pool_after_call(
+        settings,
+        provider_id=provider_id,
+        credential_id=credential_id,
+        success=success,
+    )
+    if event:
+        save_app_settings(updated_settings)
+    return event
+
+
 def _provider_configured(provider_id: str, provider_config: dict[str, Any]) -> bool:
     if not str(provider_config.get("base_url") or "").strip():
         return False
-    if _provider_requires_api_key(provider_id, provider_config) and not str(provider_config.get("api_key") or "").strip():
+    if _provider_requires_api_key(provider_id, provider_config) and not has_configured_provider_credential(provider_config):
         return False
     return True
 
@@ -1207,15 +1368,21 @@ def chat_with_model_ref_with_meta(
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
     model_runtime_fixture: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
+    provider_cost_budget: dict[str, Any] | None = None,
+    provider_rate_profile: dict[str, Any] | None = None,
+    request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     fixture = model_runtime_fixture if isinstance(model_runtime_fixture, dict) else {}
     fixture_providers = fixture.get("model_providers")
     if isinstance(fixture_providers, dict):
         saved_providers = fixture_providers
+        persist_credential_state = False
     else:
         saved_settings = load_app_settings()
         saved_providers = saved_settings.get("model_providers")
         saved_providers = saved_providers if isinstance(saved_providers, dict) else {}
+        persist_credential_state = True
     provider_id, model_name = _split_model_ref(model_ref)
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
 
@@ -1233,7 +1400,14 @@ def chat_with_model_ref_with_meta(
             input_attachments=input_attachments,
             structured_output_schema=structured_output_schema,
             model_runtime_fixture=fixture,
+            prompt_cache_policy=prompt_cache_policy,
+            provider_cost_budget=provider_cost_budget,
+            provider_rate_profile=provider_rate_profile,
+            request_timeout_seconds=request_timeout_seconds,
+            persist_credential_state=persist_credential_state,
         )
+    except ProviderCostBudgetExceeded:
+        raise
     except Exception as primary_exc:
         fallback_result = resolve_provider_fallback(
             {
@@ -1277,7 +1451,14 @@ def chat_with_model_ref_with_meta(
                     input_attachments=input_attachments,
                     structured_output_schema=structured_output_schema,
                     model_runtime_fixture=fixture,
+                    prompt_cache_policy=prompt_cache_policy,
+                    provider_cost_budget=provider_cost_budget,
+                    provider_rate_profile=provider_rate_profile,
+                    request_timeout_seconds=request_timeout_seconds,
+                    persist_credential_state=persist_credential_state,
                 )
+            except ProviderCostBudgetExceeded:
+                raise
             except Exception as fallback_exc:
                 fallback_errors.append(f"{candidate_model_ref}: {fallback_exc}")
                 _append_failed_fallback_attempt(fallback_trace, candidate_model_ref, fallback_exc)

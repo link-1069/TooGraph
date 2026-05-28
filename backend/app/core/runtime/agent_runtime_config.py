@@ -45,6 +45,9 @@ def resolve_agent_runtime_config(
         model=runtime_model_name,
     )
     resolved_thinking = resolved_thinking_level != "off"
+    provider_profile = _resolved_provider_profile(node)
+    provider_cost_budget = dict(provider_profile["cost_budget"])
+    provider_rate_profile = dict(provider_profile["rate_profile"])
 
     return {
         "model_source": node.config.model_source.value,
@@ -64,4 +67,19 @@ def resolve_agent_runtime_config(
         "runtime_model_name": runtime_model_name,
         "request_return_progress": resolved_thinking and resolved_provider_id == "local",
         "request_reasoning_format": "auto" if resolved_thinking and resolved_provider_id == "local" else None,
+        "provider_profile": provider_profile,
+        "provider_request_timeout_seconds": provider_profile["request_timeout_seconds"],
+        "provider_cache_policy": provider_profile["cache_policy"],
+        "provider_cost_budget": provider_cost_budget,
+        "provider_rate_profile": provider_rate_profile,
+    }
+
+
+def _resolved_provider_profile(node: NodeSystemAgentNode) -> dict[str, Any]:
+    profile = node.config.provider_profile
+    return {
+        "request_timeout_seconds": profile.request_timeout_seconds,
+        "cache_policy": profile.cache_policy.value,
+        "cost_budget": profile.cost_budget.model_dump(mode="json"),
+        "rate_profile": profile.rate_profile.model_dump(mode="json"),
     }

@@ -133,6 +133,7 @@ export type RunPromptCachePolicyAudit = {
   eligible: boolean | null;
   cacheKey: string;
   mode: string;
+  requestedPolicy: string;
   providerCacheControl: string;
   reason: string;
   stablePrefixHash: string;
@@ -811,6 +812,7 @@ function promptCachePolicyAuditFromRecord(value: unknown): RunPromptCachePolicyA
     eligible: normalizeBoolean(record.eligible),
     cacheKey,
     mode: normalizeText(record.mode),
+    requestedPolicy: normalizeText(record.requested_policy),
     providerCacheControl: normalizeText(record.provider_cache_control),
     reason: normalizeText(record.reason),
     stablePrefixHash,

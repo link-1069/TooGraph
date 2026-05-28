@@ -94,6 +94,310 @@ class ModelRequestLogTests(unittest.TestCase):
             "<inline-media-reference mime=image/png chars=19>",
         )
 
+    def test_model_request_log_preserves_provider_profile_context(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.core.runtime.state import create_initial_run_state
+        from app.core.storage import database, run_store
+        from app.core.storage.model_log_store import append_model_request_log, list_model_request_logs
+
+        provider_profile = {
+            "request_timeout_seconds": 12.5,
+            "cache_policy": "disabled",
+            "cost_budget": {"limit_usd": 1.25, "window": "run"},
+            "rate_profile": {"requests_per_minute": 30, "tokens_per_minute": 1200, "concurrency": 2},
+        }
+        provider_cache_decision = {
+            "kind": "prompt_cache_policy",
+            "requested_policy": "disabled",
+            "mode": "disabled",
+            "provider_cache_control": "disabled",
+            "eligible": False,
+            "reason": "node_provider_cache_policy_disabled",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir):
+                with patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"):
+                    database.initialize_storage()
+                    run = create_initial_run_state("graph_root", "Root Graph")
+                    run["run_id"] = "run_provider_profile"
+                    run["root_run_id"] = "run_provider_profile"
+                    run["run_path"] = ["run_provider_profile"]
+                    run_store.save_run(run)
+
+                    with use_model_call_context(
+                        run_id="run_provider_profile",
+                        root_run_id="run_provider_profile",
+                        node_id="agent",
+                        node_type="agent",
+                        phase="agent_response",
+                        provider_profile=provider_profile,
+                        provider_request_timeout_seconds=12.5,
+                        provider_cache_policy="disabled",
+                        provider_cache_decision=provider_cache_decision,
+                        provider_cost_budget={"limit_usd": 1.25, "window": "run"},
+                        provider_rate_profile={"requests_per_minute": 30, "tokens_per_minute": 1200, "concurrency": 2},
+                        provider_credential={
+                            "credential_id": "primary",
+                            "status": "active",
+                            "source": "credential_pool",
+                        },
+                        provider_pricing={
+                            "input_per_million_usd": 2.0,
+                            "output_per_million_usd": 8.0,
+                        },
+                    ):
+                        append_model_request_log(
+                            provider_id="local",
+                            transport="openai-compatible",
+                            model="gemma",
+                            path="/v1/chat/completions",
+                            request_raw={"model": "gemma", "messages": [{"role": "user", "content": "hello"}]},
+                            response_raw={
+                                "choices": [{"message": {"content": "hello"}}],
+                                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                            },
+                            duration_ms=10,
+                            status_code=200,
+                        )
+
+                    payload = list_model_request_logs(page=1, size=10)
+
+        entry = payload["entries"][0]
+        self.assertEqual(entry["provider_profile"], provider_profile)
+        self.assertEqual(entry["provider_request_timeout_seconds"], 12.5)
+        self.assertEqual(entry["provider_cache_policy"], "disabled")
+        self.assertEqual(entry["provider_cache_decision"], provider_cache_decision)
+        self.assertEqual(entry["provider_cost_budget"], {"limit_usd": 1.25, "window": "run"})
+        self.assertEqual(
+            entry["provider_rate_profile"],
+            {"requests_per_minute": 30, "tokens_per_minute": 1200, "concurrency": 2},
+        )
+        self.assertEqual(
+            entry["provider_credential"],
+            {
+                "credential_id": "primary",
+                "status": "active",
+                "source": "credential_pool",
+            },
+        )
+        self.assertEqual(
+            entry["provider_cost_estimate"],
+            {
+                "kind": "provider_cost_estimate",
+                "version": 1,
+                "currency": "USD",
+                "status": "estimated",
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "total_tokens": 1500,
+                "input_cost_usd": 0.002,
+                "output_cost_usd": 0.004,
+                "estimated_cost_usd": 0.006,
+                "pricing": {
+                    "input_per_million_usd": 2.0,
+                    "output_per_million_usd": 8.0,
+                },
+                "budget_limit_usd": 1.25,
+                "budget_window": "run",
+                "budget_status": "within_budget",
+                "single_call_budget_status": "within_budget",
+                "previous_window_cost_usd": 0,
+                "cumulative_cost_usd": 0.006,
+                "cumulative_budget_status": "within_budget",
+                "budget_window_scope": {
+                    "window": "run",
+                    "root_run_id": "run_provider_profile",
+                },
+            },
+        )
+        self.assertEqual(
+            entry["provider_rate_decision"],
+            {
+                "kind": "provider_rate_decision",
+                "version": 1,
+                "mode": "audit_only",
+                "scope": "single_call",
+                "status": "over_limit",
+                "requests_per_minute": 30,
+                "tokens_per_minute": 1200,
+                "concurrency": 2,
+                "observed_requests": 1,
+                "observed_total_tokens": 1500,
+                "limit_exceeded": ["tokens_per_minute"],
+                "reason": "single_call_tokens_exceed_profile",
+            },
+        )
+
+    def test_provider_cost_budget_accumulates_across_root_run_model_calls(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.core.runtime.run_tree import create_child_run_state
+        from app.core.runtime.state import create_initial_run_state
+        from app.core.storage import database, run_store
+        from app.core.storage.model_log_store import append_model_request_log, list_model_request_logs
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir):
+                with patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"):
+                    database.initialize_storage()
+                    root = create_initial_run_state("graph_root", "Root Graph")
+                    root["run_id"] = "run_budget_root"
+                    root["root_run_id"] = "run_budget_root"
+                    root["run_path"] = ["run_budget_root"]
+                    child = create_child_run_state(
+                        root,
+                        graph_id="graph_child",
+                        graph_name="Child Graph",
+                        parent_node_id="subgraph",
+                        invocation_kind="subgraph_node",
+                        invocation_key="embedded:Child",
+                    )
+                    child["run_id"] = "run_budget_child"
+                    child["run_path"] = ["run_budget_root", "run_budget_child"]
+                    run_store.save_run(root)
+                    run_store.save_run(child)
+
+                    common_provider_context = {
+                        "provider_cost_budget": {"limit_usd": 0.01, "window": "run"},
+                        "provider_pricing": {
+                            "input_per_million_usd": 2.0,
+                            "output_per_million_usd": 8.0,
+                        },
+                    }
+                    with use_model_call_context(
+                        run_id="run_budget_root",
+                        root_run_id="run_budget_root",
+                        node_id="root_agent",
+                        node_type="agent",
+                        phase="agent_response",
+                        **common_provider_context,
+                    ):
+                        append_model_request_log(
+                            provider_id="openai",
+                            transport="openai-compatible",
+                            model="gpt-4.1",
+                            path="/v1/chat/completions",
+                            request_raw={"model": "gpt-4.1", "messages": [{"role": "user", "content": "one"}]},
+                            response_raw={
+                                "choices": [{"message": {"content": "one"}}],
+                                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                            },
+                            duration_ms=10,
+                            status_code=200,
+                        )
+                    with use_model_call_context(
+                        run_id="run_budget_child",
+                        root_run_id="run_budget_root",
+                        parent_run_id="run_budget_root",
+                        parent_node_id="subgraph",
+                        node_id="child_agent",
+                        node_type="agent",
+                        phase="agent_response",
+                        **common_provider_context,
+                    ):
+                        append_model_request_log(
+                            provider_id="openai",
+                            transport="openai-compatible",
+                            model="gpt-4.1",
+                            path="/v1/chat/completions",
+                            request_raw={"model": "gpt-4.1", "messages": [{"role": "user", "content": "two"}]},
+                            response_raw={
+                                "choices": [{"message": {"content": "two"}}],
+                                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                            },
+                            duration_ms=10,
+                            status_code=200,
+                        )
+
+                    payload = list_model_request_logs(page=1, size=10)
+
+        entries_by_run = {entry["run_id"]: entry for entry in payload["entries"]}
+        root_estimate = entries_by_run["run_budget_root"]["provider_cost_estimate"]
+        child_estimate = entries_by_run["run_budget_child"]["provider_cost_estimate"]
+        self.assertEqual(root_estimate["estimated_cost_usd"], 0.006)
+        self.assertEqual(root_estimate["previous_window_cost_usd"], 0)
+        self.assertEqual(root_estimate["cumulative_cost_usd"], 0.006)
+        self.assertEqual(root_estimate["budget_status"], "within_budget")
+        self.assertEqual(child_estimate["estimated_cost_usd"], 0.006)
+        self.assertEqual(child_estimate["previous_window_cost_usd"], 0.006)
+        self.assertEqual(child_estimate["cumulative_cost_usd"], 0.012)
+        self.assertEqual(child_estimate["budget_status"], "over_budget")
+        self.assertEqual(child_estimate["cumulative_budget_status"], "over_budget")
+        self.assertEqual(
+            child_estimate["budget_window_scope"],
+            {"window": "run", "root_run_id": "run_budget_root"},
+        )
+
+    def test_provider_cost_budget_preflight_blocks_when_window_is_exhausted(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.core.runtime.state import create_initial_run_state
+        from app.core.storage import database, run_store
+        from app.core.storage.model_log_store import append_model_request_log, evaluate_provider_cost_budget_preflight
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir):
+                with patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"):
+                    database.initialize_storage()
+                    run = create_initial_run_state("graph_root", "Root Graph")
+                    run["run_id"] = "run_budget_guard"
+                    run["root_run_id"] = "run_budget_guard"
+                    run["run_path"] = ["run_budget_guard"]
+                    run_store.save_run(run)
+
+                    with use_model_call_context(
+                        run_id="run_budget_guard",
+                        root_run_id="run_budget_guard",
+                        node_id="agent",
+                        node_type="agent",
+                        phase="agent_response",
+                        provider_cost_budget={"limit_usd": 0.005, "window": "run"},
+                        provider_pricing={
+                            "input_per_million_usd": 2.0,
+                            "output_per_million_usd": 8.0,
+                        },
+                    ):
+                        append_model_request_log(
+                            provider_id="openai",
+                            transport="openai-compatible",
+                            model="gpt-4.1",
+                            path="/v1/chat/completions",
+                            request_raw={"model": "gpt-4.1", "messages": [{"role": "user", "content": "one"}]},
+                            response_raw={
+                                "choices": [{"message": {"content": "one"}}],
+                                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                            },
+                            duration_ms=10,
+                            status_code=200,
+                        )
+
+                    preflight = evaluate_provider_cost_budget_preflight(
+                        {
+                            "run_id": "run_budget_guard",
+                            "root_run_id": "run_budget_guard",
+                            "node_id": "agent",
+                        },
+                        {"limit_usd": 0.005, "window": "run"},
+                    )
+
+        self.assertEqual(
+            preflight,
+            {
+                "kind": "provider_cost_budget_preflight",
+                "version": 1,
+                "mode": "enforce_existing_window",
+                "currency": "USD",
+                "status": "blocked",
+                "reason": "provider_cost_budget_already_exhausted",
+                "budget_limit_usd": 0.005,
+                "budget_window": "run",
+                "previous_window_cost_usd": 0.006,
+                "budget_window_scope": {"window": "run", "root_run_id": "run_budget_guard"},
+            },
+        )
+
     def test_lists_model_request_logs_as_run_tree_without_legacy_jsonl(self) -> None:
         from app.core.runtime.model_call_context import use_model_call_context
         from app.core.runtime.run_tree import create_child_run_state

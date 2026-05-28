@@ -243,7 +243,7 @@ def test_external_runner_builds_buddy_template_run_and_returns_reply_text() -> N
 
 def test_external_runner_returns_buddy_visible_outputs_from_result_package() -> None:
     full_weather_reply = "今天北京天气晴朗，气温适中，空气质量良好。"
-    short_final_reply = "为您查询到北京今天的实时天气信息，请查看下方详细结果："
+    short_public_response = "为您查询到北京今天的实时天气信息，请查看下方详细结果："
     result_package = {
         "kind": "result_package",
         "outputs": {
@@ -276,13 +276,13 @@ def test_external_runner_returns_buddy_visible_outputs_from_result_package() -> 
             {
                 "node_id": "reply_and_select_capability",
                 "state_key": "public_response",
-                "value": short_final_reply,
+                "value": short_public_response,
                 "created_at": "2026-05-28T02:17:30+00:00",
                 "sequence": 3,
             },
         ]
         run_state["status"] = "completed"
-        run_state["state_snapshot"] = {"values": {"public_response": short_final_reply, "capability_result": result_package}}
+        run_state["state_snapshot"] = {"values": {"public_response": short_public_response, "capability_result": result_package}}
         run_state["state_events"] = deepcopy(state_events)
         run_state["artifacts"] = {"state_events": deepcopy(state_events)}
         return run_state
@@ -307,14 +307,14 @@ def test_external_runner_returns_buddy_visible_outputs_from_result_package() -> 
             buddy_model_ref="",
         )
 
-    assert result["final_text"] == "\n\n".join(["我先查一下。", full_weather_reply, short_final_reply])
+    assert result["final_text"] == "\n\n".join(["我先查一下。", full_weather_reply, short_public_response])
     assert result["visible_reply_text"] == result["final_text"]
-    assert result["visible_reply_parts"] == ["我先查一下。", full_weather_reply, short_final_reply]
+    assert result["visible_reply_parts"] == ["我先查一下。", full_weather_reply, short_public_response]
 
 
 def test_external_runner_streams_visible_outputs_from_run_events() -> None:
     full_weather_reply = "今天北京天气晴朗，气温适中，空气质量良好。"
-    short_final_reply = "为您查询到北京今天的实时天气信息，请查看下方详细结果："
+    short_public_response = "为您查询到北京今天的实时天气信息，请查看下方详细结果："
     result_package = {
         "kind": "result_package",
         "outputs": {
@@ -349,7 +349,7 @@ def test_external_runner_streams_visible_outputs_from_run_events() -> None:
             {
                 "node_id": "reply_and_select_capability",
                 "state_key": "public_response",
-                "value": short_final_reply,
+                "value": short_public_response,
                 "created_at": "2026-05-28T02:17:30+00:00",
                 "sequence": 3,
             },
@@ -357,7 +357,7 @@ def test_external_runner_streams_visible_outputs_from_run_events() -> None:
         for event in state_events:
             publish_run_event(run_id, "state.updated", event)
         run_state["status"] = "completed"
-        run_state["state_snapshot"] = {"values": {"public_response": short_final_reply, "capability_result": result_package}}
+        run_state["state_snapshot"] = {"values": {"public_response": short_public_response, "capability_result": result_package}}
         run_state["state_events"] = deepcopy(state_events)
         run_state["artifacts"] = {"state_events": deepcopy(state_events)}
         return run_state
@@ -387,7 +387,7 @@ def test_external_runner_streams_visible_outputs_from_run_events() -> None:
             ),
         )
 
-    assert streamed_parts == ["我先查一下。", full_weather_reply, short_final_reply]
+    assert streamed_parts == ["我先查一下。", full_weather_reply, short_public_response]
     assert result["visible_reply_parts"] == streamed_parts
 
 

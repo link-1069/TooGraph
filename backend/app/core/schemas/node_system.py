@@ -195,6 +195,53 @@ class AgentThinkingMode(str, Enum):
     XHIGH = "xhigh"
 
 
+class AgentProviderCachePolicy(str, Enum):
+    DEFAULT = "default"
+    DISABLED = "disabled"
+    PREFER = "prefer"
+
+
+class NodeSystemAgentProviderCostBudget(BaseModel):
+    limit_usd: float | None = Field(default=None, ge=0, alias="limitUsd")
+    window: Literal["node", "run", "day", "month"] = "run"
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
+
+
+class NodeSystemAgentProviderRateProfile(BaseModel):
+    requests_per_minute: int | None = Field(default=None, ge=1, alias="requestsPerMinute")
+    tokens_per_minute: int | None = Field(default=None, ge=1, alias="tokensPerMinute")
+    concurrency: int | None = Field(default=None, ge=1)
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
+
+
+class NodeSystemAgentProviderProfile(BaseModel):
+    request_timeout_seconds: float | None = Field(default=None, ge=1, le=3600, alias="requestTimeoutSeconds")
+    cache_policy: AgentProviderCachePolicy = Field(default=AgentProviderCachePolicy.DEFAULT, alias="cachePolicy")
+    cost_budget: NodeSystemAgentProviderCostBudget = Field(
+        default_factory=NodeSystemAgentProviderCostBudget,
+        alias="costBudget",
+    )
+    rate_profile: NodeSystemAgentProviderRateProfile = Field(
+        default_factory=NodeSystemAgentProviderRateProfile,
+        alias="rateProfile",
+    )
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
+
+    def is_default(self) -> bool:
+        return (
+            self.request_timeout_seconds is None
+            and self.cache_policy == AgentProviderCachePolicy.DEFAULT
+            and self.cost_budget.limit_usd is None
+            and self.cost_budget.window == "run"
+            and self.rate_profile.requests_per_minute is None
+            and self.rate_profile.tokens_per_minute is None
+            and self.rate_profile.concurrency is None
+        )
+
+
 class ConditionOperator(str, Enum):
     EQ = "=="
     NE = "!="
@@ -365,6 +412,11 @@ class NodeSystemAgentConfig(BaseModel):
     model: str = ""
     thinking_mode: AgentThinkingMode = Field(default=AgentThinkingMode.HIGH, alias="thinkingMode")
     temperature: float = Field(default=0.2, ge=0, le=2)
+    provider_profile: NodeSystemAgentProviderProfile = Field(
+        default_factory=NodeSystemAgentProviderProfile,
+        alias="providerProfile",
+        exclude_if=lambda value: value.is_default(),
+    )
 
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
 

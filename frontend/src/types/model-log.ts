@@ -35,6 +35,14 @@ export type ModelLogEntry = {
   graph_name?: string;
   run_path?: string[];
   subgraph_path?: string[];
+  provider_profile?: Record<string, unknown>;
+  provider_request_timeout_seconds?: number | null;
+  provider_cache_policy?: string;
+  provider_cache_decision?: Record<string, unknown>;
+  provider_cost_budget?: Record<string, unknown>;
+  provider_rate_profile?: Record<string, unknown>;
+  provider_cost_estimate?: Record<string, unknown>;
+  provider_rate_decision?: Record<string, unknown>;
 };
 
 export type ModelLogTreeNode = {

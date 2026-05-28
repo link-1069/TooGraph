@@ -128,6 +128,10 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.failedLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.rejectedLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.fallbackLabels/);
+  assert.match(componentSource, /agentDiagnostic\.providerProfile\.visible/);
+  assert.match(componentSource, /agentDiagnostic\.providerProfile\.requestTimeoutLabel/);
+  assert.match(componentSource, /agentDiagnostic\.providerProfile\.cacheDecisionLabel/);
+  assert.match(componentSource, /agentDiagnostic\.providerProfile\.rateProfileLabel/);
   assert.match(componentSource, /agentDiagnostic\.delegationWorker\.visible/);
   assert.match(componentSource, /agentDiagnostic\.delegationWorker\.taskId/);
   assert.match(componentSource, /agentDiagnostic\.delegationWorker\.outputLabels/);
@@ -152,6 +156,8 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /run-detail__diagnostic-warnings/);
   assert.match(componentSource, /run-detail__diagnostic-warning/);
   assert.match(componentSource, /t\("runDetail\.providerFallback"\)/);
+  assert.match(componentSource, /t\("runDetail\.providerProfile"\)/);
+  assert.match(componentSource, /t\("runDetail\.providerProfileRateProfile"\)/);
   assert.match(componentSource, /t\("runDetail\.delegationWorker"\)/);
   assert.match(componentSource, /t\("runDetail\.delegationWorkerRuns"\)/);
   assert.match(componentSource, /t\("runDetail\.delegationBoard"\)/);
@@ -193,6 +199,8 @@ test("RunDetailPage renders prompt snapshots inside context audit", () => {
   assert.match(componentSource, /snapshot\.userPromptHash/);
   assert.match(componentSource, /snapshot\.promptCachePolicy/);
   assert.match(componentSource, /t\("runDetail\.promptCachePolicy"\)/);
+  assert.match(componentSource, /snapshot\.promptCachePolicy\.requestedPolicy/);
+  assert.match(componentSource, /t\("runDetail\.promptCacheRequested"\)/);
   assert.match(componentSource, /t\("runDetail\.promptCacheStablePrefix"\)/);
   assert.match(componentSource, /t\("runDetail\.promptCacheDynamicSuffix"\)/);
 });

@@ -7,8 +7,19 @@ from typing import Any, Callable
 
 from app.core.model_catalog import get_default_video_model_ref, resolve_runtime_model_name
 from app.core.runtime.agent_multimodal import collect_input_attachments, prepare_model_input_attachments
-from app.core.runtime.agent_prompt import append_llm_prompt_snapshots, build_llm_prompt_snapshot, format_graph_state_input_prompt_lines
-from app.core.runtime.agent_response_generation import _resolve_media_runtime_config, repair_structured_output_with_runtime_model
+from app.core.runtime.agent_prompt import (
+    append_llm_prompt_snapshots,
+    apply_provider_prompt_cache_result,
+    build_llm_prompt_snapshot,
+    format_graph_state_input_prompt_lines,
+)
+from app.core.runtime.agent_response_generation import (
+    _resolve_media_runtime_config,
+    model_call_profile_context,
+    model_provider_request_profile_kwargs,
+    model_request_profile_kwargs,
+    repair_structured_output_with_runtime_model,
+)
 from app.core.runtime.model_call_context import use_model_call_context
 from app.core.runtime.structured_output import schema_for_value_type, validate_structured_output
 from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemStateDefinition
@@ -75,14 +86,16 @@ def generate_agent_subgraph_inputs(
         input_values=input_values,
         subgraph_keys=subgraph_keys,
         structured_output_schema=structured_output_schema,
+        provider_cache_policy=runtime_config.get("provider_cache_policy", "default"),
     )
+    model_call_context = model_call_profile_context(runtime_config, prompt_snapshot)
     thinking_level = runtime_config.get("resolved_thinking_level")
     if not isinstance(thinking_level, str):
         thinking_level = "medium" if runtime_config.get("resolved_thinking") else "off"
 
     if runtime_config.get("resolved_provider_id") == "local":
         try:
-            with use_model_call_context(phase="subgraph_input_planning"):
+            with use_model_call_context(phase="subgraph_input_planning", **model_call_context):
                 content, llm_meta = chat_with_local_model_with_meta_func(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
@@ -93,12 +106,13 @@ def generate_agent_subgraph_inputs(
                     thinking_level=thinking_level,
                     input_attachments=input_attachments,
                     structured_output_schema=structured_output_schema,
+                    **model_request_profile_kwargs(runtime_config),
                 )
         finally:
             cleanup_prepared_media_paths(attachment_meta.get("cleanup_paths"))
     else:
         try:
-            with use_model_call_context(phase="subgraph_input_planning"):
+            with use_model_call_context(phase="subgraph_input_planning", **model_call_context):
                 content, llm_meta = chat_with_model_ref_with_meta_func(
                     model_ref=runtime_config["resolved_model_ref"],
                     system_prompt=system_prompt,
@@ -109,6 +123,7 @@ def generate_agent_subgraph_inputs(
                     input_attachments=input_attachments,
                     structured_output_schema=structured_output_schema,
                     model_runtime_fixture=runtime_config.get("model_runtime_fixture"),
+                    **model_provider_request_profile_kwargs(runtime_config, prompt_snapshot),
                 )
         finally:
             cleanup_prepared_media_paths(attachment_meta.get("cleanup_paths"))
@@ -148,6 +163,7 @@ def generate_agent_subgraph_inputs(
 
     reasoning = str(llm_meta.get("reasoning") or "").strip()
     structured_output_strategy = str(llm_meta.get("structured_output_strategy") or "json_schema")
+    prompt_snapshot = apply_provider_prompt_cache_result(prompt_snapshot, llm_meta.get("provider_prompt_cache_result"))
     updated_runtime_config = {
         **runtime_config,
         "prompt_snapshots": append_llm_prompt_snapshots(runtime_config, prompt_snapshot, repair_meta.get("prompt_snapshot")),
@@ -157,6 +173,8 @@ def generate_agent_subgraph_inputs(
         "subgraph_input_provider_reasoning_captured": bool(reasoning),
         "subgraph_input_provider_response_id": llm_meta.get("response_id"),
         "subgraph_input_provider_usage": llm_meta.get("usage"),
+        "subgraph_input_provider_cost_estimate": llm_meta.get("provider_cost_estimate"),
+        "subgraph_input_provider_rate_decision": llm_meta.get("provider_rate_decision"),
         "subgraph_input_provider_timings": llm_meta.get("timings"),
         "subgraph_input_provider_fallback_used": bool(llm_meta.get("provider_fallback_used")),
         "subgraph_input_requested_model_ref": llm_meta.get("requested_model_ref"),
@@ -173,6 +191,8 @@ def generate_agent_subgraph_inputs(
         "subgraph_input_structured_output_repair_provider_model": repair_meta.get("model"),
         "subgraph_input_structured_output_repair_provider_response_id": repair_meta.get("response_id"),
         "subgraph_input_structured_output_repair_provider_usage": repair_meta.get("usage"),
+        "subgraph_input_structured_output_repair_provider_cost_estimate": repair_meta.get("provider_cost_estimate"),
+        "subgraph_input_structured_output_repair_provider_rate_decision": repair_meta.get("provider_rate_decision"),
         "subgraph_input_structured_output_repair_provider_timings": repair_meta.get("timings"),
         "subgraph_input_structured_output_repair_provider_fallback_used": bool(repair_meta.get("provider_fallback_used")),
         "subgraph_input_structured_output_repair_requested_model_ref": repair_meta.get("requested_model_ref"),

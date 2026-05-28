@@ -11,6 +11,11 @@ from app.core.model_catalog import (
     normalize_model_ref,
     resolve_runtime_model_name,
 )
+from app.core.model_provider_costs import normalize_provider_model_pricing
+from app.core.model_provider_credentials import (
+    normalize_provider_credential_pool,
+    preserve_provider_credential_pool_secrets,
+)
 from app.core.model_provider_templates import get_provider_template, normalize_transport
 from app.core.storage.model_log_store import (
     get_model_log_retention_settings,
@@ -72,8 +77,19 @@ class SettingsProviderModelPayload(BaseModel):
     modalities: list[str] = Field(default_factory=lambda: ["text"])
     capabilities: dict[str, bool] = Field(default_factory=dict)
     permissions: list[str] = Field(default_factory=list)
+    pricing: dict[str, object] | None = None
     context_window: int | None = Field(default=None, alias="context_window")
     max_tokens: int | None = Field(default=None, alias="max_tokens")
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+
+class SettingsProviderCredentialPayload(BaseModel):
+    credential_id: str = Field(alias="credential_id", min_length=1)
+    api_key: str | None = Field(default=None, alias="api_key")
+    status: str = "active"
+    cooldown_until: str | None = Field(default=None, alias="cooldown_until")
+    failure_count: int = Field(default=0, alias="failure_count", ge=0)
 
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
@@ -88,6 +104,7 @@ class SettingsModelProviderPayload(BaseModel):
     auth_scheme: str | None = Field(default=None, alias="auth_scheme")
     auth_mode: str | None = Field(default=None, alias="auth_mode")
     request_timeout_seconds: float | None = Field(default=None, alias="request_timeout_seconds", ge=1, le=3600)
+    credential_pool: list[SettingsProviderCredentialPayload] | None = Field(default=None, alias="credential_pool")
     models: list[SettingsProviderModelPayload] = Field(default_factory=list)
 
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
@@ -214,6 +231,36 @@ def _merge_model_providers(
             if "auth_scheme" in existing_provider
             else template.get("auth_scheme", "Bearer")
         )
+        existing_models = existing_provider.get("models") if isinstance(existing_provider.get("models"), list) else []
+        existing_models_by_name = {
+            str(model.get("model") or "").strip().lower(): model
+            for model in existing_models
+            if isinstance(model, dict) and str(model.get("model") or "").strip()
+        }
+        model_configs: list[dict[str, object]] = []
+        for model_payload in provider_payload.models:
+            existing_model = existing_models_by_name.get(str(model_payload.model or "").strip().lower(), {})
+            model_config: dict[str, object] = {
+                "model": model_payload.model,
+                "label": model_payload.label or model_payload.model,
+                "route_target": model_payload.route_target or "",
+                "reasoning": model_payload.reasoning,
+                "modalities": model_payload.modalities or ["text"],
+                "capabilities": {
+                    str(key): bool(value)
+                    for key, value in model_payload.capabilities.items()
+                    if str(key or "").strip()
+                },
+                "permissions": _dedupe_strings(model_payload.permissions),
+                "context_window": model_payload.context_window,
+                "max_tokens": model_payload.max_tokens,
+            }
+            pricing = normalize_provider_model_pricing(
+                model_payload.pricing if model_payload.pricing is not None else existing_model.get("pricing")
+            )
+            if pricing:
+                model_config["pricing"] = pricing
+            model_configs.append(model_config)
 
         provider_config = {
             "label": provider_payload.label or existing_provider.get("label") or template.get("label") or provider_key,
@@ -231,25 +278,25 @@ def _merge_model_providers(
                 if provider_payload.request_timeout_seconds is not None
                 else existing_provider.get("request_timeout_seconds") or template.get("request_timeout_seconds")
             ),
-            "models": [
-                {
-                    "model": model_payload.model,
-                    "label": model_payload.label or model_payload.model,
-                    "route_target": model_payload.route_target or "",
-                    "reasoning": model_payload.reasoning,
-                    "modalities": model_payload.modalities or ["text"],
-                    "capabilities": {
-                        str(key): bool(value)
-                        for key, value in model_payload.capabilities.items()
-                        if str(key or "").strip()
-                    },
-                    "permissions": _dedupe_strings(model_payload.permissions),
-                    "context_window": model_payload.context_window,
-                    "max_tokens": model_payload.max_tokens,
-                }
-                for model_payload in provider_payload.models
-            ],
+            "models": model_configs,
         }
+
+        credential_pool_source = (
+            [
+                credential.model_dump(by_alias=True)
+                for credential in provider_payload.credential_pool
+            ]
+            if provider_payload.credential_pool is not None
+            else existing_provider.get("credential_pool")
+        )
+        credential_pool = normalize_provider_credential_pool(credential_pool_source, include_secrets=True)
+        if provider_payload.credential_pool is not None:
+            credential_pool = preserve_provider_credential_pool_secrets(
+                credential_pool,
+                existing_provider.get("credential_pool"),
+            )
+        if credential_pool:
+            provider_config["credential_pool"] = credential_pool
 
         if incoming_api_key:
             provider_config["api_key"] = incoming_api_key

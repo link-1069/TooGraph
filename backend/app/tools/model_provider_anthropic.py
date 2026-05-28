@@ -88,6 +88,79 @@ def coalesce_anthropic_stream_response(stream_text: str) -> dict[str, Any]:
     return payload
 
 
+def _prompt_cache_prefer_requested(prompt_cache_policy: dict[str, Any] | None) -> bool:
+    return (
+        isinstance(prompt_cache_policy, dict)
+        and str(prompt_cache_policy.get("requested_policy") or "").strip().lower() == "prefer"
+    )
+
+
+def _anthropic_prompt_cache_result(
+    prompt_cache_policy: dict[str, Any] | None,
+    *,
+    mode: str,
+    provider_cache_control: str,
+    reason: str,
+    usage: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not _prompt_cache_prefer_requested(prompt_cache_policy):
+        return {}
+    policy = prompt_cache_policy or {}
+    result: dict[str, Any] = {
+        "kind": "provider_prompt_cache_result",
+        "version": 1,
+        "requested_policy": "prefer",
+        "eligible": bool(policy.get("eligible")),
+        "mode": mode,
+        "provider_cache_control": provider_cache_control,
+        "reason": reason,
+    }
+    for key in ("stable_prefix_hash", "cache_key"):
+        value = policy.get(key)
+        if isinstance(value, str) and value.strip():
+            result[key] = value.strip()
+    if isinstance(usage, dict) and usage:
+        result["usage"] = dict(usage)
+    return result
+
+
+def _anthropic_prompt_cache_system_payload(
+    system_prompt: str,
+    prompt_cache_policy: dict[str, Any] | None,
+) -> tuple[str | list[dict[str, Any]], dict[str, Any]]:
+    if not _prompt_cache_prefer_requested(prompt_cache_policy):
+        return system_prompt, {}
+    if not bool((prompt_cache_policy or {}).get("eligible")):
+        return system_prompt, _anthropic_prompt_cache_result(
+            prompt_cache_policy,
+            mode="not_applied",
+            provider_cache_control="not_applied",
+            reason=str((prompt_cache_policy or {}).get("reason") or "prompt_cache_policy_ineligible"),
+        )
+    if not system_prompt.strip():
+        return system_prompt, _anthropic_prompt_cache_result(
+            prompt_cache_policy,
+            mode="not_applied",
+            provider_cache_control="not_applied",
+            reason="empty_stable_prefix",
+        )
+    return (
+        [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
+        _anthropic_prompt_cache_result(
+            prompt_cache_policy,
+            mode="provider_applied",
+            provider_cache_control="anthropic_cache_control",
+            reason="anthropic_system_block_cache_control",
+        ),
+    )
+
+
 def chat_anthropic(
     *,
     provider_id: str,
@@ -103,6 +176,7 @@ def chat_anthropic(
     post_streaming_json_with_fallback_fn: Callable[..., tuple[dict[str, Any], dict[str, Any], str | None, bool]],
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
     request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SEC,
 ) -> tuple[str, dict[str, Any]]:
     timeout_sec = normalize_request_timeout_seconds(request_timeout_seconds)
@@ -116,9 +190,13 @@ def chat_anthropic(
     max_output_tokens = max_tokens or 4096
     if isinstance(budget_tokens, int):
         max_output_tokens = max(max_output_tokens, budget_tokens + 1024)
+    system_payload, provider_prompt_cache_result = _anthropic_prompt_cache_system_payload(
+        system_prompt,
+        prompt_cache_policy,
+    )
     request_payload: dict[str, Any] = {
         "model": model,
-        "system": system_prompt,
+        "system": system_payload,
         "max_tokens": max_output_tokens,
         "temperature": temperature,
         "stream": True,
@@ -165,7 +243,15 @@ def chat_anthropic(
         started_at=started_at,
         status_code=200,
     )
-    return extract_anthropic_text(response_payload), {
+    if provider_prompt_cache_result:
+        provider_prompt_cache_result = _anthropic_prompt_cache_result(
+            prompt_cache_policy,
+            mode=str(provider_prompt_cache_result.get("mode") or ""),
+            provider_cache_control=str(provider_prompt_cache_result.get("provider_cache_control") or ""),
+            reason=str(provider_prompt_cache_result.get("reason") or ""),
+            usage=response_payload.get("usage") if isinstance(response_payload.get("usage"), dict) else None,
+        )
+    meta = {
         "model": response_payload.get("model") or model,
         "provider_id": provider_id,
         "temperature": temperature,
@@ -178,4 +264,9 @@ def chat_anthropic(
         "reasoning_format": "anthropic-thinking" if native_thinking_payload else None,
         "stream_fallback_error": stream_fallback_error,
         "request_timeout_seconds": timeout_sec,
+    }
+    if provider_prompt_cache_result:
+        meta["provider_prompt_cache_result"] = provider_prompt_cache_result
+    return extract_anthropic_text(response_payload), {
+        **meta,
     }

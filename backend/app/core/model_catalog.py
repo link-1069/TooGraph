@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.model_provider_credentials import (
+    has_configured_provider_credential,
+    normalize_provider_credential_pool,
+)
 from app.core.model_provider_templates import get_provider_template, list_provider_templates, normalize_transport
 from app.core.storage.settings_store import load_app_settings
 from app.tools.local_llm import (
@@ -197,6 +201,10 @@ def _normalize_provider_config(
         "request_timeout_seconds": normalize_request_timeout_seconds(
             saved_provider.get("request_timeout_seconds") or template.get("request_timeout_seconds")
         ),
+        "credential_pool": normalize_provider_credential_pool(
+            saved_provider.get("credential_pool") or template.get("credential_pool"),
+            include_secrets=True,
+        ),
         "requires_login": bool(template.get("requires_login") or saved_provider.get("requires_login")),
         "saved": existing_saved_provider,
         "models": _normalize_provider_models(saved_provider.get("models") or template.get("models")),
@@ -222,7 +230,7 @@ def _is_provider_configured(provider: dict[str, Any]) -> bool:
         return False
     if provider["provider_id"] == "openai-codex":
         return bool(get_codex_auth_status().get("authenticated"))
-    if _provider_requires_api_key(provider) and not str(provider.get("api_key") or "").strip():
+    if _provider_requires_api_key(provider) and not has_configured_provider_credential(provider):
         return False
     return True
 
@@ -386,7 +394,7 @@ def _build_provider_entry(
     discovered_models: list[dict[str, Any]] | None = None,
     runtime_config: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    api_key_configured = bool(str(provider.get("api_key") or "").strip())
+    api_key_configured = has_configured_provider_credential(provider)
     auth_status = None
     if provider["provider_id"] == "local":
         api_key_configured = api_key_configured or has_local_llm_api_key_configured()
@@ -406,6 +414,7 @@ def _build_provider_entry(
         "auth_scheme": provider.get("auth_scheme") if provider.get("auth_scheme") is not None else "Bearer",
         "auth_mode": provider.get("auth_mode") or "api_key",
         "request_timeout_seconds": provider.get("request_timeout_seconds"),
+        "credential_pool": normalize_provider_credential_pool(provider.get("credential_pool")),
         "requires_login": bool(provider.get("requires_login")),
         "saved": bool(provider.get("saved")),
         "api_key_configured": api_key_configured,

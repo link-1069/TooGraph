@@ -24,10 +24,21 @@ export type AgentDiagnostic = {
   warnings: string[];
   badges: string[];
   capabilitySelection: CapabilitySelectionDiagnostic;
+  providerProfile: ProviderProfileDiagnostic;
   providerFallback: ProviderFallbackDiagnostic;
   permissionApproval: PermissionApprovalDiagnostic;
   delegationWorker: DelegationWorkerDiagnostic;
   delegationBoard: DelegationBoardDiagnostic;
+};
+
+export type ProviderProfileDiagnostic = {
+  visible: boolean;
+  requestTimeoutLabel: string;
+  cachePolicyLabel: string;
+  cacheDecisionLabel: string;
+  costBudgetLabel: string;
+  rateProfileLabel: string;
+  evidenceLabels: string[];
 };
 
 export type ProviderFallbackDiagnostic = {
@@ -85,6 +96,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     stateValues.capability_selection_trace,
     stateValues.capability_selection_reason,
   );
+  const providerProfile = buildProviderProfileDiagnostic(resolveProviderProfileRuntimeConfig(run));
   const providerFallback = buildProviderFallbackDiagnostic(resolveProviderFallbackTrace(run, stateValues));
   const permissionApproval = buildPermissionApprovalDiagnostic(run);
   const delegationWorker = buildDelegationWorkerDiagnostic(
@@ -100,6 +112,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     || capabilityCallCount !== null
     || warnings.length > 0
     || capabilitySelection.visible
+    || providerProfile.visible
     || providerFallback.visible
     || permissionApproval.visible
     || delegationWorker.visible
@@ -124,11 +137,150 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     warnings,
     badges,
     capabilitySelection,
+    providerProfile,
     providerFallback,
     permissionApproval,
     delegationWorker,
     delegationBoard,
   };
+}
+
+function resolveProviderProfileRuntimeConfig(run: RunDetail) {
+  for (const execution of [...listNodeExecutionsDeep(run.node_executions)].reverse()) {
+    const runtimeConfig = recordFromUnknown(execution.artifacts?.runtime_config);
+    if (runtimeConfigHasProviderProfileEvidence(runtimeConfig)) {
+      return runtimeConfig;
+    }
+  }
+  return {};
+}
+
+function runtimeConfigHasProviderProfileEvidence(runtimeConfig: Record<string, unknown>) {
+  return buildProviderProfileDiagnostic(runtimeConfig).visible;
+}
+
+function buildProviderProfileDiagnostic(value: unknown): ProviderProfileDiagnostic {
+  const runtimeConfig = recordFromUnknown(value);
+  const profile = recordFromUnknown(runtimeConfig.provider_profile);
+  const requestTimeout =
+    numberFromUnknown(runtimeConfig.provider_request_timeout_seconds)
+    ?? numberFromUnknown(profile.request_timeout_seconds);
+  const requestTimeoutLabel = requestTimeout !== null ? `${formatCompactNumber(requestTimeout)}s` : "";
+  const cachePolicyLabel =
+    textFromUnknown(runtimeConfig.provider_cache_policy)
+    || textFromUnknown(profile.cache_policy);
+  const cacheDecisionLabel = formatProviderCacheDecision(resolveProviderCacheDecision(runtimeConfig));
+  const costBudgetLabel = formatProviderCostBudget(
+    firstNonEmptyRecord(runtimeConfig.provider_cost_budget, profile.cost_budget),
+  );
+  const rateProfileLabel = formatProviderRateProfile(
+    firstNonEmptyRecord(runtimeConfig.provider_rate_profile, profile.rate_profile),
+  );
+  const visible = Boolean(
+    requestTimeoutLabel
+    || (cachePolicyLabel && cachePolicyLabel !== "default")
+    || cacheDecisionLabel
+    || costBudgetLabel
+    || rateProfileLabel
+  );
+  const evidenceLabels = [
+    requestTimeoutLabel ? `timeout: ${requestTimeoutLabel}` : "",
+    cachePolicyLabel && cachePolicyLabel !== "default" ? `cache policy: ${cachePolicyLabel}` : "",
+    cacheDecisionLabel ? `cache decision: ${cacheDecisionLabel}` : "",
+    costBudgetLabel ? `cost budget: ${costBudgetLabel}` : "",
+    rateProfileLabel ? `rate: ${rateProfileLabel}` : "",
+  ].filter(Boolean);
+
+  return {
+    visible,
+    requestTimeoutLabel,
+    cachePolicyLabel,
+    cacheDecisionLabel,
+    costBudgetLabel,
+    rateProfileLabel,
+    evidenceLabels,
+  };
+}
+
+function firstNonEmptyRecord(...values: unknown[]) {
+  for (const value of values) {
+    const record = recordFromUnknown(value);
+    if (Object.keys(record).length > 0) {
+      return record;
+    }
+  }
+  return {};
+}
+
+function resolveProviderCacheDecision(runtimeConfig: Record<string, unknown>) {
+  const directDecision = recordFromUnknown(runtimeConfig.provider_cache_decision);
+  if (Object.keys(directDecision).length > 0) {
+    return normalizeProviderCacheDecision(directDecision);
+  }
+  const snapshots = recordList(runtimeConfig.prompt_snapshots);
+  for (const snapshot of [...snapshots].reverse()) {
+    const policy = recordFromUnknown(snapshot.prompt_cache_policy);
+    if (Object.keys(policy).length > 0) {
+      return normalizeProviderCacheDecision(policy);
+    }
+  }
+  return normalizeProviderCacheDecision({});
+}
+
+function normalizeProviderCacheDecision(record: Record<string, unknown>) {
+  const requestedPolicy = textFromUnknown(record.requested_policy);
+  const mode = textFromUnknown(record.mode);
+  const providerCacheControl = textFromUnknown(record.provider_cache_control);
+  const eligible = typeof record.eligible === "boolean" ? record.eligible : null;
+  const reason = textFromUnknown(record.reason);
+  return { requestedPolicy, mode, providerCacheControl, eligible, reason };
+}
+
+function formatProviderCacheDecision(decision: ReturnType<typeof normalizeProviderCacheDecision>) {
+  const policy = decision.requestedPolicy || decision.mode;
+  if (
+    (policy === "" || policy === "default")
+    && (!decision.providerCacheControl || decision.providerCacheControl === "not_applied")
+  ) {
+    return "";
+  }
+  if (!policy && !decision.providerCacheControl && decision.eligible === null && !decision.reason) {
+    return "";
+  }
+  const eligibility = decision.eligible === null ? "" : decision.eligible ? "eligible" : "ineligible";
+  const parts = [policy, decision.providerCacheControl, eligibility].filter(Boolean);
+  const base = parts.join(" / ");
+  return decision.reason ? `${base} (${decision.reason})` : base;
+}
+
+function formatProviderCostBudget(record: Record<string, unknown>) {
+  const limitUsd = numberFromUnknown(record.limit_usd);
+  if (limitUsd === null) {
+    return "";
+  }
+  const window = textFromUnknown(record.window) || "run";
+  return `$${formatCompactNumber(limitUsd)} / ${window}`;
+}
+
+function formatProviderRateProfile(record: Record<string, unknown>) {
+  const labels = [
+    formatRateLimit(numberFromUnknown(record.requests_per_minute), "rpm"),
+    formatRateLimit(numberFromUnknown(record.tokens_per_minute), "tpm"),
+    formatRateLimit(numberFromUnknown(record.concurrency), "concurrency", { prefix: true }),
+  ].filter(Boolean);
+  return labels.join(", ");
+}
+
+function formatRateLimit(value: number | null, unit: string, options: { prefix?: boolean } = {}) {
+  if (value === null) {
+    return "";
+  }
+  const formatted = formatCompactNumber(value);
+  return options.prefix ? `${unit} ${formatted}` : `${formatted} ${unit}`;
+}
+
+function formatCompactNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
 }
 
 function resolveDelegationWorkerPackage(run: RunDetail, stateValues: Record<string, unknown>) {

@@ -178,6 +178,7 @@
                       {{ t("runDetail.promptCacheDynamicSuffix") }} {{ snapshot.promptCachePolicy.dynamicSuffixHash }}
                     </span>
                     <span v-if="snapshot.promptCachePolicy.cacheKey">{{ t("runDetail.promptCacheKey") }} {{ snapshot.promptCachePolicy.cacheKey }}</span>
+                    <span v-if="snapshot.promptCachePolicy.requestedPolicy">{{ t("runDetail.promptCacheRequested") }} {{ snapshot.promptCachePolicy.requestedPolicy }}</span>
                     <span v-if="snapshot.promptCachePolicy.providerCacheControl">{{ t("runDetail.promptCacheProvider") }} {{ snapshot.promptCachePolicy.providerCacheControl }}</span>
                     <span v-if="snapshot.promptCachePolicy.reason">{{ snapshot.promptCachePolicy.reason }}</span>
                     <span v-for="invalidator in snapshot.promptCachePolicy.invalidators" :key="`${snapshot.key}-cache-${invalidator}`">
@@ -593,6 +594,34 @@
                   <strong>{{ t("runDetail.capabilityFallback") }}</strong>
                   <span v-for="label in agentDiagnostic.capabilitySelection.fallbackLabels" :key="label">{{ label }}</span>
                 </div>
+              </div>
+            </div>
+            <div v-if="agentDiagnostic.providerProfile.visible" class="run-detail__capability-selection run-detail__provider-profile">
+              <h4>{{ t("runDetail.providerProfile") }}</h4>
+              <dl class="run-detail__diagnostic-facts">
+                <div v-if="agentDiagnostic.providerProfile.requestTimeoutLabel">
+                  <dt>{{ t("runDetail.providerProfileRequestTimeout") }}</dt>
+                  <dd>{{ agentDiagnostic.providerProfile.requestTimeoutLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerProfile.cachePolicyLabel">
+                  <dt>{{ t("runDetail.providerProfileCachePolicy") }}</dt>
+                  <dd>{{ agentDiagnostic.providerProfile.cachePolicyLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerProfile.cacheDecisionLabel">
+                  <dt>{{ t("runDetail.providerProfileCacheDecision") }}</dt>
+                  <dd>{{ agentDiagnostic.providerProfile.cacheDecisionLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerProfile.costBudgetLabel">
+                  <dt>{{ t("runDetail.providerProfileCostBudget") }}</dt>
+                  <dd>{{ agentDiagnostic.providerProfile.costBudgetLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerProfile.rateProfileLabel">
+                  <dt>{{ t("runDetail.providerProfileRateProfile") }}</dt>
+                  <dd>{{ agentDiagnostic.providerProfile.rateProfileLabel }}</dd>
+                </div>
+              </dl>
+              <div v-if="agentDiagnostic.providerProfile.evidenceLabels.length > 0" class="run-detail__badges">
+                <span v-for="label in agentDiagnostic.providerProfile.evidenceLabels" :key="label">{{ label }}</span>
               </div>
             </div>
             <div v-if="agentDiagnostic.providerFallback.visible" class="run-detail__capability-selection run-detail__provider-fallback">
@@ -1999,7 +2028,8 @@ function statusBadgeClass(status: string) {
   min-width: 0;
 }
 
-.run-detail__provider-fallback h4 {
+.run-detail__provider-fallback h4,
+.run-detail__provider-profile h4 {
   margin: 0;
   color: rgba(60, 41, 20, 0.86);
   font-size: 0.92rem;

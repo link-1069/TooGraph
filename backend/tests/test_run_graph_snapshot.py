@@ -24,6 +24,7 @@ class RunGraphSnapshotTests(unittest.TestCase):
                 "buddy_capability_curator",
                 "buddy_context_compaction",
                 "buddy_improvement_review_workflow",
+                "delegation_worker_batch_workflow",
                 "embedding_maintenance",
                 "toograph_page_operation_workflow",
             ],

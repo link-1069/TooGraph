@@ -40,6 +40,13 @@ export type SettingsProviderModel = {
   max_tokens?: number | null;
 };
 
+export type SettingsProviderCredential = {
+  credential_id: string;
+  status: string;
+  cooldown_until?: string | null;
+  failure_count: number;
+};
+
 export type SettingsModelProvider = {
   provider_id: string;
   label: string;
@@ -53,6 +60,7 @@ export type SettingsModelProvider = {
   auth_scheme?: string;
   auth_mode?: string;
   request_timeout_seconds?: number;
+  credential_pool?: SettingsProviderCredential[];
   requires_login?: boolean;
   auth_status?: OpenAICodexAuthStatus;
   api_key_configured?: boolean;
@@ -92,6 +100,7 @@ export type SettingsPayload = {
       auth_scheme?: string;
       auth_mode?: string;
       request_timeout_seconds?: number;
+      credential_pool?: SettingsProviderCredential[];
       models: Array<{
         model: string;
         label?: string;

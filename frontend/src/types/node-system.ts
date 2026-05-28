@@ -64,6 +64,20 @@ export type AgentActionBinding = {
 
 export type AgentThinkingMode = "off" | "low" | "medium" | "high" | "xhigh" | "on";
 
+export type AgentProviderProfile = {
+  requestTimeoutSeconds?: number | null;
+  cachePolicy?: "default" | "disabled" | "prefer";
+  costBudget?: {
+    limitUsd?: number | null;
+    window?: "node" | "run" | "day" | "month";
+  };
+  rateProfile?: {
+    requestsPerMinute?: number | null;
+    tokensPerMinute?: number | null;
+    concurrency?: number | null;
+  };
+};
+
 export type NodeUi = {
   position: GraphPosition;
   collapsed?: boolean;
@@ -102,6 +116,7 @@ export type AgentNode = {
     model: string;
     thinkingMode: AgentThinkingMode;
     temperature: number;
+    providerProfile?: AgentProviderProfile;
   };
 };
 

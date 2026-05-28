@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import importlib
+import importlib.machinery
+import importlib.util
 import os
 import platform
 import shutil
@@ -155,14 +156,34 @@ def _resolve_imageio_ffmpeg(root: Path, *, run_func: RunFunc) -> FfmpegTools | N
 
 
 def _import_imageio_ffmpeg(target_dir: Path) -> Any | None:
-    if target_dir.is_dir():
-        target = str(target_dir)
+    if not target_dir.is_dir():
+        return None
+    target = str(target_dir)
+    spec = importlib.machinery.PathFinder.find_spec("imageio_ffmpeg", [target])
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get("imageio_ffmpeg")
+    inserted_path = False
+    try:
+        sys.modules["imageio_ffmpeg"] = module
         if target not in sys.path:
             sys.path.insert(0, target)
-    try:
-        return importlib.import_module("imageio_ffmpeg")
+            inserted_path = True
+        spec.loader.exec_module(module)
+        return module
     except Exception:
         return None
+    finally:
+        if previous_module is not None:
+            sys.modules["imageio_ffmpeg"] = previous_module
+        else:
+            sys.modules.pop("imageio_ffmpeg", None)
+        if inserted_path:
+            try:
+                sys.path.remove(target)
+            except ValueError:
+                pass
 
 
 def _is_valid_executable(command: str, *, run_func: RunFunc) -> bool:

@@ -5,7 +5,12 @@ from typing import Any, Callable
 
 from app.core.model_catalog import get_default_video_model_ref, resolve_runtime_model_name
 from app.core.runtime.agent_multimodal import collect_input_attachments, prepare_model_input_attachments
-from app.core.runtime.agent_prompt import append_llm_prompt_snapshots, build_effective_system_prompt, build_llm_prompt_snapshot
+from app.core.runtime.agent_prompt import (
+    append_llm_prompt_snapshots,
+    apply_provider_prompt_cache_result,
+    build_effective_system_prompt,
+    build_llm_prompt_snapshot,
+)
 from app.core.runtime.model_call_context import use_model_call_context
 from app.core.runtime.llm_output_parser import build_output_key_aliases, parse_llm_json_response
 from app.core.runtime.structured_output import (
@@ -18,6 +23,55 @@ from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemStateDef
 from app.core.thinking_levels import resolve_effective_thinking_level
 from app.tools.local_llm import _chat_with_local_model_with_meta
 from app.tools.model_provider_client import chat_with_model_ref_with_meta
+
+
+def model_request_profile_kwargs(runtime_config: dict[str, Any]) -> dict[str, Any]:
+    request_timeout_seconds = runtime_config.get("provider_request_timeout_seconds")
+    return {"request_timeout_seconds": request_timeout_seconds} if request_timeout_seconds is not None else {}
+
+
+def model_provider_request_profile_kwargs(
+    runtime_config: dict[str, Any],
+    prompt_snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    kwargs = model_request_profile_kwargs(runtime_config)
+    prompt_cache_policy = prompt_snapshot.get("prompt_cache_policy")
+    if isinstance(prompt_cache_policy, dict) and prompt_cache_policy:
+        kwargs["prompt_cache_policy"] = prompt_cache_policy
+    provider_cost_budget = runtime_config.get("provider_cost_budget")
+    if isinstance(provider_cost_budget, dict) and provider_cost_budget:
+        kwargs["provider_cost_budget"] = provider_cost_budget
+    provider_rate_profile = runtime_config.get("provider_rate_profile")
+    if isinstance(provider_rate_profile, dict) and provider_rate_profile:
+        kwargs["provider_rate_profile"] = provider_rate_profile
+    return kwargs
+
+
+def model_call_profile_context(
+    runtime_config: dict[str, Any],
+    prompt_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    context: dict[str, Any] = {}
+    provider_profile = runtime_config.get("provider_profile")
+    if isinstance(provider_profile, dict) and provider_profile:
+        context["provider_profile"] = dict(provider_profile)
+    request_timeout_seconds = runtime_config.get("provider_request_timeout_seconds")
+    if request_timeout_seconds is not None:
+        context["provider_request_timeout_seconds"] = request_timeout_seconds
+    provider_cache_policy = str(runtime_config.get("provider_cache_policy") or "").strip()
+    if provider_cache_policy:
+        context["provider_cache_policy"] = provider_cache_policy
+    provider_cost_budget = runtime_config.get("provider_cost_budget")
+    if isinstance(provider_cost_budget, dict) and provider_cost_budget:
+        context["provider_cost_budget"] = dict(provider_cost_budget)
+    provider_rate_profile = runtime_config.get("provider_rate_profile")
+    if isinstance(provider_rate_profile, dict) and provider_rate_profile:
+        context["provider_rate_profile"] = dict(provider_rate_profile)
+    if isinstance(prompt_snapshot, dict):
+        provider_cache_decision = prompt_snapshot.get("prompt_cache_policy")
+        if isinstance(provider_cache_decision, dict) and provider_cache_decision:
+            context["provider_cache_decision"] = dict(provider_cache_decision)
+    return context
 
 
 def generate_agent_response(
@@ -65,7 +119,9 @@ def generate_agent_response(
         input_values=input_values,
         output_keys=output_keys,
         structured_output_schema=structured_output_schema,
+        provider_cache_policy=runtime_config.get("provider_cache_policy", "default"),
     )
+    model_call_context = model_call_profile_context(runtime_config, prompt_snapshot)
 
     thinking_level = runtime_config.get("resolved_thinking_level")
     if not isinstance(thinking_level, str):
@@ -73,7 +129,7 @@ def generate_agent_response(
 
     if runtime_config.get("resolved_provider_id") == "local":
         try:
-            with use_model_call_context(phase="agent_response"):
+            with use_model_call_context(phase="agent_response", **model_call_context):
                 content, llm_meta = chat_with_local_model_with_meta_func(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
@@ -85,12 +141,13 @@ def generate_agent_response(
                     on_delta=on_delta,
                     input_attachments=input_attachments,
                     structured_output_schema=structured_output_schema,
+                    **model_request_profile_kwargs(runtime_config),
                 )
         finally:
             _cleanup_prepared_media_paths(attachment_meta.get("cleanup_paths"))
     else:
         try:
-            with use_model_call_context(phase="agent_response"):
+            with use_model_call_context(phase="agent_response", **model_call_context):
                 content, llm_meta = chat_with_model_ref_with_meta_func(
                     model_ref=runtime_config["resolved_model_ref"],
                     system_prompt=system_prompt,
@@ -102,6 +159,7 @@ def generate_agent_response(
                     input_attachments=input_attachments,
                     structured_output_schema=structured_output_schema,
                     model_runtime_fixture=runtime_config.get("model_runtime_fixture"),
+                    **model_provider_request_profile_kwargs(runtime_config, prompt_snapshot),
                 )
         finally:
             _cleanup_prepared_media_paths(attachment_meta.get("cleanup_paths"))
@@ -147,6 +205,7 @@ def generate_agent_response(
     response_payload: dict[str, Any] = {"summary": content, **parsed_fields}
     reasoning = str(llm_meta.get("reasoning") or "").strip()
     structured_output_strategy = str(llm_meta.get("structured_output_strategy") or "json_schema")
+    prompt_snapshot = apply_provider_prompt_cache_result(prompt_snapshot, llm_meta.get("provider_prompt_cache_result"))
     large_video_fallbacks = attachment_meta.get("large_video_fallbacks", [])
     provider_video_fallback = llm_meta.get("video_fallback")
     if large_video_fallbacks:
@@ -167,6 +226,8 @@ def generate_agent_response(
         "provider_reasoning_captured": bool(reasoning),
         "provider_response_id": llm_meta.get("response_id"),
         "provider_usage": llm_meta.get("usage"),
+        "provider_cost_estimate": llm_meta.get("provider_cost_estimate"),
+        "provider_rate_decision": llm_meta.get("provider_rate_decision"),
         "provider_timings": llm_meta.get("timings"),
         "provider_fallback_used": bool(llm_meta.get("provider_fallback_used")),
         "requested_model_ref": llm_meta.get("requested_model_ref"),
@@ -184,6 +245,8 @@ def generate_agent_response(
         "structured_output_repair_provider_model": repair_meta.get("model"),
         "structured_output_repair_provider_response_id": repair_meta.get("response_id"),
         "structured_output_repair_provider_usage": repair_meta.get("usage"),
+        "structured_output_repair_provider_cost_estimate": repair_meta.get("provider_cost_estimate"),
+        "structured_output_repair_provider_rate_decision": repair_meta.get("provider_rate_decision"),
         "structured_output_repair_provider_timings": repair_meta.get("timings"),
         "structured_output_repair_provider_fallback_used": bool(repair_meta.get("provider_fallback_used")),
         "structured_output_repair_requested_model_ref": repair_meta.get("requested_model_ref"),
@@ -227,9 +290,11 @@ def repair_structured_output_with_runtime_model(
         action_keys=action_keys,
         subgraph_keys=subgraph_keys,
         structured_output_schema=structured_output_schema,
+        provider_cache_policy=runtime_config.get("provider_cache_policy", "default"),
     )
+    model_call_context = model_call_profile_context(runtime_config, prompt_snapshot)
     if runtime_config.get("resolved_provider_id") == "local":
-        with use_model_call_context(phase="structured_output_repair"):
+        with use_model_call_context(phase="structured_output_repair", **model_call_context):
             content, meta = chat_with_local_model_with_meta_func(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
@@ -241,9 +306,10 @@ def repair_structured_output_with_runtime_model(
                 on_delta=None,
                 input_attachments=[],
                 structured_output_schema=structured_output_schema,
+                **model_request_profile_kwargs(runtime_config),
             )
         return content, {**meta, "prompt_snapshot": prompt_snapshot}
-    with use_model_call_context(phase="structured_output_repair"):
+    with use_model_call_context(phase="structured_output_repair", **model_call_context):
         content, meta = chat_with_model_ref_with_meta_func(
             model_ref=runtime_config["resolved_model_ref"],
             system_prompt=system_prompt,
@@ -255,7 +321,9 @@ def repair_structured_output_with_runtime_model(
             input_attachments=[],
             structured_output_schema=structured_output_schema,
             model_runtime_fixture=runtime_config.get("model_runtime_fixture"),
+            **model_provider_request_profile_kwargs(runtime_config, prompt_snapshot),
         )
+    prompt_snapshot = apply_provider_prompt_cache_result(prompt_snapshot, meta.get("provider_prompt_cache_result"))
     return content, {**meta, "prompt_snapshot": prompt_snapshot}
 
 

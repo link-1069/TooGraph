@@ -4,6 +4,7 @@ import type {
   OpenAICodexAuthStatus,
   SettingsModelProvider,
   SettingsPayload,
+  SettingsProviderCredential,
 } from "../types/settings.ts";
 
 const DEFAULT_AGENT_TEMPERATURE = 0.2;
@@ -38,6 +39,7 @@ export type ProviderDraft = {
   requires_login?: boolean;
   auth_status?: OpenAICodexAuthStatus;
   request_timeout_seconds?: number;
+  credential_pool: SettingsProviderCredential[];
   api_key: string;
   api_key_configured: boolean;
   discovered_models: string[];
@@ -165,6 +167,37 @@ export function clampProviderRequestTimeoutSeconds(value: number | null | undefi
   return Math.min(3600, Math.max(1, Number(value)));
 }
 
+function normalizeProviderCredentialPool(value: unknown): SettingsProviderCredential[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const credentials: SettingsProviderCredential[] = [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Partial<SettingsProviderCredential>;
+    const credentialId = String(record.credential_id || "").trim();
+    if (!credentialId) {
+      continue;
+    }
+    const identity = credentialId.toLowerCase();
+    if (seen.has(identity)) {
+      continue;
+    }
+    seen.add(identity);
+    const failureCount = Number(record.failure_count);
+    credentials.push({
+      credential_id: credentialId,
+      status: String(record.status || "active").trim() || "active",
+      cooldown_until: record.cooldown_until ? String(record.cooldown_until).trim() : null,
+      failure_count: Number.isFinite(failureCount) ? Math.max(0, Math.trunc(failureCount)) : 0,
+    });
+  }
+  return credentials;
+}
+
 export function listProviderModelBadges(
   provider: SettingsProvider,
   modelDisplayLookup: Record<string, string>,
@@ -206,6 +239,7 @@ export function buildProviderDraftsFromSettings(payload: SettingsPayload): Recor
             requires_login: Boolean(provider.requires_login),
             auth_status: provider.auth_status,
             request_timeout_seconds: clampProviderRequestTimeoutSeconds(provider.request_timeout_seconds),
+            credential_pool: normalizeProviderCredentialPool(provider.credential_pool),
             api_key: "",
             api_key_configured: Boolean(provider.api_key_configured),
             discovered_models: discoveredModels,
@@ -231,6 +265,7 @@ export function buildProviderSavePayload(drafts: Record<string, ProviderDraft>):
         auth_scheme: draft.auth_scheme,
         auth_mode: draft.auth_mode ?? (draft.requires_login ? "chatgpt" : "api_key"),
         request_timeout_seconds: clampProviderRequestTimeoutSeconds(draft.request_timeout_seconds),
+        credential_pool: normalizeProviderCredentialPool(draft.credential_pool),
         models: dedupeStrings(draft.selected_models).map((model) => {
           const profile = draft.model_profiles?.[model] ?? normalizeModelProfile({ modalities: ["text"] });
           return {

@@ -10,6 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.runtime.agent_response_generation import generate_agent_response
+from app.core.runtime.model_call_context import get_model_call_context
 from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemStateDefinition, NodeSystemStateType
 
 
@@ -81,6 +82,144 @@ class AgentResponseGenerationTests(unittest.TestCase):
         self.assertEqual(updated_config["provider_model"], "test-model")
         self.assertEqual(updated_config["provider_id"], "local")
         self.assertEqual(updated_config["provider_thinking_level"], "medium")
+
+    def test_passes_provider_timeout_override_to_provider_client(self) -> None:
+        captured: dict[str, object] = {}
+
+        def chat_with_model_ref_with_meta_func(**kwargs):
+            captured.update(kwargs)
+            return ('{"answer": "done"}', {"warnings": [], "model": "gpt-4.1", "provider_id": "openai"})
+
+        payload, _reasoning, warnings, updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {"question": "q"},
+            {},
+            {
+                "resolved_provider_id": "openai",
+                "runtime_model_name": "gpt-4.1",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "openai/gpt-4.1",
+                "provider_request_timeout_seconds": 12.5,
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "system prompt",
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        self.assertEqual(payload["answer"], "done")
+        self.assertEqual(warnings, [])
+        self.assertEqual(captured["request_timeout_seconds"], 12.5)
+        self.assertEqual(updated_config["provider_request_timeout_seconds"], 12.5)
+
+    def test_passes_provider_cost_budget_and_records_cost_estimate(self) -> None:
+        captured: dict[str, object] = {}
+
+        def chat_with_model_ref_with_meta_func(**kwargs):
+            captured.update(kwargs)
+            return (
+                '{"answer": "done"}',
+                {
+                    "warnings": [],
+                    "model": "gpt-4.1",
+                    "provider_id": "openai",
+                    "usage": {"input_tokens": 1000, "output_tokens": 500},
+                    "provider_cost_estimate": {
+                        "kind": "provider_cost_estimate",
+                        "status": "estimated",
+                        "estimated_cost_usd": 0.006,
+                        "budget_status": "over_budget",
+                    },
+                },
+            )
+
+        _payload, _reasoning, _warnings, updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {"question": "q"},
+            {},
+            {
+                "resolved_provider_id": "openai",
+                "runtime_model_name": "gpt-4.1",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "openai/gpt-4.1",
+                "provider_cost_budget": {"limit_usd": 0.005, "window": "run"},
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "system prompt",
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        self.assertEqual(captured["provider_cost_budget"], {"limit_usd": 0.005, "window": "run"})
+        self.assertEqual(
+            updated_config["provider_cost_estimate"],
+            {
+                "kind": "provider_cost_estimate",
+                "status": "estimated",
+                "estimated_cost_usd": 0.006,
+                "budget_status": "over_budget",
+            },
+        )
+
+    def test_passes_provider_rate_profile_and_records_rate_decision(self) -> None:
+        captured: dict[str, object] = {}
+
+        def chat_with_model_ref_with_meta_func(**kwargs):
+            captured.update(kwargs)
+            return (
+                '{"answer": "done"}',
+                {
+                    "warnings": [],
+                    "model": "gpt-4.1",
+                    "provider_id": "openai",
+                    "usage": {"input_tokens": 900, "output_tokens": 500},
+                    "provider_rate_decision": {
+                        "kind": "provider_rate_decision",
+                        "mode": "audit_only",
+                        "status": "over_limit",
+                    },
+                },
+            )
+
+        _payload, _reasoning, _warnings, updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {"question": "q"},
+            {},
+            {
+                "resolved_provider_id": "openai",
+                "runtime_model_name": "gpt-4.1",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "openai/gpt-4.1",
+                "provider_rate_profile": {
+                    "requests_per_minute": 30,
+                    "tokens_per_minute": 1200,
+                    "concurrency": 2,
+                },
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "system prompt",
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        self.assertEqual(
+            captured["provider_rate_profile"],
+            {"requests_per_minute": 30, "tokens_per_minute": 1200, "concurrency": 2},
+        )
+        self.assertEqual(
+            updated_config["provider_rate_decision"],
+            {
+                "kind": "provider_rate_decision",
+                "mode": "audit_only",
+                "status": "over_limit",
+            },
+        )
 
     def test_records_prompt_snapshot_metadata_without_storing_prompt_text(self) -> None:
         def chat_with_local_model_with_meta_func(**kwargs):
@@ -164,6 +303,129 @@ class AgentResponseGenerationTests(unittest.TestCase):
         serialized_snapshot = json.dumps(snapshot, ensure_ascii=False)
         self.assertNotIn("SYSTEM SECRET INPUT", serialized_snapshot)
         self.assertNotIn("USER SECRET TASK", serialized_snapshot)
+
+    def test_provider_cache_policy_disabled_marks_prompt_cache_decision(self) -> None:
+        def chat_with_local_model_with_meta_func(**kwargs):
+            return ('{"answer": "done"}', {"warnings": [], "model": "test-model"})
+
+        _payload, _reasoning, _warnings, updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {},
+            {},
+            {
+                "resolved_provider_id": "local",
+                "runtime_model_name": "test-model",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "local/test-model",
+                "provider_cache_policy": "disabled",
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "SYSTEM PROMPT",
+            chat_with_local_model_with_meta_func=chat_with_local_model_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        prompt_cache_policy = updated_config["prompt_snapshots"][0]["prompt_cache_policy"]
+        self.assertEqual(prompt_cache_policy["requested_policy"], "disabled")
+        self.assertEqual(prompt_cache_policy["mode"], "disabled")
+        self.assertEqual(prompt_cache_policy["provider_cache_control"], "disabled")
+        self.assertFalse(prompt_cache_policy["eligible"])
+        self.assertEqual(prompt_cache_policy["reason"], "node_provider_cache_policy_disabled")
+
+    def test_provider_cache_policy_prefer_records_provider_applied_decision(self) -> None:
+        captured: dict[str, object] = {}
+
+        def chat_with_model_ref_with_meta_func(**kwargs):
+            captured.update(kwargs)
+            return (
+                '{"answer": "done"}',
+                {
+                    "warnings": [],
+                    "model": "claude-sonnet-4-5",
+                    "provider_id": "anthropic",
+                    "provider_prompt_cache_result": {
+                        "provider_cache_control": "anthropic_cache_control",
+                        "mode": "provider_applied",
+                        "reason": "anthropic_system_block_cache_control",
+                    },
+                },
+            )
+
+        _payload, _reasoning, _warnings, updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {},
+            {},
+            {
+                "resolved_provider_id": "anthropic",
+                "runtime_model_name": "claude-sonnet-4-5",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "anthropic/claude-sonnet-4-5",
+                "provider_cache_policy": "prefer",
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "STABLE SYSTEM PROMPT",
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        prompt_cache_policy = captured["prompt_cache_policy"]
+        self.assertEqual(prompt_cache_policy["requested_policy"], "prefer")
+        self.assertTrue(prompt_cache_policy["eligible"])
+        finalized_policy = updated_config["prompt_snapshots"][0]["prompt_cache_policy"]
+        self.assertEqual(finalized_policy["requested_policy"], "prefer")
+        self.assertEqual(finalized_policy["mode"], "provider_applied")
+        self.assertEqual(finalized_policy["provider_cache_control"], "anthropic_cache_control")
+        self.assertEqual(finalized_policy["reason"], "anthropic_system_block_cache_control")
+
+    def test_model_call_context_includes_provider_profile_decisions(self) -> None:
+        captured_context: dict[str, object] = {}
+
+        def chat_with_local_model_with_meta_func(**kwargs):
+            captured_context.update(get_model_call_context())
+            return ('{"answer": "done"}', {"warnings": [], "model": "test-model"})
+
+        _payload, _reasoning, _warnings, _updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {},
+            {},
+            {
+                "resolved_provider_id": "local",
+                "runtime_model_name": "test-model",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "local/test-model",
+                "provider_profile": {
+                    "request_timeout_seconds": 12.5,
+                    "cache_policy": "disabled",
+                    "cost_budget": {"limit_usd": 1.25, "window": "run"},
+                    "rate_profile": {"requests_per_minute": 30, "tokens_per_minute": 12000, "concurrency": 2},
+                },
+                "provider_request_timeout_seconds": 12.5,
+                "provider_cache_policy": "disabled",
+                "provider_cost_budget": {"limit_usd": 1.25, "window": "run"},
+                "provider_rate_profile": {"requests_per_minute": 30, "tokens_per_minute": 12000, "concurrency": 2},
+            },
+            build_effective_system_prompt_func=lambda *args, **kwargs: "SYSTEM PROMPT",
+            chat_with_local_model_with_meta_func=chat_with_local_model_with_meta_func,
+            parse_llm_json_response_func=lambda content, output_keys, *, output_key_aliases: {"answer": "done"},
+            build_output_key_aliases_func=lambda output_keys, state_schema: {"answer": ["answer"]},
+        )
+
+        self.assertEqual(captured_context["provider_request_timeout_seconds"], 12.5)
+        self.assertEqual(captured_context["provider_cache_policy"], "disabled")
+        self.assertEqual(captured_context["provider_cost_budget"], {"limit_usd": 1.25, "window": "run"})
+        self.assertEqual(
+            captured_context["provider_rate_profile"],
+            {"requests_per_minute": 30, "tokens_per_minute": 12000, "concurrency": 2},
+        )
+        self.assertEqual(captured_context["provider_profile"]["cache_policy"], "disabled")
+        self.assertEqual(captured_context["provider_cache_decision"]["requested_policy"], "disabled")
+        self.assertEqual(captured_context["provider_cache_decision"]["provider_cache_control"], "disabled")
 
     def test_passes_structured_output_schema_for_state_outputs(self) -> None:
         captured: dict[str, object] = {}

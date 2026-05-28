@@ -4,6 +4,7 @@ import type {
   ModelProviderTransport,
   OpenAICodexAuthStatus,
   ModelLogSettings,
+  SettingsProviderCredential,
   SettingsPayload,
 } from "@/types/settings";
 
@@ -19,6 +20,7 @@ export type SettingsModelProviderUpdate = {
   auth_scheme?: string;
   auth_mode?: string;
   request_timeout_seconds?: number;
+  credential_pool?: SettingsProviderCredential[];
   models: Array<{
     model: string;
     label?: string;
