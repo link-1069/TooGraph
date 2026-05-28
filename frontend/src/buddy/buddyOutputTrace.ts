@@ -1,6 +1,6 @@
 import type { ConditionalEdge, GraphEdge, GraphNode, GraphPayload } from "../types/node-system.ts";
 import type { NodeExecutionDetail, RunDetail } from "../types/run.ts";
-import { listCapabilitySelectionTraceLabels } from "../lib/capabilitySelectionTrace.ts";
+import { listCapabilitySelectionReasonLabels } from "../lib/capabilitySelectionReason.ts";
 import { listDelegationBoardTraceLabels } from "../lib/delegationBoardDiagnostic.ts";
 import { listDelegationWorkerTraceLabels } from "../lib/delegationWorkerDiagnostic.ts";
 import { summarizeVirtualOperationActivity, type VirtualOperationGraphRevision } from "../lib/virtual-operation-activity.ts";
@@ -1343,12 +1343,8 @@ function buildCapabilitySelectionArtifactLabels(
   execution: NodeExecutionDetail,
   outputs: Record<string, unknown> | null,
 ) {
-  const stateWriteTrace = findStateWriteValue(execution, "capability_selection_trace");
   const stateWriteReason = findStateWriteValue(execution, "capability_selection_reason");
-  return listCapabilitySelectionTraceLabels(
-    outputs?.capability_selection_trace ?? stateWriteTrace,
-    outputs?.capability_selection_reason ?? outputs?.selection_reason ?? stateWriteReason,
-  );
+  return listCapabilitySelectionReasonLabels(outputs?.capability_selection_reason ?? outputs?.selection_reason ?? stateWriteReason);
 }
 
 function buildDelegationWorkerArtifactLabels(

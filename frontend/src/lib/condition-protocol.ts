@@ -6,7 +6,7 @@ export const FIXED_CONDITION_BRANCH_MAPPING = {
   false: "false",
 } as const;
 export const CONDITION_LOOP_LIMIT_MIN = 1;
-export const CONDITION_LOOP_LIMIT_MAX = 10;
+export const CONDITION_LOOP_LIMIT_MAX = 100;
 export const CONDITION_LOOP_LIMIT_DEFAULT = 5;
 
 export type FixedConditionBranch = (typeof FIXED_CONDITION_BRANCHES)[number];

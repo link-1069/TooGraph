@@ -566,35 +566,11 @@
             </div>
             <div v-if="agentDiagnostic.capabilitySelection.visible" class="run-detail__capability-selection">
               <dl class="run-detail__diagnostic-facts">
-                <div v-if="agentDiagnostic.capabilitySelection.selectedRef">
-                  <dt>{{ t("runDetail.capabilitySelected") }}</dt>
-                  <dd>{{ agentDiagnostic.capabilitySelection.selectedRef }}</dd>
-                </div>
-                <div v-if="agentDiagnostic.capabilitySelection.requestedRef">
-                  <dt>{{ t("runDetail.capabilityRequested") }}</dt>
-                  <dd>{{ agentDiagnostic.capabilitySelection.requestedRef }}</dd>
-                </div>
                 <div v-if="agentDiagnostic.capabilitySelection.selectionReason">
                   <dt>{{ t("runDetail.capabilitySelectionReason") }}</dt>
                   <dd>{{ agentDiagnostic.capabilitySelection.selectionReason }}</dd>
                 </div>
               </dl>
-              <div v-if="agentDiagnostic.capabilitySelection.evidenceLabels.length > 0" class="run-detail__badges">
-                <span v-for="label in agentDiagnostic.capabilitySelection.evidenceLabels" :key="label">{{ label }}</span>
-              </div>
-              <div
-                v-if="agentDiagnostic.capabilitySelection.rejectedLabels.length > 0 || agentDiagnostic.capabilitySelection.fallbackLabels.length > 0"
-                class="run-detail__capability-candidates"
-              >
-                <div v-if="agentDiagnostic.capabilitySelection.rejectedLabels.length > 0">
-                  <strong>{{ t("runDetail.capabilityRejected") }}</strong>
-                  <span v-for="label in agentDiagnostic.capabilitySelection.rejectedLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.capabilitySelection.fallbackLabels.length > 0">
-                  <strong>{{ t("runDetail.capabilityFallback") }}</strong>
-                  <span v-for="label in agentDiagnostic.capabilitySelection.fallbackLabels" :key="label">{{ label }}</span>
-                </div>
-              </div>
             </div>
             <div v-if="agentDiagnostic.providerProfile.visible" class="run-detail__capability-selection run-detail__provider-profile">
               <h4>{{ t("runDetail.providerProfile") }}</h4>

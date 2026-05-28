@@ -238,42 +238,12 @@ test("buildAgentDiagnostic summarizes latest completed permission approval", () 
   assert.deepEqual(diagnostic.permissionApproval.warnings, ["不执行 shell。"]);
 });
 
-test("buildAgentDiagnostic summarizes capability selection trace from state values", () => {
+test("buildAgentDiagnostic summarizes capability selection reason from state values", () => {
   const diagnostic = buildAgentDiagnostic(
     createRun({
       artifacts: {
         state_values: {
           capability_selection_reason: "需要公开网页资料。",
-          capability_selection_trace: {
-            requested: { kind: "action", key: "raw_search" },
-            selected: { kind: "subgraph", key: "advanced_web_research_loop" },
-            selection_reason: "Need current public sources.",
-            rejected_candidates: [
-              { kind: "action", key: "raw_search", reason: "higher_level_capability_preferred" },
-            ],
-            fallback_candidates: [
-              { kind: "tool", key: "web_search" },
-            ],
-            usage_summary: {
-              selected: {
-                use_count: 8,
-                success_rate: 0.75,
-                recent_failure_count: 1,
-              },
-            },
-            budget_after_call: {
-              capability_call_count_after: 4,
-              max_capability_calls: 4,
-              remaining_capability_calls_after: 0,
-              capability_budget_exhausted_after: true,
-            },
-            permission_summary: {
-              permissions: ["network"],
-              requires_approval: true,
-              permission_tier: "external",
-              approval_reason: "permission_tier_requires_approval",
-            },
-          },
         },
       },
     }),
@@ -282,21 +252,7 @@ test("buildAgentDiagnostic summarizes capability selection trace from state valu
   assert.equal(diagnostic.visible, true);
   assert.deepEqual(diagnostic.capabilitySelection, {
     visible: true,
-    requestedRef: "action:raw_search",
-    selectedRef: "subgraph:advanced_web_research_loop",
     selectionReason: "需要公开网页资料。",
-    permissionLabel: "permission: external approval",
-    usageLabel: "usage: 8 uses, 75% success, 1 recent failure",
-    budgetLabel: "budget: capability calls 4 / 4, remaining 0, exhausted",
-    rejectedLabels: ["rejected: action:raw_search (higher_level_capability_preferred)"],
-    fallbackLabels: ["fallback: tool:web_search"],
-    evidenceLabels: [
-      "selected: subgraph:advanced_web_research_loop",
-      "requested: action:raw_search",
-      "permission: external approval",
-      "usage: 8 uses, 75% success, 1 recent failure",
-      "budget: capability calls 4 / 4, remaining 0, exhausted",
-    ],
   });
 });
 

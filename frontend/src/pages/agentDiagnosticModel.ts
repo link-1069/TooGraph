@@ -1,5 +1,5 @@
 import type { RunDetail } from "../types/run.ts";
-import { buildCapabilitySelectionDiagnostic, type CapabilitySelectionDiagnostic } from "../lib/capabilitySelectionTrace.ts";
+import { buildCapabilitySelectionDiagnostic, type CapabilitySelectionDiagnostic } from "../lib/capabilitySelectionReason.ts";
 import { buildDelegationBoardDiagnostic, type DelegationBoardDiagnostic } from "../lib/delegationBoardDiagnostic.ts";
 import { buildDelegationWorkerDiagnostic, type DelegationWorkerDiagnostic } from "../lib/delegationWorkerDiagnostic.ts";
 
@@ -118,10 +118,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
   const capabilityCallCount = numberFromUnknown(report.capability_call_count);
   const maxCapabilityCalls = numberFromUnknown(report.max_capability_calls);
   const decision = textFromUnknown(report.decision);
-  const capabilitySelection = buildCapabilitySelectionDiagnostic(
-    stateValues.capability_selection_trace,
-    stateValues.capability_selection_reason,
-  );
+  const capabilitySelection = buildCapabilitySelectionDiagnostic(stateValues.capability_selection_reason);
   const providerProfile = buildProviderProfileDiagnostic(resolveProviderProfileRuntimeConfig(run));
   const providerFallback = buildProviderFallbackDiagnostic(resolveProviderFallbackTrace(run, stateValues));
   const providerCostBudgetDegradation = buildProviderCostBudgetDegradationDiagnostic(
@@ -133,7 +130,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     { workerRuns: resolveDelegationWorkerRuns(run) },
   );
   const delegationBoard = buildDelegationBoardDiagnostic(resolveDelegationBoardSnapshot(run, stateValues));
-  const selectedCapabilityRef = textFromUnknown(report.selected_capability_ref) || capabilitySelection.selectedRef;
+  const selectedCapabilityRef = textFromUnknown(report.selected_capability_ref);
   const warnings = diagnosticWarningsFromReport(report);
   const hasLoopEvidence = Boolean(
     decision

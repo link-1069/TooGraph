@@ -263,7 +263,7 @@ class ConditionOperator(str, Enum):
 FIXED_CONDITION_BRANCHES = ("true", "false", "exhausted")
 FIXED_CONDITION_BRANCH_MAPPING = {"true": "true", "false": "false"}
 CONDITION_LOOP_LIMIT_MIN = 1
-CONDITION_LOOP_LIMIT_MAX = 10
+CONDITION_LOOP_LIMIT_MAX = 100
 CONDITION_LOOP_LIMIT_DEFAULT = 5
 
 

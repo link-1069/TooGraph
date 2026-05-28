@@ -34,7 +34,7 @@
 | 能力域 | 当前事实来源 |
 | --- | --- |
 | 图协议与运行记录 | `backend/app/core/schemas/node_system.py`、`backend/app/core/storage/database.py`、`backend/app/core/storage/graph_run_db_store.py`、`backend/app/core/runtime/state_io.py` |
-| Buddy 主循环 | `graph_template/official/buddy_autonomous_loop/template.json`、`tool/official/agent_loop_guard/run.py`、`tool/official/buddy_history_context_loader/run.py`、`tool/official/buddy_home_context_loader/run.py` |
+| Buddy 主循环 | `graph_template/official/buddy_autonomous_loop/template.json`、`tool/official/buddy_history_context_loader/run.py`、`tool/official/buddy_home_context_loader/run.py`、`tool/official/buddy_context_pressure_check/run.py` |
 | 上下文装配 | `backend/app/core/storage/context_assembly_store.py`、`backend/app/core/runtime/agent_prompt.py`、`tool/official/*_context_loader/run.py` |
 | 历史、搜索、记忆 | `backend/app/buddy/store.py`、`backend/app/core/storage/memory_store.py`、`backend/app/core/storage/retrieval_store.py`、`backend/app/core/storage/embedding_store.py` |
 | 后台复盘与改进候选 | `backend/app/buddy/background_review.py`、`backend/app/buddy/improvement_candidates.py`、`graph_template/official/buddy_autonomous_review/template.json`、`graph_template/official/buddy_improvement_review_workflow/template.json` |
@@ -57,7 +57,7 @@
 
 | 能力域 | 状态 | 已完成增强 | 主要验证 | 下一步 |
 | --- | --- | --- | --- | --- |
-| Agent loop 鲁棒性 | 基本完成 | loop control、guard、stop reason、retry、预算、run detail 投影 | `backend/tests/test_agent_loop_guard_tool.py`、`backend/tests/test_agent_loop_guard_e2e.py`、`backend/tests/test_graph_run_db_store.py`、`backend/tests/test_evaluator_store_routes.py` 中 Buddy 主循环恢复路径 | 扩充更复杂组合恢复用例和 UI 聚合 |
+| Agent loop 鲁棒性 | 进行中 | Buddy 主循环改为显式图循环：能力选择、动态能力执行、上下文压力检查、条件循环预算 | `backend/tests/test_template_layouts.py`、`scripts/official-asset-gate.mjs`、`backend/tests/test_graph_run_db_store.py`、`backend/tests/test_evaluator_store_routes.py` 中恢复路径 | 扩充更复杂组合恢复用例和 UI 聚合 |
 | Prompt / Context Assembly | 基本完成 | 所有主要上下文转为 `context_package` / `context_assembly_ref`，带 source refs、budget、warnings | `backend/tests/test_context_assembly_store.py`、`backend/tests/test_agent_state_prompt_semantics.py`、各 context loader 测试 | 更多官方模板统一接入，RunDetail 上下文面板增强 |
 | Session persistence 与搜索 | 基本完成 | 原子消息、会话摘要、run refs、FTS/trigram、Evidence 搜索 | `backend/tests/test_buddy_store.py`、`backend/tests/test_buddy_search_views.py`、`frontend/src/pages/EvidenceSearchPage.structure.test.ts` | 复杂 lineage、summary source refs 和 run output 召回联动 |
 | 长期记忆与 Embedding 召回 | 进行中 | 文件稳定上下文与 DB memory 双线；embedding jobs/vectors；hybrid recall；rerank | `backend/tests/test_memory_store.py`、`backend/tests/test_embedding_store.py`、`backend/tests/test_hybrid_recall_context_loader_tool.py`、`backend/tests/test_buddy_search_views.py` | 弱语义去重、人工复核候选、召回质量报告 |
@@ -77,24 +77,24 @@
 
 ## 4. 已完成增强详情
 
-### 4.1 Buddy 主循环已经从“单次回复”升级为“可诊断 Agent loop”
+### 4.1 Buddy 主循环已经从“单次回复”升级为“图模板能力循环”
 
 代码事实：
 
 - 官方主循环模板是 `graph_template/official/buddy_autonomous_loop/template.json`。
-- loop 控制由 `agent_loop_control` state 和 `tool/official/agent_loop_guard/run.py` 表达。
+- loop 控制由模板内的 `needs_capability` 条件节点、`capability_trace` 和上下文压力检查分支表达；动态能力执行后直接回到上下文压力检查。
 - `backend/app/core/storage/database.py` 已有 `agent_loop_events` 和 `capability_usage_events` 表。
 - RunDetail 和 Buddy 胶囊读取同一 run fact：`frontend/src/pages/agentDiagnosticModel.ts`、`frontend/src/buddy/buddyOutputTrace.ts`。
 
 增强内容：
 
-- 每次能力执行后都有确定性 guard 判断是否继续、重试、停止或等待权限。
-- stop reason 标准化，能区分预算耗尽、权限等待、provider 失败、能力失败和上下文预算问题。
+- 每轮由 `reply_and_select_capability` 同时产出公开回复、是否直出结果包、是否继续调用能力和单个 selected capability。
+- 能力继续循环由 condition 节点预算限制，并通过 `capability_trace` 避免重复调用。
 - 胶囊显示不再依赖临时文本拼接，而是从 run detail 和 output 边界重建。
 
 验证方式：
 
-- `pytest backend/tests/test_agent_loop_guard_tool.py backend/tests/test_agent_loop_guard_e2e.py -q`
+- `python -m unittest backend.tests.test_template_layouts`
 - `pytest backend/tests/test_graph_run_db_store.py -q`
 - `node --test frontend/src/pages/agentDiagnosticModel.test.ts frontend/src/buddy/buddyOutputTrace.test.ts`
 
@@ -688,7 +688,7 @@
 在继续后续开发前，建议先跑下面这组验证，确认当前路线文档对应的主干能力仍健康：
 
 ```bash
-pytest backend/tests/test_agent_loop_guard_tool.py backend/tests/test_agent_loop_guard_e2e.py -q
+python -m unittest backend.tests.test_template_layouts
 pytest backend/tests/test_context_assembly_store.py backend/tests/test_buddy_store.py backend/tests/test_buddy_search_views.py -q
 pytest backend/tests/test_memory_store.py backend/tests/test_embedding_store.py backend/tests/test_hybrid_recall_context_loader_tool.py -q
 pytest backend/tests/test_buddy_background_review_routes.py backend/tests/test_toograph_capability_selector_action.py -q

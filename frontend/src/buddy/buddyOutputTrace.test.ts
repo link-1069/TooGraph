@@ -1234,14 +1234,14 @@ test("buildBuddyOutputTraceStateFromRunDetail attaches projected agent loop diag
   assert.ok(labels.includes("capabilities: 4 / 4"));
 });
 
-test("buildBuddyOutputTraceStateFromRunDetail exposes capability selection trace evidence labels", () => {
+test("buildBuddyOutputTraceStateFromRunDetail exposes capability selection reason label", () => {
   const graph = fiveNodeGraph();
   graph.nodes.select_capability = {
     kind: "agent",
     name: "选择能力",
     description: "",
     reads: [],
-    writes: [{ state: "capability_selection_trace", mode: "replace" }],
+    writes: [{ state: "capability_selection_reason", mode: "replace" }],
     config: { actionKey: "toograph_capability_selector", actionBindings: [], taskInstruction: "", modelSource: "global", model: "", thinkingMode: "low", temperature: 0.2 },
     ui: { position: { x: 0, y: 0 } },
   };
@@ -1260,25 +1260,11 @@ test("buildBuddyOutputTraceStateFromRunDetail exposes capability selection trace
         artifacts: {
           inputs: {},
           outputs: {
-            capability_selection_trace: {
-              requested: { kind: "action", key: "raw_search" },
-              selected: { kind: "subgraph", key: "advanced_web_research_loop" },
-              rejected_candidates: [
-                { kind: "action", key: "raw_search", reason: "higher_level_capability_preferred" },
-              ],
-              fallback_candidates: [
-                { kind: "tool", key: "web_search" },
-              ],
-              permission_summary: {
-                permissions: ["network"],
-                requires_approval: true,
-                permission_tier: "external",
-              },
-            },
+            capability_selection_reason: "需要公开网页资料。",
           },
           family: "agent",
           state_reads: [],
-          state_writes: [{ state_key: "capability_selection_trace", output_key: "capability_selection_trace" }],
+          state_writes: [{ state_key: "capability_selection_reason", output_key: "capability_selection_reason" }],
         },
       },
       execution("node_c", "agent", "C", "2026-05-13T10:00:00.600Z", 100),
@@ -1304,13 +1290,7 @@ test("buildBuddyOutputTraceStateFromRunDetail exposes capability selection trace
     .find((record) => record.nodeId === "select_capability")
     ?.artifactLabels;
 
-  assert.deepEqual(labels, [
-    "selected: subgraph:advanced_web_research_loop",
-    "requested: action:raw_search",
-    "permission: external approval",
-    "rejected: action:raw_search (higher_level_capability_preferred)",
-    "fallback: tool:web_search",
-  ]);
+  assert.deepEqual(labels, ["reason: 需要公开网页资料。"]);
 });
 
 test("buildBuddyOutputTraceStateFromRunDetail exposes delegation worker result labels", () => {

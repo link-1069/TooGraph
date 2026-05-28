@@ -167,7 +167,7 @@ class NodeSystemSchemaLegacyFieldRejectionTests(unittest.TestCase):
         self.assertEqual(default_config.branches, ["true", "false", "exhausted"])
         self.assertEqual(default_config.branch_mapping, {"true": "true", "false": "false"})
 
-        for loop_limit in (-1, 0, 11):
+        for loop_limit in (-1, 0, 101):
             with self.subTest(loop_limit=loop_limit):
                 with self.assertRaises(ValidationError):
                     NodeSystemConditionConfig.model_validate(

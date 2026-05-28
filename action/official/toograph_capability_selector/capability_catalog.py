@@ -115,34 +115,20 @@ def normalize_selected_capability(
     capability = _parse_capability(selected)
     kind = _text(capability.get("kind")).lower()
     reason = _text(capability.get("reason"))
-    requested = _requested_capability_ref(kind, _text(capability.get("key")))
-    resolved_budget_context = resolve_budget_context(budget_context)
     if not kind or kind == "none":
         selection_reason = reason or "No capability selected."
         return _none_capability(
             selection_reason,
-            requested=requested,
             include_capability_reason=False,
-            budget_context=resolved_budget_context,
         )
     if kind not in SUPPORTED_KINDS:
         selection_reason = f"Unsupported capability kind '{kind}'."
-        return _none_capability(
-            selection_reason,
-            requested=requested,
-            rejected_reason="unsupported_kind",
-            budget_context=resolved_budget_context,
-        )
+        return _none_capability(selection_reason)
 
     key = _text(capability.get("key"))
     if not key:
         selection_reason = f"Capability kind '{kind}' requires a key."
-        return _none_capability(
-            selection_reason,
-            requested=requested,
-            rejected_reason="missing_key",
-            budget_context=resolved_budget_context,
-        )
+        return _none_capability(selection_reason)
 
     resolved_permission_policy = resolve_permission_policy(permission_policy)
     if catalog is None:
@@ -171,28 +157,12 @@ def normalize_selected_capability(
         rejected_candidate = unfiltered_index.get((kind, key))
         if rejected_candidate is not None and not _permission_policy_allows_item(rejected_candidate, resolved_permission_policy):
             selection_reason = f"Selected capability '{kind}:{key}' is not allowed by the current permission policy."
-            return _none_capability(
-                selection_reason,
-                requested=requested,
-                rejected_reason="permission_tier_not_allowed",
-                rejected_candidate_extra={
-                    "permission_tier": _capability_permission_tier(rejected_candidate),
-                },
-                permission_summary=_permission_summary(rejected_candidate, resolved_permission_policy),
-                budget_context=resolved_budget_context,
-            )
+            return _none_capability(selection_reason)
         selection_reason = f"Selected capability '{kind}:{key}' is not enabled or discoverable."
-        return _none_capability(
-            selection_reason,
-            requested=requested,
-            rejected_reason="not_enabled_or_discoverable",
-            budget_context=resolved_budget_context,
-        )
-    original_candidate = candidate
-    candidate, replacement_reason = _select_preferred_capability(candidate, resolved_catalog)
+        return _none_capability(selection_reason)
+    candidate, _replacement_reason = _select_preferred_capability(candidate, resolved_catalog)
     kind = _text(candidate.get("kind")).lower()
     key = _text(candidate.get("key"))
-    selected_ref = _requested_capability_ref(kind, key)
 
     normalized = {
         "kind": kind,
@@ -207,22 +177,10 @@ def normalize_selected_capability(
     if confidence is not None:
         normalized["confidence"] = confidence
     selection_reason = reason or f"Selected {kind}:{key}."
-    trace = _build_selection_trace(
-        requested=requested,
-        selected=selected_ref,
-        selected_item=candidate,
-        original_candidate=original_candidate,
-        replacement_reason=replacement_reason,
-        catalog=resolved_catalog,
-        reason=selection_reason,
-        permission_policy=resolved_permission_policy,
-        budget_context=resolved_budget_context,
-    )
     return {
-        "capability": normalized,
         "needs_capability": True,
         "selection_reason": selection_reason,
-        "capability_selection_trace": trace,
+        "capability": normalized,
     }
 
 
@@ -672,157 +630,17 @@ def _parse_capability(value: Any) -> dict[str, Any]:
 def _none_capability(
     reason: str = "",
     *,
-    requested: dict[str, str] | None = None,
-    rejected_reason: str = "",
-    rejected_candidate_extra: dict[str, Any] | None = None,
     include_capability_reason: bool = True,
-    permission_summary: dict[str, Any] | None = None,
-    budget_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     capability = {
         "kind": "none",
     }
     if reason and include_capability_reason:
         capability["reason"] = reason
-    requested_ref = requested or {"kind": "none"}
-    rejected_candidates = []
-    if requested_ref.get("kind") not in {"", "none"}:
-        rejected_candidates.append(
-            {
-                **requested_ref,
-                "reason": rejected_reason or "none_selected",
-                **dict(rejected_candidate_extra or {}),
-            }
-        )
-    trace = {
-        "version": 1,
-        "requested": requested_ref,
-        "selected": {"kind": "none"},
-        "selection_reason": reason,
-        "rejected_candidates": rejected_candidates,
-        "fallback_candidates": [],
-        "score_breakdown": {},
-        "permission_summary": permission_summary or {"permissions": [], "requires_approval": False, "permission_tier": "none"},
-    }
-    budget_after_call = _budget_after_call(budget_context, needs_capability=False)
-    if budget_after_call:
-        trace["budget_after_call"] = budget_after_call
     return {
-        "capability": capability,
         "needs_capability": False,
         "selection_reason": reason,
-        "capability_selection_trace": trace,
-    }
-
-
-def _build_selection_trace(
-    *,
-    requested: dict[str, str],
-    selected: dict[str, str],
-    selected_item: dict[str, Any],
-    original_candidate: dict[str, Any],
-    replacement_reason: str = "",
-    catalog: dict[str, Any],
-    reason: str,
-    permission_policy: dict[str, Any] | None = None,
-    budget_context: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    rejected_candidates: list[dict[str, Any]] = []
-    if (
-        original_candidate.get("kind") != selected_item.get("kind")
-        or original_candidate.get("key") != selected_item.get("key")
-    ):
-        rejected_candidates.append(
-            {
-                "kind": _text(original_candidate.get("kind")),
-                "key": _text(original_candidate.get("key")),
-                "reason": replacement_reason or "higher_level_capability_preferred",
-                "score": _score_capability(original_candidate),
-            }
-        )
-    fallback_candidates = _fallback_candidates(selected_item, catalog, rejected_candidates)
-    trace = {
-        "version": 1,
-        "requested": requested,
-        "selected": selected,
-        "selection_reason": reason,
-        "rejected_candidates": rejected_candidates,
-        "fallback_candidates": fallback_candidates,
-        "score_breakdown": {
-            "selected": _score_capability(selected_item),
-        },
-        "usage_summary": {
-            "selected": _usage_feedback_from_item(selected_item),
-        },
-        "permission_summary": _permission_summary(selected_item, permission_policy),
-    }
-    budget_after_call = _budget_after_call(budget_context, needs_capability=True)
-    if budget_after_call:
-        trace["budget_after_call"] = budget_after_call
-    return trace
-
-
-def _fallback_candidates(
-    selected_item: dict[str, Any],
-    catalog: dict[str, Any],
-    rejected_candidates: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    selected_kind = _text(selected_item.get("kind"))
-    selected_key = _text(selected_item.get("key"))
-    selected_terms = _term_set(selected_item.get("covers")) or _capability_terms(selected_item)
-    if not selected_terms:
-        return []
-    fallbacks: list[dict[str, Any]] = []
-    rejected_keys = {(_text(item.get("kind")), _text(item.get("key"))) for item in rejected_candidates}
-    for item in _iter_catalog_items(catalog):
-        kind = _text(item.get("kind"))
-        key = _text(item.get("key"))
-        if (kind, key) == (selected_kind, selected_key):
-            continue
-        item_terms = _term_set(item.get("covers")) or _capability_terms(item)
-        if selected_terms and not selected_terms.intersection(item_terms):
-            continue
-        fallback = {
-            "kind": kind,
-            "key": key,
-            "score": _score_capability(item),
-        }
-        if (kind, key) in rejected_keys:
-            fallback["reason"] = "original_candidate"
-        fallbacks.append(fallback)
-    fallbacks.sort(key=_fallback_sort_key, reverse=True)
-    return fallbacks[:3]
-
-
-def _fallback_sort_key(item: dict[str, Any]) -> tuple[int, int, bool, float, int, int, int, str]:
-    score = item.get("score") if isinstance(item.get("score"), dict) else {}
-    return (
-        _non_negative_int(score.get("kind_priority")),
-        _non_negative_int(score.get("granularity_priority")),
-        bool(score.get("produces_final_result")),
-        float(score.get("success_rate") or 0.0),
-        -_non_negative_int(score.get("recent_failure_count")),
-        _non_negative_int(score.get("permission_tier_priority")),
-        _non_negative_int(score.get("use_count")),
-        _text(item.get("key")),
-    )
-
-
-def _score_capability(item: dict[str, Any]) -> dict[str, Any]:
-    produces = _term_set(item.get("produces"))
-    covers = _term_set(item.get("covers"))
-    usage = _usage_feedback_from_item(item)
-    return {
-        "kind_priority": KIND_PRIORITY.get(_text(item.get("kind")).lower(), -1),
-        "granularity_priority": _granularity_rank(item),
-        "covers_count": len(covers),
-        "produces_count": len(produces),
-        "produces_final_result": bool(produces.intersection(FINAL_RESULT_OUTPUTS)),
-        "use_count": usage.get("use_count"),
-        "success_rate": usage.get("success_rate"),
-        "failure_count": usage.get("failure_count"),
-        "recent_failure_count": usage.get("recent_failure_count"),
-        "permission_tier_priority": _permission_tier_priority(item),
+        "capability": capability,
     }
 
 
@@ -835,69 +653,6 @@ def _capability_permission_tier(item: dict[str, Any]) -> str:
 
 def _permission_tier_priority(item: dict[str, Any]) -> int:
     return PERMISSION_TIER_PRIORITY.get(_capability_permission_tier(item), 0)
-
-
-def _permission_summary(item: dict[str, Any], permission_policy: dict[str, Any] | None = None) -> dict[str, Any]:
-    permissions = _list_text(item.get("permissions"))
-    permission_tier = _capability_permission_tier(item)
-    if permission_policy:
-        approval_required_tiers = {
-            tier
-            for tier in _list_text(permission_policy.get("approval_required_permission_tiers"))
-        }
-        requires_approval = permission_tier in approval_required_tiers
-    else:
-        requires_approval = bool(permissions)
-    result = {
-        "permissions": permissions,
-        "requires_approval": requires_approval,
-        "permission_tier": permission_tier,
-    }
-    if permission_policy and requires_approval:
-        result["approval_reason"] = "permission_tier_requires_approval"
-    return result
-
-
-def _budget_after_call(budget_context: dict[str, Any] | None, *, needs_capability: bool) -> dict[str, Any]:
-    if not budget_context:
-        return {}
-    capability_call_count_before = _optional_int(budget_context.get("capability_call_count"))
-    max_capability_calls = _optional_int(budget_context.get("max_capability_calls"))
-    capability_call_count_after = (
-        capability_call_count_before + (1 if needs_capability else 0)
-        if capability_call_count_before is not None
-        else None
-    )
-    result: dict[str, Any] = {}
-    for source_key, output_key in (
-        ("iteration_index", "iteration_index"),
-        ("max_iterations", "max_iterations"),
-        ("retry_budget", "retry_budget"),
-    ):
-        value = _optional_int(budget_context.get(source_key))
-        if value is not None:
-            result[output_key] = value
-    if capability_call_count_before is not None:
-        result["capability_call_count_before"] = capability_call_count_before
-    if capability_call_count_after is not None:
-        result["capability_call_count_after"] = capability_call_count_after
-    if max_capability_calls is not None:
-        result["max_capability_calls"] = max_capability_calls
-    if capability_call_count_after is not None and max_capability_calls is not None and max_capability_calls >= 0:
-        remaining = max(0, max_capability_calls - capability_call_count_after)
-        result["remaining_capability_calls_after"] = remaining
-        result["capability_budget_exhausted_after"] = capability_call_count_after >= max_capability_calls
-    return result
-
-
-def _requested_capability_ref(kind: str, key: str = "") -> dict[str, str]:
-    normalized_kind = _text(kind).lower() or "none"
-    if normalized_kind == "none":
-        return {"kind": "none"}
-    result = {"kind": normalized_kind}
-    if key:
-        result["key"] = key
-    return result
 
 
 def _template_capability_discoverable(payload: dict[str, Any], settings_entry: Any) -> bool:
@@ -984,13 +739,6 @@ def _non_negative_int(value: Any) -> int:
         return max(0, int(float(value)))
     except (TypeError, ValueError):
         return 0
-
-
-def _optional_int(value: Any) -> int | None:
-    try:
-        return int(float(value))
-    except (TypeError, ValueError):
-        return None
 
 
 def _repo_root() -> Path:
