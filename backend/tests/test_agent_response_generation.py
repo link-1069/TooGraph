@@ -530,6 +530,62 @@ class AgentResponseGenerationTests(unittest.TestCase):
         self.assertEqual(updated_config["requested_model_ref"], "openai/gpt-primary")
         self.assertEqual(updated_config["provider_fallback_trace"]["selected"]["model_ref"], "fallback/gpt-main")
 
+    def test_records_provider_cost_budget_degradation_for_remote_structured_output_call(self) -> None:
+        degradation = {
+            "kind": "provider_cost_budget_degradation",
+            "status": "applied",
+            "reason": "provider_cost_budget_degradation_selected",
+            "requested_model_ref": "openai/gpt-primary",
+            "selected_model_ref": "local/gpt-economy",
+            "provider_cost_budget_preflight": {
+                "kind": "provider_cost_budget_preflight",
+                "status": "blocked",
+                "reason": "provider_cost_budget_already_exhausted",
+                "budget_limit_usd": 0.01,
+                "previous_window_cost_usd": 0.012,
+                "cumulative_cost_usd": 0.012,
+                "budget_window": "run",
+                "on_exceeded": "degrade_model",
+            },
+        }
+
+        def chat_with_model_ref_with_meta_func(**_kwargs):
+            return (
+                '{"answer": "done"}',
+                {
+                    "warnings": [],
+                    "provider_id": "local",
+                    "model": "gpt-economy",
+                    "provider_cost_budget_degradation": degradation,
+                },
+            )
+
+        payload, _reasoning, warnings, updated_config = generate_agent_response(
+            _agent_node(writes=[{"state": "answer"}]),
+            {"question": "q"},
+            {},
+            {
+                "resolved_provider_id": "openai",
+                "runtime_model_name": "gpt-primary",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "openai/gpt-primary",
+            },
+            state_schema={
+                "answer": NodeSystemStateDefinition(
+                    name="Answer",
+                    description="Final answer.",
+                    type=NodeSystemStateType.TEXT,
+                ),
+            },
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+        )
+
+        self.assertEqual(payload["answer"], "done")
+        self.assertEqual(warnings, [])
+        self.assertEqual(updated_config["provider_cost_budget_degradation"], degradation)
+
     def test_repairs_invalid_structured_output_without_original_prompt_context(self) -> None:
         calls: list[dict[str, object]] = []
 

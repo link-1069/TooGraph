@@ -92,7 +92,7 @@ class AgentRuntimeConfigTests(unittest.TestCase):
                 "providerProfile": {
                     "requestTimeoutSeconds": 12.5,
                     "cachePolicy": "prefer",
-                    "costBudget": {"limitUsd": 1.25, "window": "run"},
+                    "costBudget": {"limitUsd": 1.25, "window": "run", "onExceeded": "request_approval"},
                     "rateProfile": {
                         "requestsPerMinute": 6,
                         "tokensPerMinute": 12000,
@@ -118,7 +118,10 @@ class AgentRuntimeConfigTests(unittest.TestCase):
 
         self.assertEqual(runtime_config["provider_request_timeout_seconds"], 12.5)
         self.assertEqual(runtime_config["provider_cache_policy"], "prefer")
-        self.assertEqual(runtime_config["provider_cost_budget"], {"limit_usd": 1.25, "window": "run"})
+        self.assertEqual(
+            runtime_config["provider_cost_budget"],
+            {"limit_usd": 1.25, "window": "run", "on_exceeded": "request_approval"},
+        )
         self.assertEqual(
             runtime_config["provider_rate_profile"],
             {
@@ -134,7 +137,7 @@ class AgentRuntimeConfigTests(unittest.TestCase):
             {
                 "request_timeout_seconds": 12.5,
                 "cache_policy": "prefer",
-                "cost_budget": {"limit_usd": 1.25, "window": "run"},
+                "cost_budget": {"limit_usd": 1.25, "window": "run", "on_exceeded": "request_approval"},
                 "rate_profile": {
                     "requests_per_minute": 6,
                     "tokens_per_minute": 12000,
@@ -146,6 +149,36 @@ class AgentRuntimeConfigTests(unittest.TestCase):
         )
         dumped_config = node.config.model_dump(by_alias=True, mode="json")
         self.assertEqual(dumped_config["providerProfile"]["requestTimeoutSeconds"], 12.5)
+
+    def test_provider_cost_budget_degrade_model_strategy_is_exposed_for_runtime_calls(self) -> None:
+        node = _agent_node(
+            {
+                "providerProfile": {
+                    "costBudget": {
+                        "limitUsd": 0.05,
+                        "window": "run",
+                        "onExceeded": "degrade_model",
+                    },
+                }
+            }
+        )
+
+        runtime_config = resolve_agent_runtime_config(
+            node,
+            get_default_text_model_ref_func=lambda *, force_refresh: "openai/gpt-4.1",
+            get_default_agent_thinking_enabled_func=lambda: False,
+            get_default_agent_thinking_level_func=lambda: "off",
+            get_default_agent_temperature_func=lambda: 0.2,
+            normalize_model_ref_func=lambda value: value.strip(),
+            resolve_runtime_model_name_func=lambda model_ref: model_ref.split("/", 1)[1],
+            normalize_thinking_level_func=lambda value: "off" if value == "auto" else str(value),
+            resolve_effective_thinking_level_func=lambda *, configured_level, provider_id, model: configured_level,
+        )
+
+        self.assertEqual(
+            runtime_config["provider_cost_budget"],
+            {"limit_usd": 0.05, "window": "run", "on_exceeded": "degrade_model"},
+        )
 
     def test_default_provider_profile_is_omitted_from_serialized_agent_config(self) -> None:
         node = _agent_node({})

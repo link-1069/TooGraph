@@ -49,6 +49,7 @@ class ModelProviderCredentialTests(unittest.TestCase):
                     "status": "cooling_down",
                     "cooldown_until": "2026-05-29T03:02:00Z",
                     "failure_count": 2,
+                    "last_used_at": "2026-05-29T03:00:00Z",
                     "api_key": "sk-primary",
                 },
                 {
@@ -71,6 +72,8 @@ class ModelProviderCredentialTests(unittest.TestCase):
                 "previous_status": "active",
                 "status": "cooling_down",
                 "previous_failure_count": 1,
+                "previous_last_used_at": None,
+                "last_used_at": "2026-05-29T03:00:00Z",
                 "failure_count": 2,
                 "cooldown_until": "2026-05-29T03:02:00Z",
                 "cooldown_seconds": 120,
@@ -110,6 +113,7 @@ class ModelProviderCredentialTests(unittest.TestCase):
                     "status": "active",
                     "cooldown_until": None,
                     "failure_count": 0,
+                    "last_used_at": "2026-05-29T03:03:00Z",
                     "api_key": "sk-primary",
                 },
             ],
@@ -125,6 +129,8 @@ class ModelProviderCredentialTests(unittest.TestCase):
                 "previous_status": "cooling_down",
                 "status": "active",
                 "previous_failure_count": 2,
+                "previous_last_used_at": None,
+                "last_used_at": "2026-05-29T03:03:00Z",
                 "failure_count": 0,
                 "cooldown_until": None,
             },
@@ -162,6 +168,163 @@ class ModelProviderCredentialTests(unittest.TestCase):
                 "status": "active",
                 "source": "credential_pool",
                 "previous_status": "cooling_down",
+            },
+        )
+
+    def test_select_provider_credential_prefers_least_recently_used_active_record(self) -> None:
+        from app.core.model_provider_credentials import select_provider_credential
+
+        api_key, credential = select_provider_credential(
+            {
+                "credential_pool": [
+                    {
+                        "credential_id": "primary",
+                        "api_key": "sk-primary",
+                        "status": "active",
+                        "last_used_at": "2026-05-29T03:05:00Z",
+                    },
+                    {
+                        "credential_id": "backup",
+                        "api_key": "sk-backup",
+                        "status": "active",
+                        "last_used_at": "2026-05-29T03:00:00Z",
+                    },
+                    {
+                        "credential_id": "fresh",
+                        "api_key": "sk-fresh",
+                        "status": "active",
+                    },
+                ]
+            },
+            now=datetime(2026, 5, 29, 3, 10, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(api_key, "sk-fresh")
+        self.assertEqual(
+            credential,
+            {
+                "credential_id": "fresh",
+                "status": "active",
+                "source": "credential_pool",
+            },
+        )
+
+    def test_update_provider_credential_pool_records_last_used_at_after_success(self) -> None:
+        from app.core.model_provider_credentials import update_provider_credential_pool_after_call
+
+        updated, event = update_provider_credential_pool_after_call(
+            {
+                "model_providers": {
+                    "openai": {
+                        "credential_pool": [
+                            {
+                                "credential_id": "primary",
+                                "api_key": "sk-primary",
+                                "status": "active",
+                                "cooldown_until": None,
+                                "failure_count": 0,
+                                "last_used_at": "2026-05-29T02:59:00Z",
+                            },
+                        ],
+                    }
+                }
+            },
+            provider_id="openai",
+            credential_id="primary",
+            success=True,
+            now=datetime(2026, 5, 29, 3, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(updated["model_providers"]["openai"]["credential_pool"][0]["last_used_at"], "2026-05-29T03:00:00Z")
+        self.assertEqual(event["last_used_at"], "2026-05-29T03:00:00Z")
+        self.assertEqual(event["previous_last_used_at"], "2026-05-29T02:59:00Z")
+
+    def test_update_provider_credential_pool_records_last_used_at_after_failure(self) -> None:
+        from app.core.model_provider_credentials import update_provider_credential_pool_after_call
+
+        updated, event = update_provider_credential_pool_after_call(
+            {
+                "model_providers": {
+                    "openai": {
+                        "credential_pool": [
+                            {
+                                "credential_id": "primary",
+                                "api_key": "sk-primary",
+                                "status": "active",
+                                "cooldown_until": None,
+                                "failure_count": 0,
+                                "last_used_at": "2026-05-29T02:59:00Z",
+                            },
+                        ],
+                    }
+                }
+            },
+            provider_id="openai",
+            credential_id="primary",
+            success=False,
+            now=datetime(2026, 5, 29, 3, 0, tzinfo=timezone.utc),
+        )
+
+        credential = updated["model_providers"]["openai"]["credential_pool"][0]
+        self.assertEqual(credential["status"], "cooling_down")
+        self.assertEqual(credential["last_used_at"], "2026-05-29T03:00:00Z")
+        self.assertEqual(event["last_used_at"], "2026-05-29T03:00:00Z")
+        self.assertEqual(event["previous_last_used_at"], "2026-05-29T02:59:00Z")
+
+    def test_update_provider_credential_pool_exhausts_credential_after_repeated_failures(self) -> None:
+        from app.core.model_provider_credentials import update_provider_credential_pool_after_call
+
+        updated, event = update_provider_credential_pool_after_call(
+            {
+                "model_providers": {
+                    "openai": {
+                        "credential_pool": [
+                            {
+                                "credential_id": "primary",
+                                "api_key": "sk-primary",
+                                "status": "cooling_down",
+                                "cooldown_until": "2026-05-29T02:59:30Z",
+                                "failure_count": 4,
+                                "last_used_at": "2026-05-29T02:59:00Z",
+                            },
+                            {
+                                "credential_id": "backup",
+                                "api_key": "sk-backup",
+                                "status": "active",
+                                "failure_count": 0,
+                            },
+                        ],
+                    }
+                }
+            },
+            provider_id="openai",
+            credential_id="primary",
+            success=False,
+            now=datetime(2026, 5, 29, 3, 0, tzinfo=timezone.utc),
+        )
+
+        credentials = updated["model_providers"]["openai"]["credential_pool"]
+        self.assertEqual(credentials[0]["credential_id"], "primary")
+        self.assertEqual(credentials[0]["status"], "exhausted")
+        self.assertIsNone(credentials[0]["cooldown_until"])
+        self.assertEqual(credentials[0]["failure_count"], 5)
+        self.assertEqual(credentials[0]["last_used_at"], "2026-05-29T03:00:00Z")
+        self.assertEqual(credentials[1]["status"], "active")
+        self.assertEqual(
+            event,
+            {
+                "kind": "provider_credential_state_update",
+                "version": 1,
+                "provider_id": "openai",
+                "credential_id": "primary",
+                "outcome": "failure",
+                "previous_status": "cooling_down",
+                "status": "exhausted",
+                "previous_failure_count": 4,
+                "previous_last_used_at": "2026-05-29T02:59:00Z",
+                "last_used_at": "2026-05-29T03:00:00Z",
+                "failure_count": 5,
+                "cooldown_until": None,
             },
         )
 

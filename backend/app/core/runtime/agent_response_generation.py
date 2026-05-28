@@ -41,6 +41,9 @@ def model_provider_request_profile_kwargs(
     provider_cost_budget = runtime_config.get("provider_cost_budget")
     if isinstance(provider_cost_budget, dict) and provider_cost_budget:
         kwargs["provider_cost_budget"] = provider_cost_budget
+    provider_cost_budget_approval = runtime_config.get("provider_cost_budget_approval")
+    if isinstance(provider_cost_budget_approval, dict) and provider_cost_budget_approval:
+        kwargs["provider_cost_budget_approval"] = provider_cost_budget_approval
     provider_rate_profile = runtime_config.get("provider_rate_profile")
     if isinstance(provider_rate_profile, dict) and provider_rate_profile:
         kwargs["provider_rate_profile"] = provider_rate_profile
@@ -64,6 +67,9 @@ def model_call_profile_context(
     provider_cost_budget = runtime_config.get("provider_cost_budget")
     if isinstance(provider_cost_budget, dict) and provider_cost_budget:
         context["provider_cost_budget"] = dict(provider_cost_budget)
+    provider_cost_budget_approval = runtime_config.get("provider_cost_budget_approval")
+    if isinstance(provider_cost_budget_approval, dict) and provider_cost_budget_approval:
+        context["provider_cost_budget_approval"] = dict(provider_cost_budget_approval)
     provider_rate_profile = runtime_config.get("provider_rate_profile")
     if isinstance(provider_rate_profile, dict) and provider_rate_profile:
         context["provider_rate_profile"] = dict(provider_rate_profile)
@@ -227,6 +233,7 @@ def generate_agent_response(
         "provider_response_id": llm_meta.get("response_id"),
         "provider_usage": llm_meta.get("usage"),
         "provider_cost_estimate": llm_meta.get("provider_cost_estimate"),
+        "provider_cost_budget_degradation": llm_meta.get("provider_cost_budget_degradation"),
         "provider_rate_decision": llm_meta.get("provider_rate_decision"),
         "provider_timings": llm_meta.get("timings"),
         "provider_fallback_used": bool(llm_meta.get("provider_fallback_used")),
@@ -246,6 +253,7 @@ def generate_agent_response(
         "structured_output_repair_provider_response_id": repair_meta.get("response_id"),
         "structured_output_repair_provider_usage": repair_meta.get("usage"),
         "structured_output_repair_provider_cost_estimate": repair_meta.get("provider_cost_estimate"),
+        "structured_output_repair_provider_cost_budget_degradation": repair_meta.get("provider_cost_budget_degradation"),
         "structured_output_repair_provider_rate_decision": repair_meta.get("provider_rate_decision"),
         "structured_output_repair_provider_timings": repair_meta.get("timings"),
         "structured_output_repair_provider_fallback_used": bool(repair_meta.get("provider_fallback_used")),

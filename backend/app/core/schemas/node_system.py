@@ -204,6 +204,7 @@ class AgentProviderCachePolicy(str, Enum):
 class NodeSystemAgentProviderCostBudget(BaseModel):
     limit_usd: float | None = Field(default=None, ge=0, alias="limitUsd")
     window: Literal["node", "run", "day", "month"] = "run"
+    on_exceeded: Literal["block", "request_approval", "degrade_model"] = Field(default="block", alias="onExceeded")
 
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
 
@@ -238,6 +239,7 @@ class NodeSystemAgentProviderProfile(BaseModel):
             and self.cache_policy == AgentProviderCachePolicy.DEFAULT
             and self.cost_budget.limit_usd is None
             and self.cost_budget.window == "run"
+            and self.cost_budget.on_exceeded == "block"
             and self.rate_profile.requests_per_minute is None
             and self.rate_profile.tokens_per_minute is None
             and self.rate_profile.concurrency is None

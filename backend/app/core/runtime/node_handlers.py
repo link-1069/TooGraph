@@ -29,7 +29,9 @@ from app.core.runtime.input_boundary import coerce_input_boundary_value, first_t
 from app.core.runtime.reference_resolution import resolve_condition_source
 from app.core.runtime.permission_approval import (
     build_pending_permission_approval,
+    build_pending_provider_cost_budget_approval,
     consume_pending_permission_approval,
+    consume_pending_provider_cost_budget_approval,
     find_pending_permission_approval_for_node,
     should_pause_for_action_permission_approval,
 )
@@ -62,6 +64,7 @@ from app.actions.registry import get_action_registry
 from app.graph_tools.definitions import get_tool_definition_registry
 from app.graph_tools.registry import get_tool_registry
 from app.graph_tools.runtime import invoke_tool
+from app.tools.model_provider_client import ProviderCostBudgetExceeded
 
 
 class _BatchItemExecutionError(Exception):
@@ -532,6 +535,18 @@ def execute_agent_node(
         runtime_config = {
             **runtime_config,
             "model_runtime_fixture": model_runtime_fixture,
+        }
+    provider_cost_budget_approval = consume_pending_provider_cost_budget_approval(state, node_name=node_name)
+    if provider_cost_budget_approval is not None:
+        if str(provider_cost_budget_approval.get("status") or "") == "denied":
+            denial_reason = (
+                _compact_text(provider_cost_budget_approval.get("denial_reason"))
+                or "The user denied this provider cost budget request."
+            )
+            raise RuntimeError(f"Provider cost budget approval denied for node '{node_name}': {denial_reason}")
+        runtime_config = {
+            **runtime_config,
+            "provider_cost_budget_approval": provider_cost_budget_approval,
         }
     action_definitions = get_action_definition_registry_func(include_disabled=False)
     resolved_bindings = resolve_agent_action_bindings(node, input_values=input_values, state_schema=state_schema)
@@ -1105,13 +1120,52 @@ def execute_agent_node(
         phase="agent_response",
         record_activity_event_func=record_activity_event_func,
     )
-    response_payload, response_reasoning, response_warnings, runtime_config = generate_agent_response_func(
-        response_node,
-        input_values,
-        action_context,
-        runtime_config,
-        **generate_kwargs,
-    )
+    try:
+        response_payload, response_reasoning, response_warnings, runtime_config = generate_agent_response_func(
+            response_node,
+            input_values,
+            action_context,
+            runtime_config,
+            **generate_kwargs,
+        )
+    except ProviderCostBudgetExceeded as exc:
+        if not isinstance(getattr(exc, "approval_request", None), dict):
+            raise
+        pending_approval = build_pending_provider_cost_budget_approval(
+            state=state,
+            node_name=node_name,
+            preflight_decision=exc.decision,
+        )
+        record_activity_event_func(
+            state,
+            kind="permission_pause",
+            summary="Provider cost budget approval required.",
+            node_id=node_name,
+            status="awaiting_human",
+            detail={
+                "approval_type": "provider_cost_budget",
+                "budget_window": exc.decision.get("budget_window"),
+                "budget_limit_usd": exc.decision.get("budget_limit_usd"),
+                "previous_window_cost_usd": exc.decision.get("previous_window_cost_usd"),
+            },
+        )
+        return {
+            "outputs": {},
+            "awaiting_human": True,
+            "pending_permission_approval": pending_approval,
+            "action_input_reasoning": action_input_reasoning,
+            "subgraph_input_reasoning": subgraph_input_reasoning,
+            "selected_actions": selected_actions,
+            "selected_capabilities": selected_capabilities,
+            "action_outputs": action_outputs,
+            "tool_outputs": tool_outputs,
+            "capability_outputs": capability_outputs,
+            "runtime_config": _runtime_config_for_artifacts(runtime_config),
+            "warnings": list(dict.fromkeys(warnings)),
+            "llm_phases": list(llm_phases),
+            "context_assembly_report": context_assembly_report(),
+            "final_result": "",
+        }
     llm_phases.append("agent_response")
     warnings.extend(response_warnings)
 

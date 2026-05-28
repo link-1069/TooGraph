@@ -114,6 +114,51 @@ class ModelRequestLogTests(unittest.TestCase):
             "eligible": False,
             "reason": "node_provider_cache_policy_disabled",
         }
+        provider_fallback_trace = {
+            "kind": "provider_fallback_trace",
+            "decision": "fallback_selected",
+            "fallback_used": True,
+            "requested": {"provider_id": "openai", "model": "gpt-primary", "model_ref": "openai/gpt-primary"},
+            "selected": {"provider_id": "local", "model": "gemma", "model_ref": "local/gemma"},
+            "failed_candidates": [
+                {
+                    "provider_id": "openai",
+                    "model": "gpt-primary",
+                    "model_ref": "openai/gpt-primary",
+                    "error_type": "provider_timeout",
+                },
+            ],
+            "fallback_candidates": [
+                {
+                    "provider_id": "local",
+                    "model": "gemma",
+                    "model_ref": "local/gemma",
+                    "reason": "compatible_fallback",
+                },
+            ],
+            "rejected_candidates": [
+                {
+                    "provider_id": "web-gateway",
+                    "model": "browsing-model",
+                    "model_ref": "web-gateway/browsing-model",
+                    "reason": "permission_scope_expanded",
+                },
+            ],
+            "required_capabilities": ["chat", "structured_output"],
+            "required_permissions": ["text_generation"],
+            "warnings": ["primary provider timed out"],
+        }
+        provider_cost_budget_approval = {
+            "kind": "capability_permission_approval",
+            "approval_type": "provider_cost_budget",
+            "approval_id": "budget_approval",
+            "status": "approved",
+            "provider_cost_budget_preflight": {
+                "kind": "provider_cost_budget_preflight",
+                "status": "blocked",
+                "budget_window_scope": {"window": "run", "root_run_id": "run_provider_profile"},
+            },
+        }
 
         with tempfile.TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir) / "data"
@@ -136,12 +181,24 @@ class ModelRequestLogTests(unittest.TestCase):
                         provider_request_timeout_seconds=12.5,
                         provider_cache_policy="disabled",
                         provider_cache_decision=provider_cache_decision,
+                        provider_fallback_trace=provider_fallback_trace,
                         provider_cost_budget={"limit_usd": 1.25, "window": "run"},
+                        provider_cost_budget_approval=provider_cost_budget_approval,
                         provider_rate_profile={"requests_per_minute": 30, "tokens_per_minute": 1200, "concurrency": 2},
                         provider_credential={
                             "credential_id": "primary",
                             "status": "active",
                             "source": "credential_pool",
+                        },
+                        provider_credential_state_update={
+                            "kind": "provider_credential_state_update",
+                            "credential_id": "primary",
+                            "outcome": "failure",
+                            "previous_status": "cooling_down",
+                            "status": "exhausted",
+                            "previous_failure_count": 4,
+                            "failure_count": 5,
+                            "cooldown_until": None,
                         },
                         provider_rate_reservation={
                             "kind": "provider_rate_reservation",
@@ -176,7 +233,9 @@ class ModelRequestLogTests(unittest.TestCase):
         self.assertEqual(entry["provider_request_timeout_seconds"], 12.5)
         self.assertEqual(entry["provider_cache_policy"], "disabled")
         self.assertEqual(entry["provider_cache_decision"], provider_cache_decision)
+        self.assertEqual(entry["provider_fallback_trace"], provider_fallback_trace)
         self.assertEqual(entry["provider_cost_budget"], {"limit_usd": 1.25, "window": "run"})
+        self.assertEqual(entry["provider_cost_budget_approval"], provider_cost_budget_approval)
         self.assertEqual(
             entry["provider_rate_profile"],
             {"requests_per_minute": 30, "tokens_per_minute": 1200, "concurrency": 2},
@@ -187,6 +246,19 @@ class ModelRequestLogTests(unittest.TestCase):
                 "credential_id": "primary",
                 "status": "active",
                 "source": "credential_pool",
+            },
+        )
+        self.assertEqual(
+            entry["provider_credential_state_update"],
+            {
+                "kind": "provider_credential_state_update",
+                "credential_id": "primary",
+                "outcome": "failure",
+                "previous_status": "cooling_down",
+                "status": "exhausted",
+                "previous_failure_count": 4,
+                "failure_count": 5,
+                "cooldown_until": None,
             },
         )
         self.assertEqual(
@@ -246,6 +318,78 @@ class ModelRequestLogTests(unittest.TestCase):
                 "reason": "single_call_tokens_exceed_profile",
             },
         )
+
+    def test_model_request_log_metadata_update_attaches_provider_fallback_trace(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.core.runtime.state import create_initial_run_state
+        from app.core.storage import database, run_store
+        from app.core.storage.model_log_store import (
+            append_model_request_log,
+            list_model_request_logs,
+            update_model_request_log_metadata,
+        )
+
+        provider_fallback_trace = {
+            "kind": "provider_fallback_trace",
+            "decision": "fallback_selected",
+            "fallback_used": True,
+            "requested": {"provider_id": "openai", "model": "gpt-primary", "model_ref": "openai/gpt-primary"},
+            "selected": {"provider_id": "local", "model": "gemma", "model_ref": "local/gemma"},
+            "failed_candidates": [
+                {
+                    "provider_id": "openai",
+                    "model": "gpt-primary",
+                    "model_ref": "openai/gpt-primary",
+                    "error_type": "provider_timeout",
+                },
+            ],
+            "fallback_candidates": [
+                {
+                    "provider_id": "local",
+                    "model": "gemma",
+                    "model_ref": "local/gemma",
+                    "reason": "compatible_fallback",
+                },
+            ],
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir):
+                with patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"):
+                    database.initialize_storage()
+                    run = create_initial_run_state("graph_root", "Root Graph")
+                    run["run_id"] = "run_provider_fallback"
+                    run["root_run_id"] = "run_provider_fallback"
+                    run["run_path"] = ["run_provider_fallback"]
+                    run_store.save_run(run)
+
+                    with use_model_call_context(
+                        run_id="run_provider_fallback",
+                        root_run_id="run_provider_fallback",
+                        node_id="agent",
+                        node_type="agent",
+                        phase="agent_response",
+                    ):
+                        created = append_model_request_log(
+                            provider_id="local",
+                            transport="openai-compatible",
+                            model="gemma",
+                            path="/v1/chat/completions",
+                            request_raw={"model": "gemma", "messages": [{"role": "user", "content": "hello"}]},
+                            response_raw={"choices": [{"message": {"content": "hello"}}]},
+                            duration_ms=10,
+                            status_code=200,
+                        )
+
+                    updated = update_model_request_log_metadata(
+                        created["id"],
+                        {"provider_fallback_trace": provider_fallback_trace},
+                    )
+                    payload = list_model_request_logs(page=1, size=10)
+
+        self.assertEqual(updated["provider_fallback_trace"], provider_fallback_trace)
+        self.assertEqual(payload["entries"][0]["provider_fallback_trace"], provider_fallback_trace)
 
     def test_provider_cost_budget_accumulates_across_root_run_model_calls(self) -> None:
         from app.core.runtime.model_call_context import use_model_call_context
@@ -414,6 +558,87 @@ class ModelRequestLogTests(unittest.TestCase):
                 "budget_window_scope": {"window": "run", "root_run_id": "run_budget_guard"},
             },
         )
+
+    def test_provider_cost_budget_preflight_marks_approval_strategy_when_window_is_exhausted(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.core.runtime.state import create_initial_run_state
+        from app.core.storage import database, run_store
+        from app.core.storage.model_log_store import append_model_request_log, evaluate_provider_cost_budget_preflight
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir):
+                with patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"):
+                    database.initialize_storage()
+                    run = create_initial_run_state("graph_root", "Root Graph")
+                    run["run_id"] = "run_budget_approval"
+                    run["root_run_id"] = "run_budget_approval"
+                    run["run_path"] = ["run_budget_approval"]
+                    run_store.save_run(run)
+
+                    with use_model_call_context(
+                        run_id="run_budget_approval",
+                        root_run_id="run_budget_approval",
+                        node_id="agent",
+                        node_type="agent",
+                        phase="agent_response",
+                        provider_cost_budget={"limit_usd": 0.005, "window": "run"},
+                        provider_pricing={
+                            "input_per_million_usd": 2.0,
+                            "output_per_million_usd": 8.0,
+                        },
+                    ):
+                        append_model_request_log(
+                            provider_id="openai",
+                            transport="openai-compatible",
+                            model="gpt-4.1",
+                            path="/v1/chat/completions",
+                            request_raw={"model": "gpt-4.1", "messages": [{"role": "user", "content": "one"}]},
+                            response_raw={
+                                "choices": [{"message": {"content": "one"}}],
+                                "usage": {"input_tokens": 1000, "output_tokens": 500},
+                            },
+                            duration_ms=10,
+                            status_code=200,
+                        )
+
+                    preflight = evaluate_provider_cost_budget_preflight(
+                        {
+                            "run_id": "run_budget_approval",
+                            "root_run_id": "run_budget_approval",
+                            "node_id": "agent",
+                        },
+                        {"limit_usd": 0.005, "window": "run", "on_exceeded": "request_approval"},
+                    )
+                    degradation_preflight = evaluate_provider_cost_budget_preflight(
+                        {
+                            "run_id": "run_budget_approval",
+                            "root_run_id": "run_budget_approval",
+                            "node_id": "agent",
+                        },
+                        {"limit_usd": 0.005, "window": "run", "on_exceeded": "degrade_model"},
+                    )
+
+        self.assertEqual(preflight["status"], "blocked")
+        self.assertEqual(preflight["on_exceeded"], "request_approval")
+        self.assertTrue(preflight["requires_approval"])
+        self.assertEqual(
+            preflight["approval_request"],
+            {
+                "kind": "provider_cost_budget_approval_request",
+                "version": 1,
+                "reason": "provider_cost_budget_already_exhausted",
+                "budget_limit_usd": 0.005,
+                "previous_window_cost_usd": 0.006,
+                "budget_window": "run",
+                "budget_window_scope": {"window": "run", "root_run_id": "run_budget_approval"},
+                "requested_action": "approve_budget_overrun_or_degrade_model",
+            },
+        )
+        self.assertEqual(degradation_preflight["status"], "blocked")
+        self.assertEqual(degradation_preflight["on_exceeded"], "degrade_model")
+        self.assertTrue(degradation_preflight["requires_degradation"])
+        self.assertNotIn("approval_request", degradation_preflight)
 
     def test_provider_rate_profile_preflight_blocks_when_minute_window_is_exhausted(self) -> None:
         from app.core.runtime.model_call_context import use_model_call_context

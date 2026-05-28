@@ -117,6 +117,65 @@ class AgentActionInputGenerationTests(unittest.TestCase):
         self.assertNotIn("ACTION SECRET INPUT", serialized_snapshot)
         self.assertNotIn("ACTION SECRET TASK", serialized_snapshot)
 
+    def test_generate_agent_action_inputs_records_provider_cost_budget_degradation(self) -> None:
+        degradation = {
+            "kind": "provider_cost_budget_degradation",
+            "status": "applied",
+            "requested_model_ref": "openai/gpt-primary",
+            "selected_model_ref": "local/gpt-economy",
+            "provider_cost_budget_preflight": {"status": "blocked", "on_exceeded": "degrade_model"},
+        }
+
+        def chat_with_model_ref_with_meta_func(**_kwargs):
+            return (
+                '{"web_search": {"query": "TooGraph"}}',
+                {
+                    "warnings": [],
+                    "model": "gpt-economy",
+                    "provider_id": "local",
+                    "provider_cost_budget_degradation": degradation,
+                },
+            )
+
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "reads": [{"state": "question"}],
+                "config": {"actionKey": "web_search"},
+            }
+        )
+
+        _action_inputs, _state_outputs, _reasoning, warnings, updated_config = generate_agent_action_inputs(
+            node=node,
+            input_values={"question": "search"},
+            bindings=[
+                ResolvedAgentActionBinding(
+                    binding=NodeSystemAgentActionBinding(actionKey="web_search"),
+                    source="node_config",
+                )
+            ],
+            action_definitions={
+                "web_search": ActionDefinition(
+                    actionKey="web_search",
+                    name="Web Search",
+                    llmOutputSchema=[ActionIoField(key="query", name="Query", valueType="text")],
+                )
+            },
+            runtime_config={
+                "resolved_provider_id": "openai",
+                "runtime_model_name": "gpt-primary",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+                "resolved_model_ref": "openai/gpt-primary",
+            },
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+        )
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(updated_config["action_input_provider_cost_budget_degradation"], degradation)
+
     def test_action_input_prompt_separates_state_inputs_from_llm_parameters(self) -> None:
         prompt = build_action_input_system_prompt(
             input_values={"user_goal": "打开运行历史"},

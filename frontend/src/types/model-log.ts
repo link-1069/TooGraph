@@ -39,8 +39,13 @@ export type ModelLogEntry = {
   provider_request_timeout_seconds?: number | null;
   provider_cache_policy?: string;
   provider_cache_decision?: Record<string, unknown>;
+  provider_fallback_trace?: Record<string, unknown>;
   provider_cost_budget?: Record<string, unknown>;
+  provider_cost_budget_approval?: Record<string, unknown>;
+  provider_cost_budget_degradation?: Record<string, unknown>;
   provider_rate_profile?: Record<string, unknown>;
+  provider_credential?: Record<string, unknown>;
+  provider_credential_state_update?: Record<string, unknown>;
   provider_cost_estimate?: Record<string, unknown>;
   provider_rate_decision?: Record<string, unknown>;
   provider_rate_reservation?: Record<string, unknown>;

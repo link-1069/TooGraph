@@ -109,6 +109,141 @@
             <span>{{ selectedLog.path }}</span>
           </div>
 
+          <section v-if="selectedProviderFallback.visible" class="model-logs-page__section model-logs-page__provider-fallback">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.providerFallback") }}</h4>
+              <span
+                class="model-logs-page__section-pill"
+                :class="`model-logs-page__section-pill--${selectedProviderFallback.tone}`"
+              >
+                {{ selectedProviderFallback.status || t("common.noSummary") }}
+              </span>
+            </div>
+            <dl v-if="selectedProviderFallback.metrics.length > 0" class="model-logs-page__diagnostic-grid">
+              <div v-for="metric in selectedProviderFallback.metrics" :key="metric.key">
+                <dt>{{ providerFallbackMetricLabel(metric.key) }}</dt>
+                <dd>{{ metric.value }}</dd>
+              </div>
+            </dl>
+            <div v-if="selectedProviderFallback.evidenceLabels.length > 0" class="model-logs-page__diagnostic-chips">
+              <span v-for="label in selectedProviderFallback.evidenceLabels" :key="label">{{ label }}</span>
+            </div>
+          </section>
+
+          <section
+            v-if="selectedProviderCostBudgetDegradation.visible"
+            class="model-logs-page__section model-logs-page__provider-cost-budget-degradation"
+          >
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.providerCostBudgetDegradation") }}</h4>
+              <span
+                class="model-logs-page__section-pill"
+                :class="`model-logs-page__section-pill--${selectedProviderCostBudgetDegradation.tone}`"
+              >
+                {{ selectedProviderCostBudgetDegradation.status || t("common.noSummary") }}
+              </span>
+            </div>
+            <dl v-if="selectedProviderCostBudgetDegradation.metrics.length > 0" class="model-logs-page__diagnostic-grid">
+              <div v-for="metric in selectedProviderCostBudgetDegradation.metrics" :key="metric.key">
+                <dt>{{ providerCostBudgetDegradationMetricLabel(metric.key) }}</dt>
+                <dd>{{ metric.value }}</dd>
+              </div>
+            </dl>
+            <div v-if="selectedProviderCostBudgetDegradation.evidenceLabels.length > 0" class="model-logs-page__diagnostic-chips">
+              <span v-for="label in selectedProviderCostBudgetDegradation.evidenceLabels" :key="label">{{ label }}</span>
+            </div>
+          </section>
+
+          <section v-if="selectedProviderCache.visible" class="model-logs-page__section model-logs-page__provider-cache">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.providerCache") }}</h4>
+              <span
+                class="model-logs-page__section-pill"
+                :class="`model-logs-page__section-pill--${selectedProviderCache.tone}`"
+              >
+                {{ selectedProviderCache.status || t("common.noSummary") }}
+              </span>
+            </div>
+            <dl v-if="selectedProviderCache.metrics.length > 0" class="model-logs-page__diagnostic-grid">
+              <div v-for="metric in selectedProviderCache.metrics" :key="metric.key">
+                <dt>{{ providerCacheMetricLabel(metric.key) }}</dt>
+                <dd>{{ metric.value }}</dd>
+              </div>
+            </dl>
+            <div v-if="selectedProviderCache.evidenceLabels.length > 0" class="model-logs-page__diagnostic-chips">
+              <span v-for="label in selectedProviderCache.evidenceLabels" :key="label">{{ label }}</span>
+            </div>
+          </section>
+
+          <section v-if="selectedProviderCost.visible" class="model-logs-page__section model-logs-page__provider-cost">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.providerCost") }}</h4>
+              <span
+                class="model-logs-page__section-pill"
+                :class="`model-logs-page__section-pill--${selectedProviderCost.tone}`"
+              >
+                {{ selectedProviderCost.status || t("common.noSummary") }}
+              </span>
+            </div>
+            <dl v-if="selectedProviderCost.metrics.length > 0" class="model-logs-page__diagnostic-grid">
+              <div v-for="metric in selectedProviderCost.metrics" :key="metric.key">
+                <dt>{{ providerCostMetricLabel(metric.key) }}</dt>
+                <dd>{{ metric.value }}</dd>
+              </div>
+            </dl>
+            <div v-if="selectedProviderCost.evidenceLabels.length > 0" class="model-logs-page__diagnostic-chips">
+              <span v-for="label in selectedProviderCost.evidenceLabels" :key="label">{{ label }}</span>
+            </div>
+          </section>
+
+          <section v-if="selectedProviderRateDecision.visible" class="model-logs-page__section model-logs-page__provider-rate-decision">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.providerRateDecision") }}</h4>
+              <span
+                class="model-logs-page__section-pill"
+                :class="`model-logs-page__section-pill--${selectedProviderRateDecision.tone}`"
+              >
+                {{ selectedProviderRateDecision.status || t("common.noSummary") }}
+              </span>
+            </div>
+            <dl v-if="selectedProviderRateDecision.metrics.length > 0" class="model-logs-page__diagnostic-grid">
+              <div v-for="metric in selectedProviderRateDecision.metrics" :key="metric.key">
+                <dt>{{ providerRateDecisionMetricLabel(metric.key) }}</dt>
+                <dd>{{ metric.value }}</dd>
+              </div>
+            </dl>
+            <div v-if="selectedProviderRateDecision.evidenceLabels.length > 0" class="model-logs-page__diagnostic-chips">
+              <span v-for="label in selectedProviderRateDecision.evidenceLabels" :key="label">{{ label }}</span>
+            </div>
+          </section>
+
+          <section v-if="selectedProviderCredential.visible" class="model-logs-page__section model-logs-page__provider-credential">
+            <div class="model-logs-page__section-heading">
+              <h4>{{ t("modelLogs.providerCredential") }}</h4>
+              <span
+                class="model-logs-page__section-pill"
+                :class="`model-logs-page__section-pill--${selectedProviderCredential.tone}`"
+              >
+                {{ selectedProviderCredential.status || t("common.noSummary") }}
+              </span>
+            </div>
+            <dl v-if="selectedProviderCredential.metrics.length > 0" class="model-logs-page__diagnostic-grid">
+              <div v-for="metric in selectedProviderCredential.metrics" :key="metric.key">
+                <dt>{{ providerCredentialMetricLabel(metric.key) }}</dt>
+                <dd>{{ metric.value }}</dd>
+              </div>
+            </dl>
+            <dl v-if="selectedProviderCredential.timeline.length > 0" class="model-logs-page__diagnostic-grid model-logs-page__diagnostic-grid--timeline">
+              <div v-for="item in selectedProviderCredential.timeline" :key="item.key">
+                <dt>{{ providerCredentialTimelineLabel(item.key) }}</dt>
+                <dd>{{ formatTimestamp(item.value) }}</dd>
+              </div>
+            </dl>
+            <div v-if="selectedProviderCredential.evidenceLabels.length > 0" class="model-logs-page__diagnostic-chips">
+              <span v-for="label in selectedProviderCredential.evidenceLabels" :key="label">{{ label }}</span>
+            </div>
+          </section>
+
           <section v-if="selectedRateReservation.visible" class="model-logs-page__section model-logs-page__rate-reservation">
             <div class="model-logs-page__section-heading">
               <h4>{{ t("modelLogs.rateReservation") }}</h4>
@@ -309,7 +444,20 @@ import AppShell from "@/layouts/AppShell.vue";
 import type { ModelLogEntry, ModelLogTreeNode } from "@/types/model-log";
 import { highlightJson } from "./modelLogsJsonHighlight.ts";
 import {
+  buildProviderCacheDiagnostic,
+  buildProviderCostBudgetDegradationDiagnostic,
+  buildProviderCredentialDiagnostic,
+  buildProviderCostDiagnostic,
+  buildProviderFallbackDiagnostic,
+  buildProviderRateDecisionDiagnostic,
   buildProviderRateReservationDiagnostic,
+  type ProviderCacheMetricKey,
+  type ProviderCredentialMetricKey,
+  type ProviderCredentialTimelineKey,
+  type ProviderCostBudgetDegradationMetricKey,
+  type ProviderCostMetricKey,
+  type ProviderFallbackMetricKey,
+  type ProviderRateDecisionMetricKey,
   type ProviderRateReservationMetricKey,
   type ProviderRateReservationTimelineKey,
 } from "./modelLogProviderDiagnostics.ts";
@@ -354,6 +502,14 @@ const errorCount = computed(() => logs.value.filter((entry) => Boolean(entry.err
 const logsById = computed(() => new Map(logs.value.map((entry) => [entry.id, entry])));
 const treeItems = computed(() => flattenTreeItems(runTrees.value, logsById.value));
 const selectedStreamSummary = computed(() => (selectedLog.value ? getStreamSummary(selectedLog.value) : null));
+const selectedProviderFallback = computed(() => buildProviderFallbackDiagnostic(selectedLog.value ?? {}));
+const selectedProviderCostBudgetDegradation = computed(() =>
+  buildProviderCostBudgetDegradationDiagnostic(selectedLog.value ?? {}),
+);
+const selectedProviderCache = computed(() => buildProviderCacheDiagnostic(selectedLog.value ?? {}));
+const selectedProviderCost = computed(() => buildProviderCostDiagnostic(selectedLog.value ?? {}));
+const selectedProviderRateDecision = computed(() => buildProviderRateDecisionDiagnostic(selectedLog.value ?? {}));
+const selectedProviderCredential = computed(() => buildProviderCredentialDiagnostic(selectedLog.value ?? {}));
 const selectedRateReservation = computed(() => buildProviderRateReservationDiagnostic(selectedLog.value ?? {}));
 const rawDialogTitle = computed(() =>
   rawDialogKind.value === "request" ? t("modelLogs.rawRequest") : t("modelLogs.rawResponse"),
@@ -654,6 +810,34 @@ function rateReservationMetricLabel(key: ProviderRateReservationMetricKey) {
 
 function rateReservationTimelineLabel(key: ProviderRateReservationTimelineKey) {
   return t(`modelLogs.rateReservationTimeline.${key}`);
+}
+
+function providerCredentialMetricLabel(key: ProviderCredentialMetricKey) {
+  return t(`modelLogs.providerCredentialMetric.${key}`);
+}
+
+function providerCredentialTimelineLabel(key: ProviderCredentialTimelineKey) {
+  return t(`modelLogs.providerCredentialTimeline.${key}`);
+}
+
+function providerCostMetricLabel(key: ProviderCostMetricKey) {
+  return t(`modelLogs.providerCostMetric.${key}`);
+}
+
+function providerCostBudgetDegradationMetricLabel(key: ProviderCostBudgetDegradationMetricKey) {
+  return t(`modelLogs.providerCostBudgetDegradationMetric.${key}`);
+}
+
+function providerRateDecisionMetricLabel(key: ProviderRateDecisionMetricKey) {
+  return t(`modelLogs.providerRateDecisionMetric.${key}`);
+}
+
+function providerCacheMetricLabel(key: ProviderCacheMetricKey) {
+  return t(`modelLogs.providerCacheMetric.${key}`);
+}
+
+function providerFallbackMetricLabel(key: ProviderFallbackMetricKey) {
+  return t(`modelLogs.providerFallbackMetric.${key}`);
 }
 
 watch(query, () => {
@@ -1103,13 +1287,13 @@ onBeforeUnmount(() => {
   overflow: hidden;
   margin: 0;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .model-logs-page__diagnostic-grid dt {
   color: rgba(60, 41, 20, 0.58);
   font-size: 0.7rem;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .model-logs-page__diagnostic-grid dd {
@@ -1117,6 +1301,9 @@ onBeforeUnmount(() => {
   color: rgba(31, 23, 15, 0.82);
   font-family: var(--toograph-font-mono);
   font-size: 0.76rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .model-logs-page__diagnostic-chips {

@@ -137,12 +137,14 @@ def _failed_candidates(
             "provider_id": failure_provider_id,
             "model": _text(failure_event.get("model")) or requested.get("model", ""),
         }
+    error_type = _text(failure_event.get("error_type")) or "provider_failed"
+    reason = "provider_cost_budget_exceeded" if error_type == "provider_cost_budget_exceeded" else "provider_failed"
     return [
         {
             **_candidate_public(failed),
             "status": "failed",
-            "reason": "provider_failed",
-            "error_type": _text(failure_event.get("error_type")) or "provider_failed",
+            "reason": reason,
+            "error_type": error_type,
             "message": _text(failure_event.get("message")),
         }
     ]

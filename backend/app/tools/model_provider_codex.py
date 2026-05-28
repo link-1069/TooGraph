@@ -206,6 +206,7 @@ def chat_codex_responses(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
     request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SEC,
 ) -> tuple[str, dict[str, Any]]:
     timeout_sec = normalize_request_timeout_seconds(request_timeout_seconds)
@@ -225,6 +226,10 @@ def chat_codex_responses(
         thinking_level=thinking_level,
     )
     request_payload.update(native_thinking_payload)
+    provider_prompt_cache_result = _apply_codex_responses_prompt_cache_key(
+        request_payload=request_payload,
+        prompt_cache_policy=prompt_cache_policy,
+    )
 
     started_at = time.monotonic()
     path = "/responses"
@@ -289,6 +294,11 @@ def chat_codex_responses(
     )
 
     content, reasoning = extract_codex_responses_text(response_payload)
+    if provider_prompt_cache_result:
+        provider_prompt_cache_result = _with_codex_responses_prompt_cache_usage(
+            provider_prompt_cache_result,
+            response_payload.get("usage"),
+        )
     return content, {
         "model": response_payload.get("model") or model,
         "provider_id": provider_id,
@@ -303,4 +313,51 @@ def chat_codex_responses(
         "reasoning_format": "responses-reasoning" if native_thinking_payload else None,
         "structured_output_strategy": "json_schema" if structured_output_schema else None,
         "request_timeout_seconds": timeout_sec,
+        **({"provider_prompt_cache_result": provider_prompt_cache_result} if provider_prompt_cache_result else {}),
     }
+
+
+def _apply_codex_responses_prompt_cache_key(
+    *,
+    request_payload: dict[str, Any],
+    prompt_cache_policy: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(prompt_cache_policy, dict):
+        return {}
+    if str(prompt_cache_policy.get("requested_policy") or "").strip().lower() != "prefer":
+        return {}
+    if not prompt_cache_policy.get("eligible"):
+        return {}
+    cache_key = str(prompt_cache_policy.get("cache_key") or "").strip()
+    if not cache_key:
+        return {}
+
+    request_payload["prompt_cache_key"] = cache_key
+    result: dict[str, Any] = {
+        "kind": "provider_prompt_cache_result",
+        "version": 1,
+        "requested_policy": "prefer",
+        "eligible": True,
+        "mode": "provider_applied",
+        "provider_cache_control": "openai_responses_prompt_cache_key",
+        "reason": "openai_responses_prompt_cache_key_applied",
+        "cache_key": cache_key,
+    }
+    stable_prefix_hash = str(prompt_cache_policy.get("stable_prefix_hash") or "").strip()
+    if stable_prefix_hash:
+        result["stable_prefix_hash"] = stable_prefix_hash
+    return result
+
+
+def _with_codex_responses_prompt_cache_usage(result: dict[str, Any], usage: Any) -> dict[str, Any]:
+    if not isinstance(usage, dict):
+        return result
+    details = usage.get("input_tokens_details")
+    if not isinstance(details, dict):
+        details = usage.get("prompt_tokens_details")
+    if not isinstance(details, dict):
+        return result
+    cached_tokens = details.get("cached_tokens")
+    if not isinstance(cached_tokens, (int, float)) or cached_tokens < 0:
+        return result
+    return {**result, "usage": {"cached_tokens": int(cached_tokens)}}

@@ -429,6 +429,75 @@ test("buildAgentDiagnostic summarizes provider fallback trace from node runtime 
   assert.deepEqual(diagnostic.providerFallback.warnings, ["repair provider fallback used"]);
 });
 
+test("buildAgentDiagnostic summarizes provider cost budget degradation from node runtime config", () => {
+  const diagnostic = buildAgentDiagnostic(
+    createRun({
+      node_executions: [
+        {
+          node_id: "agent",
+          node_type: "agent",
+          status: "success",
+          duration_ms: 1200,
+          input_summary: "",
+          output_summary: "",
+          warnings: [],
+          errors: [],
+          artifacts: {
+            inputs: {},
+            outputs: {},
+            family: "agent",
+            state_reads: [],
+            state_writes: [],
+            runtime_config: {
+              provider_cost_budget_degradation: {
+                kind: "provider_cost_budget_degradation",
+                status: "applied",
+                reason: "provider_cost_budget_degradation_selected",
+                requested_model_ref: "openai/gpt-primary",
+                selected_model_ref: "local/gpt-economy",
+                provider_cost_budget_preflight: {
+                  kind: "provider_cost_budget_preflight",
+                  status: "blocked",
+                  reason: "provider_cost_budget_already_exhausted",
+                  budget_limit_usd: 0.01,
+                  previous_window_cost_usd: 0.012,
+                  cumulative_cost_usd: 0.012,
+                  budget_window: "run",
+                  on_exceeded: "degrade_model",
+                },
+              },
+            },
+          },
+        },
+      ],
+    }),
+  );
+
+  assert.equal(diagnostic.visible, true);
+  assert.deepEqual(diagnostic.providerCostBudgetDegradation, {
+    visible: true,
+    status: "applied",
+    requestedRef: "openai/gpt-primary",
+    selectedRef: "local/gpt-economy",
+    reason: "provider_cost_budget_degradation_selected",
+    preflightStatus: "blocked",
+    preflightReason: "provider_cost_budget_already_exhausted",
+    budgetLimitLabel: "$0.01",
+    previousWindowCostLabel: "$0.012",
+    cumulativeCostLabel: "$0.012",
+    windowLabel: "run",
+    onExceededLabel: "degrade_model",
+    evidenceLabels: [
+      "status: applied",
+      "reason: provider_cost_budget_degradation_selected",
+      "preflight: blocked",
+      "preflight reason: provider_cost_budget_already_exhausted",
+      "window: run",
+      "on exceeded: degrade_model",
+    ],
+  });
+});
+
 test("buildAgentDiagnostic summarizes provider profile from node runtime config", () => {
   const diagnostic = buildAgentDiagnostic(
     createRun({
@@ -452,7 +521,7 @@ test("buildAgentDiagnostic summarizes provider profile from node runtime config"
               provider_profile: {
                 request_timeout_seconds: 12.5,
                 cache_policy: "disabled",
-                cost_budget: { limit_usd: 1.25, window: "run" },
+                cost_budget: { limit_usd: 1.25, window: "run", on_exceeded: "degrade_model" },
                 rate_profile: {
                   requests_per_minute: 30,
                   tokens_per_minute: 12000,
@@ -463,7 +532,7 @@ test("buildAgentDiagnostic summarizes provider profile from node runtime config"
               },
               provider_request_timeout_seconds: 12.5,
               provider_cache_policy: "disabled",
-              provider_cost_budget: { limit_usd: 1.25, window: "run" },
+              provider_cost_budget: { limit_usd: 1.25, window: "run", on_exceeded: "degrade_model" },
               provider_rate_profile: {
                 requests_per_minute: 30,
                 tokens_per_minute: 12000,
@@ -498,13 +567,13 @@ test("buildAgentDiagnostic summarizes provider profile from node runtime config"
     requestTimeoutLabel: "12.5s",
     cachePolicyLabel: "disabled",
     cacheDecisionLabel: "disabled / disabled / ineligible (node_provider_cache_policy_disabled)",
-    costBudgetLabel: "$1.25 / run",
+    costBudgetLabel: "$1.25 / run, degrade model",
     rateProfileLabel: "30 rpm, 12000 tpm, concurrency 2, wait up to 3.5s",
     evidenceLabels: [
       "timeout: 12.5s",
       "cache policy: disabled",
       "cache decision: disabled / disabled / ineligible (node_provider_cache_policy_disabled)",
-      "cost budget: $1.25 / run",
+      "cost budget: $1.25 / run, degrade model",
       "rate: 30 rpm, 12000 tpm, concurrency 2, wait up to 3.5s",
     ],
   });

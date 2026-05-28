@@ -111,6 +111,69 @@ class AgentSubgraphInputGenerationTests(unittest.TestCase):
         self.assertNotIn("总结今天 AI 新闻", serialized_snapshot)
         self.assertNotIn("Prepare the graph template inputs.", serialized_snapshot)
 
+    def test_generate_agent_subgraph_inputs_records_provider_cost_budget_degradation(self) -> None:
+        degradation = {
+            "kind": "provider_cost_budget_degradation",
+            "status": "applied",
+            "requested_model_ref": "openai/gpt-primary",
+            "selected_model_ref": "local/gpt-economy",
+            "provider_cost_budget_preflight": {"status": "blocked", "on_exceeded": "degrade_model"},
+        }
+
+        def chat_with_model_ref_with_meta_func(**_kwargs):
+            return (
+                '{"advanced_web_research_loop": {"user_question": "AI news today"}}',
+                {
+                    "warnings": [],
+                    "model": "gpt-economy",
+                    "provider_id": "local",
+                    "provider_cost_budget_degradation": degradation,
+                },
+            )
+
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "name": "Run Subgraph",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "reads": [{"state": "question"}],
+                "config": {"taskInstruction": "Prepare subgraph inputs."},
+            }
+        )
+
+        subgraph_inputs, _reasoning, warnings, runtime_config = generate_agent_subgraph_inputs(
+            node=node,
+            input_values={"question": "总结今天 AI 新闻"},
+            subgraphs=[
+                SubgraphCapabilityDefinition(
+                    key="advanced_web_research_loop",
+                    name="高级联网搜索",
+                    input_schema=[
+                        SubgraphCapabilityField(
+                            key="user_question",
+                            name="用户问题",
+                            value_type="text",
+                            required=True,
+                        )
+                    ],
+                )
+            ],
+            runtime_config={
+                "resolved_provider_id": "openai",
+                "resolved_model_ref": "openai/gpt-primary",
+                "runtime_model_name": "gpt-primary",
+                "resolved_temperature": 0.2,
+                "resolved_thinking": False,
+                "resolved_thinking_level": "off",
+            },
+            state_schema={"question": NodeSystemStateDefinition.model_validate({"name": "Question", "type": "text"})},
+            chat_with_model_ref_with_meta_func=chat_with_model_ref_with_meta_func,
+        )
+
+        self.assertEqual(subgraph_inputs, {"advanced_web_research_loop": {"user_question": "AI news today"}})
+        self.assertEqual(warnings, [])
+        self.assertEqual(runtime_config["subgraph_input_provider_cost_budget_degradation"], degradation)
+
     def test_repairs_invalid_subgraph_inputs_records_repair_prompt_snapshot(self) -> None:
         calls: list[dict[str, object]] = []
 

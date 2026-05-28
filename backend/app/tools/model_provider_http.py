@@ -38,10 +38,10 @@ def append_model_request_log_safely(
     status_code: int | None = 200,
     error: str | None = None,
     log_writer: Callable[..., Any] | None = None,
-) -> None:
+) -> Any:
     try:
         writer = log_writer or append_model_request_log
-        writer(
+        return writer(
             provider_id=provider_id,
             transport=transport,
             model=model,
@@ -53,7 +53,7 @@ def append_model_request_log_safely(
             error=error,
         )
     except Exception:
-        return
+        return None
 
 
 def normalize_base_url(base_url: str) -> str:

@@ -277,6 +277,51 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertEqual(requested["json"]["stream"], True)
         self.assertEqual(requested["json"]["messages"][0], {"role": "system", "content": "sys"})
 
+    def test_chat_openai_compatible_applies_prompt_cache_key_for_openai_provider(self) -> None:
+        from app.tools.model_provider_client import chat_with_model_provider
+
+        fake_client, client_patch = self._patched_client(
+            FakeResponse(
+                {
+                    "id": "chatcmpl_cache",
+                    "model": "gpt-4.1",
+                    "choices": [{"message": {"content": "hello"}}],
+                    "usage": {
+                        "prompt_tokens": 2048,
+                        "completion_tokens": 32,
+                        "total_tokens": 2080,
+                        "prompt_tokens_details": {"cached_tokens": 1024},
+                    },
+                }
+            )
+        )
+        with client_patch, patch("app.tools.model_provider_client.append_model_request_log"):
+            content, meta = chat_with_model_provider(
+                provider_id="openai",
+                transport="openai-compatible",
+                base_url="https://api.openai.com/v1",
+                api_key="sk-openai",
+                model="gpt-4.1",
+                system_prompt="stable system",
+                user_prompt="dynamic user",
+                temperature=0.2,
+                prompt_cache_policy={
+                    "kind": "prompt_cache_policy",
+                    "requested_policy": "prefer",
+                    "eligible": True,
+                    "stable_prefix_hash": "sha256:stable",
+                    "cache_key": "sha256:prompt-cache-key",
+                },
+            )
+
+        requested = fake_client.post_calls[0]
+        self.assertEqual(content, "hello")
+        self.assertEqual(requested["json"]["prompt_cache_key"], "sha256:prompt-cache-key")
+        self.assertEqual(meta["provider_prompt_cache_result"]["mode"], "provider_applied")
+        self.assertEqual(meta["provider_prompt_cache_result"]["provider_cache_control"], "openai_prompt_cache_key")
+        self.assertEqual(meta["provider_prompt_cache_result"]["cache_key"], "sha256:prompt-cache-key")
+        self.assertEqual(meta["provider_prompt_cache_result"]["usage"]["cached_tokens"], 1024)
+
     def test_chat_openai_compatible_uses_request_timeout_profile(self) -> None:
         from app.tools.model_provider_client import chat_with_model_provider
 
@@ -338,6 +383,68 @@ class ModelProviderClientTests(unittest.TestCase):
 
         self.assertEqual(content, "hello")
         self.assertEqual(meta["provider_id"], "openai")
+
+    def test_chat_with_model_ref_backfills_provider_cache_result_to_model_log(self) -> None:
+        from app.tools import model_provider_client
+        from app.tools.model_provider_client import chat_with_model_ref_with_meta
+
+        provider_cache_result = {
+            "kind": "provider_prompt_cache_result",
+            "version": 1,
+            "requested_policy": "prefer",
+            "eligible": True,
+            "mode": "provider_applied",
+            "provider_cache_control": "openai_prompt_cache_key",
+            "reason": "openai_prompt_cache_key_applied",
+            "cache_key": "sha256:prompt-cache-key",
+        }
+        saved_settings = {
+            "model_providers": {
+                "openai": {
+                    "enabled": True,
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-openai",
+                    "models": [{"model": "gpt-4.1", "capabilities": {"chat": True}}],
+                }
+            }
+        }
+
+        def fake_chat_with_provider(**kwargs: Any) -> tuple[str, dict[str, Any]]:
+            model_provider_client._LAST_MODEL_REQUEST_LOG.set(
+                {"id": "log_openai_cache", "provider_id": kwargs["provider_id"], "model": kwargs["model"]}
+            )
+            return (
+                "hello",
+                {
+                    "provider_id": kwargs["provider_id"],
+                    "model": kwargs["model"],
+                    "warnings": [],
+                    "provider_prompt_cache_result": provider_cache_result,
+                },
+            )
+
+        with patch.object(model_provider_client, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_provider_client, "chat_with_model_provider", side_effect=fake_chat_with_provider):
+                with patch.object(model_provider_client, "update_model_request_log_metadata") as update_metadata:
+                    content, meta = chat_with_model_ref_with_meta(
+                        model_ref="openai/gpt-4.1",
+                        system_prompt="stable system",
+                        user_prompt="dynamic user",
+                        temperature=0.2,
+                        prompt_cache_policy={
+                            "kind": "prompt_cache_policy",
+                            "requested_policy": "prefer",
+                            "eligible": True,
+                            "cache_key": "sha256:prompt-cache-key",
+                        },
+                    )
+
+        self.assertEqual(content, "hello")
+        self.assertEqual(meta["provider_prompt_cache_result"], provider_cache_result)
+        update_metadata.assert_called_once_with(
+            "log_openai_cache",
+            {"provider_cache_decision": provider_cache_result},
+        )
 
     def test_chat_with_model_ref_explicit_request_timeout_overrides_saved_profile(self) -> None:
         from app.tools import model_provider_client
@@ -904,6 +1011,71 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertEqual(credential["status"], "cooling_down")
         self.assertEqual(credential["failure_count"], 2)
         self.assertIsInstance(credential["cooldown_until"], str)
+        self.assertIsInstance(credential["last_used_at"], str)
+
+    def test_chat_with_model_ref_exhausts_repeatedly_failed_credential(self) -> None:
+        from app.tools import model_provider_client
+        from app.tools.model_provider_client import chat_with_model_ref_with_meta
+
+        saved_settings = {
+            "model_providers": {
+                "openai": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://primary.test/v1",
+                    "api_key": "",
+                    "credential_pool": [
+                        {
+                            "credential_id": "primary",
+                            "api_key": "sk-primary",
+                            "status": "active",
+                            "cooldown_until": None,
+                            "failure_count": 4,
+                        },
+                        {
+                            "credential_id": "backup",
+                            "api_key": "sk-backup",
+                            "status": "active",
+                            "failure_count": 0,
+                            "last_used_at": "2026-05-29T03:00:00Z",
+                        },
+                    ],
+                    "models": [
+                        {
+                            "model": "gpt-primary",
+                            "capabilities": {"chat": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
+                },
+            }
+        }
+        saved_payload: dict[str, Any] = {}
+
+        def fake_chat_with_provider(**_kwargs: Any) -> tuple[str, dict[str, Any]]:
+            raise httpx.TimeoutException("provider timed out")
+
+        def capture_save(payload: dict[str, Any]) -> dict[str, Any]:
+            saved_payload.update(payload)
+            return payload
+
+        with patch.object(model_provider_client, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_provider_client, "save_app_settings", side_effect=capture_save):
+                with patch.object(model_provider_client, "chat_with_model_provider", side_effect=fake_chat_with_provider):
+                    with self.assertRaises(httpx.TimeoutException):
+                        chat_with_model_ref_with_meta(
+                            model_ref="openai/gpt-primary",
+                            system_prompt="sys",
+                            user_prompt="user",
+                            temperature=0.2,
+                        )
+
+        credentials = saved_payload["model_providers"]["openai"]["credential_pool"]
+        self.assertEqual(credentials[0]["credential_id"], "primary")
+        self.assertEqual(credentials[0]["status"], "exhausted")
+        self.assertIsNone(credentials[0]["cooldown_until"])
+        self.assertEqual(credentials[0]["failure_count"], 5)
+        self.assertEqual(credentials[1]["status"], "active")
 
     def test_chat_with_model_ref_clears_selected_credential_failure_state_after_success(self) -> None:
         from app.tools import model_provider_client
@@ -959,18 +1131,84 @@ class ModelProviderClientTests(unittest.TestCase):
                     )
 
         self.assertEqual(meta["provider_credential"]["credential_id"], "primary")
-        self.assertEqual(
-            saved_payload["model_providers"]["openai"]["credential_pool"],
-            [
-                {
-                    "credential_id": "primary",
-                    "status": "active",
-                    "cooldown_until": None,
-                    "failure_count": 0,
-                    "api_key": "sk-primary",
+        credential = saved_payload["model_providers"]["openai"]["credential_pool"][0]
+        self.assertEqual(credential["credential_id"], "primary")
+        self.assertEqual(credential["status"], "active")
+        self.assertIsNone(credential["cooldown_until"])
+        self.assertEqual(credential["failure_count"], 0)
+        self.assertEqual(credential["api_key"], "sk-primary")
+        self.assertIsInstance(credential["last_used_at"], str)
+
+    def test_chat_with_model_ref_rotates_to_least_recently_used_credential(self) -> None:
+        from app.tools import model_provider_client
+        from app.tools.model_provider_client import chat_with_model_ref_with_meta
+
+        saved_settings = {
+            "model_providers": {
+                "openai": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://primary.test/v1",
+                    "api_key": "",
+                    "credential_pool": [
+                        {
+                            "credential_id": "primary",
+                            "api_key": "sk-primary",
+                            "status": "active",
+                            "last_used_at": "2026-05-29T03:05:00Z",
+                        },
+                        {
+                            "credential_id": "backup",
+                            "api_key": "sk-backup",
+                            "status": "active",
+                            "last_used_at": "2026-05-29T03:00:00Z",
+                        },
+                    ],
+                    "models": [
+                        {
+                            "model": "gpt-primary",
+                            "capabilities": {"chat": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
                 },
-            ],
+            }
+        }
+        captured: dict[str, Any] = {}
+        saved_payload: dict[str, Any] = {}
+
+        def fake_chat_with_provider(**kwargs: Any) -> tuple[str, dict[str, Any]]:
+            captured.update(kwargs)
+            return "ok", {"provider_id": kwargs["provider_id"], "model": kwargs["model"], "warnings": []}
+
+        def capture_save(payload: dict[str, Any]) -> dict[str, Any]:
+            saved_payload.update(payload)
+            return payload
+
+        with patch.object(model_provider_client, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_provider_client, "save_app_settings", side_effect=capture_save):
+                with patch.object(model_provider_client, "chat_with_model_provider", side_effect=fake_chat_with_provider):
+                    _content, meta = chat_with_model_ref_with_meta(
+                        model_ref="openai/gpt-primary",
+                        system_prompt="sys",
+                        user_prompt="user",
+                        temperature=0.2,
+                    )
+
+        self.assertEqual(captured["api_key"], "sk-backup")
+        self.assertEqual(
+            meta["provider_credential"],
+            {
+                "credential_id": "backup",
+                "status": "active",
+                "source": "credential_pool",
+                "last_used_at": "2026-05-29T03:00:00Z",
+            },
         )
+        credentials = saved_payload["model_providers"]["openai"]["credential_pool"]
+        self.assertEqual(credentials[0]["last_used_at"], "2026-05-29T03:05:00Z")
+        self.assertNotEqual(credentials[1]["last_used_at"], "2026-05-29T03:00:00Z")
+        self.assertIsInstance(credentials[1]["last_used_at"], str)
 
     def test_chat_with_model_ref_blocks_provider_call_when_cost_budget_preflight_is_exhausted(self) -> None:
         from app.core.runtime.model_call_context import use_model_call_context
@@ -1026,6 +1264,220 @@ class ModelProviderClientTests(unittest.TestCase):
                             )
 
         self.assertEqual(provider_calls, [])
+
+    def test_chat_with_model_ref_cost_budget_exception_exposes_approval_request(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.tools import model_provider_client
+        from app.tools.model_provider_client import ProviderCostBudgetExceeded, chat_with_model_ref_with_meta
+
+        saved_settings = {
+            "model_providers": {
+                "openai": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://primary.test/v1",
+                    "api_key": "sk-openai",
+                    "models": [{"model": "gpt-primary", "capabilities": {"chat": True}}],
+                },
+            }
+        }
+        preflight_decision = {
+            "kind": "provider_cost_budget_preflight",
+            "version": 1,
+            "mode": "enforce_existing_window",
+            "currency": "USD",
+            "status": "blocked",
+            "reason": "provider_cost_budget_already_exhausted",
+            "budget_limit_usd": 0.005,
+            "budget_window": "run",
+            "previous_window_cost_usd": 0.006,
+            "on_exceeded": "request_approval",
+            "requires_approval": True,
+            "approval_request": {
+                "kind": "provider_cost_budget_approval_request",
+                "requested_action": "approve_budget_overrun_or_degrade_model",
+            },
+        }
+
+        with patch.object(model_provider_client, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_provider_client, "evaluate_provider_cost_budget_preflight", return_value=preflight_decision):
+                with patch.object(model_provider_client, "chat_with_model_provider") as chat_with_provider:
+                    with use_model_call_context(run_id="run_budget_guard", root_run_id="run_budget_guard", node_id="agent"):
+                        with self.assertRaises(ProviderCostBudgetExceeded) as raised:
+                            chat_with_model_ref_with_meta(
+                                model_ref="openai/gpt-primary",
+                                system_prompt="sys",
+                                user_prompt="user",
+                                temperature=0.2,
+                                provider_cost_budget={
+                                    "limit_usd": 0.005,
+                                    "window": "run",
+                                    "on_exceeded": "request_approval",
+                                },
+                            )
+
+        self.assertEqual(raised.exception.decision, preflight_decision)
+        self.assertIs(raised.exception.approval_request, preflight_decision["approval_request"])
+        chat_with_provider.assert_not_called()
+
+    def test_chat_with_model_ref_approved_cost_budget_overrun_skips_preflight_block(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.tools import model_provider_client
+        from app.tools.model_provider_client import chat_with_model_ref_with_meta
+
+        saved_settings = {
+            "model_providers": {
+                "openai": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://primary.test/v1",
+                    "api_key": "sk-openai",
+                    "models": [{"model": "gpt-primary", "capabilities": {"chat": True}}],
+                },
+            }
+        }
+        preflight_decision = {
+            "kind": "provider_cost_budget_preflight",
+            "status": "blocked",
+            "reason": "provider_cost_budget_already_exhausted",
+            "budget_window_scope": {"window": "run", "root_run_id": "run_budget_guard"},
+        }
+        approval = {
+            "kind": "capability_permission_approval",
+            "approval_type": "provider_cost_budget",
+            "status": "approved",
+            "provider_cost_budget_preflight": preflight_decision,
+        }
+
+        with patch.object(model_provider_client, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_provider_client, "evaluate_provider_cost_budget_preflight", return_value=preflight_decision):
+                with patch.object(
+                    model_provider_client,
+                    "chat_with_model_provider",
+                    return_value=("ok", {"model": "gpt-primary", "provider_id": "openai", "warnings": []}),
+                ) as chat_with_provider:
+                    with use_model_call_context(run_id="run_budget_guard", root_run_id="run_budget_guard", node_id="agent"):
+                        content, meta = chat_with_model_ref_with_meta(
+                            model_ref="openai/gpt-primary",
+                            system_prompt="sys",
+                            user_prompt="user",
+                            temperature=0.2,
+                            provider_cost_budget={"limit_usd": 0.005, "window": "run", "on_exceeded": "request_approval"},
+                            provider_cost_budget_approval=approval,
+                        )
+
+        self.assertEqual(content, "ok")
+        self.assertEqual(meta["provider_cost_budget_approval"], approval)
+        chat_with_provider.assert_called_once()
+
+    def test_chat_with_model_ref_degrades_model_when_cost_budget_preflight_is_exhausted(self) -> None:
+        from app.core.runtime.model_call_context import use_model_call_context
+        from app.tools import model_provider_client
+        from app.tools.model_provider_client import chat_with_model_ref_with_meta
+
+        saved_settings = {
+            "model_providers": {
+                "openai": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://primary.test/v1",
+                    "api_key": "sk-primary",
+                    "models": [
+                        {
+                            "model": "gpt-primary",
+                            "capabilities": {"chat": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
+                },
+                "cheap": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://cheap.test/v1",
+                    "api_key": "sk-cheap",
+                    "models": [
+                        {
+                            "model": "gpt-cheap",
+                            "capabilities": {"chat": True},
+                            "permissions": ["text_generation"],
+                        }
+                    ],
+                },
+                "web-gateway": {
+                    "enabled": True,
+                    "transport": "openai-compatible",
+                    "base_url": "https://web.test/v1",
+                    "api_key": "sk-web",
+                    "models": [
+                        {
+                            "model": "gpt-web",
+                            "capabilities": {"chat": True},
+                            "permissions": ["text_generation", "network_access"],
+                        }
+                    ],
+                },
+            }
+        }
+        preflight_decision = {
+            "kind": "provider_cost_budget_preflight",
+            "version": 1,
+            "mode": "enforce_existing_window",
+            "currency": "USD",
+            "status": "blocked",
+            "reason": "provider_cost_budget_already_exhausted",
+            "budget_limit_usd": 0.005,
+            "budget_window": "run",
+            "previous_window_cost_usd": 0.006,
+            "budget_window_scope": {"window": "run", "root_run_id": "run_budget_guard"},
+            "on_exceeded": "degrade_model",
+            "requires_degradation": True,
+        }
+        attempted: list[str] = []
+
+        def fake_chat_with_provider(**kwargs: Any) -> tuple[str, dict[str, Any]]:
+            model_ref = f"{kwargs['provider_id']}/{kwargs['model']}"
+            attempted.append(model_ref)
+            return "cheap answer", {"provider_id": kwargs["provider_id"], "model": kwargs["model"], "warnings": []}
+
+        with patch.object(model_provider_client, "load_app_settings", return_value=saved_settings):
+            with patch.object(
+                model_provider_client,
+                "evaluate_provider_cost_budget_preflight",
+                return_value=preflight_decision,
+            ) as evaluate_preflight:
+                with patch.object(model_provider_client, "chat_with_model_provider", side_effect=fake_chat_with_provider):
+                    with use_model_call_context(run_id="run_budget_guard", root_run_id="run_budget_guard", node_id="agent"):
+                        content, meta = chat_with_model_ref_with_meta(
+                            model_ref="openai/gpt-primary",
+                            system_prompt="sys",
+                            user_prompt="user",
+                            temperature=0.2,
+                            provider_cost_budget={
+                                "limit_usd": 0.005,
+                                "window": "run",
+                                "on_exceeded": "degrade_model",
+                            },
+                        )
+
+        self.assertEqual(content, "cheap answer")
+        self.assertEqual(attempted, ["cheap/gpt-cheap"])
+        self.assertEqual(evaluate_preflight.call_count, 1)
+        self.assertTrue(meta["provider_fallback_used"])
+        self.assertEqual(meta["requested_model_ref"], "openai/gpt-primary")
+        self.assertEqual(meta["provider_id"], "cheap")
+        self.assertEqual(meta["model"], "gpt-cheap")
+        degradation = meta["provider_cost_budget_degradation"]
+        self.assertEqual(degradation["kind"], "provider_cost_budget_degradation")
+        self.assertEqual(degradation["status"], "applied")
+        self.assertEqual(degradation["requested_model_ref"], "openai/gpt-primary")
+        self.assertEqual(degradation["selected_model_ref"], "cheap/gpt-cheap")
+        self.assertEqual(degradation["provider_cost_budget_preflight"], preflight_decision)
+        trace = meta["provider_fallback_trace"]
+        self.assertEqual(trace["trigger"], "provider_cost_budget_degradation")
+        self.assertEqual(trace["selected"]["model_ref"], "cheap/gpt-cheap")
+        self.assertEqual(trace["failed_candidates"][0]["reason"], "provider_cost_budget_exceeded")
+        self.assertEqual(trace["rejected_candidates"][0]["model_ref"], "web-gateway/gpt-web")
+        self.assertEqual(trace["rejected_candidates"][0]["reason"], "permission_scope_expanded")
 
     def test_chat_with_model_ref_blocks_provider_call_when_rate_profile_preflight_is_exhausted(self) -> None:
         from app.core.runtime.model_call_context import use_model_call_context
@@ -2035,6 +2487,57 @@ class ModelProviderClientTests(unittest.TestCase):
 
         self.assertEqual(content, "hello")
         self.assertTrue(str(calls[0][0].get("data_url")).startswith("data:image/jpeg;base64,"))
+
+    def test_chat_codex_responses_applies_prompt_cache_key(self) -> None:
+        from app.tools import model_provider_client, model_provider_codex
+        from app.tools.model_provider_client import chat_with_model_provider
+
+        captured_payloads: list[dict[str, Any]] = []
+
+        def fake_post_codex_responses_once(**kwargs: Any) -> dict[str, Any]:
+            captured_payloads.append(dict(kwargs["request_payload"]))
+            return {
+                "id": "resp_cache",
+                "model": "gpt-5.1-codex",
+                "output_text": "hello",
+                "usage": {
+                    "input_tokens": 2048,
+                    "input_tokens_details": {"cached_tokens": 768},
+                    "output_tokens": 32,
+                    "total_tokens": 2080,
+                },
+            }
+
+        with patch.object(model_provider_client, "resolve_codex_access_token", return_value="access-token"):
+            with patch.object(model_provider_client, "refresh_codex_access_token", return_value="fresh-token"):
+                with patch.object(model_provider_codex, "post_codex_responses_once", side_effect=fake_post_codex_responses_once):
+                    content, meta = chat_with_model_provider(
+                        provider_id="openai-codex",
+                        transport="codex-responses",
+                        base_url="https://chatgpt.com/backend-api/codex",
+                        api_key="",
+                        model="gpt-5.1-codex",
+                        system_prompt="stable system",
+                        user_prompt="dynamic user",
+                        temperature=0.2,
+                        prompt_cache_policy={
+                            "kind": "prompt_cache_policy",
+                            "requested_policy": "prefer",
+                            "eligible": True,
+                            "stable_prefix_hash": "sha256:stable",
+                            "cache_key": "sha256:codex-cache-key",
+                        },
+                    )
+
+        self.assertEqual(content, "hello")
+        self.assertEqual(captured_payloads[0]["prompt_cache_key"], "sha256:codex-cache-key")
+        self.assertEqual(meta["provider_prompt_cache_result"]["mode"], "provider_applied")
+        self.assertEqual(
+            meta["provider_prompt_cache_result"]["provider_cache_control"],
+            "openai_responses_prompt_cache_key",
+        )
+        self.assertEqual(meta["provider_prompt_cache_result"]["cache_key"], "sha256:codex-cache-key")
+        self.assertEqual(meta["provider_prompt_cache_result"]["usage"]["cached_tokens"], 768)
 
     def test_chat_openai_compatible_sends_video_attachments_as_native_video_parts(self) -> None:
         from app.tools.model_provider_client import chat_with_model_provider

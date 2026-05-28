@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+from contextvars import ContextVar
 import json
 import tempfile
 import threading
@@ -35,6 +36,7 @@ from app.core.storage.model_log_store import (
     release_provider_rate_reservation,
     release_provider_rate_wait_queue_entry,
     reserve_provider_rate_profile_capacity,
+    update_model_request_log_metadata,
 )
 from app.core.runtime.model_call_context import get_model_call_context, use_model_call_context
 from app.core.thinking_levels import (
@@ -70,10 +72,15 @@ from app.tools.model_provider_http import (
 
 
 _sleep = time.sleep
+_LAST_MODEL_REQUEST_LOG: ContextVar[dict[str, Any]] = ContextVar("toograph_last_model_request_log", default={})
 
 
-def _append_model_request_log_safely(**kwargs: Any) -> None:
-    append_model_request_log_safely(**kwargs, log_writer=append_model_request_log)
+def _append_model_request_log_safely(**kwargs: Any) -> dict[str, Any]:
+    result = append_model_request_log_safely(**kwargs, log_writer=append_model_request_log)
+    if isinstance(result, dict) and str(result.get("id") or "").strip():
+        _LAST_MODEL_REQUEST_LOG.set(result)
+        return result
+    return {}
 
 
 _PROVIDER_RATE_CONCURRENCY_LOCK = threading.Lock()
@@ -86,6 +93,7 @@ _PROVIDER_RATE_WAIT_QUEUE_CONDITION = threading.Condition(threading.Lock())
 class ProviderCostBudgetExceeded(RuntimeError):
     def __init__(self, decision: dict[str, Any]) -> None:
         self.decision = dict(decision)
+        self.approval_request = decision.get("approval_request") if isinstance(decision.get("approval_request"), dict) else None
         reason = str(decision.get("reason") or "provider_cost_budget_exceeded").strip()
         previous_cost = decision.get("previous_window_cost_usd")
         limit = decision.get("budget_limit_usd")
@@ -146,6 +154,7 @@ def _chat_openai_compatible(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     return model_provider_openai.chat_openai_compatible(
@@ -165,6 +174,7 @@ def _chat_openai_compatible(
         on_delta=on_delta,
         input_attachments=input_attachments,
         structured_output_schema=structured_output_schema,
+        prompt_cache_policy=prompt_cache_policy,
         request_timeout_seconds=normalize_request_timeout_seconds(request_timeout_seconds),
     )
 
@@ -251,6 +261,7 @@ def _chat_codex_responses(
     on_delta: Callable[[str], None] | None = None,
     input_attachments: list[dict[str, Any]] | None = None,
     structured_output_schema: dict[str, Any] | None = None,
+    prompt_cache_policy: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     return model_provider_codex.chat_codex_responses(
@@ -267,6 +278,7 @@ def _chat_codex_responses(
         on_delta=on_delta,
         input_attachments=input_attachments,
         structured_output_schema=structured_output_schema,
+        prompt_cache_policy=prompt_cache_policy,
         request_timeout_seconds=normalize_request_timeout_seconds(request_timeout_seconds),
     )
 
@@ -414,6 +426,7 @@ def rerank_documents_with_model_ref(
     saved_providers = saved_providers if isinstance(saved_providers, dict) else {}
     provider_id, model_name = _split_model_ref(model_ref)
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
+    _LAST_MODEL_REQUEST_LOG.set({})
 
     try:
         return _rerank_documents_with_model_ref_once(
@@ -464,6 +477,7 @@ def rerank_documents_with_model_ref(
                 continue
 
             _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
+            _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
             return results, _with_provider_fallback_meta(
                 meta,
                 trace=fallback_trace,
@@ -513,6 +527,7 @@ def embed_text_with_model_ref(
     saved_providers = saved_providers if isinstance(saved_providers, dict) else {}
     provider_id, model_name = _split_model_ref(model_ref)
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
+    _LAST_MODEL_REQUEST_LOG.set({})
 
     try:
         return _embed_text_with_model_ref_once(
@@ -561,6 +576,7 @@ def embed_text_with_model_ref(
                 continue
 
             _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
+            _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
             return vector, _with_provider_fallback_meta(
                 meta,
                 trace=fallback_trace,
@@ -644,6 +660,7 @@ def chat_with_model_provider(
                 on_delta=on_delta,
                 input_attachments=attachments,
                 structured_output_schema=structured_output_schema,
+                prompt_cache_policy=prompt_cache_policy,
                 request_timeout_seconds=normalized_timeout_seconds,
             )
     elif normalized_transport == TRANSPORT_ANTHROPIC_MESSAGES:
@@ -694,6 +711,7 @@ def chat_with_model_provider(
                 on_delta=on_delta,
                 input_attachments=attachments,
                 structured_output_schema=structured_output_schema,
+                prompt_cache_policy=prompt_cache_policy,
                 request_timeout_seconds=normalized_timeout_seconds,
             )
     else:  # pragma: no cover - guarded by normalize_transport
@@ -975,11 +993,14 @@ def _chat_with_model_ref_once(
     model_runtime_fixture: dict[str, Any] | None = None,
     prompt_cache_policy: dict[str, Any] | None = None,
     provider_cost_budget: dict[str, Any] | None = None,
+    provider_cost_budget_approval: dict[str, Any] | None = None,
+    provider_cost_budget_degradation: dict[str, Any] | None = None,
     provider_rate_profile: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
     persist_credential_state: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     provider_id, model_name = _split_model_ref(model_ref)
+    current_model_ref = f"{provider_id}/{model_name}".strip("/")
     fixture_result = _resolve_model_runtime_fixture_result(
         model_ref,
         model_runtime_fixture,
@@ -1019,9 +1040,19 @@ def _chat_with_model_ref_once(
         provider_context["provider_pricing"] = provider_pricing
     if isinstance(provider_cost_budget, dict) and provider_cost_budget:
         provider_context["provider_cost_budget"] = dict(provider_cost_budget)
+    if isinstance(provider_cost_budget_approval, dict) and provider_cost_budget_approval:
+        provider_context["provider_cost_budget_approval"] = dict(provider_cost_budget_approval)
+    if isinstance(provider_cost_budget_degradation, dict) and provider_cost_budget_degradation:
+        provider_context["provider_cost_budget_degradation"] = dict(provider_cost_budget_degradation)
     if isinstance(provider_rate_profile, dict) and provider_rate_profile:
         provider_context["provider_rate_profile"] = dict(provider_rate_profile)
-    _enforce_provider_cost_budget_preflight(provider_context, provider_cost_budget)
+    _enforce_provider_cost_budget_preflight(
+        provider_context,
+        provider_cost_budget,
+        provider_cost_budget_approval,
+        provider_cost_budget_degradation,
+        model_ref=current_model_ref,
+    )
     provider_rate_reservation = _enforce_provider_rate_profile_preflight(
         {**provider_context, "provider_id": provider_id, "model": model_name},
         provider_rate_profile,
@@ -1068,6 +1099,7 @@ def _chat_with_model_ref_once(
                     structured_output_schema=structured_output_schema,
                     prompt_cache_policy=prompt_cache_policy,
                 )
+                _annotate_last_model_request_log_with_provider_cache(meta)
     except ProviderRateProfileExceeded:
         raise
     except Exception:
@@ -1096,6 +1128,10 @@ def _chat_with_model_ref_once(
     )
     if provider_rate_reservation_meta:
         meta = {**meta, "provider_rate_reservation": provider_rate_reservation_meta}
+    if isinstance(provider_cost_budget_approval, dict) and provider_cost_budget_approval:
+        meta = {**meta, "provider_cost_budget_approval": dict(provider_cost_budget_approval)}
+    if isinstance(provider_cost_budget_degradation, dict) and provider_cost_budget_degradation:
+        meta = {**meta, "provider_cost_budget_degradation": dict(provider_cost_budget_degradation)}
     if "provider_cost_estimate" not in meta:
         provider_cost_estimate = build_provider_cost_estimate(meta.get("usage"), provider_pricing, provider_cost_budget)
         if provider_cost_estimate:
@@ -1118,13 +1154,66 @@ def _provider_requires_api_key(provider_id: str, provider_config: dict[str, Any]
     return True
 
 
-def _enforce_provider_cost_budget_preflight(provider_context: dict[str, Any], provider_cost_budget: Any) -> None:
+def _enforce_provider_cost_budget_preflight(
+    provider_context: dict[str, Any],
+    provider_cost_budget: Any,
+    provider_cost_budget_approval: Any = None,
+    provider_cost_budget_degradation: Any = None,
+    *,
+    model_ref: str = "",
+) -> None:
     if not isinstance(provider_cost_budget, dict) or not provider_cost_budget:
+        return
+    if _provider_cost_budget_approval_allows_overrun(provider_cost_budget_approval):
+        return
+    if _provider_cost_budget_degradation_allows_model(provider_cost_budget_degradation, model_ref):
         return
     call_context = {**get_model_call_context(), **provider_context}
     decision = evaluate_provider_cost_budget_preflight(call_context, provider_cost_budget)
     if decision.get("status") == "blocked":
         raise ProviderCostBudgetExceeded(decision)
+
+
+def _provider_cost_budget_approval_allows_overrun(approval: Any) -> bool:
+    if not isinstance(approval, dict):
+        return False
+    if str(approval.get("approval_type") or "") != "provider_cost_budget":
+        return False
+    return str(approval.get("status") or "").lower() == "approved"
+
+
+def _provider_cost_budget_degradation_allows_model(degradation: Any, model_ref: str) -> bool:
+    if not isinstance(degradation, dict):
+        return False
+    if str(degradation.get("kind") or "") != "provider_cost_budget_degradation":
+        return False
+    if str(degradation.get("status") or "").lower() != "applied":
+        return False
+    selected_model_ref = str(degradation.get("selected_model_ref") or "").strip()
+    return bool(selected_model_ref and selected_model_ref == str(model_ref or "").strip())
+
+
+def _provider_cost_budget_degradation_enabled(provider_cost_budget: Any) -> bool:
+    if not isinstance(provider_cost_budget, dict):
+        return False
+    return str(provider_cost_budget.get("on_exceeded") or provider_cost_budget.get("onExceeded") or "").strip() == "degrade_model"
+
+
+def _provider_cost_budget_degradation_record(
+    *,
+    preflight_decision: dict[str, Any],
+    requested_model_ref: str,
+    selected_model_ref: str,
+) -> dict[str, Any]:
+    return {
+        "kind": "provider_cost_budget_degradation",
+        "version": 1,
+        "status": "applied",
+        "reason": "provider_cost_budget_degradation_selected",
+        "requested_model_ref": requested_model_ref,
+        "selected_model_ref": selected_model_ref,
+        "provider_cost_budget_preflight": dict(preflight_decision),
+    }
 
 
 def _enforce_provider_rate_profile_preflight(
@@ -1565,7 +1654,9 @@ def _provider_failure_event(
 ) -> dict[str, str]:
     message = str(exc)
     lowered_message = message.lower()
-    if isinstance(exc, httpx.TimeoutException) or "timeout" in lowered_message or "timed out" in lowered_message:
+    if isinstance(exc, ProviderCostBudgetExceeded):
+        error_type = "provider_cost_budget_exceeded"
+    elif isinstance(exc, httpx.TimeoutException) or "timeout" in lowered_message or "timed out" in lowered_message:
         error_type = "provider_timeout"
     elif isinstance(exc, httpx.HTTPStatusError):
         error_type = "provider_http_error"
@@ -1677,6 +1768,33 @@ def _append_selected_fallback_attempt(trace: dict[str, Any], model_ref: str) -> 
     )
 
 
+def _annotate_last_model_request_log_with_provider_fallback(trace: dict[str, Any], selected_model_ref: str) -> None:
+    last_entry = _LAST_MODEL_REQUEST_LOG.get({})
+    model_call_id = str(last_entry.get("id") or "").strip()
+    if not model_call_id:
+        return
+    provider_id, model_name = _split_model_ref(selected_model_ref)
+    if str(last_entry.get("provider_id") or "").strip() != provider_id:
+        return
+    if str(last_entry.get("model") or "").strip() != model_name:
+        return
+    update_model_request_log_metadata(model_call_id, {"provider_fallback_trace": trace})
+
+
+def _annotate_last_model_request_log_with_provider_cache(meta: dict[str, Any]) -> None:
+    provider_cache_result = meta.get("provider_prompt_cache_result") if isinstance(meta, dict) else None
+    if not isinstance(provider_cache_result, dict) or not provider_cache_result:
+        return
+    last_entry = _LAST_MODEL_REQUEST_LOG.get({})
+    model_call_id = str(last_entry.get("id") or "").strip()
+    if not model_call_id:
+        return
+    provider_id = str(meta.get("provider_id") or "").strip()
+    if provider_id and str(last_entry.get("provider_id") or "").strip() != provider_id:
+        return
+    update_model_request_log_metadata(model_call_id, {"provider_cache_decision": provider_cache_result})
+
+
 def _with_provider_fallback_meta(
     meta: dict[str, Any],
     *,
@@ -1712,6 +1830,7 @@ def chat_with_model_ref_with_meta(
     model_runtime_fixture: dict[str, Any] | None = None,
     prompt_cache_policy: dict[str, Any] | None = None,
     provider_cost_budget: dict[str, Any] | None = None,
+    provider_cost_budget_approval: dict[str, Any] | None = None,
     provider_rate_profile: dict[str, Any] | None = None,
     request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
@@ -1727,6 +1846,7 @@ def chat_with_model_ref_with_meta(
         persist_credential_state = True
     provider_id, model_name = _split_model_ref(model_ref)
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
+    _LAST_MODEL_REQUEST_LOG.set({})
 
     try:
         return _chat_with_model_ref_once(
@@ -1744,11 +1864,36 @@ def chat_with_model_ref_with_meta(
             model_runtime_fixture=fixture,
             prompt_cache_policy=prompt_cache_policy,
             provider_cost_budget=provider_cost_budget,
+            provider_cost_budget_approval=provider_cost_budget_approval,
             provider_rate_profile=provider_rate_profile,
             request_timeout_seconds=request_timeout_seconds,
             persist_credential_state=persist_credential_state,
         )
-    except (ProviderCostBudgetExceeded, ProviderRateProfileExceeded):
+    except ProviderCostBudgetExceeded as budget_exc:
+        if not _provider_cost_budget_degradation_enabled(provider_cost_budget):
+            raise
+        return _chat_with_model_ref_cost_budget_degradation(
+            requested_model_ref=requested_model_ref,
+            saved_providers=saved_providers,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            thinking_enabled=thinking_enabled,
+            thinking_level=thinking_level,
+            on_delta=on_delta,
+            input_attachments=input_attachments,
+            structured_output_schema=structured_output_schema,
+            model_runtime_fixture=fixture,
+            prompt_cache_policy=prompt_cache_policy,
+            provider_cost_budget=provider_cost_budget,
+            provider_cost_budget_approval=provider_cost_budget_approval,
+            provider_rate_profile=provider_rate_profile,
+            request_timeout_seconds=request_timeout_seconds,
+            persist_credential_state=persist_credential_state,
+            primary_exc=budget_exc,
+        )
+    except ProviderRateProfileExceeded:
         raise
     except Exception as primary_exc:
         fallback_result = resolve_provider_fallback(
@@ -1795,6 +1940,7 @@ def chat_with_model_ref_with_meta(
                     model_runtime_fixture=fixture,
                     prompt_cache_policy=prompt_cache_policy,
                     provider_cost_budget=provider_cost_budget,
+                    provider_cost_budget_approval=provider_cost_budget_approval,
                     provider_rate_profile=provider_rate_profile,
                     request_timeout_seconds=request_timeout_seconds,
                     persist_credential_state=persist_credential_state,
@@ -1807,6 +1953,7 @@ def chat_with_model_ref_with_meta(
                 continue
 
             _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
+            _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
             return content, _with_provider_fallback_meta(
                 meta,
                 trace=fallback_trace,
@@ -1818,3 +1965,111 @@ def chat_with_model_ref_with_meta(
         raise RuntimeError(
             f"Primary provider '{requested_model_ref}' failed and all compatible fallback providers failed: {'; '.join(fallback_errors)}"
         ) from primary_exc
+
+
+def _chat_with_model_ref_cost_budget_degradation(
+    *,
+    requested_model_ref: str,
+    saved_providers: dict[str, Any],
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: int | None,
+    thinking_enabled: bool,
+    thinking_level: str | None,
+    on_delta: Callable[[str], None] | None,
+    input_attachments: list[dict[str, Any]] | None,
+    structured_output_schema: dict[str, Any] | None,
+    model_runtime_fixture: dict[str, Any],
+    prompt_cache_policy: dict[str, Any] | None,
+    provider_cost_budget: dict[str, Any] | None,
+    provider_cost_budget_approval: dict[str, Any] | None,
+    provider_rate_profile: dict[str, Any] | None,
+    request_timeout_seconds: float | None,
+    persist_credential_state: bool,
+    primary_exc: ProviderCostBudgetExceeded,
+) -> tuple[str, dict[str, Any]]:
+    provider_id, model_name = _split_model_ref(requested_model_ref)
+    fallback_result = resolve_provider_fallback(
+        {
+            "requested_model_ref": requested_model_ref,
+            "required_capabilities": _required_chat_capabilities(
+                input_attachments=input_attachments,
+                structured_output_schema=structured_output_schema,
+            ),
+            "required_permissions": ["text_generation"],
+            "failure_event": _provider_failure_event(
+                model_ref=requested_model_ref,
+                provider_id=provider_id,
+                model_name=model_name,
+                exc=primary_exc,
+            ),
+            "provider_candidates": _provider_fallback_candidates(
+                requested_provider_id=provider_id,
+                requested_model_name=model_name,
+                saved_providers=saved_providers,
+            ),
+        }
+    )
+    selected_model_ref = str(fallback_result.get("selected_model_ref") or "").strip()
+    if not selected_model_ref or selected_model_ref == requested_model_ref:
+        raise primary_exc
+
+    fallback_trace = _runtime_fallback_trace(fallback_result)
+    fallback_trace["trigger"] = "provider_cost_budget_degradation"
+    fallback_trace["provider_cost_budget_preflight"] = dict(primary_exc.decision)
+    fallback_errors: list[str] = []
+    for candidate_model_ref in _fallback_candidate_model_refs(fallback_result, fallback_trace, requested_model_ref):
+        degradation = _provider_cost_budget_degradation_record(
+            preflight_decision=primary_exc.decision,
+            requested_model_ref=requested_model_ref,
+            selected_model_ref=candidate_model_ref,
+        )
+        try:
+            content, meta = _chat_with_model_ref_once(
+                model_ref=candidate_model_ref,
+                saved_providers=saved_providers,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                thinking_enabled=thinking_enabled,
+                thinking_level=thinking_level,
+                on_delta=on_delta,
+                input_attachments=input_attachments,
+                structured_output_schema=structured_output_schema,
+                model_runtime_fixture=model_runtime_fixture,
+                prompt_cache_policy=prompt_cache_policy,
+                provider_cost_budget=provider_cost_budget,
+                provider_cost_budget_approval=provider_cost_budget_approval,
+                provider_cost_budget_degradation=degradation,
+                provider_rate_profile=provider_rate_profile,
+                request_timeout_seconds=request_timeout_seconds,
+                persist_credential_state=persist_credential_state,
+            )
+        except ProviderCostBudgetExceeded:
+            raise
+        except ProviderRateProfileExceeded:
+            raise
+        except Exception as fallback_exc:
+            fallback_errors.append(f"{candidate_model_ref}: {fallback_exc}")
+            _append_failed_fallback_attempt(fallback_trace, candidate_model_ref, fallback_exc)
+            continue
+
+        _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
+        fallback_trace["trigger"] = "provider_cost_budget_degradation"
+        fallback_trace["provider_cost_budget_preflight"] = dict(primary_exc.decision)
+        _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
+        meta = {**meta, "provider_cost_budget_degradation": degradation}
+        return content, _with_provider_fallback_meta(
+            meta,
+            trace=fallback_trace,
+            requested_model_ref=requested_model_ref,
+            selected_model_ref=candidate_model_ref,
+            primary_error=primary_exc,
+        )
+
+    raise RuntimeError(
+        "Primary provider cost budget was exhausted and all compatible degradation fallback providers failed: "
+        f"{'; '.join(fallback_errors)}"
+    ) from primary_exc

@@ -70,6 +70,7 @@ export type AgentProviderProfile = {
   costBudget?: {
     limitUsd?: number | null;
     window?: "node" | "run" | "day" | "month";
+    onExceeded?: "block" | "request_approval" | "degrade_model";
   };
   rateProfile?: {
     requestsPerMinute?: number | null;

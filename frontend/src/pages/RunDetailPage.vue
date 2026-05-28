@@ -624,6 +624,41 @@
                 <span v-for="label in agentDiagnostic.providerProfile.evidenceLabels" :key="label">{{ label }}</span>
               </div>
             </div>
+            <div
+              v-if="agentDiagnostic.providerCostBudgetDegradation.visible"
+              class="run-detail__capability-selection run-detail__provider-cost-budget-degradation"
+            >
+              <h4>{{ t("runDetail.providerCostBudgetDegradation") }}</h4>
+              <dl class="run-detail__diagnostic-facts">
+                <div v-if="agentDiagnostic.providerCostBudgetDegradation.selectedRef">
+                  <dt>{{ t("runDetail.providerCostBudgetDegradationSelected") }}</dt>
+                  <dd>{{ agentDiagnostic.providerCostBudgetDegradation.selectedRef }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerCostBudgetDegradation.requestedRef">
+                  <dt>{{ t("runDetail.providerCostBudgetDegradationRequested") }}</dt>
+                  <dd>{{ agentDiagnostic.providerCostBudgetDegradation.requestedRef }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerCostBudgetDegradation.budgetLimitLabel">
+                  <dt>{{ t("runDetail.providerCostBudgetDegradationLimit") }}</dt>
+                  <dd>{{ agentDiagnostic.providerCostBudgetDegradation.budgetLimitLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerCostBudgetDegradation.previousWindowCostLabel">
+                  <dt>{{ t("runDetail.providerCostBudgetDegradationPreviousWindow") }}</dt>
+                  <dd>{{ agentDiagnostic.providerCostBudgetDegradation.previousWindowCostLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerCostBudgetDegradation.cumulativeCostLabel">
+                  <dt>{{ t("runDetail.providerCostBudgetDegradationCumulative") }}</dt>
+                  <dd>{{ agentDiagnostic.providerCostBudgetDegradation.cumulativeCostLabel }}</dd>
+                </div>
+                <div v-if="agentDiagnostic.providerCostBudgetDegradation.preflightStatus">
+                  <dt>{{ t("runDetail.providerCostBudgetDegradationPreflight") }}</dt>
+                  <dd>{{ agentDiagnostic.providerCostBudgetDegradation.preflightStatus }}</dd>
+                </div>
+              </dl>
+              <div v-if="agentDiagnostic.providerCostBudgetDegradation.evidenceLabels.length > 0" class="run-detail__badges">
+                <span v-for="label in agentDiagnostic.providerCostBudgetDegradation.evidenceLabels" :key="label">{{ label }}</span>
+              </div>
+            </div>
             <div v-if="agentDiagnostic.providerFallback.visible" class="run-detail__capability-selection run-detail__provider-fallback">
               <h4>{{ t("runDetail.providerFallback") }}</h4>
               <dl class="run-detail__diagnostic-facts">

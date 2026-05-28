@@ -148,6 +148,52 @@ def append_model_request_log(
     )
 
 
+def update_model_request_log_metadata(model_call_id: Any, metadata_patch: dict[str, Any]) -> dict[str, Any]:
+    model_call_key = _text(model_call_id)
+    if not model_call_key or not isinstance(metadata_patch, dict):
+        return {}
+    safe_patch: dict[str, Any] = {}
+    _append_provider_context_fields(safe_patch, metadata_patch)
+    if not safe_patch:
+        return {}
+
+    try:
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT metadata_json FROM graph_model_calls WHERE model_call_id = ?",
+                (model_call_key,),
+            ).fetchone()
+            if row is None:
+                return {}
+            metadata = _loads(row["metadata_json"], {})
+            metadata = metadata if isinstance(metadata, dict) else {}
+            metadata.update(safe_patch)
+            connection.execute(
+                "UPDATE graph_model_calls SET metadata_json = ? WHERE model_call_id = ?",
+                (_json(metadata), model_call_key),
+            )
+            updated_row = connection.execute(
+                """
+                SELECT
+                    graph_model_calls.*,
+                    graph_runs.root_run_id AS joined_root_run_id,
+                    graph_runs.parent_run_id AS joined_parent_run_id,
+                    graph_runs.parent_node_id AS joined_parent_node_id,
+                    graph_runs.graph_id AS joined_graph_id,
+                    graph_runs.graph_name AS joined_graph_name,
+                    graph_runs.run_path_json AS joined_run_path_json
+                FROM graph_model_calls
+                JOIN graph_runs ON graph_runs.run_id = graph_model_calls.run_id
+                WHERE graph_model_calls.model_call_id = ?
+                """,
+                (model_call_key,),
+            ).fetchone()
+    except Exception:
+        return {}
+
+    return _hydrate_db_model_call(updated_row) if updated_row is not None else {}
+
+
 def list_model_request_logs(*, page: int = 1, size: int = 20, query: str = "") -> dict[str, Any]:
     page = max(1, int(page or 1))
     size = max(1, min(int(size or 20), 100))
@@ -249,6 +295,7 @@ def evaluate_provider_cost_budget_preflight(
     budget = cost_budget if isinstance(cost_budget, dict) else {}
     limit_usd = _normalize_optional_float(budget.get("limit_usd") or budget.get("limitUsd"))
     budget_window = _text(budget.get("window") or "run").lower()
+    on_exceeded = _normalize_provider_cost_budget_on_exceeded(budget.get("on_exceeded") or budget.get("onExceeded"))
     if limit_usd is None or budget_window not in {"node", "run", "day", "month"}:
         return {}
     normalized_context = call_context if isinstance(call_context, dict) else {}
@@ -263,7 +310,12 @@ def evaluate_provider_cost_budget_preflight(
             completed_at=completed_at,
         )
     status = "blocked" if previous_window_cost >= limit_usd else "within_budget"
-    return {
+    scope = _provider_cost_budget_window_scope(
+        call_context=normalized_context,
+        budget_window=budget_window,
+        completed_at=completed_at,
+    )
+    result: dict[str, Any] = {
         "kind": "provider_cost_budget_preflight",
         "version": 1,
         "mode": "enforce_existing_window",
@@ -273,12 +325,25 @@ def evaluate_provider_cost_budget_preflight(
         "budget_limit_usd": limit_usd,
         "budget_window": budget_window,
         "previous_window_cost_usd": previous_window_cost,
-        "budget_window_scope": _provider_cost_budget_window_scope(
-            call_context=normalized_context,
-            budget_window=budget_window,
-            completed_at=completed_at,
-        ),
+        "budget_window_scope": scope,
     }
+    if on_exceeded != "block":
+        result["on_exceeded"] = on_exceeded
+    if status == "blocked" and on_exceeded == "request_approval":
+        result["requires_approval"] = True
+        result["approval_request"] = {
+            "kind": "provider_cost_budget_approval_request",
+            "version": 1,
+            "reason": "provider_cost_budget_already_exhausted",
+            "budget_limit_usd": limit_usd,
+            "previous_window_cost_usd": previous_window_cost,
+            "budget_window": budget_window,
+            "budget_window_scope": scope,
+            "requested_action": "approve_budget_overrun_or_degrade_model",
+        }
+    if status == "blocked" and on_exceeded == "degrade_model":
+        result["requires_degradation"] = True
+    return result
 
 
 def evaluate_provider_rate_profile_preflight(
@@ -1374,9 +1439,13 @@ def _append_provider_context_fields(target: dict[str, Any], source: dict[str, An
     for key in (
         "provider_profile",
         "provider_cache_decision",
+        "provider_fallback_trace",
         "provider_cost_budget",
+        "provider_cost_budget_approval",
+        "provider_cost_budget_degradation",
         "provider_rate_profile",
         "provider_credential",
+        "provider_credential_state_update",
         "provider_rate_reservation",
         "provider_cost_estimate",
         "provider_rate_decision",
@@ -1394,6 +1463,11 @@ def _normalize_optional_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def _normalize_provider_cost_budget_on_exceeded(value: Any) -> str:
+    normalized = _text(value).lower()
+    return normalized if normalized in {"block", "request_approval", "degrade_model"} else "block"
 
 
 def build_display_messages(request_raw: dict[str, Any]) -> list[dict[str, str]]:

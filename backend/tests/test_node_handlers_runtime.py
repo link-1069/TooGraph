@@ -17,6 +17,7 @@ from app.core.runtime.action_invocation import callable_accepts_keyword
 from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemConditionNode, NodeSystemInputNode, NodeSystemStateDefinition
 from app.core.schemas.actions import ActionDefinition, ActionIoField
 from app.core.schemas.tools import ToolDefinition, ToolIoField
+from app.tools.model_provider_client import ProviderCostBudgetExceeded
 
 
 def pass_through_action_inputs_func(**kwargs):
@@ -1350,6 +1351,140 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         self.assertEqual(package["inputs"], stored_inputs)
         self.assertEqual(result["action_outputs"][0]["status"], "failed")
         self.assertEqual(result["action_outputs"][0]["error_type"], "permission_denied")
+
+    def test_execute_agent_node_pauses_for_provider_cost_budget_approval_request(self) -> None:
+        state_schema = {
+            "question": NodeSystemStateDefinition.model_validate({"type": "text"}),
+            "answer": NodeSystemStateDefinition.model_validate({"type": "text"}),
+        }
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "name": "writer",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "reads": [{"state": "question"}],
+                "writes": [{"state": "answer"}],
+                "config": {},
+            }
+        )
+        decision = {
+            "kind": "provider_cost_budget_preflight",
+            "status": "blocked",
+            "reason": "provider_cost_budget_already_exhausted",
+            "budget_limit_usd": 0.005,
+            "previous_window_cost_usd": 0.006,
+            "budget_window": "run",
+            "budget_window_scope": {"window": "run", "root_run_id": "run-budget"},
+            "requires_approval": True,
+            "approval_request": {
+                "kind": "provider_cost_budget_approval_request",
+                "requested_action": "approve_budget_overrun_or_degrade_model",
+            },
+        }
+
+        result = execute_agent_node(
+            state_schema,
+            node,
+            {"question": "q"},
+            {"state": {}},
+            node_name="writer",
+            state={"run_id": "run-budget", "metadata": {}},
+            resolve_agent_runtime_config_func=lambda agent_node: {"provider_cost_budget": {"limit_usd": 0.005, "window": "run"}},
+            build_agent_stream_delta_callback_func=lambda *, state, node_name, output_keys: None,
+            callable_accepts_keyword_func=lambda func, keyword: False,
+            generate_agent_response_func=lambda *args, **kwargs: (_ for _ in ()).throw(
+                ProviderCostBudgetExceeded(decision)
+            ),
+            finalize_agent_stream_delta_func=lambda *, state, node_name, output_values: None,
+            first_truthy_func=lambda values: next((value for value in values if value), None),
+        )
+
+        self.assertTrue(result["awaiting_human"])
+        approval = result["pending_permission_approval"]
+        self.assertEqual(approval["kind"], "capability_permission_approval")
+        self.assertEqual(approval["approval_type"], "provider_cost_budget")
+        self.assertEqual(approval["node_id"], "writer")
+        self.assertEqual(approval["capability_kind"], "provider")
+        self.assertEqual(approval["capability_key"], "cost_budget")
+        self.assertEqual(approval["permissions"], ["provider_cost_budget_overrun"])
+        self.assertEqual(approval["provider_cost_budget_preflight"], decision)
+
+    def test_execute_agent_node_resumes_provider_cost_budget_approval_with_runtime_override(self) -> None:
+        state_schema = {
+            "question": NodeSystemStateDefinition.model_validate({"type": "text"}),
+            "answer": NodeSystemStateDefinition.model_validate({"type": "text"}),
+        }
+        node = NodeSystemAgentNode.model_validate(
+            {
+                "kind": "agent",
+                "name": "writer",
+                "ui": {"position": {"x": 0, "y": 0}},
+                "reads": [{"state": "question"}],
+                "writes": [{"state": "answer"}],
+                "config": {},
+            }
+        )
+        preflight = {
+            "kind": "provider_cost_budget_preflight",
+            "status": "blocked",
+            "reason": "provider_cost_budget_already_exhausted",
+            "budget_window_scope": {"window": "run", "root_run_id": "run-budget"},
+            "approval_request": {"kind": "provider_cost_budget_approval_request"},
+        }
+        state = {
+            "run_id": "run-budget",
+            "metadata": {
+                "pending_permission_approval": {
+                    "kind": "capability_permission_approval",
+                    "approval_type": "provider_cost_budget",
+                    "approval_id": "budget_approval",
+                    "node_id": "writer",
+                    "capability_kind": "provider",
+                    "capability_key": "cost_budget",
+                    "capability_name": "Provider cost budget",
+                    "binding_source": "provider_profile",
+                    "permissions": ["provider_cost_budget_overrun"],
+                    "provider_cost_budget_preflight": preflight,
+                },
+                "pending_permission_approval_resume_payload": {
+                    "permission_approval": {
+                        "decision": "approved",
+                        "reason": "允许本次预算超限",
+                    }
+                },
+            },
+        }
+        captured_runtime_config: dict[str, object] = {}
+
+        def generate_agent_response_func(agent_node, input_values, action_context, runtime_config, **kwargs):
+            captured_runtime_config.update(runtime_config)
+            return {"answer": "done", "summary": "done"}, "", [], runtime_config
+
+        result = execute_agent_node(
+            state_schema,
+            node,
+            {"question": "q"},
+            {"state": {}},
+            node_name="writer",
+            state=state,
+            resolve_agent_runtime_config_func=lambda agent_node: {"provider_cost_budget": {"limit_usd": 0.005, "window": "run"}},
+            build_agent_stream_delta_callback_func=lambda *, state, node_name, output_keys: None,
+            callable_accepts_keyword_func=lambda func, keyword: False,
+            generate_agent_response_func=generate_agent_response_func,
+            finalize_agent_stream_delta_func=lambda *, state, node_name, output_values: None,
+            first_truthy_func=lambda values: next((value for value in values if value), None),
+        )
+
+        self.assertEqual(result["outputs"], {"answer": "done"})
+        self.assertNotIn("pending_permission_approval", state["metadata"])
+        approval = state["permission_approvals"][0]
+        self.assertEqual(approval["status"], "approved")
+        self.assertEqual(approval["approval_type"], "provider_cost_budget")
+        self.assertEqual(captured_runtime_config["provider_cost_budget_approval"]["status"], "approved")
+        self.assertEqual(
+            captured_runtime_config["provider_cost_budget_approval"]["provider_cost_budget_preflight"],
+            preflight,
+        )
 
     def test_execute_agent_node_uses_llm_inputs_for_capability_state_selected_subgraph(self) -> None:
         state_schema = {

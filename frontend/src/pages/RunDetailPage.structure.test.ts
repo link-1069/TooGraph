@@ -128,6 +128,11 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.failedLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.rejectedLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerFallback\.fallbackLabels/);
+  assert.match(componentSource, /agentDiagnostic\.providerCostBudgetDegradation\.visible/);
+  assert.match(componentSource, /agentDiagnostic\.providerCostBudgetDegradation\.requestedRef/);
+  assert.match(componentSource, /agentDiagnostic\.providerCostBudgetDegradation\.selectedRef/);
+  assert.match(componentSource, /agentDiagnostic\.providerCostBudgetDegradation\.budgetLimitLabel/);
+  assert.match(componentSource, /agentDiagnostic\.providerCostBudgetDegradation\.evidenceLabels/);
   assert.match(componentSource, /agentDiagnostic\.providerProfile\.visible/);
   assert.match(componentSource, /agentDiagnostic\.providerProfile\.requestTimeoutLabel/);
   assert.match(componentSource, /agentDiagnostic\.providerProfile\.cacheDecisionLabel/);
@@ -156,6 +161,8 @@ test("RunDetailPage renders Agent Diagnostic from run detail state", () => {
   assert.match(componentSource, /run-detail__diagnostic-warnings/);
   assert.match(componentSource, /run-detail__diagnostic-warning/);
   assert.match(componentSource, /t\("runDetail\.providerFallback"\)/);
+  assert.match(componentSource, /t\("runDetail\.providerCostBudgetDegradation"\)/);
+  assert.match(componentSource, /t\("runDetail\.providerCostBudgetDegradationSelected"\)/);
   assert.match(componentSource, /t\("runDetail\.providerProfile"\)/);
   assert.match(componentSource, /t\("runDetail\.providerProfileRateProfile"\)/);
   assert.match(componentSource, /t\("runDetail\.delegationWorker"\)/);

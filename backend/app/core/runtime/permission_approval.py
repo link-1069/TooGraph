@@ -104,6 +104,44 @@ def build_pending_permission_approval(
     return pending
 
 
+def build_pending_provider_cost_budget_approval(
+    *,
+    state: dict[str, Any],
+    node_name: str,
+    preflight_decision: dict[str, Any],
+) -> dict[str, Any]:
+    raw_approval_request = preflight_decision.get("approval_request")
+    approval_request = raw_approval_request if isinstance(raw_approval_request, dict) else {}
+    approval_seed = {
+        "run_id": str(state.get("run_id") or ""),
+        "node_id": node_name,
+        "approval_type": "provider_cost_budget",
+        "provider_cost_budget_preflight": preflight_decision,
+    }
+    approval_id = hashlib.sha256(
+        json.dumps(approval_seed, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:16]
+    pending = {
+        "kind": "capability_permission_approval",
+        "approval_type": "provider_cost_budget",
+        "approval_id": approval_id,
+        "node_id": node_name,
+        "capability_kind": "provider",
+        "capability_key": "cost_budget",
+        "capability_name": "Provider cost budget",
+        "binding_source": "provider_profile",
+        "permissions": ["provider_cost_budget_overrun"],
+        "inputs": {"provider_cost_budget_preflight": preflight_decision},
+        "input_preview": _preview_value(preflight_decision),
+        "reason": _provider_cost_budget_approval_reason(preflight_decision),
+        "requested_at": utc_now_iso(),
+        "provider_cost_budget_preflight": preflight_decision,
+    }
+    if approval_request:
+        pending["approval_request"] = approval_request
+    return pending
+
+
 def consume_pending_permission_approval(
     state: dict[str, Any],
     *,
@@ -124,6 +162,41 @@ def consume_pending_permission_approval(
     if str(pending.get("capability_key") or "") != action_key:
         return None
     if str(pending.get("binding_source") or "") != binding_source:
+        return None
+
+    metadata.pop("pending_permission_approval", None)
+    resume_payload = metadata.pop("pending_permission_approval_resume_payload", {})
+    normalized_resume_payload = resume_payload if isinstance(resume_payload, dict) else {}
+    decision = _resolve_resume_decision(normalized_resume_payload)
+    denial_reason = _resolve_denial_reason(normalized_resume_payload)
+    approval_record = {
+        **pending,
+        "status": decision,
+        "resume_payload": normalized_resume_payload,
+    }
+    if decision == "denied":
+        approval_record["denied_at"] = utc_now_iso()
+        approval_record["denial_reason"] = denial_reason
+    else:
+        approval_record["approved_at"] = utc_now_iso()
+    state["permission_approvals"] = [*state.get("permission_approvals", []), approval_record]
+    return approval_record
+
+
+def consume_pending_provider_cost_budget_approval(
+    state: dict[str, Any],
+    *,
+    node_name: str,
+) -> dict[str, Any] | None:
+    metadata = state.get("metadata") if isinstance(state.get("metadata"), dict) else {}
+    pending = metadata.get("pending_permission_approval")
+    if not isinstance(pending, dict):
+        return None
+    if str(pending.get("kind") or "") != "capability_permission_approval":
+        return None
+    if str(pending.get("approval_type") or "") != "provider_cost_budget":
+        return None
+    if str(pending.get("node_id") or "") != node_name:
         return None
 
     metadata.pop("pending_permission_approval", None)
@@ -215,6 +288,15 @@ def _approval_reason(permissions: list[str], action_name: str) -> str:
         return ""
     label = ", ".join(permissions)
     return f"Action '{action_name}' declares risky permission(s): {label}."
+
+
+def _provider_cost_budget_approval_reason(preflight_decision: dict[str, Any]) -> str:
+    limit = preflight_decision.get("budget_limit_usd")
+    previous = preflight_decision.get("previous_window_cost_usd")
+    window = str(preflight_decision.get("budget_window") or "run").strip() or "run"
+    if limit is not None and previous is not None:
+        return f"Provider cost budget for the {window} window is exhausted: ${previous} used of ${limit}."
+    return "Provider cost budget is exhausted and requires approval before this model call can continue."
 
 
 def _resolve_resume_decision(resume_payload: dict[str, Any]) -> str:

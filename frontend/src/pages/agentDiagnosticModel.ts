@@ -12,6 +12,15 @@ const PROVIDER_FALLBACK_TRACE_RUNTIME_KEYS = [
   "subgraph_input_structured_output_repair_provider_fallback_trace",
 ] as const;
 
+const PROVIDER_COST_BUDGET_DEGRADATION_RUNTIME_KEYS = [
+  "provider_cost_budget_degradation",
+  "structured_output_repair_provider_cost_budget_degradation",
+  "action_input_provider_cost_budget_degradation",
+  "action_input_structured_output_repair_provider_cost_budget_degradation",
+  "subgraph_input_provider_cost_budget_degradation",
+  "subgraph_input_structured_output_repair_provider_cost_budget_degradation",
+] as const;
+
 export type AgentDiagnostic = {
   visible: boolean;
   stopReason: string;
@@ -26,6 +35,7 @@ export type AgentDiagnostic = {
   capabilitySelection: CapabilitySelectionDiagnostic;
   providerProfile: ProviderProfileDiagnostic;
   providerFallback: ProviderFallbackDiagnostic;
+  providerCostBudgetDegradation: ProviderCostBudgetDegradationDiagnostic;
   permissionApproval: PermissionApprovalDiagnostic;
   delegationWorker: DelegationWorkerDiagnostic;
   delegationBoard: DelegationBoardDiagnostic;
@@ -54,6 +64,22 @@ export type ProviderFallbackDiagnostic = {
   rejectedLabels: string[];
   evidenceLabels: string[];
   warnings: string[];
+};
+
+export type ProviderCostBudgetDegradationDiagnostic = {
+  visible: boolean;
+  status: string;
+  requestedRef: string;
+  selectedRef: string;
+  reason: string;
+  preflightStatus: string;
+  preflightReason: string;
+  budgetLimitLabel: string;
+  previousWindowCostLabel: string;
+  cumulativeCostLabel: string;
+  windowLabel: string;
+  onExceededLabel: string;
+  evidenceLabels: string[];
 };
 
 export type PermissionApprovalDiagnostic = {
@@ -98,6 +124,9 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
   );
   const providerProfile = buildProviderProfileDiagnostic(resolveProviderProfileRuntimeConfig(run));
   const providerFallback = buildProviderFallbackDiagnostic(resolveProviderFallbackTrace(run, stateValues));
+  const providerCostBudgetDegradation = buildProviderCostBudgetDegradationDiagnostic(
+    resolveProviderCostBudgetDegradation(run, stateValues),
+  );
   const permissionApproval = buildPermissionApprovalDiagnostic(run);
   const delegationWorker = buildDelegationWorkerDiagnostic(
     resolveDelegationWorkerPackage(run, stateValues),
@@ -114,6 +143,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     || capabilitySelection.visible
     || providerProfile.visible
     || providerFallback.visible
+    || providerCostBudgetDegradation.visible
     || permissionApproval.visible
     || delegationWorker.visible
     || delegationBoard.visible
@@ -139,6 +169,7 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     capabilitySelection,
     providerProfile,
     providerFallback,
+    providerCostBudgetDegradation,
     permissionApproval,
     delegationWorker,
     delegationBoard,
@@ -259,7 +290,9 @@ function formatProviderCostBudget(record: Record<string, unknown>) {
     return "";
   }
   const window = textFromUnknown(record.window) || "run";
-  return `$${formatCompactNumber(limitUsd)} / ${window}`;
+  const onExceeded = textFromUnknown(record.on_exceeded) || textFromUnknown(record.onExceeded);
+  const strategy = onExceeded && onExceeded !== "block" ? onExceeded.replace(/_/g, " ") : "";
+  return [`$${formatCompactNumber(limitUsd)} / ${window}`, strategy].filter(Boolean).join(", ");
 }
 
 function formatProviderRateProfile(record: Record<string, unknown>) {
@@ -427,6 +460,23 @@ function resolveProviderFallbackTrace(run: RunDetail, stateValues: Record<string
   return {};
 }
 
+function resolveProviderCostBudgetDegradation(run: RunDetail, stateValues: Record<string, unknown>) {
+  const stateDegradation = recordFromUnknown(stateValues.provider_cost_budget_degradation);
+  if (Object.keys(stateDegradation).length > 0) {
+    return stateDegradation;
+  }
+  for (const execution of listNodeExecutionsDeep(run.node_executions)) {
+    const runtimeConfig = recordFromUnknown(execution.artifacts?.runtime_config);
+    for (const key of PROVIDER_COST_BUDGET_DEGRADATION_RUNTIME_KEYS) {
+      const degradation = recordFromUnknown(runtimeConfig[key]);
+      if (Object.keys(degradation).length > 0) {
+        return degradation;
+      }
+    }
+  }
+  return {};
+}
+
 function listNodeExecutionsDeep(executions: RunDetail["node_executions"]): RunDetail["node_executions"] {
   const result: RunDetail["node_executions"] = [];
   for (const execution of executions ?? []) {
@@ -487,6 +537,59 @@ function buildProviderFallbackDiagnostic(value: unknown): ProviderFallbackDiagno
   };
 }
 
+function buildProviderCostBudgetDegradationDiagnostic(value: unknown): ProviderCostBudgetDegradationDiagnostic {
+  const degradation = recordFromUnknown(value);
+  const preflight = recordFromUnknown(degradation.provider_cost_budget_preflight);
+  const status = textFromUnknown(degradation.status) || textFromUnknown(preflight.status);
+  const requestedRef = textFromUnknown(degradation.requested_model_ref);
+  const selectedRef = textFromUnknown(degradation.selected_model_ref);
+  const reason = textFromUnknown(degradation.reason);
+  const preflightStatus = textFromUnknown(preflight.status);
+  const preflightReason = textFromUnknown(preflight.reason);
+  const budgetLimitLabel = formatUsdLabel(numberFromUnknown(preflight.budget_limit_usd));
+  const previousWindowCostLabel = formatUsdLabel(numberFromUnknown(preflight.previous_window_cost_usd));
+  const cumulativeCostLabel = formatUsdLabel(numberFromUnknown(preflight.cumulative_cost_usd));
+  const windowLabel = textFromUnknown(preflight.budget_window);
+  const onExceededLabel = textFromUnknown(preflight.on_exceeded);
+  const evidenceLabels = [
+    status ? `status: ${status}` : "",
+    reason ? `reason: ${reason}` : "",
+    preflightStatus ? `preflight: ${preflightStatus}` : "",
+    preflightReason ? `preflight reason: ${preflightReason}` : "",
+    windowLabel ? `window: ${windowLabel}` : "",
+    onExceededLabel ? `on exceeded: ${onExceededLabel}` : "",
+  ].filter(Boolean);
+  const visible = Boolean(
+    status ||
+    requestedRef ||
+    selectedRef ||
+    reason ||
+    preflightStatus ||
+    preflightReason ||
+    budgetLimitLabel ||
+    previousWindowCostLabel ||
+    cumulativeCostLabel ||
+    windowLabel ||
+    onExceededLabel
+  );
+
+  return {
+    visible,
+    status,
+    requestedRef,
+    selectedRef,
+    reason,
+    preflightStatus,
+    preflightReason,
+    budgetLimitLabel,
+    previousWindowCostLabel,
+    cumulativeCostLabel,
+    windowLabel,
+    onExceededLabel,
+    evidenceLabels,
+  };
+}
+
 function providerCandidateLabel(prefix: string, candidate: Record<string, unknown>, reasonKey: string) {
   const ref = providerModelRef(candidate);
   const reason = textFromUnknown(candidate[reasonKey]) || textFromUnknown(candidate.reason);
@@ -505,6 +608,10 @@ function providerModelRef(value: unknown) {
     return `${providerId}/${model}`;
   }
   return model || providerId;
+}
+
+function formatUsdLabel(value: number | null) {
+  return value === null ? "" : `$${formatCompactNumber(value)}`;
 }
 
 const USER_FACING_STOP_REASONS = new Set([

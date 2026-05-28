@@ -80,9 +80,17 @@ def _resolved_provider_profile(node: NodeSystemAgentNode) -> dict[str, Any]:
     return {
         "request_timeout_seconds": profile.request_timeout_seconds,
         "cache_policy": profile.cache_policy.value,
-        "cost_budget": profile.cost_budget.model_dump(mode="json"),
+        "cost_budget": _provider_cost_budget_payload(profile),
         "rate_profile": _provider_rate_profile_payload(profile),
     }
+
+
+def _provider_cost_budget_payload(profile: Any) -> dict[str, Any]:
+    cost_budget = profile.cost_budget
+    payload = cost_budget.model_dump(mode="json")
+    if cost_budget.on_exceeded == "block":
+        payload.pop("on_exceeded", None)
+    return payload
 
 
 def _provider_rate_profile_payload(profile: Any) -> dict[str, Any]:
