@@ -42,7 +42,6 @@ class TooGraphPageOperatorActionTests(unittest.TestCase):
 
         self.assertEqual(definition.action_key, "toograph_page_operator")
         self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
-        self.assertEqual(definition.verification_eval_suites, ["toograph_page_operation_workflow_core"])
         self.assertEqual(definition.permissions, ["virtual_ui_operation"])
         self.assertEqual(
             [field.key for field in definition.state_input_schema],

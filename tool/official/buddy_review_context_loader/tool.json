@@ -5,8 +5,9 @@
   "description": "A deterministic Buddy runtime tool that reconstructs memory-review inputs from a source Buddy graph run stored in the database.",
   "version": "0.1.0",
   "timeoutSeconds": 30,
-  "permissions": ["buddy_session_read"],
-  "verificationEvalSuites": ["buddy_autonomous_review_core"],
+  "permissions": [
+    "buddy_session_read"
+  ],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

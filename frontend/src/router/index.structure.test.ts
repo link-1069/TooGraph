@@ -39,11 +39,6 @@ test("router exposes first-class management pages for presets and actions", () =
   assert.match(routerSource, /\{ path: "\/message-platforms", component: MessagePlatformsPage \}/);
 });
 
-test("router keeps legacy developer-only tooling outside the user-facing route table", () => {
-  assert.doesNotMatch(routerSource, /const EvalsPage = \(\) => import\("@\/pages\/EvalsPage\.vue"\);/);
-  assert.doesNotMatch(routerSource, /\{ path: "\/evals", component: EvalsPage \}/);
-});
-
 test("router lazy-loads page components to keep the production entry chunk small", () => {
   for (const pageName of [
     "EditorPage",

@@ -6,7 +6,6 @@
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
-  "verificationEvalSuites": ["buddy_autonomous_loop_core"],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

@@ -69,10 +69,6 @@ test("buildRuntimeModelOptions uses the same configured catalog rules as LLM nod
     revision: {
       max_revision_round: 2,
     },
-    evaluator: {
-      default_score_threshold: 0.7,
-      routes: [],
-    },
     tools: [],
   };
 

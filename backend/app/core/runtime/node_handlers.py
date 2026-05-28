@@ -1800,11 +1800,6 @@ def _runtime_config_for_artifacts(runtime_config: dict[str, Any]) -> dict[str, A
 
 
 def _resolve_model_runtime_fixture_from_graph_metadata(graph_metadata: dict[str, Any]) -> dict[str, Any]:
-    eval_metadata = graph_metadata.get("eval")
-    if isinstance(eval_metadata, dict):
-        fixture = eval_metadata.get("model_runtime_fixture")
-        if isinstance(fixture, dict):
-            return copy.deepcopy(fixture)
     fixture = graph_metadata.get("model_runtime_fixture")
     if isinstance(fixture, dict):
         return copy.deepcopy(fixture)
@@ -1812,11 +1807,6 @@ def _resolve_model_runtime_fixture_from_graph_metadata(graph_metadata: dict[str,
 
 
 def _resolve_tool_runtime_fixture_from_graph_metadata(graph_metadata: dict[str, Any]) -> dict[str, Any]:
-    eval_metadata = graph_metadata.get("eval")
-    if isinstance(eval_metadata, dict):
-        fixture = eval_metadata.get("tool_runtime_fixture")
-        if isinstance(fixture, dict):
-            return copy.deepcopy(fixture)
     fixture = graph_metadata.get("tool_runtime_fixture")
     if isinstance(fixture, dict):
         return copy.deepcopy(fixture)
@@ -1931,7 +1921,7 @@ def _tool_runtime_fixture_failure_result(
         _compact_text(record.get("error"))
         or _compact_text(record.get("message"))
         or _compact_text(result.get("error"))
-        or f"Eval fixture failed tool '{tool_key}' at node '{node_name}'."
+        or f"Runtime fixture failed tool '{tool_key}' at node '{node_name}'."
     )
     return result
 

@@ -213,7 +213,6 @@ function seedRunRecord(testInfo: TestInfo, options: SeedRunOptions = {}) {
     activity_events: [],
     selected_capabilities: [],
     capability_outputs: [],
-    evaluation_result: {},
     memory_summary: "E2E memory summary",
     final_result: "E2E run records fixture final output with restore-ready graph state.",
     node_status_map: nodeStatusMap,

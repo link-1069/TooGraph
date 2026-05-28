@@ -25,7 +25,6 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
 
         self.assertEqual(manifest["actionKey"], "toograph_capability_selector")
         self.assertEqual(manifest["timeoutSeconds"], 30)
-        self.assertEqual(manifest.get("verificationEvalSuites"), ["buddy_autonomous_loop_core"])
         self.assertEqual(
             [field["key"] for field in manifest.get("stateInputSchema", [])],
             ["current_requirement", "agent_loop_control"],
@@ -180,8 +179,8 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
         self.assertIn("network", web_search["permissions"])
         self.assertEqual(web_search["permissionTier"], "external")
 
-    def test_capability_catalog_exposes_permission_tier_and_eval_status(self) -> None:
-        selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_eval_test")
+    def test_capability_catalog_exposes_permission_tier(self) -> None:
+        selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_permission_test")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -211,24 +210,11 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (template_dir / "eval_cases.json").write_text(
-                json.dumps({"cases": [{"case_id": "case_1"}, {"case_id": "case_2"}]}),
-                encoding="utf-8",
-            )
-
             catalog = selector.discover_capability_catalog(root)
 
         visible_loop = next(item for item in catalog["subgraphs"] if item["key"] == "visible_loop")
         self.assertEqual(visible_loop["permissions"], ["file_write"])
         self.assertEqual(visible_loop["permissionTier"], "risky")
-        self.assertEqual(
-            visible_loop["evalStatus"],
-            {
-                "has_cases": True,
-                "case_count": 2,
-                "source": "graph_template/official/visible_loop/eval_cases.json",
-            },
-        )
 
     def test_capability_catalog_exposes_standard_permission_profile(self) -> None:
         selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_permission_profile_test")

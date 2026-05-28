@@ -59,21 +59,6 @@
         "managed": true
       }
     },
-    "eval_snapshot": {
-      "name": "Eval 快照",
-      "description": "官方模板、Action、Tool、selector 和召回相关 eval 覆盖与最近结果。",
-      "type": "json",
-      "value": {},
-      "color": "#0891b2",
-      "binding": {
-        "kind": "tool_output",
-        "actionKey": "",
-        "toolKey": "capability_curator_context_loader",
-        "nodeId": "load_curator_context",
-        "fieldKey": "eval_snapshot",
-        "managed": true
-      }
-    },
     "existing_candidates_snapshot": {
       "name": "已有候选快照",
       "description": "当前 improvement_candidates 队列摘要，用于合并重复建议和延续已存在候选。",
@@ -185,7 +170,7 @@
     "load_curator_context": {
       "kind": "tool",
       "name": "加载整理上下文",
-      "description": "调用 capability_curator_context_loader 读取能力目录、使用事件、eval 覆盖和已有候选。",
+      "description": "调用 capability_curator_context_loader 读取能力目录、使用事件和已有候选。",
       "ui": {
         "position": {
           "x": 620,
@@ -220,10 +205,6 @@
           "mode": "replace"
         },
         {
-          "state": "eval_snapshot",
-          "mode": "replace"
-        },
-        {
           "state": "existing_candidates_snapshot",
           "mode": "replace"
         },
@@ -239,7 +220,7 @@
     "analyze_capability_health": {
       "kind": "agent",
       "name": "分析能力健康",
-      "description": "根据目录、使用记录和 eval 快照生成能力健康报告。",
+      "description": "根据目录、使用记录生成能力健康报告。",
       "ui": {
         "position": {
           "x": 620,
@@ -265,10 +246,6 @@
           "required": true
         },
         {
-          "state": "eval_snapshot",
-          "required": true
-        },
-        {
           "state": "existing_candidates_snapshot",
           "required": true
         },
@@ -291,7 +268,7 @@
         "actionKey": "",
         "actionBindings": [],
         "actionInstructionBlocks": {},
-        "taskInstruction": "读取 curator_scope、capability_catalog_snapshot、capability_usage_snapshot、eval_snapshot、existing_candidates_snapshot。写 capability_health_report JSON：summary、capability_scores、duplicate_groups、stale_capabilities、high_failure_capabilities、missing_tests、missing_docs、missing_permissions、priority_gaps、evidence_refs。写 curator_report Markdown，按能力健康、风险、重复能力、缺测试、缺文档、低使用、高失败和推荐切片组织，并为每条结论附 source refs。",
+        "taskInstruction": "读取 curator_scope、capability_catalog_snapshot、capability_usage_snapshot、existing_candidates_snapshot。写 capability_health_report JSON：summary、capability_scores、duplicate_groups、stale_capabilities、high_failure_capabilities、missing_tests、missing_docs、missing_permissions、priority_gaps、evidence_refs。写 curator_report Markdown，按能力健康、风险、重复能力、缺测试、缺文档、低使用、高失败和推荐切片组织，并为每条结论附 source refs。",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "high",
@@ -345,7 +322,7 @@
         "actionKey": "",
         "actionBindings": [],
         "actionInstructionBlocks": {},
-        "taskInstruction": "根据 capability_health_report 和 curator_report 写 improvement_candidates JSON 数组。每个候选使用 improvement_candidate 合同：candidate_id、kind、source_run_id、review_id、review_run_id、target_ref、evidence_refs、risk_level、expected_benefit、proposed_change_summary、approval_required、payload、status。kind 可用 action_revision、tool_revision、template_revision、subgraph_proposal、eval_case、docs_update、policy_suggestion、memory。候选聚焦可验证、可审查、可通过 buddy_improvement_review_workflow 继续验证的改动。写 scheduler_recommendation JSON：recommended_interval、next_scope、dry_run、required_inputs、readiness、candidate_backlog_policy。",
+        "taskInstruction": "根据 capability_health_report 和 curator_report 写 improvement_candidates JSON 数组。每个候选使用 improvement_candidate 合同：candidate_id、kind、source_run_id、review_id、review_run_id、target_ref、evidence_refs、risk_level、expected_benefit、proposed_change_summary、approval_required、payload、status。kind 可用 action_revision、tool_revision、template_revision、subgraph_proposal、docs_update、policy_suggestion、memory。候选聚焦可验证、可审查、可通过 buddy_improvement_review_workflow 继续验证的改动。写 scheduler_recommendation JSON：recommended_interval、next_scope、dry_run、required_inputs、readiness、candidate_backlog_policy。",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "medium",

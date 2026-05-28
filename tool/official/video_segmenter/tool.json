@@ -5,8 +5,11 @@
   "description": "当用户需要把本地视频切成短片段，供后续 Batch 或 LLM 节点逐段分析时使用。",
   "version": "0.1.0",
   "timeoutSeconds": 600,
-  "permissions": ["subprocess", "file_read", "file_write"],
-  "verificationEvalSuites": ["game_creative_factory_official", "video_segmenter_eval_core"],
+  "permissions": [
+    "subprocess",
+    "file_read",
+    "file_write"
+  ],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

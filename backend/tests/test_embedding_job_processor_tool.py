@@ -54,7 +54,6 @@ class EmbeddingJobProcessorToolTests(unittest.TestCase):
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Embedding Job Processor")
         self.assertIn("pending embedding jobs", definition.description)
-        self.assertEqual(definition.verification_eval_suites, ["embedding_maintenance_core"])
         self.assertIn("embedding_job_processor", get_tool_registry(include_disabled=True).keys())
 
     def test_tool_processes_pending_local_embedding_jobs(self) -> None:

@@ -120,9 +120,5 @@ export type SettingsPayload = {
   revision: {
     max_revision_round: number;
   };
-  evaluator: {
-    default_score_threshold: number;
-    routes: string[];
-  };
   tools: string[];
 };

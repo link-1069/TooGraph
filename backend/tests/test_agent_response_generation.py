@@ -1236,11 +1236,11 @@ class AgentResponseGenerationTests(unittest.TestCase):
         captured: dict[str, object] = {}
         fixture = {
             "model_providers": {
-                "eval-primary": {
+                "fixture-primary": {
                     "models": [{"model": "gpt-primary"}],
                 }
             },
-            "failures": {"eval-primary/gpt-primary": {"message": "timeout"}},
+            "failures": {"fixture-primary/gpt-primary": {"message": "timeout"}},
         }
 
         def chat_with_model_ref_with_meta_func(**kwargs):
@@ -1249,7 +1249,7 @@ class AgentResponseGenerationTests(unittest.TestCase):
                 '{"answer": "done"}',
                 {
                     "warnings": [],
-                    "provider_id": "eval-primary",
+                    "provider_id": "fixture-primary",
                     "model": "gpt-primary",
                 },
             )
@@ -1259,9 +1259,9 @@ class AgentResponseGenerationTests(unittest.TestCase):
             {"question": "q"},
             {},
             {
-                "resolved_provider_id": "eval-primary",
+                "resolved_provider_id": "fixture-primary",
                 "runtime_model_name": "gpt-primary",
-                "resolved_model_ref": "eval-primary/gpt-primary",
+                "resolved_model_ref": "fixture-primary/gpt-primary",
                 "resolved_temperature": 0.2,
                 "resolved_thinking": False,
                 "resolved_thinking_level": "off",

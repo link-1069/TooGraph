@@ -353,10 +353,6 @@ def _build_settings_payload(*, force_refresh_models: bool = False) -> dict:
         "revision": {
             "max_revision_round": 1,
         },
-        "evaluator": {
-            "default_score_threshold": 7.8,
-            "routes": ["pass", "revise", "fail"],
-        },
         "tools": sorted(get_tool_registry().keys()),
         "buddy_runtime": get_saved_buddy_runtime_settings(),
         "model_logs": get_model_log_retention_settings(),

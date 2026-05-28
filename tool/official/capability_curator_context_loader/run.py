@@ -29,7 +29,6 @@ def capability_curator_context_loader(payload: dict[str, Any] | None) -> dict[st
         scope = _normalize_scope(inputs.get("curator_scope"))
         catalog_snapshot = _build_catalog_snapshot(repo_root, scope)
         usage_snapshot = _build_usage_snapshot(scope)
-        eval_snapshot = _build_eval_snapshot(repo_root, scope)
         candidates_snapshot = _build_existing_candidates_snapshot(scope)
         report = {
             "scope": "capability_curator",
@@ -38,13 +37,11 @@ def capability_curator_context_loader(payload: dict[str, Any] | None) -> dict[st
                 "tools": catalog_snapshot["counts"]["tools"],
                 "templates": catalog_snapshot["counts"]["templates"],
                 "usage_events": usage_snapshot["counts"]["events"],
-                "official_template_eval_suites": eval_snapshot["counts"]["official_template_eval_suites"],
                 "existing_candidates": candidates_snapshot["counts"]["total"],
             },
             "warnings": [
                 *catalog_snapshot.get("warnings", []),
                 *usage_snapshot.get("warnings", []),
-                *eval_snapshot.get("warnings", []),
                 *candidates_snapshot.get("warnings", []),
             ],
         }
@@ -53,7 +50,6 @@ def capability_curator_context_loader(payload: dict[str, Any] | None) -> dict[st
             "curator_scope": scope,
             "capability_catalog_snapshot": catalog_snapshot,
             "capability_usage_snapshot": usage_snapshot,
-            "eval_snapshot": eval_snapshot,
             "existing_candidates_snapshot": candidates_snapshot,
             "curator_context_report": report,
         }
@@ -66,7 +62,6 @@ def capability_curator_context_loader(payload: dict[str, Any] | None) -> dict[st
             "curator_scope": _normalize_scope(inputs.get("curator_scope")),
             "capability_catalog_snapshot": _empty_catalog_snapshot([warning]),
             "capability_usage_snapshot": _empty_usage_snapshot([warning]),
-            "eval_snapshot": _empty_eval_snapshot([warning]),
             "existing_candidates_snapshot": _empty_candidates_snapshot([warning]),
             "curator_context_report": {
                 "scope": "capability_curator",
@@ -118,7 +113,6 @@ def _discover_action_items(repo_root: Path, source_roots: list[str]) -> list[dic
                     "runtime": _runtime_summary(payload.get("runtime")),
                     "input_schema": _schema_summary(payload.get("stateInputSchema") or payload.get("state_input_schema")),
                     "output_schema": _schema_summary(payload.get("stateOutputSchema") or payload.get("state_output_schema")),
-                    "eval_status": _eval_status(repo_root, manifest.parent / "eval_cases.json"),
                 }
             )
     return sorted(items, key=lambda item: (item["source"], item["key"]))
@@ -145,7 +139,6 @@ def _discover_tool_items(repo_root: Path, source_roots: list[str]) -> list[dict[
                     "runtime": _runtime_summary(payload.get("runtime")),
                     "input_schema": _schema_summary(payload.get("inputSchema") or payload.get("input_schema")),
                     "output_schema": _schema_summary(payload.get("outputSchema") or payload.get("output_schema")),
-                    "eval_status": _eval_status(repo_root, manifest.parent / "eval_cases.json"),
                 }
             )
     return sorted(items, key=lambda item: (item["source"], item["key"]))
@@ -160,7 +153,6 @@ def _discover_template_items(repo_root: Path, source_roots: list[str]) -> list[d
             key = _text(payload.get("template_id") or manifest.parent.name)
             if not key:
                 continue
-            eval_path = manifest.parent / _text(metadata.get("evalCases") or payload.get("evalCases") or "eval_cases.json")
             items.append(
                 {
                     "kind": "template",
@@ -177,7 +169,6 @@ def _discover_template_items(repo_root: Path, source_roots: list[str]) -> list[d
                     "required_actions": _text_list(metadata.get("requiredActions")),
                     "required_tools": _text_list(metadata.get("requiredTools")),
                     "permissions": _text_list(metadata.get("permissions")),
-                    "eval_status": _eval_status(repo_root, eval_path),
                 }
             )
     return sorted(items, key=lambda item: (item["source"], item["key"]))
@@ -223,37 +214,6 @@ def _build_usage_snapshot(scope: dict[str, Any]) -> dict[str, Any]:
             "events": len(events),
             "capabilities": len(by_capability),
             "failed_events": sum(1 for event in events if not _status_succeeded(event.get("status"))),
-        },
-        "warnings": warnings,
-    }
-
-
-def _build_eval_snapshot(repo_root: Path, scope: dict[str, Any]) -> dict[str, Any]:
-    _ = scope
-    suites: list[dict[str, Any]] = []
-    warnings: list[dict[str, str]] = []
-    for eval_path in sorted((repo_root / "graph_template" / "official").glob("*/eval_cases.json")):
-        try:
-            payload = _read_json(eval_path)
-            cases = payload.get("cases") if isinstance(payload.get("cases"), list) else []
-            template_id = _text(payload.get("template_id") or eval_path.parent.name)
-            suites.append(
-                {
-                    "template_id": template_id,
-                    "suite": _text(payload.get("suite") or template_id),
-                    "case_count": len(cases),
-                    "case_ids": [_text(case.get("case_id")) for case in cases if isinstance(case, dict)],
-                    "source_path": _relative_path(repo_root, eval_path),
-                }
-            )
-        except Exception as exc:
-            warnings.append({"type": "eval_snapshot_parse_failed", "message": f"{eval_path}: {exc}"})
-    return {
-        "kind": "eval_snapshot",
-        "official_template_eval_suites": suites,
-        "counts": {
-            "official_template_eval_suites": len(suites),
-            "official_template_eval_cases": sum(item.get("case_count", 0) for item in suites),
         },
         "warnings": warnings,
     }
@@ -391,17 +351,6 @@ def _iter_manifests(root: Path, filename: str) -> list[Path]:
     return sorted(path / filename for path in root.iterdir() if (path / filename).is_file())
 
 
-def _eval_status(repo_root: Path, eval_path: Path) -> dict[str, Any]:
-    if not eval_path.exists():
-        return {"has_cases": False, "case_count": 0, "source": ""}
-    try:
-        payload = _read_json(eval_path)
-        cases = payload.get("cases") if isinstance(payload.get("cases"), list) else []
-        return {"has_cases": bool(cases), "case_count": len(cases), "source": _relative_path(repo_root, eval_path)}
-    except Exception as exc:
-        return {"has_cases": False, "case_count": 0, "source": _relative_path(repo_root, eval_path), "error": str(exc)}
-
-
 def _template_capability_discoverable(metadata: dict[str, Any]) -> bool:
     if metadata.get("visible") is False or metadata.get("internal") is True:
         return False
@@ -443,10 +392,6 @@ def _empty_catalog_snapshot(warnings: list[dict[str, str]]) -> dict[str, Any]:
 
 def _empty_usage_snapshot(warnings: list[dict[str, str]]) -> dict[str, Any]:
     return {"kind": "capability_usage_snapshot", "lookback_days": 0, "events": [], "by_capability": {}, "counts": {"events": 0, "capabilities": 0, "failed_events": 0}, "warnings": warnings}
-
-
-def _empty_eval_snapshot(warnings: list[dict[str, str]]) -> dict[str, Any]:
-    return {"kind": "eval_snapshot", "official_template_eval_suites": [], "counts": {"official_template_eval_suites": 0, "official_template_eval_cases": 0}, "warnings": warnings}
 
 
 def _empty_candidates_snapshot(warnings: list[dict[str, str]]) -> dict[str, Any]:

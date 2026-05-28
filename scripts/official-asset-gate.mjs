@@ -21,7 +21,6 @@ const TEMPLATE_GATE = {
     "-m",
     "unittest",
     "backend.tests.test_template_layouts",
-    "backend.tests.test_evaluator_official_seed",
   ],
 };
 
@@ -46,7 +45,6 @@ const TOOL_GATE = {
     "backend.tests.test_tool_catalog_routes",
     "backend.tests.test_node_system_validator_tools",
     "backend.tests.test_tool_node_runtime",
-    "backend.tests.test_official_tool_eval_bindings",
   ],
 };
 
@@ -54,20 +52,12 @@ export function resolveOfficialAssetGatePlan({ changedPaths = [] } = {}) {
   const normalizedPaths = changedPaths.map(normalizePath).filter(Boolean);
   const changedAssetKinds = [];
   const commands = [GIT_DIFF_CHECK];
-  const templateEvalSuiteIds = resolveChangedTemplateEvalSuiteIds(normalizedPaths);
   const changedActionKeys = resolveChangedPackageKeys(normalizedPaths, OFFICIAL_ACTION_PREFIX);
   const changedToolKeys = resolveChangedPackageKeys(normalizedPaths, OFFICIAL_TOOL_PREFIX);
 
   if (normalizedPaths.some((path) => path.startsWith(OFFICIAL_TEMPLATE_PREFIX))) {
     changedAssetKinds.push("official_template");
     appendCommand(commands, TEMPLATE_GATE);
-    for (const suiteId of templateEvalSuiteIds) {
-      appendCommand(commands, {
-        name: `official eval suite gate: ${suiteId}`,
-        command: "python",
-        args: ["scripts/official_eval_suite_gate.py", suiteId],
-      });
-    }
   }
   if (normalizedPaths.some((path) => path.startsWith(OFFICIAL_ACTION_PREFIX))) {
     changedAssetKinds.push("official_action");
@@ -81,9 +71,6 @@ export function resolveOfficialAssetGatePlan({ changedPaths = [] } = {}) {
     }
     for (const command of resolveManifestVerificationCommands(changedActionKeys, OFFICIAL_ACTION_PREFIX, "action.json")) {
       appendCommand(commands, command);
-    }
-    for (const suiteId of resolveManifestEvalSuiteIds(changedActionKeys, OFFICIAL_ACTION_PREFIX, "action.json")) {
-      appendCommand(commands, officialEvalSuiteCommand(suiteId));
     }
   }
   if (normalizedPaths.some((path) => path.startsWith(OFFICIAL_TOOL_PREFIX))) {
@@ -99,22 +86,11 @@ export function resolveOfficialAssetGatePlan({ changedPaths = [] } = {}) {
     for (const command of resolveManifestVerificationCommands(changedToolKeys, OFFICIAL_TOOL_PREFIX, "tool.json")) {
       appendCommand(commands, command);
     }
-    for (const suiteId of resolveManifestEvalSuiteIds(changedToolKeys, OFFICIAL_TOOL_PREFIX, "tool.json")) {
-      appendCommand(commands, officialEvalSuiteCommand(suiteId));
-    }
   }
 
   return {
     changedAssetKinds,
     commands,
-  };
-}
-
-function officialEvalSuiteCommand(suiteId) {
-  return {
-    name: `official eval suite gate: ${suiteId}`,
-    command: "python",
-    args: ["scripts/official_eval_suite_gate.py", suiteId],
   };
 }
 
@@ -191,28 +167,6 @@ function resolveManifestVerificationCommands(packageKeys, prefix, manifestFileNa
   });
 }
 
-function resolveManifestEvalSuiteIds(packageKeys, prefix, manifestFileName) {
-  return uniqueTextList(
-    packageKeys.flatMap((packageKey) => {
-      const manifestPath = `${prefix}${packageKey}/${manifestFileName}`;
-      if (!existsSync(manifestPath)) {
-        return [];
-      }
-      let payload;
-      try {
-        payload = JSON.parse(readFileSync(manifestPath, "utf8"));
-      } catch {
-        return [];
-      }
-      const suites = payload?.verificationEvalSuites ?? payload?.verification_eval_suites;
-      if (!Array.isArray(suites)) {
-        return [];
-      }
-      return suites.map(normalizePath).filter(Boolean);
-    }),
-  );
-}
-
 function parseVerificationCommand(command, { packageKey, manifestPath, index }) {
   if (!command || typeof command !== "object" || Array.isArray(command)) {
     throw new Error(`Invalid verificationCommands[${index}] in ${manifestPath} for ${packageKey}.`);
@@ -234,31 +188,6 @@ function parseVerificationCommand(command, { packageKey, manifestPath, index }) 
 
 function normalizeCommandName(command) {
   return String(command || "").trim();
-}
-
-function resolveChangedTemplateEvalSuiteIds(changedPaths) {
-  const templateIds = uniqueTextList(
-    changedPaths
-      .filter((path) => path.startsWith(OFFICIAL_TEMPLATE_PREFIX))
-      .map((path) => path.slice(OFFICIAL_TEMPLATE_PREFIX.length).split("/")[0])
-      .filter(Boolean),
-  );
-  return templateIds
-    .map(readTemplateEvalSuiteId)
-    .filter(Boolean);
-}
-
-function readTemplateEvalSuiteId(templateId) {
-  const evalPath = `${OFFICIAL_TEMPLATE_PREFIX}${templateId}/eval_cases.json`;
-  if (!existsSync(evalPath)) {
-    return "";
-  }
-  try {
-    const payload = JSON.parse(readFileSync(evalPath, "utf8"));
-    return normalizePath(payload?.suite ?? payload?.suite_id);
-  } catch {
-    return "";
-  }
 }
 
 function normalizePath(path) {

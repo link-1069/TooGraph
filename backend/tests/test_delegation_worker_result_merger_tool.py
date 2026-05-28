@@ -34,7 +34,6 @@ class DelegationWorkerResultMergerToolTests(unittest.TestCase):
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Delegation Worker Result Merger")
         self.assertIn("worker_result_package", definition.description)
-        self.assertEqual(definition.verification_eval_suites, ["delegation_worker_batch_eval_core"])
         self.assertIn("delegation_worker_result_merger", get_tool_registry(include_disabled=True).keys())
 
     def test_merger_outputs_partial_review_package_with_worker_links_and_budget(self) -> None:

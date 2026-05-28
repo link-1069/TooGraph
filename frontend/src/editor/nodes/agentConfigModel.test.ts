@@ -147,10 +147,6 @@ test("resolveAgentRuntimeCatalog uses configured providers and the agent runtime
     revision: {
       max_revision_round: 2,
     },
-    evaluator: {
-      default_score_threshold: 0.7,
-      routes: [],
-    },
     tools: [],
   });
 
@@ -215,10 +211,6 @@ test("resolveAgentRuntimeCatalog only exposes enabled configured providers", () 
     revision: {
       max_revision_round: 2,
     },
-    evaluator: {
-      default_score_threshold: 0.7,
-      routes: [],
-    },
     tools: [],
   });
 
@@ -253,10 +245,6 @@ test("resolveAgentRuntimeCatalog falls back to the editor default model when age
     },
     revision: {
       max_revision_round: 2,
-    },
-    evaluator: {
-      default_score_threshold: 0.7,
-      routes: [],
     },
     tools: [],
   });

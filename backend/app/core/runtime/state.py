@@ -74,7 +74,6 @@ class RunState(TypedDict, total=False):
     activity_events: list[dict[str, Any]]
     selected_capabilities: list[dict[str, Any]]
     capability_outputs: list[dict[str, Any]]
-    evaluation_result: dict[str, Any]
     final_result: str
     node_status_map: dict[str, NodeStatus]
     subgraph_status_map: dict[str, dict[str, NodeStatus]]
@@ -221,7 +220,6 @@ def create_initial_run_state(graph_id: str, graph_name: str, max_revision_round:
         activity_events=[],
         selected_capabilities=[],
         capability_outputs=[],
-        evaluation_result={},
         final_result="",
         node_status_map={},
         subgraph_status_map={},

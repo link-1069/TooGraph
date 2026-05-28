@@ -40,10 +40,6 @@ class ProviderFallbackResolverToolTests(unittest.TestCase):
             definition.verification_commands[0].args,
             ["-m", "unittest", "backend.tests.test_provider_fallback_resolver"],
         )
-        self.assertEqual(
-            definition.verification_eval_suites,
-            ["provider_fallback_eval_core", "tool_runtime_fallback_eval_core"],
-        )
         self.assertIn("provider_fallback_resolver", get_tool_registry(include_disabled=True).keys())
 
     def test_tool_outputs_provider_fallback_trace(self) -> None:

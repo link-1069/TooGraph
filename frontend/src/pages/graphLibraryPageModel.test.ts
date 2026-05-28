@@ -76,7 +76,6 @@ const templates: TemplateRecord[] = [
         { path: "final_package.md", state: "final_package", type: "markdown" },
         { path: "evidence.json", state: "evidence", type: "json" },
       ],
-      evalCases: [{ caseId: "official-loop-mock", input: "examples/mock_input.json" }],
     },
   },
   {
@@ -152,7 +151,6 @@ test("buildGraphLibraryItems exposes gallery metadata for template cards", () =>
   assert.equal(official?.permissionsPreview, "buddy_session_read, network");
   assert.equal(official?.mockEntry, "examples/mock_input.json");
   assert.equal(official?.sampleOutput, "final_package.md +1");
-  assert.deepEqual(Object.keys(official ?? {}).filter((key) => key.toLowerCase().includes("eval")), []);
 });
 
 test("filterGraphLibraryItems filters by kind, status, and search text", () => {

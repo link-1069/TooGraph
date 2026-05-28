@@ -102,29 +102,18 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_autonomous_review",
                 "buddy_capability_curator",
                 "buddy_context_compaction",
-                "buddy_hybrid_recall_eval",
                 "buddy_improvement_review_workflow",
-                "buddy_memory_recall_eval",
-                "delegation_kanban_board_eval",
-                "delegation_worker_batch_eval",
                 "delegation_worker_batch_workflow",
-                "delegation_worker_eval",
                 "ecommerce_review_mining_agent",
                 "embedding_maintenance",
                 "game_creative_factory",
                 "job_application_interview_coach",
-                "llm_runtime_fallback_eval",
                 "multi_platform_content_repurposer",
                 "policy_navigator_agent",
                 "product_competitor_research_agent",
-                "provider_fallback_eval",
-                "scheduler_retry_delivery_eval",
                 "toograph_action_creation_workflow",
                 "toograph_graph_template_creation_workflow",
                 "toograph_page_operation_workflow",
-                "tool_runtime_fallback_eval",
-                "video_segmenter_eval",
-                "workspace_executor_eval",
             ],
         )
         self.assertEqual(
@@ -402,65 +391,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn("PRD 草稿", product_template["description"])
         self.assertIs(product_template["capabilityDiscoverable"], False)
 
-    def test_delegation_worker_batch_eval_runs_subgraph_workers_and_merges_results(self) -> None:
-        template = load_template_record("delegation_worker_batch_eval")
-        nodes = template["nodes"]
-        state_schema = template["state_schema"]
-
-        self.assertEqual(template["metadata"]["role"], "delegation_worker_batch_eval")
-        self.assertEqual(
-            template["metadata"]["requiredTools"],
-            ["delegation_worker_result_packager", "delegation_worker_result_merger"],
-        )
-        self.assertIs(template["capabilityDiscoverable"], False)
-
-        batch_node = nodes["run_worker_batch"]
-        self.assertEqual(batch_node["kind"], "batch")
-        self.assertEqual(batch_node["config"]["workerSource"], "subgraph")
-        self.assertEqual(batch_node["config"]["maxConcurrency"], 2)
-        self.assertEqual(batch_node["config"]["continueOnError"], True)
-        self.assertEqual(
-            batch_node["config"]["inputModes"],
-            {
-                "worker_task_packets": "batch",
-                "worker_outputs_list": "batch",
-                "worker_statuses": "batch",
-                "worker_budget_usages": "batch",
-            },
-        )
-        self.assertEqual(batch_node["writes"], [{"state": "worker_result_packages", "mode": "replace"}])
-
-        worker_graph = batch_node["config"]["subgraphWorker"]["graph"]
-        self.assertEqual(worker_graph["nodes"]["package_worker_result"]["kind"], "tool")
-        self.assertEqual(
-            worker_graph["nodes"]["package_worker_result"]["config"]["toolKey"],
-            "delegation_worker_result_packager",
-        )
-        budget_read = next(
-            read for read in worker_graph["nodes"]["package_worker_result"]["reads"]
-            if read["binding"]["fieldKey"] == "budget_usage"
-        )
-        self.assertEqual(budget_read["state"], "worker_budget_usage")
-        self.assertEqual(worker_graph["nodes"]["output_worker_result_package"]["kind"], "output")
-
-        merge_node = nodes["merge_worker_results"]
-        self.assertEqual(merge_node["kind"], "tool")
-        self.assertEqual(merge_node["config"]["toolKey"], "delegation_worker_result_merger")
-        self.assertEqual(
-            _read_contracts(merge_node["writes"]),
-            [
-                {"state": "worker_merge_status", "mode": "replace"},
-                {"state": "worker_merge_review_package", "mode": "replace"},
-                {"state": "merge_review_report", "mode": "replace"},
-            ],
-        )
-        self.assertEqual(
-            state_schema["worker_merge_review_package"]["binding"]["toolKey"],
-            "delegation_worker_result_merger",
-        )
-        self.assertIn({"source": "run_worker_batch", "target": "merge_worker_results"}, template["edges"])
-        self.assertIn({"source": "merge_worker_results", "target": "output_worker_merge_review"}, template["edges"])
-
     def test_delegation_worker_batch_workflow_exposes_reusable_board_workflow(self) -> None:
         template = load_template_record("delegation_worker_batch_workflow")
         nodes = template["nodes"]
@@ -500,31 +430,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "merge_worker_results", "target": "build_delegation_board"}, template["edges"])
         self.assertIn({"source": "build_delegation_board", "target": "output_delegation_board"}, template["edges"])
         self.assertIn({"source": "build_delegation_board", "target": "output_kanban_board_report"}, template["edges"])
-
-    def test_delegation_kanban_board_eval_builds_board_snapshot(self) -> None:
-        template = load_template_record("delegation_kanban_board_eval")
-        nodes = template["nodes"]
-        state_schema = template["state_schema"]
-
-        self.assertEqual(template["metadata"]["role"], "delegation_kanban_board_eval")
-        self.assertEqual(template["metadata"]["requiredTools"], ["delegation_kanban_board_builder"])
-        self.assertIs(template["capabilityDiscoverable"], False)
-        self.assertEqual(nodes["build_delegation_board"]["kind"], "tool")
-        self.assertEqual(nodes["build_delegation_board"]["config"]["toolKey"], "delegation_kanban_board_builder")
-        self.assertEqual(
-            _read_contracts(nodes["build_delegation_board"]["writes"]),
-            [
-                {"state": "kanban_builder_status", "mode": "replace"},
-                {"state": "delegation_board_snapshot", "mode": "replace"},
-                {"state": "kanban_board_report", "mode": "replace"},
-            ],
-        )
-        self.assertEqual(
-            state_schema["delegation_board_snapshot"]["binding"]["toolKey"],
-            "delegation_kanban_board_builder",
-        )
-        self.assertIn({"source": "input_worker_task_packets", "target": "build_delegation_board"}, template["edges"])
-        self.assertIn({"source": "build_delegation_board", "target": "output_delegation_board"}, template["edges"])
 
     def test_page_operation_template_instruction_hides_self_surface_details(self) -> None:
         template = load_template_record("toograph_page_operation_workflow")
@@ -793,7 +698,6 @@ class TemplateLayoutTests(unittest.TestCase):
                 "final_policy_package.md": "final_policy_package",
             },
         )
-        self.assertEqual(metadata["evalCases"][0]["caseId"], "policy-navigator-mock-housing-subsidy")
 
         self.assertEqual(states["policy_sources"]["type"], "text")
         self.assertEqual(states["raw_policy_text"]["type"], "markdown")
@@ -856,7 +760,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "examples" / "mock_policy_input.json").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_policy_notice.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_policy_package.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_policy_navigator_agent_is_runtime_compatible(self) -> None:
         template = next(record for record in _official_template_records() if record["template_id"] == "policy_navigator_agent")
@@ -916,7 +819,6 @@ class TemplateLayoutTests(unittest.TestCase):
                 "final_content_package.md": "final_content_package",
             },
         )
-        self.assertEqual(metadata["evalCases"][0]["caseId"], "ai-news-mock-model-launch-digest")
 
         self.assertEqual(states["use_web_search"]["type"], "boolean")
         self.assertEqual(states["artifact_paths"]["type"], "file")
@@ -1004,7 +906,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "examples" / "mock_news_input.json").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_ai_news_items.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_content_package.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_ai_news_digest_to_wechat_article_is_runtime_compatible(self) -> None:
         template = next(
@@ -1106,7 +1007,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "examples" / "mock_repurposer_input.json").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_source_content.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_distribution_pack.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_multi_platform_content_repurposer_is_runtime_compatible(self) -> None:
         template = next(
@@ -1236,7 +1136,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "mock_data" / "sample_resume.md").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_job_description.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_application_package.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_job_application_interview_coach_is_runtime_compatible(self) -> None:
         template = next(
@@ -1380,7 +1279,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "mock_data" / "sample_competitor_ads.md").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_material_analysis.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_summary.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_game_creative_factory_is_runtime_compatible(self) -> None:
         template = next(
@@ -1517,7 +1415,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "mock_data" / "sample_competitor_sources.md").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_user_reviews.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_research_package.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_product_competitor_research_agent_is_runtime_compatible(self) -> None:
         template = next(
@@ -1657,7 +1554,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertTrue((template_dir / "mock_data" / "sample_reviews.csv").is_file())
         self.assertTrue((template_dir / "mock_data" / "sample_competitor_reviews.md").is_file())
         self.assertTrue((template_dir / "artifacts" / "sample_final_review_mining_package.md").is_file())
-        self.assertTrue((template_dir / "eval_cases.json").is_file())
 
     def test_ecommerce_review_mining_agent_is_runtime_compatible(self) -> None:
         template = next(
@@ -2045,104 +1941,6 @@ class TemplateLayoutTests(unittest.TestCase):
         cycle_tracker = build_langgraph_cycle_tracker(graph, build_execution_edges(graph))
         self.assertTrue(cycle_tracker["has_cycle"])
         self.assertEqual(cycle_tracker["loop_limits_by_source"], {"validation_passed": 3})
-
-    def test_toograph_graph_template_creation_workflow_eval_cases(self) -> None:
-        eval_path = OFFICIAL_TEMPLATES_ROOT / "toograph_graph_template_creation_workflow" / "eval_cases.json"
-        payload = json.loads(eval_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["suite"], "toograph_graph_template_creation_workflow_core")
-        self.assertGreaterEqual(len(payload["cases"]), 1)
-        case = payload["cases"][0]
-        self.assertEqual(
-            case["case_id"],
-            "graph-template-creation-requires-user-template-write-and-validation",
-        )
-        self.assertEqual(
-            set(case["expected"]["required"]),
-            {"generated_template_json", "validation_report", "write_template_result", "final_summary"},
-        )
-        self.assertIn("template_request", case["inputs"])
-        self.assertIn("capability_gap", case["inputs"])
-        self.assertIn("fixture_model_runtime", case["metadata"])
-        self.assertEqual(case["metadata"]["fixture_agent_model_ref"], "eval-primary/gpt-primary")
-        self.assertTrue(case["metadata"]["fixture_graph_template_workspace"])
-        self.assertEqual(
-            case["metadata"]["fixture_model_runtime"]["responses"]["eval-primary/gpt-primary"]["meta"]["response_id"],
-            "graph-template-creation-fixture",
-        )
-        self.assertEqual({check["kind"] for check in case["checks"]}, {"schema", "rule", "graph_run"})
-        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
-        self.assertEqual(graph_run_check["min_action_invocations"], 3)
-        self.assertEqual(
-            [item["action_key"] for item in graph_run_check["required_action_invocations"]],
-            [
-                "toograph_graph_template_reader",
-                "toograph_graph_template_validator",
-                "toograph_graph_template_writer",
-            ],
-        )
-
-    def test_llm_runtime_fallback_eval_cases(self) -> None:
-        eval_path = OFFICIAL_TEMPLATES_ROOT / "llm_runtime_fallback_eval" / "eval_cases.json"
-        payload = json.loads(eval_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["suite"], "llm_runtime_fallback_eval_core")
-        self.assertEqual(len(payload["cases"]), 1)
-        case = payload["cases"][0]
-        self.assertEqual(case["case_id"], "llm-runtime-fallback-uses-compatible-provider")
-        self.assertIn("fixture_model_runtime", case["metadata"])
-        self.assertEqual(
-            {check["kind"] for check in case["checks"]},
-            {"schema", "rule", "provider_fallback", "graph_run"},
-        )
-
-    def test_tool_runtime_fallback_eval_cases(self) -> None:
-        eval_path = OFFICIAL_TEMPLATES_ROOT / "tool_runtime_fallback_eval" / "eval_cases.json"
-        payload = json.loads(eval_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["suite"], "tool_runtime_fallback_eval_core")
-        self.assertEqual(len(payload["cases"]), 1)
-        case = payload["cases"][0]
-        self.assertEqual(case["case_id"], "tool-runtime-fallback-routes-to-fallback-tool")
-        self.assertIn("fixture_tool_runtime", case["metadata"])
-        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
-        self.assertEqual(graph_run_check["min_tool_invocations"], 2)
-        self.assertEqual(
-            graph_run_check["required_tool_invocations"][0]["error_type"],
-            "eval_tool_timeout",
-        )
-
-    def test_workspace_executor_eval_cases(self) -> None:
-        eval_path = OFFICIAL_TEMPLATES_ROOT / "workspace_executor_eval" / "eval_cases.json"
-        payload = json.loads(eval_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["suite"], "workspace_executor_eval_core")
-        self.assertEqual(len(payload["cases"]), 1)
-        case = payload["cases"][0]
-        self.assertEqual(case["case_id"], "workspace-executor-searches-roadmap-through-action")
-        self.assertIn("fixture_model_runtime", case["metadata"])
-        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
-        self.assertEqual(graph_run_check["min_action_invocations"], 1)
-        self.assertEqual(
-            graph_run_check["required_action_invocations"][0]["action_key"],
-            "local_workspace_executor",
-        )
-
-    def test_video_segmenter_eval_cases(self) -> None:
-        eval_path = OFFICIAL_TEMPLATES_ROOT / "video_segmenter_eval" / "eval_cases.json"
-        payload = json.loads(eval_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["suite"], "video_segmenter_eval_core")
-        self.assertEqual(len(payload["cases"]), 1)
-        case = payload["cases"][0]
-        self.assertEqual(case["case_id"], "video-segmenter-splits-fixture-video-through-tool")
-        self.assertIn("fixture_video_files", case["metadata"])
-        graph_run_check = next(check for check in case["checks"] if check["kind"] == "graph_run")
-        self.assertEqual(graph_run_check["min_tool_invocations"], 1)
-        self.assertEqual(
-            graph_run_check["required_tool_invocations"][0]["tool_key"],
-            "video_segmenter",
-        )
 
     def test_buddy_autonomous_loop_contract(self) -> None:
         template = next(record for record in _official_template_records() if record["template_id"] == "buddy_autonomous_loop")
@@ -2614,229 +2412,6 @@ class TemplateLayoutTests(unittest.TestCase):
             with self.subTest(template_id=template_id):
                 template = load_template_record(template_id)
                 self.assertNotIn("policy.json", json.dumps(template, ensure_ascii=False))
-
-    def test_buddy_autonomous_loop_has_agent_loop_guard_eval_cases(self) -> None:
-        eval_path = OFFICIAL_TEMPLATES_ROOT / "buddy_autonomous_loop" / "eval_cases.json"
-        payload = json.loads(eval_path.read_text(encoding="utf-8"))
-
-        self.assertEqual(payload["suite"], "buddy_autonomous_loop_core")
-        case_ids = {case["case_id"] for case in payload["cases"]}
-        self.assertIn("buddy-main-loop-capability-budget-exhausted", case_ids)
-        self.assertIn("buddy-main-loop-capability-failure-classified", case_ids)
-        self.assertIn("buddy-main-loop-recovers-from-live-tool-failure-with-fallback", case_ids)
-        self.assertIn("buddy-main-loop-recovers-from-provider-model-fallback", case_ids)
-        self.assertIn("buddy-main-loop-recovers-from-subgraph-failure-with-fallback", case_ids)
-        self.assertIn("buddy-main-loop-pauses-for-action-permission-required", case_ids)
-        self.assertIn("buddy-main-loop-compacts-context-overflow-before-reply", case_ids)
-        self.assertIn("buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure", case_ids)
-        self.assertIn("buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure", case_ids)
-        self.assertIn("buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required", case_ids)
-        fallback_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-recovers-from-live-tool-failure-with-fallback"
-        )
-        self.assertIn("fixture_model_runtime", fallback_case["metadata"])
-        self.assertIn("fixture_tool_runtime", fallback_case["metadata"])
-        graph_run_check = next(check for check in fallback_case["checks"] if check["kind"] == "graph_run")
-        self.assertGreaterEqual(graph_run_check["min_tool_invocations"], 4)
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "tool_key": "provider_fallback_resolver",
-                "status": "failed",
-                "error_type": "eval_tool_timeout",
-            },
-            graph_run_check["required_tool_invocations"],
-        )
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "tool_key": "runtime_context_loader",
-                "status": "succeeded",
-            },
-            graph_run_check["required_tool_invocations"],
-        )
-        provider_fallback_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-recovers-from-provider-model-fallback"
-        )
-        self.assertIn("fixture_model_runtime", provider_fallback_case["metadata"])
-        provider_fallback_check = next(
-            check for check in provider_fallback_case["checks"] if check["kind"] == "provider_fallback"
-        )
-        self.assertEqual(
-            provider_fallback_check["required_selected"],
-            {"provider_id": "eval-fallback", "model": "gpt-fallback"},
-        )
-        provider_graph_run_check = next(
-            check for check in provider_fallback_case["checks"] if check["kind"] == "graph_run"
-        )
-        self.assertIn("reply_and_select_capability", provider_graph_run_check["required_node_ids"])
-        self.assertGreaterEqual(provider_graph_run_check["min_action_invocations"], 1)
-        subgraph_fallback_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-recovers-from-subgraph-failure-with-fallback"
-        )
-        self.assertIn("fixture_model_runtime", subgraph_fallback_case["metadata"])
-        subgraph_graph_run_check = next(
-            check for check in subgraph_fallback_case["checks"] if check["kind"] == "graph_run"
-        )
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "subgraph_key": "advanced_web_research_loop",
-                "status": "failed",
-                "error_type": "missing_required_input",
-            },
-            subgraph_graph_run_check["required_subgraph_invocations"],
-        )
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "tool_key": "runtime_context_loader",
-                "status": "succeeded",
-            },
-            subgraph_graph_run_check["required_tool_invocations"],
-        )
-        permission_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-pauses-for-action-permission-required"
-        )
-        self.assertEqual(permission_case["metadata"]["fixture_graph_metadata"]["graph_permission_mode"], "ask_first")
-        permission_graph_run_check = next(
-            check for check in permission_case["checks"] if check["kind"] == "graph_run"
-        )
-        self.assertEqual(permission_graph_run_check["required_status"], "awaiting_human")
-        self.assertIn("permission_pause", permission_graph_run_check["required_activity_kinds"])
-        self.assertEqual(
-            permission_graph_run_check["required_metadata"]["pending_permission_approval"]["capability_key"],
-            "local_workspace_executor",
-        )
-        self.assertEqual(
-            permission_graph_run_check["required_metadata"]["pending_permission_approval"]["permissions"],
-            ["file_write"],
-        )
-        context_overflow_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-before-reply"
-        )
-        self.assertIn("fixture_buddy_sessions", context_overflow_case["metadata"])
-        self.assertEqual(
-            context_overflow_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
-            "session_eval_context_overflow",
-        )
-        context_overflow_graph_run_check = next(
-            check for check in context_overflow_case["checks"] if check["kind"] == "graph_run"
-        )
-        self.assertIn("run_context_compaction", context_overflow_graph_run_check["required_node_ids"])
-        self.assertIn("context_budget_report", context_overflow_graph_run_check["required_state_keys"])
-        self.assertIn("context_compaction_summary", context_overflow_graph_run_check["required_state_keys"])
-        self.assertIn(
-            {
-                "node_id": "check_context_pressure",
-                "tool_key": "buddy_context_pressure_check",
-                "status": "succeeded",
-            },
-            context_overflow_graph_run_check["required_tool_invocations"],
-        )
-        combo_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-then-recovers-from-tool-failure"
-        )
-        self.assertIn("fixture_buddy_sessions", combo_case["metadata"])
-        self.assertIn("fixture_tool_runtime", combo_case["metadata"])
-        self.assertEqual(
-            combo_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
-            "session_eval_context_overflow_tool_combo",
-        )
-        combo_graph_run_check = next(check for check in combo_case["checks"] if check["kind"] == "graph_run")
-        self.assertIn("run_context_compaction", combo_graph_run_check["required_node_ids"])
-        self.assertIn("execute_capability", combo_graph_run_check["required_node_ids"])
-        self.assertIn("context_compaction_summary", combo_graph_run_check["required_state_keys"])
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "tool_key": "provider_fallback_resolver",
-                "status": "failed",
-                "error_type": "eval_tool_timeout",
-            },
-            combo_graph_run_check["required_tool_invocations"],
-        )
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "tool_key": "runtime_context_loader",
-                "status": "succeeded",
-            },
-            combo_graph_run_check["required_tool_invocations"],
-        )
-        combo_subgraph_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-then-recovers-from-subgraph-failure"
-        )
-        self.assertIn("fixture_buddy_sessions", combo_subgraph_case["metadata"])
-        self.assertIn("fixture_tool_runtime", combo_subgraph_case["metadata"])
-        self.assertEqual(
-            combo_subgraph_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
-            "session_eval_context_overflow_subgraph_combo",
-        )
-        combo_subgraph_graph_run_check = next(
-            check for check in combo_subgraph_case["checks"] if check["kind"] == "graph_run"
-        )
-        self.assertIn("run_context_compaction", combo_subgraph_graph_run_check["required_node_ids"])
-        self.assertIn("execute_capability", combo_subgraph_graph_run_check["required_node_ids"])
-        self.assertIn("context_compaction_summary", combo_subgraph_graph_run_check["required_state_keys"])
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "subgraph_key": "advanced_web_research_loop",
-                "status": "failed",
-                "error_type": "missing_required_input",
-            },
-            combo_subgraph_graph_run_check["required_subgraph_invocations"],
-        )
-        self.assertIn(
-            {
-                "node_id": "execute_capability",
-                "tool_key": "runtime_context_loader",
-                "status": "succeeded",
-            },
-            combo_subgraph_graph_run_check["required_tool_invocations"],
-        )
-        combo_permission_case = next(
-            case
-            for case in payload["cases"]
-            if case["case_id"] == "buddy-main-loop-compacts-context-overflow-then-pauses-for-action-permission-required"
-        )
-        self.assertIn("fixture_buddy_sessions", combo_permission_case["metadata"])
-        self.assertEqual(combo_permission_case["metadata"]["fixture_graph_metadata"]["graph_permission_mode"], "ask_first")
-        self.assertEqual(
-            combo_permission_case["metadata"]["fixture_graph_metadata"]["runtime_context"]["buddy_session_id"],
-            "session_eval_context_overflow_permission_combo",
-        )
-        combo_permission_graph_run_check = next(
-            check for check in combo_permission_case["checks"] if check["kind"] == "graph_run"
-        )
-        self.assertEqual(combo_permission_graph_run_check["required_status"], "awaiting_human")
-        self.assertIn("run_context_compaction", combo_permission_graph_run_check["required_node_ids"])
-        self.assertIn("execute_capability", combo_permission_graph_run_check["required_node_ids"])
-        self.assertIn("context_compaction_summary", combo_permission_graph_run_check["required_state_keys"])
-        self.assertIn("permission_pause", combo_permission_graph_run_check["required_activity_kinds"])
-        self.assertEqual(
-            combo_permission_graph_run_check["required_metadata"]["pending_permission_approval"]["capability_key"],
-            "local_workspace_executor",
-        )
-        self.assertEqual(
-            combo_permission_graph_run_check["required_metadata"]["pending_permission_approval"]["permissions"],
-            ["file_write"],
-        )
 
     def test_buddy_support_templates_are_visible_and_loadable(self) -> None:
         public_template_ids = {record["template_id"] for record in _visible_official_template_records()}
@@ -3987,7 +3562,6 @@ class TemplateLayoutTests(unittest.TestCase):
                 "curator_scope",
                 "capability_catalog_snapshot",
                 "capability_usage_snapshot",
-                "eval_snapshot",
                 "existing_candidates_snapshot",
                 "curator_context_report",
                 "capability_health_report",
@@ -3999,7 +3573,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["curator_scope"]["type"], "json")
         self.assertEqual(states["capability_catalog_snapshot"]["type"], "json")
         self.assertEqual(states["capability_usage_snapshot"]["type"], "json")
-        self.assertEqual(states["eval_snapshot"]["type"], "json")
         self.assertEqual(states["existing_candidates_snapshot"]["type"], "json")
         self.assertEqual(states["curator_context_report"]["type"], "json")
         self.assertEqual(states["capability_health_report"]["type"], "json")
@@ -4008,7 +3581,6 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["scheduler_recommendation"]["type"], "json")
         self.assertEqual(states["capability_catalog_snapshot"]["binding"]["toolKey"], "capability_curator_context_loader")
         self.assertEqual(states["capability_usage_snapshot"]["binding"]["fieldKey"], "capability_usage_snapshot")
-        self.assertEqual(states["eval_snapshot"]["binding"]["fieldKey"], "eval_snapshot")
         self.assertEqual(states["existing_candidates_snapshot"]["binding"]["fieldKey"], "existing_candidates_snapshot")
         self.assertEqual(states["curator_context_report"]["binding"]["fieldKey"], "curator_context_report")
 
@@ -4049,7 +3621,6 @@ class TemplateLayoutTests(unittest.TestCase):
             [
                 {"state": "capability_catalog_snapshot", "mode": "replace"},
                 {"state": "capability_usage_snapshot", "mode": "replace"},
-                {"state": "eval_snapshot", "mode": "replace"},
                 {"state": "existing_candidates_snapshot", "mode": "replace"},
                 {"state": "curator_context_report", "mode": "replace"},
             ],
@@ -4063,7 +3634,6 @@ class TemplateLayoutTests(unittest.TestCase):
                 {"state": "curator_scope", "required": True},
                 {"state": "capability_catalog_snapshot", "required": True},
                 {"state": "capability_usage_snapshot", "required": True},
-                {"state": "eval_snapshot", "required": True},
                 {"state": "existing_candidates_snapshot", "required": True},
                 {"state": "curator_context_report", "required": False},
             ],

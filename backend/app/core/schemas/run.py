@@ -242,7 +242,6 @@ class RunDetail(RunSummary):
     tool_outputs: list[dict[str, Any]] = Field(default_factory=list)
     selected_capabilities: list[dict[str, Any]] = Field(default_factory=list)
     capability_outputs: list[dict[str, Any]] = Field(default_factory=list)
-    evaluation_result: dict[str, Any] = Field(default_factory=dict)
     memory_summary: str = ""
     final_result: str = ""
     node_status_map: dict[str, str] = Field(default_factory=dict)

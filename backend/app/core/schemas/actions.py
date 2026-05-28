@@ -75,7 +75,6 @@ class ActionDefinition(BaseModel):
         default_factory=list,
         alias="verificationCommands",
     )
-    verification_eval_suites: list[str] = Field(default_factory=list, alias="verificationEvalSuites")
     state_input_schema: list[ActionIoField] = Field(default_factory=list, alias="stateInputSchema")
     llm_output_schema: list[ActionIoField] = Field(default_factory=list, alias="llmOutputSchema")
     state_output_schema: list[ActionIoField] = Field(default_factory=list, alias="stateOutputSchema")

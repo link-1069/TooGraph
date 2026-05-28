@@ -2361,12 +2361,12 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertEqual(trace["failed_candidates"][1]["reason"], "fallback_provider_failed")
         self.assertTrue(any("fallback-a/gpt-fallback-a" in warning for warning in trace["warnings"]))
 
-    def test_chat_with_model_ref_uses_eval_runtime_fixture_for_fallback(self) -> None:
+    def test_chat_with_model_ref_uses_runtime_fixture_for_fallback(self) -> None:
         from app.tools.model_provider_client import chat_with_model_ref_with_meta
 
         fixture = {
             "model_providers": {
-                "eval-primary": {
+                "fixture-primary": {
                     "enabled": True,
                     "transport": "openai-compatible",
                     "base_url": "http://127.0.0.1:9999/v1",
@@ -2378,7 +2378,7 @@ class ModelProviderClientTests(unittest.TestCase):
                         }
                     ],
                 },
-                "eval-fallback": {
+                "fixture-fallback": {
                     "enabled": True,
                     "transport": "openai-compatible",
                     "base_url": "http://127.0.0.1:9998/v1",
@@ -2392,13 +2392,13 @@ class ModelProviderClientTests(unittest.TestCase):
                 },
             },
             "failures": {
-                "eval-primary/gpt-primary": {
+                "fixture-primary/gpt-primary": {
                     "error_type": "provider_timeout",
-                    "message": "eval injected timeout",
+                    "message": "fixture injected timeout",
                 }
             },
             "responses": {
-                "eval-fallback/gpt-fallback": {
+                "fixture-fallback/gpt-fallback": {
                     "content": '{"answer":"fallback answer"}',
                     "meta": {"response_id": "fixture-response-1"},
                 }
@@ -2406,7 +2406,7 @@ class ModelProviderClientTests(unittest.TestCase):
         }
 
         content, meta = chat_with_model_ref_with_meta(
-            model_ref="eval-primary/gpt-primary",
+            model_ref="fixture-primary/gpt-primary",
             system_prompt="sys",
             user_prompt="user",
             temperature=0.2,
@@ -2420,14 +2420,14 @@ class ModelProviderClientTests(unittest.TestCase):
         )
 
         self.assertEqual(content, '{"answer":"fallback answer"}')
-        self.assertEqual(meta["provider_id"], "eval-fallback")
+        self.assertEqual(meta["provider_id"], "fixture-fallback")
         self.assertEqual(meta["model"], "gpt-fallback")
         self.assertEqual(meta["response_id"], "fixture-response-1")
         self.assertTrue(meta["provider_fallback_used"])
         trace = meta["provider_fallback_trace"]
-        self.assertEqual(trace["requested"]["model_ref"], "eval-primary/gpt-primary")
-        self.assertEqual(trace["selected"]["model_ref"], "eval-fallback/gpt-fallback")
-        self.assertEqual(trace["failed_candidates"][0]["model_ref"], "eval-primary/gpt-primary")
+        self.assertEqual(trace["requested"]["model_ref"], "fixture-primary/gpt-primary")
+        self.assertEqual(trace["selected"]["model_ref"], "fixture-fallback/gpt-fallback")
+        self.assertEqual(trace["failed_candidates"][0]["model_ref"], "fixture-primary/gpt-primary")
         self.assertEqual(trace["failed_candidates"][0]["error_type"], "provider_timeout")
 
     def test_chat_with_model_ref_fixture_response_list_can_match_prompt_terms(self) -> None:
@@ -2435,7 +2435,7 @@ class ModelProviderClientTests(unittest.TestCase):
 
         fixture = {
             "model_providers": {
-                "eval-primary": {
+                "fixture-primary": {
                     "enabled": True,
                     "transport": "openai-compatible",
                     "base_url": "http://127.0.0.1:9999/v1",
@@ -2450,13 +2450,13 @@ class ModelProviderClientTests(unittest.TestCase):
             },
             "responses": [
                 {
-                    "model_ref": "eval-primary/gpt-primary",
-                    "user_contains": ["eval injected primary timeout"],
+                    "model_ref": "fixture-primary/gpt-primary",
+                    "user_contains": ["fixture injected primary timeout"],
                     "content": '{"answer":"fallback after failure"}',
                     "meta": {"response_id": "fixture-after-failure"},
                 },
                 {
-                    "model_ref": "eval-primary/gpt-primary",
+                    "model_ref": "fixture-primary/gpt-primary",
                     "content": '{"answer":"initial selection"}',
                     "meta": {"response_id": "fixture-initial"},
                 },
@@ -2464,16 +2464,16 @@ class ModelProviderClientTests(unittest.TestCase):
         }
 
         initial_content, initial_meta = chat_with_model_ref_with_meta(
-            model_ref="eval-primary/gpt-primary",
+            model_ref="fixture-primary/gpt-primary",
             system_prompt="sys",
             user_prompt="ordinary prompt",
             temperature=0.2,
             model_runtime_fixture=fixture,
         )
         failure_content, failure_meta = chat_with_model_ref_with_meta(
-            model_ref="eval-primary/gpt-primary",
+            model_ref="fixture-primary/gpt-primary",
             system_prompt="sys",
-            user_prompt="capability_result error: eval injected primary timeout",
+            user_prompt="capability_result error: fixture injected primary timeout",
             temperature=0.2,
             model_runtime_fixture=fixture,
         )

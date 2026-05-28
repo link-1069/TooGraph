@@ -2,11 +2,10 @@
   "schemaVersion": "toograph.tool/v1",
   "toolKey": "scheduler_run_context_loader",
   "name": "Scheduler Run Context Loader",
-  "description": "A deterministic loader for scheduled graph job runs. It reads one scheduled graph job, job run, and graph run from the database and returns retry, pending retry, delivery, permission policy, source refs, and redacted target details for eval and diagnostics.",
+  "description": "A deterministic loader for scheduled graph job runs. It reads one scheduled graph job, job run, and graph run from the database and returns retry, pending retry, delivery, permission policy, source refs, and redacted target details for validation diagnostics.",
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
-  "verificationEvalSuites": ["scheduler_retry_delivery_eval_core"],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",

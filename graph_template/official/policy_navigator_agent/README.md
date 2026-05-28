@@ -46,9 +46,6 @@
 
 示例输入见 `examples/mock_policy_input.json`，mock 政策正文见 `mock_data/sample_policy_notice.md`，示例输出见 `artifacts/sample_final_policy_package.md`。
 
-## Eval Cases
-
-见 `eval_cases.json`。首个 case 覆盖发文机关和日期、保守资格状态、引用 ID、用户信息不足处理和 artifact contract 完整性。
 
 ## Safety Notes
 

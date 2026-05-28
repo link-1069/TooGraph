@@ -156,23 +156,6 @@ class ActionManifestContractTests(unittest.TestCase):
             ["-m", "unittest", "backend.tests.test_verify_action_package"],
         )
 
-    def test_native_manifest_exposes_verification_eval_suites(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            action_dir = Path(temp_dir) / "verify_action_eval"
-            action_dir.mkdir()
-            payload = _ready_manifest("verify_action_eval")
-            payload["verificationEvalSuites"] = ["verify_action_eval_core"]
-            manifest = _write_manifest(action_dir, payload)
-            (action_dir / "run.py").write_text("print('{}')\n", encoding="utf-8")
-
-            definition = _parse_native_action_manifest(manifest, ActionSourceScope.INSTALLED).definition
-
-        self.assertEqual(definition.verification_eval_suites, ["verify_action_eval_core"])
-        self.assertEqual(
-            definition.model_dump(by_alias=True)["verificationEvalSuites"],
-            ["verify_action_eval_core"],
-        )
-
     def test_native_manifest_exposes_state_input_schema_separately_from_llm_parameters(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             action_dir = Path(temp_dir) / "page_operator"

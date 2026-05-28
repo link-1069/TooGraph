@@ -88,18 +88,10 @@
           </article>
 
           <article class="settings-page__panel">
-            <h3>{{ t("settings.revisionEvaluator") }}</h3>
+            <h3>{{ t("settings.revision") }}</h3>
             <div class="settings-page__info">
               <span>{{ t("settings.maxRevisionRounds") }}</span>
               <strong>{{ settings.revision.max_revision_round }}</strong>
-            </div>
-            <div class="settings-page__info">
-              <span>{{ t("settings.threshold") }}</span>
-              <strong>{{ settings.evaluator.default_score_threshold }}</strong>
-            </div>
-            <div class="settings-page__info">
-              <span>{{ t("settings.routes") }}</span>
-              <strong>{{ settings.evaluator.routes.join(", ") }}</strong>
             </div>
           </article>
         </section>

@@ -8,14 +8,30 @@
   "metadata": {
     "capability": {
       "granularity": "atomic",
-      "covers": ["web_research", "search", "evidence_check", "latest_information"],
-      "produces": ["raw_results", "sources", "artifacts"],
-      "taskTags": ["web", "news", "public_sources"]
+      "covers": [
+        "web_research",
+        "search",
+        "evidence_check",
+        "latest_information"
+      ],
+      "produces": [
+        "raw_results",
+        "sources",
+        "artifacts"
+      ],
+      "taskTags": [
+        "web",
+        "news",
+        "public_sources"
+      ]
     }
   },
-  "verificationEvalSuites": ["advanced_web_research_loop_core"],
   "timeoutSeconds": 300,
-  "permissions": ["network", "secret_read", "browser_automation"],
+  "permissions": [
+    "network",
+    "secret_read",
+    "browser_automation"
+  ],
   "stateInputSchema": [
     {
       "key": "user_question",

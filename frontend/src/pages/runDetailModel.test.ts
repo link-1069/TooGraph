@@ -35,7 +35,6 @@ function createRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
     action_outputs: [],
     selected_tools: [],
     tool_outputs: [],
-    evaluation_result: {},
     memory_summary: "",
     final_result: "",
     node_status_map: {},

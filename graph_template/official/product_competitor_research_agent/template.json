@@ -1474,7 +1474,6 @@
         "required": true
       }
     ],
-    "evalCases": "eval_cases.json",
     "safetyNotes": [
       "不得把少量评论包装成统计结论。",
       "不得编造竞品功能、定价、用户数量或市场数据。",

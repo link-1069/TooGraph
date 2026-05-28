@@ -115,7 +115,6 @@ function createRun(): RunDetail {
     metadata: {},
     selected_actions: [],
     action_outputs: [],
-    evaluation_result: {},
     memory_summary: "",
     final_result: "",
     node_status_map: { draft_writer: "paused" },

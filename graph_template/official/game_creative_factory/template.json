@@ -1733,7 +1733,6 @@
         "required": true
       }
     ],
-    "evalCases": "eval_cases.json",
     "safetyNotes": [
       "不得生成违法、歧视、成人、赌博或侵犯版权的广告素材建议。",
       "广告平台合规风险必须显式输出，最终投放前需要人工审核。",

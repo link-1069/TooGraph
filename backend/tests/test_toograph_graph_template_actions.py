@@ -33,25 +33,16 @@ def _official_template_payload(template_id: str = "advanced_web_research_loop") 
 
 
 class GraphTemplateActionTests(unittest.TestCase):
-    def test_manifests_expose_graph_template_creation_eval_gate(self) -> None:
+    def test_manifests_expose_graph_template_creation_contract(self) -> None:
         expected = {
             "toograph_graph_template_reader": {
                 "permissions": ["file_read"],
-                "eval_suites": [
-                    "toograph_graph_template_creation_workflow_core",
-                    "buddy_improvement_review_workflow_core",
-                ],
             },
             "toograph_graph_template_validator": {
                 "permissions": [],
-                "eval_suites": [
-                    "toograph_graph_template_creation_workflow_core",
-                    "buddy_improvement_review_workflow_core",
-                ],
             },
             "toograph_graph_template_writer": {
                 "permissions": ["file_write"],
-                "eval_suites": ["toograph_graph_template_creation_workflow_core"],
             },
         }
         expected_command_args = ["-m", "unittest", "backend.tests.test_toograph_graph_template_actions"]
@@ -66,7 +57,6 @@ class GraphTemplateActionTests(unittest.TestCase):
                 self.assertEqual(definition.action_key, action_key)
                 self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
                 self.assertEqual(definition.permissions, contract["permissions"])
-                self.assertEqual(definition.verification_eval_suites, contract["eval_suites"])
                 self.assertNotIn("你已绑定", definition.llm_instruction)
                 self.assertEqual(len(definition.verification_commands), 1)
                 self.assertEqual(definition.verification_commands[0].command, "python")

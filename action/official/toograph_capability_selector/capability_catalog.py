@@ -252,8 +252,6 @@ def _discover_subgraphs(repo_root: Path, *, errors: list[dict[str, str]]) -> lis
                     "description": _text(payload.get("description")),
                 },
                 payload,
-                repo_root=repo_root,
-                source_path=template_path,
             )
         )
     return _sort_items(items)
@@ -283,8 +281,6 @@ def _discover_actions(repo_root: Path, *, errors: list[dict[str, str]]) -> list[
                     "description": _text(payload.get("description")),
                 },
                 payload,
-                repo_root=repo_root,
-                source_path=action_path,
             )
         )
     return _sort_items(items)
@@ -314,8 +310,6 @@ def _discover_tools(repo_root: Path, *, errors: list[dict[str, str]]) -> list[di
                     "description": _text(payload.get("description")),
                 },
                 payload,
-                repo_root=repo_root,
-                source_path=tool_path,
             )
         )
     return _sort_items(items)
@@ -356,16 +350,9 @@ def _format_capability_items(items: list[dict[str, Any]]) -> list[str]:
 def _with_capability_metadata(
     item: dict[str, Any],
     payload: dict[str, Any],
-    *,
-    repo_root: Path | None = None,
-    source_path: Path | None = None,
 ) -> dict[str, Any]:
     enriched = dict(item)
     enriched.update(_capability_metadata(payload))
-    if repo_root is not None and source_path is not None:
-        eval_status = _capability_eval_status(repo_root, source_path, payload)
-        if eval_status:
-            enriched["evalStatus"] = eval_status
     return enriched
 
 
@@ -393,29 +380,6 @@ def _capability_metadata(payload: dict[str, Any]) -> dict[str, Any]:
         result["permissionTier"] = _permission_tier(permissions)
         result["permissionProfile"] = build_capability_permission_profile(permissions)
     return result
-
-
-def _capability_eval_status(repo_root: Path, source_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    configured_eval_path = _text(payload.get("evalCases") or metadata.get("evalCases"))
-    eval_path = source_path.parent / (configured_eval_path or "eval_cases.json")
-    if not eval_path.exists():
-        return {}
-    try:
-        package = json.loads(eval_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return {
-            "has_cases": False,
-            "case_count": 0,
-            "source": _display_path(repo_root, eval_path),
-            "error": str(exc),
-        }
-    cases = package.get("cases") if isinstance(package, dict) else []
-    return {
-        "has_cases": bool(cases),
-        "case_count": len(cases) if isinstance(cases, list) else 0,
-        "source": _display_path(repo_root, eval_path),
-    }
 
 
 def _permission_tier(permissions: list[str]) -> str:
@@ -650,7 +614,7 @@ def _produces_more_complete_result(item: dict[str, Any], candidate: dict[str, An
     return bool(item_produces.intersection(FINAL_RESULT_OUTPUTS) - candidate_produces)
 
 
-def _capability_preference_score(item: dict[str, Any]) -> tuple[int, int, int, int, int, int, int, int, str]:
+def _capability_preference_score(item: dict[str, Any]) -> tuple[int, int, int, int, int, int, int, str]:
     produces = _term_set(item.get("produces"))
     usage = _usage_feedback_from_item(item)
     success_rate = usage.get("success_rate") if isinstance(usage.get("success_rate"), float) else 0.0
@@ -661,7 +625,6 @@ def _capability_preference_score(item: dict[str, Any]) -> tuple[int, int, int, i
         int(success_rate * 1000),
         -_non_negative_int(usage.get("recent_failure_count")),
         _permission_tier_priority(item),
-        _eval_case_count(item),
         len(produces),
         _text(item.get("key")),
     )
@@ -831,7 +794,7 @@ def _fallback_candidates(
     return fallbacks[:3]
 
 
-def _fallback_sort_key(item: dict[str, Any]) -> tuple[int, int, bool, float, int, int, int, int, str]:
+def _fallback_sort_key(item: dict[str, Any]) -> tuple[int, int, bool, float, int, int, int, str]:
     score = item.get("score") if isinstance(item.get("score"), dict) else {}
     return (
         _non_negative_int(score.get("kind_priority")),
@@ -840,7 +803,6 @@ def _fallback_sort_key(item: dict[str, Any]) -> tuple[int, int, bool, float, int
         float(score.get("success_rate") or 0.0),
         -_non_negative_int(score.get("recent_failure_count")),
         _non_negative_int(score.get("permission_tier_priority")),
-        _non_negative_int(score.get("eval_case_count")),
         _non_negative_int(score.get("use_count")),
         _text(item.get("key")),
     )
@@ -861,7 +823,6 @@ def _score_capability(item: dict[str, Any]) -> dict[str, Any]:
         "failure_count": usage.get("failure_count"),
         "recent_failure_count": usage.get("recent_failure_count"),
         "permission_tier_priority": _permission_tier_priority(item),
-        "eval_case_count": _eval_case_count(item),
     }
 
 
@@ -874,11 +835,6 @@ def _capability_permission_tier(item: dict[str, Any]) -> str:
 
 def _permission_tier_priority(item: dict[str, Any]) -> int:
     return PERMISSION_TIER_PRIORITY.get(_capability_permission_tier(item), 0)
-
-
-def _eval_case_count(item: dict[str, Any]) -> int:
-    eval_status = item.get("evalStatus") if isinstance(item.get("evalStatus"), dict) else {}
-    return _non_negative_int(eval_status.get("case_count"))
 
 
 def _permission_summary(item: dict[str, Any], permission_policy: dict[str, Any] | None = None) -> dict[str, Any]:

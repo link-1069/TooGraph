@@ -1038,18 +1038,6 @@
         "required": true
       }
     ],
-    "evalCases": [
-      {
-        "caseId": "repurposer-mock-product-update",
-        "input": "examples/mock_repurposer_input.json",
-        "checks": [
-          "core_message_preserved",
-          "all_target_platforms_present",
-          "ai_tone_report_present",
-          "final_pack_contains_manual_review_notes"
-        ]
-      }
-    ],
     "safetyNotes": [
       "改写不得丢失源内容中的关键事实、限制和不确定项。",
       "人工反馈通过普通输入进入下一轮，不使用用户可见断点。"

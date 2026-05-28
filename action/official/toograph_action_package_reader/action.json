@@ -5,9 +5,10 @@
   "description": "当用户需要审查、改进、迁移或复用一个已有 TooGraph Action 包时使用；它会只读读取该包的 manifest、文档和脚本内容。",
   "llmInstruction": "Choose exactly one target action key from the graph state or user request, and optionally choose source_scope as user or official. This read-only action returns action_key and source_scope.",
   "version": "1.0.0",
-  "verificationEvalSuites": ["toograph_action_creation_workflow_core", "buddy_improvement_review_workflow_core"],
   "timeoutSeconds": 20,
-  "permissions": ["action_read"],
+  "permissions": [
+    "action_read"
+  ],
   "stateInputSchema": [
     {
       "key": "target_action_key",

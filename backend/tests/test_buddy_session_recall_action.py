@@ -59,10 +59,6 @@ class BuddySessionRecallActionTests(unittest.TestCase):
 
         self.assertEqual(definition.action_key, "buddy_session_recall")
         self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
-        self.assertEqual(
-            definition.verification_eval_suites,
-            ["buddy_hybrid_recall_eval_core", "buddy_memory_recall_eval_core"],
-        )
         self.assertEqual(definition.permissions, ["buddy_session_read"])
         manifest = json.loads((SESSION_RECALL_ACTION_DIR / "action.json").read_text(encoding="utf-8"))
         self.assertNotIn("你已绑定", manifest["llmInstruction"])

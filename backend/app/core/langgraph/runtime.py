@@ -92,7 +92,6 @@ INHERITED_SUBGRAPH_METADATA_KEYS = {
     "buddy_can_execute_actions",
     "action_runtime_context",
     "capability_permission_policy",
-    "eval",
     "model_runtime_fixture",
     "tool_runtime_fixture",
 }

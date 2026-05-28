@@ -34,7 +34,6 @@ class DelegationKanbanBoardBuilderToolTests(unittest.TestCase):
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Delegation Kanban Board Builder")
         self.assertIn("delegation_board_snapshot", definition.description)
-        self.assertEqual(definition.verification_eval_suites, ["delegation_kanban_board_eval_core"])
         self.assertIn("delegation_kanban_board_builder", get_tool_registry(include_disabled=True).keys())
 
     def test_builder_projects_worker_results_into_review_and_blocked_columns(self) -> None:

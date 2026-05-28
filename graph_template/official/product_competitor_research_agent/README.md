@@ -54,9 +54,6 @@
 - `mock_data/sample_user_reviews.md`
 - `artifacts/sample_final_research_package.md`
 
-## Eval Cases
-
-`eval_cases.json` 覆盖证据链、功能矩阵、评论聚类、机会点排序、MVP/PRD 假设边界和验证计划。
 
 ## Safety Notes
 

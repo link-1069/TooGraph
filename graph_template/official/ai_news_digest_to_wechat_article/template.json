@@ -1379,19 +1379,6 @@
         "required": true
       }
     ],
-    "evalCases": [
-      {
-        "caseId": "ai-news-mock-model-launch-digest",
-        "input": "examples/mock_news_input.json",
-        "checks": [
-          "top_news_cards_present",
-          "deduplicates_same_event",
-          "source_citations_required",
-          "facts_and_opinions_separated",
-          "platform_distribution_complete"
-        ]
-      }
-    ],
     "safetyNotes": [
       "事实和观点必须分开表达。",
       "没有来源的新闻事实必须进入 fact_check_report。",

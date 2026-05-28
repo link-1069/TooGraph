@@ -58,9 +58,6 @@
 
 该 mock run 不需要外部账号、招聘平台 API 或联网检索。
 
-## Eval Cases
-
-`eval_cases.json` 覆盖 JD 拆解、经历证据映射、简历事实边界、STAR/CAR 故事、模拟面试反馈和学习计划可执行性。
 
 ## Safety Notes
 

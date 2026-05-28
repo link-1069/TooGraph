@@ -23,8 +23,6 @@ test("resolvePrimaryNavigationSection keeps graph editor detail routes inside th
   assert.equal(resolvePrimaryNavigationSection("/library/templates"), "graphLibrary");
   assert.equal(resolvePrimaryNavigationSection("/knowledge"), "knowledge");
   assert.equal(resolvePrimaryNavigationSection("/knowledge/docs"), "knowledge");
-  assert.equal(resolvePrimaryNavigationSection("/evals"), null);
-  assert.equal(resolvePrimaryNavigationSection("/evals/suite_a"), null);
   assert.equal(resolvePrimaryNavigationSection("/scheduler"), "scheduler");
   assert.equal(resolvePrimaryNavigationSection("/scheduler/jobs"), "scheduler");
   assert.equal(resolvePrimaryNavigationSection("/curator-reports"), "curatorReports");

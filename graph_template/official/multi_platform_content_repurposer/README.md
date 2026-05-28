@@ -47,9 +47,6 @@
 
 示例输入见 `examples/mock_repurposer_input.json`，mock 源内容见 `mock_data/sample_source_content.md`，示例输出见 `artifacts/sample_final_distribution_pack.md`。
 
-## Eval Cases
-
-见 `eval_cases.json`。首个 case 检查核心观点保留、目标平台覆盖、AI 味报告和人工复核提示。
 
 ## Safety Notes
 

@@ -190,7 +190,7 @@
     },
     "test_plan": {
       "name": "测试计划",
-      "description": "候选应用前需要运行的验证命令、eval case 或人工检查步骤。",
+      "description": "候选应用前需要运行的验证命令、validation case 或人工检查步骤。",
       "type": "markdown",
       "value": "",
       "color": "#0891b2",
@@ -571,7 +571,7 @@
         "actionKey": "",
         "actionBindings": [],
         "actionInstructionBlocks": {},
-        "taskInstruction": "根据 improvement_candidate、candidate_review_context、action_package、template_package 起草候选处理方案。写 candidate_validation_plan JSON：checks、required_permissions、risk_assessment、evidence_refs、success_criteria。写 proposed_diff JSON：target_ref、change_kind、files_or_templates、diff_summary、rollback_notes、source_run_id。若候选包含完整图模板改动，写 candidate_template_json 为完整 template.json 且 should_validate_template=true；其他候选写空对象且 should_validate_template=false。写 test_plan Markdown，列出需要运行的 validator、eval case 或人工检查。写 approval_request JSON：candidate_id、target_ref、risk_level、approval_required、summary、diff_ref、validation_ref、allowed_next_actions。若候选可由现有 Buddy command 安全应用，在 approval_request.apply_command 写单个受控命令对象：action、payload、target_id、change_reason；action 取值限于 buddy_identity.update、user_context.update、memory_document.update、session_summary.update、capability_usage_stats.update、memory_entry.create、memory_entry.update、memory_entry.archive、run_template_binding.update 或 memory_review_template_binding.update；其他候选的 approval_request 仅保留人工审批信息。",
+        "taskInstruction": "根据 improvement_candidate、candidate_review_context、action_package、template_package 起草候选处理方案。写 candidate_validation_plan JSON：checks、required_permissions、risk_assessment、evidence_refs、success_criteria。写 proposed_diff JSON：target_ref、change_kind、files_or_templates、diff_summary、rollback_notes、source_run_id。若候选包含完整图模板改动，写 candidate_template_json 为完整 template.json 且 should_validate_template=true；其他候选写空对象且 should_validate_template=false。写 test_plan Markdown，列出需要运行的 validator、validation case 或人工检查。写 approval_request JSON：candidate_id、target_ref、risk_level、approval_required、summary、diff_ref、validation_ref、allowed_next_actions。若候选可由现有 Buddy command 安全应用，在 approval_request.apply_command 写单个受控命令对象：action、payload、target_id、change_reason；action 取值限于 buddy_identity.update、user_context.update、memory_document.update、session_summary.update、capability_usage_stats.update、memory_entry.create、memory_entry.update、memory_entry.archive、run_template_binding.update 或 memory_review_template_binding.update；其他候选的 approval_request 仅保留人工审批信息。",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "high",

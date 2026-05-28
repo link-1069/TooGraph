@@ -1008,7 +1008,7 @@ def _fixture_terms_match(raw_terms: Any, haystack: str) -> bool:
 
 
 def _model_runtime_fixture_failure(failure: dict[str, Any], model_ref: str) -> Exception:
-    message = str(failure.get("message") or failure.get("error") or f"Eval model runtime fixture failed {model_ref}.")
+    message = str(failure.get("message") or failure.get("error") or f"Model runtime fixture failed {model_ref}.")
     error_type = str(failure.get("error_type") or "").strip()
     if error_type == "provider_timeout":
         return httpx.TimeoutException(message)

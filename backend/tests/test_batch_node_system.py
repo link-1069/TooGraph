@@ -552,16 +552,16 @@ def test_langgraph_runtime_executes_batch_node_with_template_worker(monkeypatch)
     assert batch_execution["artifacts"]["batch"]["items"][0]["subgraph"]["status"] == "completed"
 
 
-def test_delegation_worker_batch_eval_template_executes_subgraph_workers_and_merges(monkeypatch) -> None:
+def test_delegation_worker_batch_workflow_template_executes_subgraph_workers_and_merges(monkeypatch) -> None:
     import copy
     import app.core.langgraph.runtime as runtime_module
 
     saved_runs: list[dict[str, Any]] = []
     monkeypatch.setattr(runtime_module, "save_run", lambda state: saved_runs.append(copy.deepcopy(state)))
-    template = load_template_record("delegation_worker_batch_eval")
+    template = load_template_record("delegation_worker_batch_workflow")
     graph = NodeSystemGraphDocument.model_validate(
         {
-            "graph_id": "graph_delegation_worker_batch_eval_runtime",
+            "graph_id": "graph_delegation_worker_batch_workflow_runtime",
             "name": template["default_graph_name"],
             "state_schema": template["state_schema"],
             "nodes": template["nodes"],

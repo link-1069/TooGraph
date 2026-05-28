@@ -75,10 +75,6 @@ test("AppShell exposes graph and template management as a primary sidebar destin
 });
 
 test("AppShell keeps legacy developer-only tooling out of the primary sidebar", () => {
-  assert.doesNotMatch(componentSource, /to="\/evals"/);
-  assert.doesNotMatch(componentSource, /data-virtual-affordance-id="app\.nav\.evals"/);
-  assert.doesNotMatch(componentSource, /activeNavigationSection === 'evals'/);
-  assert.doesNotMatch(componentSource, /t\("nav\.evals"\)/);
   assert.doesNotMatch(componentSource, /<DataAnalysis \/>/);
 });
 

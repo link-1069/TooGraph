@@ -5,9 +5,10 @@
   "description": "当用户需要回顾、引用、延续或查找 Buddy 历史对话时使用；它浏览、搜索或展开统一数据库中的会话消息、记忆和运行输出。",
   "llmInstruction": "根据 recall_request 和上游状态生成检索参数。mode 取 browse、discover 或 scroll。discover 使用 query 搜索真实 buddy_messages、memory_entries 和 graph outputs，返回 snippet、命中窗口、session bookends 和可追溯 source refs；browse 列出最近会话；scroll 使用 session_id 和 anchor_message_id 展开上下文。可选参数包括 limit、window、bookend、sort、role_filter、current_session_id、embedding_model_ref。current_session_id 用于排除当前会话谱系，避免把正在运行的上下文再次作为历史召回。embedding_model_ref 可启用 memory_entries 和 graph outputs 的 hybrid/embedding 召回；没有可用模型时留空并使用 FTS/LIKE。输出范围聚焦检索参数，由运行时返回统一数据库事实。",
   "version": "1.0.0",
-  "verificationEvalSuites": ["buddy_hybrid_recall_eval_core", "buddy_memory_recall_eval_core"],
   "timeoutSeconds": 15,
-  "permissions": ["buddy_session_read"],
+  "permissions": [
+    "buddy_session_read"
+  ],
   "metadata": {
     "internal": true
   },

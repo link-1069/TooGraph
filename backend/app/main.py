@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.api.routes_buddy import router as buddy_router
-from app.api.routes_evals import router as evals_router
 from app.api.routes_graphs import router as graphs_router
 from app.api.routes_knowledge import router as knowledge_router
 from app.api.routes_local_input_sources import router as local_input_sources_router
@@ -26,7 +25,6 @@ from app.api.routes_tools import router as tools_router
 from app.buddy.store import initialize_buddy_home
 from app.core.runtime.run_recovery import mark_interrupted_active_runs
 from app.core.storage.database import initialize_storage
-from app.evaluator.official_seed import seed_official_eval_suites
 from app.messaging.runtime import message_platform_runtime
 from app.scheduler.official_seed import seed_official_scheduled_graph_jobs
 from app.scheduler.service import start_scheduler_service, stop_scheduler_service
@@ -38,7 +36,6 @@ FRONTEND_DIST_DIR = Path(os.environ.get("TOOGRAPH_FRONTEND_DIST", ROOT_DIR / "fr
 
 def startup() -> None:
     initialize_storage()
-    seed_official_eval_suites()
     seed_official_scheduled_graph_jobs()
     initialize_buddy_home()
     mark_interrupted_active_runs()
@@ -108,7 +105,6 @@ app.add_middleware(
 )
 
 app.include_router(buddy_router)
-app.include_router(evals_router)
 app.include_router(graphs_router)
 app.include_router(knowledge_router)
 app.include_router(local_input_sources_router)

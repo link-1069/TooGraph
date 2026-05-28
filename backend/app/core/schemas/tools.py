@@ -50,7 +50,6 @@ class ToolDefinition(BaseModel):
         default_factory=list,
         alias="verificationCommands",
     )
-    verification_eval_suites: list[str] = Field(default_factory=list, alias="verificationEvalSuites")
     input_schema: list[ToolIoField] = Field(default_factory=list, alias="inputSchema")
     output_schema: list[ToolIoField] = Field(default_factory=list, alias="outputSchema")
     source_scope: ToolSourceScope = Field(default=ToolSourceScope.INSTALLED, alias="sourceScope")

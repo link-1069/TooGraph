@@ -78,7 +78,6 @@ function createRun(overrides: Partial<RunDetail> = {}): RunDetail {
     metadata: {},
     selected_actions: [],
     action_outputs: [],
-    evaluation_result: {},
     memory_summary: "",
     final_result: "# Answer\n\nPersist me.",
     node_status_map: {},

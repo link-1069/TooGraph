@@ -2,11 +2,10 @@
   "schemaVersion": "toograph.tool/v1",
   "toolKey": "capability_curator_context_loader",
   "name": "Capability Curator Context Loader",
-  "description": "Builds the capability catalog, usage, eval, and existing candidate snapshots used by the Buddy capability curator template.",
+  "description": "Builds the capability catalog, usage, and existing candidate snapshots used by the Buddy capability curator template.",
   "version": "0.1.0",
   "timeoutSeconds": 30,
   "permissions": [],
-  "verificationEvalSuites": ["buddy_capability_curator_core"],
   "runtime": {
     "type": "python",
     "entrypoint": "run.py",
@@ -44,12 +43,6 @@
       "name": "Capability Usage Snapshot",
       "valueType": "json",
       "description": "Recent capability usage events and grouped counters."
-    },
-    {
-      "key": "eval_snapshot",
-      "name": "Eval Snapshot",
-      "valueType": "json",
-      "description": "Official template eval suite coverage snapshot."
     },
     {
       "key": "existing_candidates_snapshot",

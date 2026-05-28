@@ -290,7 +290,6 @@ export type RunDetail = RunSummary & {
   tool_outputs: Array<Record<string, unknown>>;
   selected_capabilities?: Array<Record<string, unknown>>;
   capability_outputs?: Array<Record<string, unknown>>;
-  evaluation_result: Record<string, unknown>;
   memory_summary: string;
   final_result: string;
   node_status_map: Record<string, string>;

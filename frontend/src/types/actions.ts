@@ -35,7 +35,6 @@ export type ActionDefinition = {
   permissions: string[];
   runtime: ActionRuntimeSpec;
   verificationCommands?: VerificationCommand[];
-  verificationEvalSuites?: string[];
   stateInputSchema?: ActionIoField[];
   llmOutputSchema: ActionIoField[];
   stateOutputSchema: ActionIoField[];

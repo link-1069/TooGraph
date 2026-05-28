@@ -1306,7 +1306,6 @@
         "required": true
       }
     ],
-    "evalCases": "eval_cases.json",
     "safetyNotes": [
       "不得把少量评论包装成统计结论。",
       "不得生成无来源功效承诺、绝对化宣传、虚假稀缺或竞品贬损。",

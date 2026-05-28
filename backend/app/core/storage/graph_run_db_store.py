@@ -18,7 +18,6 @@ DETAIL_KEYS = (
     "tool_outputs",
     "selected_capabilities",
     "capability_outputs",
-    "evaluation_result",
     "memory_summary",
     "warnings",
     "errors",
@@ -877,7 +876,6 @@ def _build_run_state(
     state.setdefault("tool_outputs", artifact_payload.get("tool_outputs", []))
     state.setdefault("selected_capabilities", artifact_payload.get("selected_capabilities", []))
     state.setdefault("capability_outputs", artifact_payload.get("capability_outputs", []))
-    state.setdefault("evaluation_result", {})
     state.setdefault("memory_summary", "")
     state.setdefault("warnings", [])
     state.setdefault("errors", [])

@@ -1064,19 +1064,6 @@
         "required": true
       }
     ],
-    "evalCases": [
-      {
-        "caseId": "policy-navigator-mock-housing-subsidy",
-        "input": "examples/mock_policy_input.json",
-        "checks": [
-          "issuer_and_date_present",
-          "eligibility_status_conservative",
-          "citation_ids_required",
-          "missing_user_info_not_overpromised",
-          "artifact_contract_complete"
-        ]
-      }
-    ],
     "safetyNotes": [
       "资格初判只能输出可能符合、可能不符合或信息不足。",
       "不得承诺行政审批结果、法律意见或财务收益。",

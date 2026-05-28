@@ -5,13 +5,12 @@
   "description": "当用户需要在 TooGraph 本地工作区白名单内读取文件、列目录、搜索内容、局部编辑、写入文件或执行明确路径下的受控命令时使用。",
   "llmInstruction": "根据当前图 state、节点任务和 Action Pre-LLM Context 中的运行时文件摘要生成一个受控本地操作。operation 取 read、list、search、edit、write 或 execute。path 使用仓库内相对路径。search 提供 query。edit 提供 old_string、new_string、expected_sha256、expected_mtime_ns；确认所有匹配都要替换时设置 replace_all=true。write 提供 content；覆盖已有文件时带 expected_sha256 和 expected_mtime_ns，创建新文件可省略。execute 执行 path 指向的脚本，可提供 args JSON 数组。默认写入范围是 backend/data、action/user、graph_template/user 或 node_preset/user；默认执行范围是 backend/data/tmp 或 action/user。输出 success 和 result。",
   "version": "1.0.0",
-  "verificationEvalSuites": [
-    "toograph_action_creation_workflow_core",
-    "scheduler_retry_delivery_eval_core",
-    "workspace_executor_eval_core"
-  ],
   "timeoutSeconds": 120,
-  "permissions": ["file_read", "file_write", "subprocess"],
+  "permissions": [
+    "file_read",
+    "file_write",
+    "subprocess"
+  ],
   "stateInputSchema": [
     {
       "key": "workspace_request",

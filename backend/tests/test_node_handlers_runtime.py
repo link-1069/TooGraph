@@ -1643,8 +1643,8 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             invoke_tool_func=lambda tool_func, tool_inputs, **kwargs: captured_inputs.append(dict(tool_inputs))
             or {
                 "status": "succeeded",
-                "selected_model_ref": "eval-fallback/gpt-fallback",
-                "provider_fallback_trace": {"selected": {"model_ref": "eval-fallback/gpt-fallback"}},
+                "selected_model_ref": "fixture-fallback/gpt-fallback",
+                "provider_fallback_trace": {"selected": {"model_ref": "fixture-fallback/gpt-fallback"}},
             },
             resolve_agent_runtime_config_func=lambda agent_node: {},
             build_agent_stream_delta_callback_func=lambda *, state, node_name, output_keys: None,
@@ -1663,11 +1663,11 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         self.assertEqual(result["tool_outputs"][0]["status"], "succeeded")
         self.assertEqual(
             result["outputs"]["dynamic_result"]["outputs"]["selected_model_ref"]["value"],
-            "eval-fallback/gpt-fallback",
+            "fixture-fallback/gpt-fallback",
         )
         self.assertEqual(
             result["outputs"]["dynamic_result"]["outputs"]["provider_fallback_trace"]["value"]["selected"]["model_ref"],
-            "eval-fallback/gpt-fallback",
+            "fixture-fallback/gpt-fallback",
         )
         self.assertIn('"sourceType": "tool"', result["final_result"].replace("'", '"'))
 

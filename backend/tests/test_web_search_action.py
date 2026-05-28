@@ -35,7 +35,6 @@ class WebSearchActionTests(unittest.TestCase):
         manifest = json.loads((WEB_SEARCH_AFTER_LLM_PATH.parent / "action.json").read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["actionKey"], "web_search")
-        self.assertEqual(manifest.get("verificationEvalSuites"), ["advanced_web_research_loop_core"])
 
     def test_web_search_action_does_not_mutate_llm_generated_query_with_current_date(self) -> None:
         web_search = _load_web_search_module()

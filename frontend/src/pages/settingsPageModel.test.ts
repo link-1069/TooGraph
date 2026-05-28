@@ -69,7 +69,6 @@ test("buildProviderDraftsFromSettings keeps stored API keys hidden", () => {
       ],
     },
     revision: { max_revision_round: 1 },
-    evaluator: { default_score_threshold: 7.8, routes: ["pass", "revise", "fail"] },
     tools: [],
   });
 
@@ -137,7 +136,6 @@ test("provider drafts preserve model capabilities and permissions", () => {
       ],
     },
     revision: { max_revision_round: 1 },
-    evaluator: { default_score_threshold: 7.8, routes: [] },
     tools: [],
   });
 
@@ -200,7 +198,6 @@ test("provider drafts preserve credential pool metadata", () => {
       ],
     },
     revision: { max_revision_round: 1 },
-    evaluator: { default_score_threshold: 7.8, routes: [] },
     tools: [],
   });
 
@@ -253,7 +250,6 @@ test("buildProviderDraftsFromSettings keeps saved Codex login providers visible 
       ],
     },
     revision: { max_revision_round: 1 },
-    evaluator: { default_score_threshold: 7.8, routes: [] },
     tools: [],
   });
 
@@ -322,7 +318,6 @@ test("buildProviderDraftsFromSettings keeps discovered model options separate fr
       ],
     },
     revision: { max_revision_round: 1 },
-    evaluator: { default_score_threshold: 7.8, routes: [] },
     tools: [],
   });
 
@@ -367,7 +362,6 @@ test("listAddableProviderTemplates hides existing drafts", () => {
         ],
       },
       revision: { max_revision_round: 1 },
-      evaluator: { default_score_threshold: 7.8, routes: [] },
       tools: [],
     },
     {

@@ -5,15 +5,15 @@
   "description": "当用户需要审查、改进、迁移或复用一个已有 TooGraph 图模板时使用；它会只读读取官方或用户 template.json。",
   "llmInstruction": "选择一个 target_template_id 或 template_id，并可选 source_scope 为 user 或 official。此只读 Action 返回模板读取参数。",
   "version": "0.1.0",
-  "verificationEvalSuites": [
-    "toograph_graph_template_creation_workflow_core",
-    "buddy_improvement_review_workflow_core"
-  ],
   "verificationCommands": [
     {
       "name": "Graph template action tests",
       "command": "python",
-      "args": ["-m", "unittest", "backend.tests.test_toograph_graph_template_actions"]
+      "args": [
+        "-m",
+        "unittest",
+        "backend.tests.test_toograph_graph_template_actions"
+      ]
     }
   ],
   "timeoutSeconds": 30,

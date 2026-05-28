@@ -78,7 +78,6 @@ function createSettings(baseUrl = "1"): SettingsPayload {
       },
     },
     revision: { max_revision_round: 1 },
-    evaluator: { default_score_threshold: 0.8, routes: [] },
     tools: [],
   };
 }

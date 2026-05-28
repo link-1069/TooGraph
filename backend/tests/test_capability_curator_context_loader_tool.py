@@ -118,10 +118,6 @@ class CapabilityCuratorContextLoaderToolTests(unittest.TestCase):
         self.assertEqual(usage["counts"]["events"], 1)
         self.assertEqual(usage["by_capability"]["action:web_search"]["failure_count"], 1)
         self.assertEqual(usage["events"][0]["error_type"], "network_error")
-        eval_snapshot = result["eval_snapshot"]
-        self.assertEqual(eval_snapshot["kind"], "eval_snapshot")
-        self.assertGreater(eval_snapshot["counts"]["official_template_eval_suites"], 0)
-        self.assertIn("buddy_autonomous_loop", {item["template_id"] for item in eval_snapshot["official_template_eval_suites"]})
         candidates = result["existing_candidates_snapshot"]
         self.assertEqual(candidates["kind"], "existing_candidates_snapshot")
         self.assertEqual(candidates["counts"]["total"], 1)

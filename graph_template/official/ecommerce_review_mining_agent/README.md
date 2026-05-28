@@ -55,9 +55,6 @@
 - `mock_data/sample_competitor_reviews.md`
 - `artifacts/sample_final_review_mining_package.md`
 
-## Eval Cases
-
-`eval_cases.json` 覆盖评论清洗、正负向聚类、证据引用、卖点/风险边界和合规文案。
 
 ## Safety Notes
 

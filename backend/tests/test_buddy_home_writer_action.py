@@ -48,10 +48,6 @@ class BuddyHomeWriterActionTests(unittest.TestCase):
 
         self.assertEqual(definition.action_key, "buddy_home_writer")
         self.assertEqual(definition.llm_node_eligibility, ActionLlmNodeEligibility.READY)
-        self.assertEqual(
-            definition.verification_eval_suites,
-            ["buddy_autonomous_review_core", "buddy_context_compaction_core"],
-        )
         self.assertEqual(definition.permissions, ["buddy_home_write"])
         self.assertEqual(manifest["metadata"], {"internal": True})
         self.assertNotIn("你已绑定", manifest["llmInstruction"])
