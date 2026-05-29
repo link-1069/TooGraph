@@ -30,259 +30,23 @@
 
       <nav class="app-shell__nav">
         <RouterLink
-          to="/"
+          v-for="item in visibleNavigationItems"
+          :key="item.path"
+          :to="item.path"
           class="app-shell__link"
-          data-virtual-affordance-id="app.nav.home"
-          data-virtual-affordance-label="首页"
+          :data-virtual-affordance-id="item.affordanceId"
+          :data-virtual-affordance-label="t(item.labelKey)"
           data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
+          :data-virtual-affordance-zone="item.affordanceZone || 'app-shell'"
           data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'home' }"
-          :title="t('nav.home')"
+          :data-virtual-affordance-path-after-click="item.pathAfterClick || null"
+          :data-virtual-affordance-self-surface="item.selfSurface ? 'true' : null"
+          :class="{ 'app-shell__link--active': activeNavigationSection === item.section }"
+          :title="t(item.labelKey)"
         >
-          <ElIcon class="app-shell__link-icon"><House /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.home") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/editor"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.editor"
-          data-virtual-affordance-label="图编辑器"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/editor"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'editor' }"
-          :title="t('nav.editor')"
-        >
-          <ElIcon class="app-shell__link-icon"><EditPen /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.editor") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/runs"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.runs"
-          data-virtual-affordance-label="运行历史"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/runs"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'runs' }"
-          :title="t('nav.runs')"
-        >
-          <ElIcon class="app-shell__link-icon"><Clock /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.runs") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/library"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.library"
-          data-virtual-affordance-label="图库"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/library"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'graphLibrary' }"
-          :title="t('nav.graphLibrary')"
-        >
-          <ElIcon class="app-shell__link-icon"><Collection /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.graphLibrary") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/scheduler"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.scheduler"
-          data-virtual-affordance-label="定时任务"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/scheduler"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'scheduler' }"
-          :title="t('nav.scheduler')"
-        >
-          <ElIcon class="app-shell__link-icon"><Timer /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.scheduler") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/curator-reports"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.curatorReports"
-          :data-virtual-affordance-label="t('nav.curatorReports')"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/curator-reports"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'curatorReports' }"
-          :title="t('nav.curatorReports')"
-        >
-          <ElIcon class="app-shell__link-icon"><DataBoard /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.curatorReports") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/knowledge"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.knowledge"
-          data-virtual-affordance-label="知识库"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/knowledge"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'knowledge' }"
-          :title="t('nav.knowledge')"
-        >
-          <ElIcon class="app-shell__link-icon"><Reading /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.knowledge") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/buddy"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.buddy"
-          data-virtual-affordance-label="伙伴"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="buddy-page"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-self-surface="true"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'buddy' }"
-          :title="t('nav.buddy')"
-        >
-          <ElIcon class="app-shell__link-icon"><ChatDotRound /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.buddy") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/message-platforms"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.messagePlatforms"
-          data-virtual-affordance-label="消息平台"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/message-platforms"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'messagePlatforms' }"
-          :title="t('nav.messagePlatforms')"
-        >
-          <ElIcon class="app-shell__link-icon"><Connection /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.messagePlatforms") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/presets"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.presets"
-          data-virtual-affordance-label="预设节点"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/presets"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'presets' }"
-          :title="t('nav.presets')"
-        >
-          <ElIcon class="app-shell__link-icon"><CollectionTag /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.presets") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/actions"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.actions"
-          data-virtual-affordance-label="Actions"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/actions"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'actions' }"
-          :title="t('nav.actions')"
-        >
-          <ElIcon class="app-shell__link-icon"><Opportunity /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.actions") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/tools"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.tools"
-          data-virtual-affordance-label="工具"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/tools"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'tools' }"
-          :title="t('nav.tools')"
-        >
-          <ElIcon class="app-shell__link-icon"><Tools /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.tools") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/improvements"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.improvements"
-          :data-virtual-affordance-label="t('nav.improvements')"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/improvements"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'improvements' }"
-          :title="t('nav.improvements')"
-        >
-          <ElIcon class="app-shell__link-icon"><TrendCharts /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.improvements") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/models"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.models"
-          data-virtual-affordance-label="模型"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/models"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'models' }"
-          :title="t('nav.models')"
-        >
-          <ElIcon class="app-shell__link-icon"><DataLine /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.models") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/model-logs"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.modelLogs"
-          data-virtual-affordance-label="模型日志"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/model-logs"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'modelLogs' }"
-          :title="t('nav.modelLogs')"
-        >
-          <ElIcon class="app-shell__link-icon"><Tickets /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.modelLogs") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/evidence"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.evidenceSearch"
-          :data-virtual-affordance-label="t('nav.evidenceSearch')"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/evidence"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'evidenceSearch' }"
-          :title="t('nav.evidenceSearch')"
-        >
-          <ElIcon class="app-shell__link-icon"><DocumentChecked /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.evidenceSearch") }}</span>
-        </RouterLink>
-        <RouterLink
-          to="/settings"
-          class="app-shell__link"
-          data-virtual-affordance-id="app.nav.settings"
-          data-virtual-affordance-label="设置"
-          data-virtual-affordance-role="navigation-link"
-          data-virtual-affordance-zone="app-shell"
-          data-virtual-affordance-actions="click"
-          data-virtual-affordance-path-after-click="/settings"
-          :class="{ 'app-shell__link--active': activeNavigationSection === 'settings' }"
-          :title="t('nav.settings')"
-        >
-          <ElIcon class="app-shell__link-icon"><Setting /></ElIcon>
-          <span class="app-shell__link-label">{{ t("nav.settings") }}</span>
+          <ElIcon class="app-shell__link-icon"><component :is="navigationIconComponents[item.icon]" /></ElIcon>
+          <span class="app-shell__link-label">{{ t(item.labelKey) }}</span>
+          <span v-if="item.visibility === 'developer'" class="app-shell__developer-badge">{{ t("nav.developerBadge") }}</span>
         </RouterLink>
       </nav>
 
@@ -316,24 +80,64 @@ import {
   Timer,
   TrendCharts,
 } from "@element-plus/icons-vue";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute } from "vue-router";
 
 import LanguageSwitcher from "./LanguageSwitcher.vue";
+import { fetchSettings } from "@/api/settings";
 import { resolvePrimaryNavigationSection, resolveShellLayoutMode } from "@/lib/layout-mode";
+import { buildVisibleNavigationItems } from "@/lib/navigation";
+import type { NavigationIconKey } from "@/lib/navigation";
 
 const SIDEBAR_STORAGE_KEY = "toograph:sidebar-collapsed";
+const UI_PREFERENCES_UPDATED_EVENT = "toograph:ui-preferences-updated";
+
+const navigationIconComponents: Record<NavigationIconKey, Component> = {
+  ChatDotRound,
+  Clock,
+  Collection,
+  CollectionTag,
+  Connection,
+  DataBoard,
+  DataLine,
+  DocumentChecked,
+  EditPen,
+  House,
+  Opportunity,
+  Reading,
+  Setting,
+  Tickets,
+  Timer,
+  Tools,
+  TrendCharts,
+};
 
 const route = useRoute();
 const { t } = useI18n();
 const isSidebarCollapsed = ref(false);
+const developerModeEnabled = ref(false);
 
 const activeNavigationSection = computed(() => resolvePrimaryNavigationSection(route.path));
 const isEditorCanvasMode = computed(() => resolveShellLayoutMode(route.path) === "editor-canvas");
+const visibleNavigationItems = computed(() => buildVisibleNavigationItems(developerModeEnabled.value));
 
 function setSidebarCollapsed(nextValue: boolean) {
   isSidebarCollapsed.value = nextValue;
+}
+
+async function loadUiPreferences() {
+  try {
+    const settings = await fetchSettings();
+    developerModeEnabled.value = Boolean(settings.ui_preferences?.developer_mode);
+  } catch {
+    developerModeEnabled.value = false;
+  }
+}
+
+function handleUiPreferencesUpdated(event: Event) {
+  const customEvent = event as CustomEvent<{ developer_mode?: boolean }>;
+  developerModeEnabled.value = Boolean(customEvent.detail?.developer_mode);
 }
 
 onMounted(() => {
@@ -341,6 +145,12 @@ onMounted(() => {
   if (saved === "true") {
     isSidebarCollapsed.value = true;
   }
+  window.addEventListener(UI_PREFERENCES_UPDATED_EVENT, handleUiPreferencesUpdated);
+  void loadUiPreferences();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(UI_PREFERENCES_UPDATED_EVENT, handleUiPreferencesUpdated);
 });
 
 watch(isSidebarCollapsed, (nextValue) => {
@@ -527,6 +337,18 @@ watch(isSidebarCollapsed, (nextValue) => {
   white-space: nowrap;
 }
 
+.app-shell__developer-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(154, 52, 18, 0.14);
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: rgba(255, 248, 240, 0.82);
+  color: rgba(154, 52, 18, 0.72);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
 .app-shell__sidebar--collapsed .app-shell__link {
   width: 42px;
   min-height: 42px;
@@ -534,7 +356,8 @@ watch(isSidebarCollapsed, (nextValue) => {
   padding: 0;
 }
 
-.app-shell__sidebar--collapsed .app-shell__link-label {
+.app-shell__sidebar--collapsed .app-shell__link-label,
+.app-shell__sidebar--collapsed .app-shell__developer-badge {
   display: none;
 }
 

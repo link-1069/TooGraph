@@ -6,6 +6,7 @@ import type {
   ModelLogSettings,
   SettingsProviderCredential,
   SettingsPayload,
+  UiPreferencesSettings,
 } from "@/types/settings";
 
 import { apiGet, apiPost } from "./http.ts";
@@ -48,6 +49,7 @@ export type SettingsUpdatePayload = {
   model_providers?: Record<string, SettingsModelProviderUpdate>;
   buddy_runtime?: BuddyRuntimeSettings;
   model_logs?: ModelLogSettings;
+  ui_preferences?: UiPreferencesSettings;
 };
 
 export async function fetchSettings(): Promise<SettingsPayload> {

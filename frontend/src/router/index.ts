@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from "vue-router";
 
+import { fetchSettings } from "@/api/settings";
+import { isDeveloperNavigationPath } from "@/lib/navigation";
+
 const BuddyPage = () => import("@/pages/BuddyPage.vue");
 const CuratorReportsPage = () => import("@/pages/CuratorReportsPage.vue");
 const EditorPage = () => import("@/pages/EditorPage.vue");
@@ -44,4 +47,25 @@ export const router = createRouter({
     { path: "/runs/:runId", component: RunDetailPage },
     { path: "/settings", component: SettingsPage },
   ],
+});
+
+router.beforeEach(async (to) => {
+  if (!isDeveloperNavigationPath(to.path)) {
+    return true;
+  }
+  try {
+    const settings = await fetchSettings();
+    if (settings.ui_preferences?.developer_mode) {
+      return true;
+    }
+  } catch {
+    // Keep unfinished pages hidden when settings cannot be loaded.
+  }
+  return {
+    path: "/settings",
+    query: {
+      developerModeRequired: "1",
+      from: to.fullPath,
+    },
+  };
 });

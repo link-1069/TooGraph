@@ -26,7 +26,7 @@ test("AppShell keeps collapsed navigation usable with compact labels and a brand
   assert.match(componentSource, /<button[\s\S]*class="app-shell__brand-mark"[\s\S]*:aria-label="isSidebarCollapsed \? t\('nav\.expandSidebar'\) : t\('nav\.collapseSidebar'\)"[\s\S]*@click="setSidebarCollapsed\(!isSidebarCollapsed\)"/);
   assert.doesNotMatch(componentSource, /class="app-shell__collapse"/);
   assert.match(componentSource, /\.app-shell__sidebar--collapsed\s+\.app-shell__brand-copy \{[\s\S]*display:\s*none;/);
-  assert.match(componentSource, /\.app-shell__sidebar--collapsed\s+\.app-shell__link-label \{[\s\S]*display:\s*none;/);
+  assert.match(componentSource, /\.app-shell__sidebar--collapsed\s+\.app-shell__link-label,[\s\S]*\.app-shell__sidebar--collapsed\s+\.app-shell__developer-badge \{[\s\S]*display:\s*none;/);
 });
 
 test("AppShell uses dynamic viewport height and keeps editor chrome inside the visible viewport", () => {
@@ -52,53 +52,35 @@ test("AppShell uses a low-noise ChatGPT-style brand rail with library icons", ()
   assert.match(componentSource, /<h1 class="app-shell__title">TooGraph<\/h1>/);
   assert.doesNotMatch(componentSource, /app-shell__note/);
   assert.match(componentSource, /\.app-shell__brand-logo \{[\s\S]*object-fit:\s*contain;/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><House \/><\/ElIcon>/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><EditPen \/><\/ElIcon>/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Clock \/><\/ElIcon>/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Collection \/><\/ElIcon>/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Setting \/><\/ElIcon>/);
-  assert.match(componentSource, /\{\{ t\("nav\.home"\) \}\}/);
-  assert.match(componentSource, /\{\{ t\("nav\.editor"\) \}\}/);
-  assert.match(componentSource, /\{\{ t\("nav\.runs"\) \}\}/);
-  assert.match(componentSource, /\{\{ t\("nav\.graphLibrary"\) \}\}/);
-  assert.match(componentSource, /\{\{ t\("nav\.settings"\) \}\}/);
+  assert.match(componentSource, /navigationIconComponents/);
+  assert.match(componentSource, /<component :is="navigationIconComponents\[item\.icon\]" \/>/);
+  assert.match(componentSource, /\{\{ t\(item\.labelKey\) \}\}/);
   assert.match(componentSource, /\.app-shell__sidebar \{[\s\S]*background:\s*var\(--toograph-glass-bg\);/);
   assert.match(componentSource, /\.app-shell__sidebar \{[\s\S]*backdrop-filter:\s*blur\(24px\) saturate\(1\.35\);/);
   assert.match(componentSource, /\.app-shell__link \{[\s\S]*border:\s*1px solid transparent;/);
   assert.match(componentSource, /\.app-shell__link\.router-link-active,[\s\S]*\.app-shell__link\.app-shell__link--active \{[\s\S]*box-shadow:\s*inset 3px 0 0 rgba\(154,\s*52,\s*18,\s*0\.7\);/);
 });
 
-test("AppShell exposes graph and template management as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*Collection[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/library"[\s\S]*activeNavigationSection === 'graphLibrary'[\s\S]*t\("nav\.graphLibrary"\)/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Collection \/><\/ElIcon>/);
-});
-
 test("AppShell keeps legacy developer-only tooling out of the primary sidebar", () => {
   assert.doesNotMatch(componentSource, /<DataAnalysis \/>/);
 });
 
-test("AppShell exposes scheduled graph jobs as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*Timer[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/scheduler"[\s\S]*activeNavigationSection === 'scheduler'[\s\S]*t\("nav\.scheduler"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.scheduler"/);
-  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/scheduler"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Timer \/><\/ElIcon>/);
+test("AppShell gates developer navigation entries behind developer mode", () => {
+  assert.match(componentSource, /visibleNavigationItems/);
+  assert.match(componentSource, /developerModeEnabled/);
+  assert.match(componentSource, /nav\.developerBadge/);
+  assert.match(componentSource, /loadUiPreferences/);
+  assert.match(componentSource, /toograph:ui-preferences-updated/);
 });
 
-test("AppShell exposes capability curator reports as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*DataBoard[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/curator-reports"[\s\S]*activeNavigationSection === 'curatorReports'[\s\S]*t\("nav\.curatorReports"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.curatorReports"/);
-  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/curator-reports"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DataBoard \/><\/ElIcon>/);
-});
-
-test("AppShell exposes knowledge management as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*Reading[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/knowledge"[\s\S]*activeNavigationSection === 'knowledge'[\s\S]*t\("nav\.knowledge"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.knowledge"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Reading \/><\/ElIcon>/);
+test("AppShell renders primary navigation from the versioned navigation registry", () => {
+  assert.match(componentSource, /import \{ buildVisibleNavigationItems \} from "@\/lib\/navigation";/);
+  assert.match(componentSource, /v-for="item in visibleNavigationItems"/);
+  assert.match(componentSource, /:to="item\.path"/);
+  assert.match(componentSource, /:data-virtual-affordance-id="item\.affordanceId"/);
+  assert.match(componentSource, /:data-virtual-affordance-label="t\(item\.labelKey\)"/);
+  assert.match(componentSource, /:data-virtual-affordance-path-after-click="item\.pathAfterClick \|\| null"/);
+  assert.match(componentSource, /activeNavigationSection === item\.section/);
 });
 
 test("AppShell exposes the global language switcher in the sidebar", () => {
@@ -108,67 +90,13 @@ test("AppShell exposes the global language switcher in the sidebar", () => {
 
 test("AppShell keeps the editor navigation entry active for graph-specific editor routes", () => {
   assert.match(componentSource, /const activeNavigationSection = computed\(\(\) => resolvePrimaryNavigationSection\(route\.path\)\);/);
-  assert.match(componentSource, /<RouterLink[\s\S]*to="\/editor"[\s\S]*:class="\{ 'app-shell__link--active': activeNavigationSection === 'editor' \}"/);
+  assert.match(componentSource, /:class="\{ 'app-shell__link--active': activeNavigationSection === item\.section \}"/);
   assert.match(componentSource, /\.app-shell__link\.app-shell__link--active \{[\s\S]*box-shadow:\s*inset 3px 0 0 rgba\(154,\s*52,\s*18,\s*0\.7\);/);
 });
 
-test("AppShell exposes preset node action and tool management as primary sidebar destinations", () => {
-  assert.match(componentSource, /import \{[\s\S]*CollectionTag[\s\S]*Opportunity[\s\S]*Tools[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/presets"[\s\S]*activeNavigationSection === 'presets'[\s\S]*t\("nav\.presets"\)/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><CollectionTag \/><\/ElIcon>/);
-  assert.match(componentSource, /to="\/actions"[\s\S]*activeNavigationSection === 'actions'[\s\S]*t\("nav\.actions"\)/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Opportunity \/><\/ElIcon>/);
-  assert.match(componentSource, /to="\/tools"[\s\S]*activeNavigationSection === 'tools'[\s\S]*t\("nav\.tools"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.tools"/);
-  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/tools"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Tools \/><\/ElIcon>/);
-});
-
-test("AppShell exposes improvement candidates as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*TrendCharts[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/improvements"[\s\S]*activeNavigationSection === 'improvements'[\s\S]*t\("nav\.improvements"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.improvements"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><TrendCharts \/><\/ElIcon>/);
-});
-
-test("AppShell exposes model provider management as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*DataLine[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/models"[\s\S]*activeNavigationSection === 'models'[\s\S]*t\("nav\.models"\)/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DataLine \/><\/ElIcon>/);
-});
-
-test("AppShell exposes model request logs as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*Tickets[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/model-logs"[\s\S]*activeNavigationSection === 'modelLogs'[\s\S]*t\("nav\.modelLogs"\)/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Tickets \/><\/ElIcon>/);
-});
-
-test("AppShell exposes evidence search as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*DocumentChecked[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/evidence"[\s\S]*activeNavigationSection === 'evidenceSearch'[\s\S]*t\("nav\.evidenceSearch"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.evidenceSearch"/);
-  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/evidence"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><DocumentChecked \/><\/ElIcon>/);
-});
-
-test("AppShell exposes message platform management as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*Connection[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/message-platforms"[\s\S]*activeNavigationSection === 'messagePlatforms'[\s\S]*t\("nav\.messagePlatforms"\)/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.messagePlatforms"/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><Connection \/><\/ElIcon>/);
-});
-
 test("AppShell registers only non-buddy navigation affordances for virtual page operations", () => {
-  assert.match(componentSource, /to="\/runs"[\s\S]*data-virtual-affordance-id="app\.nav\.runs"/);
-  assert.match(componentSource, /data-virtual-affordance-label="运行历史"/);
+  assert.match(componentSource, /:data-virtual-affordance-id="item\.affordanceId"/);
+  assert.match(componentSource, /:data-virtual-affordance-label="t\(item\.labelKey\)"/);
   assert.match(componentSource, /data-virtual-affordance-actions="click"/);
-  assert.match(componentSource, /data-virtual-affordance-path-after-click="\/runs"/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.settings"/);
-  assert.match(componentSource, /data-virtual-affordance-id="app\.nav\.buddy"[\s\S]*data-virtual-affordance-self-surface="true"/);
-});
-
-test("AppShell exposes Buddy as a primary sidebar destination", () => {
-  assert.match(componentSource, /import \{[\s\S]*ChatDotRound[\s\S]*\} from "@element-plus\/icons-vue";/);
-  assert.match(componentSource, /to="\/buddy"[\s\S]*activeNavigationSection === 'buddy'[\s\S]*t\("nav\.buddy"\)/);
-  assert.match(componentSource, /<ElIcon class="app-shell__link-icon"><ChatDotRound \/><\/ElIcon>/);
+  assert.match(componentSource, /:data-virtual-affordance-self-surface="item\.selfSurface \? 'true' : null"/);
 });

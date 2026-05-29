@@ -1,0 +1,39 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { buildVisibleNavigationItems, isDeveloperNavigationPath, PRIMARY_NAVIGATION_ITEMS } from "./navigation.ts";
+
+test("navigation marks only unfinished pages as developer-only", () => {
+  const developerPaths = PRIMARY_NAVIGATION_ITEMS
+    .filter((item) => item.visibility === "developer")
+    .map((item) => item.path);
+
+  assert.deepEqual(developerPaths, ["/curator-reports", "/improvements", "/evidence"]);
+  assert.equal(PRIMARY_NAVIGATION_ITEMS.find((item) => item.path === "/actions")?.visibility, "stable");
+  assert.equal(PRIMARY_NAVIGATION_ITEMS.find((item) => item.path === "/tools")?.visibility, "stable");
+  assert.equal(PRIMARY_NAVIGATION_ITEMS.find((item) => item.path === "/model-logs")?.visibility, "stable");
+});
+
+test("navigation hides developer pages until developer mode is enabled", () => {
+  assert.deepEqual(
+    buildVisibleNavigationItems(false)
+      .filter((item) => item.visibility === "developer")
+      .map((item) => item.path),
+    [],
+  );
+  assert.deepEqual(
+    buildVisibleNavigationItems(true)
+      .filter((item) => item.visibility === "developer")
+      .map((item) => item.path),
+    ["/curator-reports", "/improvements", "/evidence"],
+  );
+});
+
+test("developer path matching applies to developer pages and their children", () => {
+  assert.equal(isDeveloperNavigationPath("/curator-reports"), true);
+  assert.equal(isDeveloperNavigationPath("/curator-reports/run_123"), true);
+  assert.equal(isDeveloperNavigationPath("/improvements"), true);
+  assert.equal(isDeveloperNavigationPath("/evidence/run_123"), true);
+  assert.equal(isDeveloperNavigationPath("/model-logs"), false);
+  assert.equal(isDeveloperNavigationPath("/actions"), false);
+});

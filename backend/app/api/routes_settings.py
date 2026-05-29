@@ -145,12 +145,19 @@ class ModelLogSettingsPayload(BaseModel):
         return normalize_provider_prompt_cache_resource_retention_days(self.cache_resource_retention_days)
 
 
+class UiPreferencesPayload(BaseModel):
+    developer_mode: bool = Field(default=False, alias="developer_mode")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class SettingsUpdatePayload(BaseModel):
     model: SettingsModelPayload
     agent_runtime_defaults: AgentRuntimeDefaultsPayload = Field(alias="agent_runtime_defaults")
     model_providers: dict[str, SettingsModelProviderPayload] | None = Field(default=None, alias="model_providers")
     buddy_runtime: BuddyRuntimeSettingsPayload | None = Field(default=None, alias="buddy_runtime")
     model_logs: ModelLogSettingsPayload | None = Field(default=None, alias="model_logs")
+    ui_preferences: UiPreferencesPayload | None = Field(default=None, alias="ui_preferences")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -211,6 +218,13 @@ def save_buddy_runtime_settings(payload: BuddyRuntimeSettingsPayload) -> dict[st
     next_settings["buddy_runtime"] = {"permission_mode": payload.normalized_permission_mode}
     save_app_settings(next_settings)
     return get_saved_buddy_runtime_settings(next_settings)
+
+
+def get_saved_ui_preferences(settings: dict | None = None) -> dict[str, bool]:
+    source = settings if isinstance(settings, dict) else load_app_settings()
+    raw_preferences = source.get("ui_preferences") if isinstance(source, dict) else {}
+    preferences = raw_preferences if isinstance(raw_preferences, dict) else {}
+    return {"developer_mode": bool(preferences.get("developer_mode", False))}
 
 
 def _merge_model_providers(
@@ -356,6 +370,7 @@ def _build_settings_payload(*, force_refresh_models: bool = False) -> dict:
         "tools": sorted(get_tool_registry().keys()),
         "buddy_runtime": get_saved_buddy_runtime_settings(),
         "model_logs": get_model_log_retention_settings(),
+        "ui_preferences": get_saved_ui_preferences(),
     }
 
 
@@ -412,6 +427,11 @@ def update_settings_endpoint(payload: SettingsUpdatePayload) -> dict:
         }
     elif "model_logs" in existing_settings:
         next_settings["model_logs"] = get_model_log_retention_settings(existing_settings)
+    next_settings["ui_preferences"] = (
+        {"developer_mode": bool(payload.ui_preferences.developer_mode)}
+        if payload.ui_preferences is not None
+        else get_saved_ui_preferences(existing_settings)
+    )
     next_settings.pop("buddy_permission_mode", None)
     save_app_settings(next_settings)
     return _build_settings_payload(force_refresh_models=False)

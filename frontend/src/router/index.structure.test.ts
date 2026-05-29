@@ -11,6 +11,13 @@ test("router resets page scroll on route navigation while preserving browser bac
   assert.match(routerSource, /scrollBehavior:\s*\(_to,\s*_from,\s*savedPosition\)\s*=>\s*savedPosition\s*\?\?\s*\{\s*left:\s*0,\s*top:\s*0\s*\}/);
 });
 
+test("router redirects developer-only pages when developer mode is disabled", () => {
+  assert.match(routerSource, /isDeveloperNavigationPath/);
+  assert.match(routerSource, /fetchSettings/);
+  assert.match(routerSource, /router\.beforeEach/);
+  assert.match(routerSource, /developerModeRequired/);
+});
+
 test("router exposes first-class management pages for presets and actions", () => {
   assert.doesNotMatch(routerSource, /import \w+Page from "@\/pages\//);
   assert.match(routerSource, /const GraphLibraryPage = \(\) => import\("@\/pages\/GraphLibraryPage\.vue"\);/);

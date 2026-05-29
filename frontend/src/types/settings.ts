@@ -18,6 +18,10 @@ export type ModelLogSettings = {
   cache_resource_retention_days: number;
 };
 
+export type UiPreferencesSettings = {
+  developer_mode: boolean;
+};
+
 export type OpenAICodexAuthStatus = {
   provider_id?: string;
   configured: boolean;
@@ -117,6 +121,7 @@ export type SettingsPayload = {
   >;
   buddy_runtime?: BuddyRuntimeSettings;
   model_logs?: ModelLogSettings;
+  ui_preferences?: UiPreferencesSettings;
   revision: {
     max_revision_round: number;
   };

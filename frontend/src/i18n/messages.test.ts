@@ -79,6 +79,17 @@ test("i18n messages expose capability curator report labels", () => {
   assert.equal(messages["en-US"].curatorReports.schedulerRecommendation, "Scheduler recommendation");
 });
 
+test("i18n messages expose developer mode labels", () => {
+  assert.equal(messages["zh-CN"].nav.developerBadge, "Dev");
+  assert.equal(messages["zh-CN"].settings.developerOptions, "开发者选项");
+  assert.equal(messages["zh-CN"].settings.developerMode, "开发者模式");
+  assert.match(messages["zh-CN"].settings.developerModeHelp, /能力报告/);
+  assert.equal(messages["en-US"].nav.developerBadge, "Dev");
+  assert.equal(messages["en-US"].settings.developerOptions, "Developer options");
+  assert.equal(messages["en-US"].settings.developerMode, "Developer mode");
+  assert.match(messages["en-US"].settings.developerModeHelp, /Capability Reports/);
+});
+
 test("Preset management labels localize node families in Chinese", () => {
   assert.equal(messages["zh-CN"].presets.agents, "LLM 预设");
   assert.equal(messages["zh-CN"].presets.input, "输入");

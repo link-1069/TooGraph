@@ -63,6 +63,20 @@
             </div>
           </article>
 
+          <article class="settings-page__panel">
+            <h3>{{ t("settings.developerOptions") }}</h3>
+            <label class="settings-page__switch-row">
+              <span>
+                <strong>{{ t("settings.developerMode") }}</strong>
+                <small>{{ t("settings.developerModeHelp") }}</small>
+              </span>
+              <ElSwitch v-model="draft.developer_mode" />
+            </label>
+            <p v-if="developerModeRequired" class="settings-page__hint settings-page__hint--warning">
+              {{ t("settings.developerModeRequired") }}
+            </p>
+          </article>
+
           <article class="settings-page__panel settings-page__panel--wide">
             <div class="settings-page__panel-heading">
               <h3>{{ t("settings.modelProviders") }}</h3>
@@ -109,9 +123,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { ElOption, ElSelect } from "element-plus";
+import { ElOption, ElSelect, ElSwitch } from "element-plus";
 import { useI18n } from "vue-i18n";
-import { RouterLink } from "vue-router";
+import { RouterLink, useRoute } from "vue-router";
 
 import { fetchSettings, updateSettings } from "@/api/settings";
 import AppShell from "@/layouts/AppShell.vue";
@@ -125,6 +139,7 @@ type SettingsDraft = {
   thinking_enabled: boolean;
   thinking_level: AgentThinkingLevel;
   temperature: number;
+  developer_mode: boolean;
 };
 
 const settings = ref<SettingsPayload | null>(null);
@@ -133,6 +148,8 @@ const error = ref<string | null>(null);
 const saveMessage = ref<string | null>(null);
 const isSaving = ref(false);
 const { t } = useI18n();
+const route = useRoute();
+const developerModeRequired = computed(() => route.query.developerModeRequired === "1");
 
 function buildDraftFromSettings(payload: SettingsPayload): SettingsDraft {
   return {
@@ -141,6 +158,7 @@ function buildDraftFromSettings(payload: SettingsPayload): SettingsDraft {
     thinking_enabled: payload.agent_runtime_defaults?.thinking_enabled ?? false,
     thinking_level: normalizeThinkingLevel(payload.agent_runtime_defaults?.thinking_level),
     temperature: payload.agent_runtime_defaults?.temperature ?? 0.2,
+    developer_mode: Boolean(payload.ui_preferences?.developer_mode),
   };
 }
 
@@ -234,7 +252,7 @@ const isDirty = computed(() => {
   }
   return JSON.stringify(draft.value) !== JSON.stringify(buildDraftFromSettings(settings.value));
 });
-const canSave = computed(() => isDirty.value && !isSaving.value && configuredModelOptions.value.length > 0);
+const canSave = computed(() => isDirty.value && !isSaving.value);
 
 function alignDefaultModelsToAvailableOptions() {
   if (!draft.value || configuredModelOptions.value.length === 0) {
@@ -261,7 +279,7 @@ async function loadSettings() {
 }
 
 async function handleSave() {
-  if (!draft.value || configuredModelOptions.value.length === 0) {
+  if (!draft.value) {
     return;
   }
   try {
@@ -279,7 +297,15 @@ async function handleSave() {
         thinking_level: draft.value.thinking_level,
         temperature: clampSettingsTemperature(draft.value.temperature),
       },
+      ui_preferences: {
+        developer_mode: draft.value.developer_mode,
+      },
     });
+    window.dispatchEvent(
+      new CustomEvent("toograph:ui-preferences-updated", {
+        detail: { developer_mode: draft.value.developer_mode },
+      }),
+    );
     draft.value = buildDraftFromSettings(settings.value);
     saveMessage.value = t("settings.saved");
     error.value = null;
@@ -370,6 +396,33 @@ onMounted(loadSettings);
   gap: 8px;
   margin-top: 12px;
   color: rgba(60, 41, 20, 0.72);
+}
+
+.settings-page__switch-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+
+.settings-page__switch-row span {
+  display: grid;
+  gap: 4px;
+}
+
+.settings-page__switch-row strong {
+  color: var(--toograph-text-strong);
+  font-size: 0.94rem;
+}
+
+.settings-page__switch-row small {
+  color: rgba(60, 41, 20, 0.68);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.settings-page__hint--warning {
+  margin-top: 12px;
+  color: rgb(154, 52, 18);
 }
 
 .settings-page__panel input {
