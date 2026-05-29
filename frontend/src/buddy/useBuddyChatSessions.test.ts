@@ -196,3 +196,137 @@ test("refreshActiveChatSession imports externally appended platform messages int
   assert.equal(hydrated.length, 2);
   assert.equal(hydrated[1][2].run_id, "run_2");
 });
+
+test("refreshActiveChatSession preserves local run messages that appear while refresh is in flight", async () => {
+  const storage = new Map<string, string>();
+  Object.defineProperty(globalThis, "window", {
+    value: {
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    },
+    configurable: true,
+  });
+
+  const initialRecords: BuddyChatMessageRecord[] = [
+    {
+      message_id: "msg_user_1",
+      session_id: "session_1",
+      role: "user",
+      content: "你好",
+      client_order: 0,
+      include_in_context: true,
+      run_id: null,
+      metadata: {},
+      created_at: "2026-05-26T00:00:00Z",
+      updated_at: "2026-05-26T00:00:00Z",
+    },
+  ];
+  const refreshedRecords: BuddyChatMessageRecord[] = [
+    ...initialRecords,
+    {
+      message_id: "msg_external_1",
+      session_id: "session_1",
+      role: "user",
+      content: "来自飞书的新消息",
+      client_order: 5,
+      include_in_context: true,
+      run_id: null,
+      metadata: { source_kind: "message_platform", platform_id: "feishu" },
+      created_at: "2026-05-26T00:01:00Z",
+      updated_at: "2026-05-26T00:01:00Z",
+    },
+  ];
+
+  globalThis.fetch = (async () => new Response(JSON.stringify(initialRecords), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  })) as typeof fetch;
+
+  type TestMessage = {
+    id: string;
+    role: "user" | "assistant";
+    content: string;
+    clientOrder: number | null;
+    runId?: string | null;
+    activityText?: string;
+    outputTrace?: unknown;
+  };
+  const messages = ref<TestMessage[]>([]);
+  const sessions = useBuddyChatSessions({
+    messages,
+    queuedTurns: ref([]),
+    activeRunId: ref(null),
+    errorMessage: ref(""),
+    t: (key) => key,
+    messageRecordToBuddyMessage: (record) => ({
+      id: record.message_id,
+      role: record.role,
+      content: record.content,
+      clientOrder: record.client_order,
+      runId: record.run_id,
+      activityText: "",
+    }),
+    resetNextBuddyMessageClientOrder: () => {},
+    resetVisibleBuddyRunState: () => {},
+    scrollMessagesToBottom: async () => {},
+    formatErrorMessage: (error) => String(error),
+  });
+
+  try {
+    await sessions.selectChatSession("session_1");
+    assert.deepEqual(messages.value.map((message) => message.id), ["msg_user_1"]);
+
+    let releaseRefresh: ((response: Response) => void) | null = null;
+    globalThis.fetch = (async () => new Promise<Response>((resolve) => {
+      releaseRefresh = resolve;
+    })) as typeof fetch;
+    const refreshPromise = sessions.refreshActiveChatSession();
+    messages.value.push(
+      {
+        id: "local_user_2",
+        role: "user",
+        content: "没事",
+        clientOrder: 1,
+        activityText: "",
+      },
+      {
+        id: "local_assistant_2",
+        role: "assistant",
+        content: "",
+        clientOrder: 2,
+        activityText: "正在运行",
+      },
+      {
+        id: "local_assistant_2:trace:__pending__",
+        role: "assistant",
+        content: "",
+        clientOrder: 3,
+        activityText: "",
+        outputTrace: { status: "running" },
+      },
+    );
+    releaseRefresh?.(new Response(JSON.stringify(refreshedRecords), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const refreshed = await refreshPromise;
+    assert.equal(refreshed, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.defineProperty(globalThis, "window", { value: originalWindow, configurable: true });
+  }
+
+  assert.deepEqual(messages.value.map((message) => message.id), [
+    "msg_user_1",
+    "local_user_2",
+    "local_assistant_2",
+    "local_assistant_2:trace:__pending__",
+    "msg_external_1",
+  ]);
+});

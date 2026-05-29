@@ -228,7 +228,7 @@ def run_graph_endpoint(payload: dict[str, Any], background_tasks: BackgroundTask
     run_state["runtime_backend"] = "langgraph"
     run_state["metadata"] = dict(executed_graph.metadata)
     run_state["metadata"]["resolved_runtime_backend"] = "langgraph"
-    run_state["graph_snapshot"] = executed_graph.model_dump(by_alias=True)
+    run_state["graph_snapshot"] = executed_graph.model_dump(by_alias=True, mode="json")
     run_state["node_status_map"] = {node_name: "idle" for node_name in executed_graph.nodes}
     touch_run_lifecycle(run_state)
     save_run(run_state)

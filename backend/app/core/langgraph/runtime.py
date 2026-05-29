@@ -442,7 +442,7 @@ def _create_child_graph_run_state(
         "resolved_runtime_backend": "langgraph",
     }
     child_state["runtime_backend"] = "langgraph"
-    child_state["graph_snapshot"] = subgraph_document.model_dump(by_alias=True)
+    child_state["graph_snapshot"] = subgraph_document.model_dump(by_alias=True, mode="json")
     child_state["node_status_map"] = {node_name: "idle" for node_name in subgraph_document.nodes}
     return child_state
 

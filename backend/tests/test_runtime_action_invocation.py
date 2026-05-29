@@ -193,6 +193,56 @@ class RuntimeActionInvocationTests(unittest.TestCase):
         self.assertFalse(result["anthropic_key_present"])
         self.assertFalse(result["custom_token_present"])
 
+    def test_script_action_runner_inherits_http_proxy_environment_without_provider_secrets(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            action_dir = Path(temp_dir) / "proxy_env_echo"
+            action_dir.mkdir()
+            entrypoint = action_dir / "run.py"
+            entrypoint.write_text(
+                "\n".join(
+                    [
+                        "import json",
+                        "import os",
+                        "print(json.dumps({",
+                        "  'status': 'succeeded',",
+                        "  'https_proxy': os.environ.get('HTTPS_PROXY'),",
+                        "  'http_proxy': os.environ.get('http_proxy'),",
+                        "  'all_proxy': os.environ.get('ALL_PROXY'),",
+                        "  'no_proxy': os.environ.get('NO_PROXY'),",
+                        "  'openai_key_present': 'OPENAI_API_KEY' in os.environ,",
+                        "}))",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            runner = ScriptActionRunner(
+                action_key="proxy_env_echo",
+                action_dir=action_dir,
+                runtime_type="python",
+                entrypoint="run.py",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "HTTPS_PROXY": "http://127.0.0.1:7897",
+                    "http_proxy": "http://127.0.0.1:7897",
+                    "ALL_PROXY": "http://127.0.0.1:7897",
+                    "NO_PROXY": "127.0.0.1,localhost",
+                    "OPENAI_API_KEY": "sk-test-secret",
+                },
+                clear=False,
+            ):
+                result = invoke_action(runner, {})
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["https_proxy"], "http://127.0.0.1:7897")
+        self.assertEqual(result["http_proxy"], "http://127.0.0.1:7897")
+        self.assertEqual(result["all_proxy"], "http://127.0.0.1:7897")
+        self.assertEqual(result["no_proxy"], "127.0.0.1,localhost")
+        self.assertFalse(result["openai_key_present"])
+
     def test_script_action_runner_spools_large_runtime_context_to_file_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             action_dir = Path(temp_dir) / "runtime_context_echo"

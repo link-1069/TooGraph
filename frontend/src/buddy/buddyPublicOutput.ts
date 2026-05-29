@@ -85,8 +85,8 @@ export function resolveBuddyPublicOutputMessageKind(input: {
   stateType: string;
   displayMode: string | null | undefined;
 }): BuddyPublicOutputMessageKind {
-  const stateType = input.stateType.trim();
-  const displayMode = String(input.displayMode ?? "").trim();
+  const stateType = normalizePersistedProtocolToken(input.stateType);
+  const displayMode = normalizePersistedProtocolToken(input.displayMode);
   if (
     stateType === "markdown" ||
     stateType === "html" ||
@@ -98,6 +98,12 @@ export function resolveBuddyPublicOutputMessageKind(input: {
     return "text";
   }
   return "card";
+}
+
+function normalizePersistedProtocolToken(value: unknown) {
+  const raw = String(value ?? "").trim();
+  const enumMatch = /^(?:NodeSystemStateType|DisplayMode)\.([A-Z0-9_]+)$/.exec(raw);
+  return (enumMatch?.[1] ?? raw).toLowerCase();
 }
 
 export function isBuddyPublicOutputMessageVisible(output: BuddyPublicOutputMessage | null | undefined) {

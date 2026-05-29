@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.buddy import store as buddy_store
 from app.core.runtime.run_tree import create_child_run_state
 from app.core.runtime.state import create_initial_run_state
+from app.core.schemas.node_system import NodeSystemStateDefinition, NodeSystemStateType
 from app.core.schemas.run import RunDetail
 from app.core.storage import database, run_store
 
@@ -75,6 +76,38 @@ def test_save_run_persists_agent_stop_reason(tmp_path: Path, monkeypatch: pytest
     assert loaded["stop_reason"] == "capability_budget_exhausted"
     assert detail.stop_reason == "capability_budget_exhausted"
     assert detail.artifacts.stop_reason == "capability_budget_exhausted"
+
+
+def test_save_run_serializes_state_type_enums_as_protocol_values(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_temp_run_store(tmp_path, monkeypatch)
+    run = _run_state("run_enum_state_type", "2026-05-26T00:00:00Z")
+    run["status"] = "completed"
+    run["graph_snapshot"] = {
+        "graph_id": "graph_enum_state_type",
+        "state_schema": {
+            "public_response": NodeSystemStateDefinition(
+                name="模型整理回复",
+                type=NodeSystemStateType.MARKDOWN,
+            ).model_dump(by_alias=True),
+        },
+        "nodes": {},
+    }
+
+    run_store.save_run(run)
+
+    loaded = run_store.load_run("run_enum_state_type")
+    with sqlite3.connect(database.DB_PATH) as connection:
+        raw_type = connection.execute(
+            """
+            SELECT json_extract(graph_snapshot_json, '$.state_schema.public_response.type')
+            FROM graph_run_snapshots
+            WHERE run_id = ? AND kind = 'current'
+            """,
+            ("run_enum_state_type",),
+        ).fetchone()[0]
+
+    assert raw_type == "markdown"
+    assert loaded["graph_snapshot"]["state_schema"]["public_response"]["type"] == "markdown"
 
 
 def test_save_run_projects_capability_usage_events_for_runtime_invocations(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

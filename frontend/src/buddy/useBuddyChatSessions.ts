@@ -9,7 +9,9 @@ import {
 import type { BuddyChatMessageRecord, BuddyChatSession } from "../types/buddy.ts";
 
 type BuddySessionMessage = {
+  id?: string;
   content: string;
+  clientOrder?: number | null;
 };
 
 type BuddyChatSessionsOptions<Message extends BuddySessionMessage> = {
@@ -51,6 +53,32 @@ function buildChatMessageRecordsSignature(records: BuddyChatMessageRecord[]) {
       record.updated_at,
     ].join(":"))
     .join("|");
+}
+
+function getBuddySessionMessageId(message: BuddySessionMessage) {
+  return typeof message.id === "string" ? message.id.trim() : "";
+}
+
+function resolveBuddySessionMessageClientOrder(message: BuddySessionMessage, fallbackIndex: number) {
+  const clientOrder = message.clientOrder;
+  if (typeof clientOrder === "number" && Number.isFinite(clientOrder)) {
+    return clientOrder;
+  }
+  return Number.MAX_SAFE_INTEGER + fallbackIndex;
+}
+
+function sortBuddySessionMessagesByClientOrder<Message extends BuddySessionMessage>(messages: Message[]) {
+  return messages
+    .map((message, index) => ({
+      message,
+      index,
+      clientOrder: resolveBuddySessionMessageClientOrder(message, index),
+    }))
+    .sort((left, right) => {
+      const orderDelta = left.clientOrder - right.clientOrder;
+      return orderDelta === 0 ? left.index - right.index : orderDelta;
+    })
+    .map((entry) => entry.message);
 }
 
 export function useBuddyChatSessions<Message extends BuddySessionMessage>({
@@ -185,11 +213,14 @@ export function useBuddyChatSessions<Message extends BuddySessionMessage>({
     }
     try {
       const records = await fetchBuddyChatMessages(sessionId);
+      if (sessionId !== activeSessionId.value || isSessionSwitchLocked.value) {
+        return false;
+      }
       const nextSignature = buildChatMessageRecordsSignature(records);
       if (nextSignature === activeSessionMessageSignature) {
         return false;
       }
-      await applyLoadedChatMessages(records);
+      await applyLoadedChatMessages(records, { mergeExisting: true });
       await scrollMessagesToBottom();
       return true;
     } catch (error) {
@@ -198,12 +229,54 @@ export function useBuddyChatSessions<Message extends BuddySessionMessage>({
     }
   }
 
-  async function applyLoadedChatMessages(records: BuddyChatMessageRecord[]) {
+  async function applyLoadedChatMessages(
+    records: BuddyChatMessageRecord[],
+    options: { mergeExisting?: boolean } = {},
+  ) {
     activeSessionMessageSignature = buildChatMessageRecordsSignature(records);
-    messages.value = records.map(messageRecordToBuddyMessage);
+    if (options.mergeExisting) {
+      mergeLoadedChatMessages(records);
+    } else {
+      messages.value = records.map(messageRecordToBuddyMessage);
+      resetVisibleBuddyRunState();
+    }
     resetNextBuddyMessageClientOrder();
-    resetVisibleBuddyRunState();
     await hydrateLoadedRunDisplays?.(records);
+  }
+
+  function mergeLoadedChatMessages(records: BuddyChatMessageRecord[]) {
+    const loadedMessages = records.map(messageRecordToBuddyMessage);
+    const loadedMessageIds = new Set(
+      loadedMessages.map(getBuddySessionMessageId).filter((messageId) => messageId.length > 0),
+    );
+    const existingMessagesById = new Map<string, Message>();
+    for (const message of messages.value) {
+      const messageId = getBuddySessionMessageId(message);
+      if (messageId) {
+        existingMessagesById.set(messageId, message);
+      }
+    }
+
+    const mergedMessages: Message[] = [];
+    for (const loadedMessage of loadedMessages) {
+      const messageId = getBuddySessionMessageId(loadedMessage);
+      const existingMessage = messageId ? existingMessagesById.get(messageId) : null;
+      if (existingMessage) {
+        Object.assign(existingMessage, loadedMessage);
+        mergedMessages.push(existingMessage);
+      } else {
+        mergedMessages.push(loadedMessage);
+      }
+    }
+    for (const message of messages.value) {
+      const messageId = getBuddySessionMessageId(message);
+      if (messageId && loadedMessageIds.has(messageId)) {
+        continue;
+      }
+      mergedMessages.push(message);
+    }
+
+    messages.value = sortBuddySessionMessagesByClientOrder(mergedMessages);
   }
 
   async function deleteSession(sessionId: string) {

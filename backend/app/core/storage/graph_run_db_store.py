@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from enum import Enum
 import json
 from typing import Any
 
@@ -945,8 +946,10 @@ def _detail_payload(run_state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _redact_permission_approval_audit(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return _redact_permission_approval_audit(value.value)
     if isinstance(value, dict):
-        return {str(key): _redact_permission_approval_audit(raw_value) for key, raw_value in value.items()}
+        return {_json_object_key(key): _redact_permission_approval_audit(raw_value) for key, raw_value in value.items()}
     if isinstance(value, list):
         return [_redact_permission_approval_audit(item) for item in value]
     if isinstance(value, str):
@@ -1097,13 +1100,21 @@ def _json(value: Any) -> str:
 
 
 def _redact_run_record_value(value: Any) -> Any:
+    if isinstance(value, Enum):
+        return _redact_run_record_value(value.value)
     if isinstance(value, dict):
-        return {str(key): _redact_run_record_value(raw_value) for key, raw_value in value.items()}
+        return {_json_object_key(key): _redact_run_record_value(raw_value) for key, raw_value in value.items()}
     if isinstance(value, list):
         return [_redact_run_record_value(item) for item in value]
     if isinstance(value, str):
         return _redact_run_record_text(value)
     return value
+
+
+def _json_object_key(value: Any) -> str:
+    if isinstance(value, Enum):
+        return str(value.value)
+    return str(value)
 
 
 def _redact_run_record_text(value: Any) -> str:

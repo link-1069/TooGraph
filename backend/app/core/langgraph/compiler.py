@@ -80,7 +80,7 @@ def compile_graph_to_langgraph_plan(graph: NodeSystemGraphPayload) -> LangGraphB
             writes=[binding.state for binding in node.writes],
             action_keys=attached_actions,
             tool_keys=attached_tools,
-            config=node.config.model_dump(by_alias=True),
+            config=node.config.model_dump(by_alias=True, mode="json"),
         )
 
     runtime_nodes = {
@@ -260,7 +260,7 @@ def compile_graph_to_langgraph_plan(graph: NodeSystemGraphPayload) -> LangGraphB
         graph_id=graph.graph_id or "",
         name=graph.name,
         state_schema={
-            state_name: definition.model_dump(by_alias=True)
+            state_name: definition.model_dump(by_alias=True, mode="json")
             for state_name, definition in graph.state_schema.items()
         },
         nodes=graph_nodes,

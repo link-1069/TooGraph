@@ -113,6 +113,14 @@ test("resolveBuddyPublicOutputMessageKind separates text bubbles from cards", ()
   assert.equal(resolveBuddyPublicOutputMessageKind({ stateType: "file", displayMode: "documents" }), "card");
 });
 
+test("resolveBuddyPublicOutputMessageKind treats persisted enum state types as protocol values", () => {
+  assert.equal(resolveBuddyPublicOutputMessageKind({ stateType: "NodeSystemStateType.MARKDOWN", displayMode: "auto" }), "text");
+  assert.equal(resolveBuddyPublicOutputMessageKind({ stateType: "NodeSystemStateType.TEXT", displayMode: "auto" }), "text");
+  assert.equal(resolveBuddyPublicOutputMessageKind({ stateType: "NodeSystemStateType.JSON", displayMode: "auto" }), "card");
+  assert.equal(resolveBuddyPublicOutputMessageKind({ stateType: "json", displayMode: "DisplayMode.MARKDOWN" }), "text");
+  assert.equal(resolveBuddyPublicOutputMessageKind({ stateType: "json", displayMode: "DisplayMode.JSON" }), "card");
+});
+
 test("reduceBuddyPublicOutputEvent starts output timing from upstream node start and completes on matching state", () => {
   const bindings = [
     {
