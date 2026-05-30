@@ -60,43 +60,77 @@
           <article v-if="loading && treeItems.length === 0" class="model-logs-page__empty">{{ t("common.loadingModelLogs") }}</article>
           <article v-else-if="error" class="model-logs-page__empty">{{ t("common.failedToLoad", { error }) }}</article>
           <article v-else-if="logs.length === 0" class="model-logs-page__empty">{{ t("modelLogs.empty") }}</article>
-          <div v-else class="model-logs-page__tree" role="tree">
-            <button
-              v-for="item in treeItems"
-              :key="item.key"
-              type="button"
-              class="model-logs-page__tree-node"
-              :class="{
-                'model-logs-page__tree-node--active': treeItemIsActive(item),
-                'model-logs-page__tree-node--error': treeItemHasError(item),
-                'model-logs-page__tree-node--muted': !item.selectable,
-                [`model-logs-page__tree-node--${item.kind}`]: true,
-              }"
-              :style="treeItemStyle(item)"
-              :disabled="!item.selectable"
-              role="treeitem"
-              @click="selectTreeItem(item)"
-            >
-              <span class="model-logs-page__tree-children" aria-hidden="true"></span>
-              <span class="model-logs-page__tree-icon" aria-hidden="true">
-                <ElIcon v-if="item.kind === 'run'"><Connection /></ElIcon>
-                <ElIcon v-else-if="item.treeNode?.node_type === 'subgraph'"><Share /></ElIcon>
-                <ElIcon v-else-if="item.kind === 'model_call'"><ChatDotRound /></ElIcon>
-                <ElIcon v-else><Cpu /></ElIcon>
-              </span>
-              <span class="model-logs-page__tree-main">
-                <span class="model-logs-page__tree-heading">
-                  <strong>{{ treeItemLabel(item) }}</strong>
-                  <span class="model-logs-page__tree-kind">{{ treeItemKind(item) }}</span>
-                </span>
-                <span class="model-logs-page__tree-meta">
-                  <span>{{ treeItemTimestamp(item) }}</span>
-                  <span v-if="treeItemDuration(item)">{{ treeItemDuration(item) }}</span>
-                  <span v-if="treeItemProvider(item)">{{ treeItemProvider(item) }}</span>
-                </span>
-                <span v-if="treeItemPath(item)" class="model-logs-page__tree-path">{{ treeItemPath(item) }}</span>
-              </span>
-            </button>
+          <div v-else class="model-logs-page__outline-shell">
+            <div class="model-logs-page__outline-toolbar">
+              <button type="button" :title="t('modelLogs.expandAll')" :aria-label="t('modelLogs.expandAll')" @click="expandAllTreeItems">
+                <ElIcon aria-hidden="true"><ArrowDown /></ElIcon>
+              </button>
+              <button type="button" :title="t('modelLogs.collapseAll')" :aria-label="t('modelLogs.collapseAll')" @click="collapseAllTreeItems">
+                <ElIcon aria-hidden="true"><ArrowRight /></ElIcon>
+              </button>
+            </div>
+            <div class="model-logs-page__outline" role="tree">
+              <div
+                v-for="item in treeItems"
+                :key="item.key"
+                class="model-logs-page__outline-row"
+                :class="{
+                  'model-logs-page__outline-row--active': treeItemIsActive(item),
+                  'model-logs-page__outline-row--error': treeItemHasError(item),
+                  [`model-logs-page__outline-row--${item.kind}`]: true,
+                }"
+                :style="treeItemStyle(item)"
+                role="treeitem"
+                :aria-level="item.depth + 1"
+                :aria-selected="treeItemIsActive(item)"
+                :aria-expanded="item.hasChildren ? item.expanded : undefined"
+              >
+                <span class="model-logs-page__outline-branch" aria-hidden="true"></span>
+                <button
+                  v-if="item.hasChildren"
+                  type="button"
+                  class="model-logs-page__outline-toggle"
+                  :aria-label="treeItemToggleLabel(item)"
+                  :title="treeItemToggleLabel(item)"
+                  @click.stop="toggleTreeItem(item)"
+                >
+                  <ElIcon aria-hidden="true">
+                    <ArrowDown v-if="item.expanded" />
+                    <ArrowRight v-else />
+                  </ElIcon>
+                </button>
+                <span v-else class="model-logs-page__outline-toggle model-logs-page__outline-toggle--placeholder" aria-hidden="true"></span>
+                <button
+                  type="button"
+                  class="model-logs-page__outline-node"
+                  :class="{
+                    'model-logs-page__outline-node--active': treeItemIsActive(item),
+                    'model-logs-page__outline-node--error': treeItemHasError(item),
+                    'model-logs-page__outline-node--muted': !item.selectable,
+                    [`model-logs-page__outline-node--${item.kind}`]: true,
+                  }"
+                  :disabled="!item.selectable"
+                  :title="treeItemTitle(item)"
+                  @click="selectTreeItem(item)"
+                >
+                  <span class="model-logs-page__outline-icon" aria-hidden="true">
+                    <ElIcon v-if="item.kind === 'run'"><Connection /></ElIcon>
+                    <ElIcon v-else-if="item.kind === 'loop_group'"><Refresh /></ElIcon>
+                    <ElIcon v-else-if="item.treeNode?.node_type === 'subgraph'"><Share /></ElIcon>
+                    <ElIcon v-else-if="item.kind === 'model_call'"><ChatDotRound /></ElIcon>
+                    <ElIcon v-else><Cpu /></ElIcon>
+                  </span>
+                  <span class="model-logs-page__outline-main">
+                    <span class="model-logs-page__outline-label">
+                      <strong>{{ treeItemLabel(item) }}</strong>
+                    </span>
+                    <span v-if="treeItemCallCountLabel(item)" class="model-logs-page__outline-count" aria-hidden="true">
+                      {{ treeItemCallCountLabel(item) }}
+                    </span>
+                  </span>
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -448,7 +482,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChatDotRound, Connection, Cpu, Refresh, Share, View } from "@element-plus/icons-vue";
+import { ArrowDown, ArrowRight, ChatDotRound, Connection, Cpu, Refresh, Share, View } from "@element-plus/icons-vue";
 import { ElDialog, ElIcon, ElInput, ElInputNumber, ElMessage, ElPagination } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -457,6 +491,11 @@ import { fetchModelLogs, updateModelLogRetention } from "@/api/modelLogs";
 import AppShell from "@/layouts/AppShell.vue";
 import type { ModelLogEntry, ModelLogTreeNode, ProviderCacheSummary } from "@/types/model-log";
 import { highlightJson } from "./modelLogsJsonHighlight.ts";
+import {
+  buildModelLogTreeItems,
+  collectExpandableModelLogTreeKeys,
+  type ModelLogTreeItem,
+} from "./modelLogsTreeModel.ts";
 import {
   buildProviderCacheDiagnostic,
   buildProviderCostBudgetDegradationDiagnostic,
@@ -497,16 +536,6 @@ const rawDialogVisible = ref(false);
 const rawDialogKind = ref<"request" | "response">("request");
 let searchTimer: number | null = null;
 
-type ModelLogTreeItem = {
-  key: string;
-  kind: "run" | "graph_node" | "model_call";
-  depth: number;
-  treeNode?: ModelLogTreeNode;
-  log?: ModelLogEntry;
-  logIds: string[];
-  selectable: boolean;
-};
-
 const selectedLog = computed(() => {
   if (!logs.value.length) {
     return null;
@@ -539,7 +568,8 @@ const cacheTokenLabel = computed(() =>
   }),
 );
 const logsById = computed(() => new Map(logs.value.map((entry) => [entry.id, entry])));
-const treeItems = computed(() => flattenTreeItems(runTrees.value, logsById.value));
+const expandedTreeKeys = ref<Set<string>>(new Set());
+const treeItems = computed(() => buildModelLogTreeItems(runTrees.value, logsById.value, expandedTreeKeys.value));
 const selectedStreamSummary = computed(() => (selectedLog.value ? getStreamSummary(selectedLog.value) : null));
 const selectedProviderFallback = computed(() => buildProviderFallbackDiagnostic(selectedLog.value ?? {}));
 const selectedProviderCostBudgetDegradation = computed(() =>
@@ -583,54 +613,32 @@ function getRecordArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => isRecord(item)) : [];
 }
 
-function flattenTreeItems(
-  nodes: ModelLogTreeNode[],
-  logIndex: Map<string, ModelLogEntry>,
-  depth = 0,
-): ModelLogTreeItem[] {
-  const items: ModelLogTreeItem[] = [];
-  for (const node of nodes) {
-    const logIds = collectModelLogIds(node);
-    items.push({
-      key: node.id,
-      kind: node.kind,
-      depth,
-      treeNode: node,
-      logIds,
-      selectable: logIds.length > 0,
-    });
-    for (const logId of node.model_log_ids || []) {
-      const log = logIndex.get(logId);
-      if (!log) {
-        continue;
-      }
-      items.push({
-        key: `model:${log.id}`,
-        kind: "model_call",
-        depth: depth + 1,
-        log,
-        logIds: [log.id],
-        selectable: true,
-      });
-    }
-    items.push(...flattenTreeItems(node.children || [], logIndex, depth + 1));
-  }
-  return items;
-}
-
-function collectModelLogIds(node: ModelLogTreeNode): string[] {
-  const ids = [...(node.model_log_ids || [])];
-  for (const child of node.children || []) {
-    ids.push(...collectModelLogIds(child));
-  }
-  return Array.from(new Set(ids));
-}
-
 function selectTreeItem(item: ModelLogTreeItem) {
   const logId = item.log?.id ?? item.logIds[0] ?? "";
   if (logId) {
     selectLog(logId);
   }
+}
+
+function toggleTreeItem(item: ModelLogTreeItem) {
+  if (!item.hasChildren) {
+    return;
+  }
+  const nextKeys = new Set(expandedTreeKeys.value);
+  if (nextKeys.has(item.key)) {
+    nextKeys.delete(item.key);
+  } else {
+    nextKeys.add(item.key);
+  }
+  expandedTreeKeys.value = nextKeys;
+}
+
+function expandAllTreeItems() {
+  expandedTreeKeys.value = collectExpandableModelLogTreeKeys(runTrees.value);
+}
+
+function collapseAllTreeItems() {
+  expandedTreeKeys.value = new Set();
 }
 
 function treeItemIsActive(item: ModelLogTreeItem) {
@@ -649,12 +657,18 @@ function treeItemLabel(item: ModelLogTreeItem) {
   if (item.log) {
     return item.log.phase || item.log.request_kind || item.log.model || item.log.provider_id;
   }
+  if (item.kind === "loop_group") {
+    return t("modelLogs.capabilityLoop", { index: item.loopIndex ?? 1 });
+  }
   return item.treeNode?.label || item.treeNode?.node_id || item.treeNode?.run_id || t("common.noSummary");
 }
 
 function treeItemKind(item: ModelLogTreeItem) {
   if (item.kind === "model_call") {
     return item.log?.request_kind || t("modelLogs.modelCall");
+  }
+  if (item.kind === "loop_group") {
+    return t("modelLogs.capabilityLoopKind");
   }
   if (item.kind === "run") {
     return t("modelLogs.rootRun");
@@ -665,24 +679,30 @@ function treeItemKind(item: ModelLogTreeItem) {
   return "LLM";
 }
 
-function treeItemTimestamp(item: ModelLogTreeItem) {
-  return formatTimestamp(item.log?.timestamp || item.treeNode?.started_at || "");
-}
-
-function treeItemDuration(item: ModelLogTreeItem) {
-  const duration = item.log?.duration_ms ?? item.treeNode?.duration_ms;
-  return typeof duration === "number" ? formatDuration(duration) : "";
-}
-
-function treeItemProvider(item: ModelLogTreeItem) {
-  return item.log?.provider_id || item.treeNode?.status || "";
-}
-
-function treeItemPath(item: ModelLogTreeItem) {
-  if (item.log) {
-    return item.log.path;
+function treeItemCallCountLabel(item: ModelLogTreeItem) {
+  if ((item.kind !== "run" && item.kind !== "loop_group") || item.logIds.length === 0) {
+    return "";
   }
-  return item.treeNode?.execution_id || item.treeNode?.run_id || "";
+  return t("modelLogs.callCount", { count: item.logIds.length });
+}
+
+function treeItemTitle(item: ModelLogTreeItem) {
+  const timestamp = formatTimestamp(item.log?.timestamp || item.treeNode?.started_at || "");
+  const duration = item.log
+    ? formatDuration(item.log.duration_ms)
+    : typeof item.treeNode?.duration_ms === "number"
+      ? formatDuration(item.treeNode.duration_ms)
+      : "";
+  const provider = item.log?.provider_id || item.treeNode?.status || "";
+  return [treeItemLabel(item), treeItemKind(item), treeItemCallCountLabel(item), timestamp, duration, provider]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function treeItemToggleLabel(item: ModelLogTreeItem) {
+  return t(item.expanded ? "modelLogs.collapseNode" : "modelLogs.expandNode", {
+    label: treeItemLabel(item),
+  });
 }
 
 function getStreamSummary(log: ModelLogEntry): StreamSummary | null {
@@ -754,6 +774,7 @@ async function loadLogs() {
     });
     logs.value = page.entries;
     runTrees.value = page.run_trees;
+    expandedTreeKeys.value = new Set();
     providerCacheSummary.value = normalizeProviderCacheSummary(page.provider_cache_summary);
     total.value = page.total;
     currentPage.value = page.page;
@@ -1117,8 +1138,7 @@ onBeforeUnmount(() => {
 }
 
 .model-logs-page__overview span,
-.model-logs-page__status,
-.model-logs-page__tree-kind {
+.model-logs-page__status {
   border: 1px solid rgba(154, 52, 18, 0.12);
   border-radius: 999px;
   padding: 5px 10px;
@@ -1139,129 +1159,213 @@ onBeforeUnmount(() => {
 .model-logs-page__entry-list {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: 8px;
   height: 100%;
   max-height: none;
   min-height: 420px;
   overflow: auto;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.52);
-}
-
-.model-logs-page__tree {
-  display: grid;
-  gap: 7px;
-}
-
-.model-logs-page__tree-node {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
-  width: 100%;
   border: 1px solid rgba(154, 52, 18, 0.1);
-  border-radius: 14px;
-  padding: 10px 12px 10px calc(12px + var(--tree-depth, 0) * 18px);
-  background: rgba(255, 253, 249, 0.82);
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  border-radius: 16px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.58);
 }
 
-.model-logs-page__tree-node:hover:not(:disabled),
-.model-logs-page__tree-node--active {
-  border-color: rgba(154, 52, 18, 0.26);
-  background: rgba(255, 248, 240, 0.98);
-  box-shadow: 0 12px 24px rgba(61, 43, 24, 0.08);
-  transform: translateY(-1px);
+.model-logs-page__outline-shell {
+  display: grid;
+  gap: 8px;
 }
 
-.model-logs-page__tree-node--error {
-  border-color: rgba(220, 38, 38, 0.16);
+.model-logs-page__outline-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  border-bottom: 1px solid rgba(154, 52, 18, 0.08);
+  padding: 0 0 8px;
 }
 
-.model-logs-page__tree-node--muted {
-  cursor: default;
-}
-
-.model-logs-page__tree-children {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 16px;
-  width: calc(var(--tree-depth, 0) * 18px);
-  pointer-events: none;
-}
-
-.model-logs-page__tree-children::before {
-  position: absolute;
-  top: -8px;
-  bottom: -8px;
-  left: 0;
-  border-left: 1px solid rgba(154, 52, 18, 0.14);
-  content: "";
-  opacity: calc(var(--tree-depth, 0) * 0.45);
-}
-
-.model-logs-page__tree-icon {
+.model-logs-page__outline-toolbar button {
   display: inline-grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   place-items: center;
-  border: 1px solid rgba(37, 99, 235, 0.14);
-  border-radius: 9px;
-  background: rgba(239, 246, 255, 0.82);
-  color: rgb(37, 99, 235);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(120, 53, 15, 0.68);
+  cursor: pointer;
 }
 
-.model-logs-page__tree-node--run .model-logs-page__tree-icon {
-  border-color: rgba(154, 52, 18, 0.14);
-  background: rgba(255, 248, 240, 0.92);
+.model-logs-page__outline-toolbar button:hover {
+  border-color: rgba(154, 52, 18, 0.16);
+  background: rgba(255, 248, 240, 0.86);
   color: rgb(154, 52, 18);
 }
 
-.model-logs-page__tree-node--error .model-logs-page__tree-icon {
-  border-color: rgba(220, 38, 38, 0.18);
-  background: rgba(254, 242, 242, 0.92);
+.model-logs-page__outline {
+  display: grid;
+  gap: 1px;
+}
+
+.model-logs-page__outline-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: calc(var(--tree-depth, 0) * 18px) 20px minmax(0, 1fr);
+  min-height: 30px;
+  align-items: stretch;
+}
+
+.model-logs-page__outline-row::before {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: calc(var(--tree-depth, 0) * 18px + 11px);
+  border-left: 1px solid rgba(154, 52, 18, 0.11);
+  content: "";
+  opacity: min(var(--tree-depth, 0), 1);
+  pointer-events: none;
+}
+
+.model-logs-page__outline-row--active::after {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: calc(var(--tree-depth, 0) * 18px + 20px);
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(154, 52, 18, 0.48);
+  content: "";
+  pointer-events: none;
+}
+
+.model-logs-page__outline-branch {
+  position: relative;
+  pointer-events: none;
+}
+
+.model-logs-page__outline-branch::after {
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 11px;
+  border-top: 1px solid rgba(154, 52, 18, 0.11);
+  content: "";
+  opacity: min(var(--tree-depth, 0), 1);
+}
+
+.model-logs-page__outline-toggle {
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  width: 20px;
+  min-width: 20px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(120, 53, 15, 0.58);
+  cursor: pointer;
+}
+
+.model-logs-page__outline-toggle:hover {
+  background: rgba(255, 248, 240, 0.9);
+  color: rgb(154, 52, 18);
+}
+
+.model-logs-page__outline-toggle--placeholder {
+  cursor: default;
+}
+
+.model-logs-page__outline-toggle--placeholder:hover {
+  background: transparent;
+}
+
+.model-logs-page__outline-node {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 7px 3px 5px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.model-logs-page__outline-node:hover:not(:disabled),
+.model-logs-page__outline-node--active {
+  background: rgba(255, 248, 240, 0.72);
+}
+
+.model-logs-page__outline-node--error {
+  color: rgb(185, 28, 28);
+}
+
+.model-logs-page__outline-node--muted {
+  cursor: default;
+}
+
+.model-logs-page__outline-icon {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: rgba(37, 99, 235, 0.82);
+  font-size: 0.76rem;
+}
+
+.model-logs-page__outline-node--run .model-logs-page__outline-icon,
+.model-logs-page__outline-node--loop_group .model-logs-page__outline-icon {
+  color: rgb(154, 52, 18);
+}
+
+.model-logs-page__outline-node--error .model-logs-page__outline-icon {
   color: rgb(220, 38, 38);
 }
 
-.model-logs-page__tree-main,
-.model-logs-page__tree-heading {
-  display: grid;
+.model-logs-page__outline-main,
+.model-logs-page__outline-label {
   min-width: 0;
 }
 
-.model-logs-page__tree-heading {
+.model-logs-page__outline-main {
+  display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
 
-.model-logs-page__tree-heading strong {
+.model-logs-page__outline-label {
+  display: block;
+}
+
+.model-logs-page__outline-label strong {
+  display: block;
   overflow: hidden;
   color: var(--toograph-text-strong);
+  font-size: 0.82rem;
+  font-weight: 760;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.model-logs-page__tree-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  margin-top: 6px;
-  color: rgba(60, 41, 20, 0.62);
-  font-size: 0.78rem;
-}
-
-.model-logs-page__tree-path {
-  margin-top: 6px;
-  overflow: hidden;
-  color: rgba(60, 41, 20, 0.56);
+.model-logs-page__outline-count {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: center;
+  color: rgba(120, 53, 15, 0.46);
   font-family: var(--toograph-font-mono);
-  font-size: 0.74rem;
-  text-overflow: ellipsis;
+  font-size: 0.68rem;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.2;
   white-space: nowrap;
 }
 

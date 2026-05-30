@@ -18,12 +18,19 @@ test("ModelLogsPage renders a themed paginated raw model request log", () => {
   assert.match(pageSource, /cache_resource_retention_days:\s*nextCacheResourceDays/);
   assert.match(pageSource, /<ElInput[\s\S]*v-model="query"/);
   assert.match(pageSource, /<ElPagination[\s\S]*v-model:current-page="currentPage"[\s\S]*:page-size="pageSize"[\s\S]*:total="total"/);
-  assert.match(pageSource, /model-logs-page__tree-node/);
+  assert.match(pageSource, /model-logs-page__outline-node/);
   assert.match(pageSource, /v-for="item in treeItems"/);
   assert.match(pageSource, /selectTreeItem\(item\)/);
   assert.match(pageSource, /runTrees/);
-  assert.match(pageSource, /flattenTreeItems/);
-  assert.match(pageSource, /model-logs-page__tree-children/);
+  assert.match(pageSource, /buildModelLogTreeItems/);
+  assert.match(pageSource, /collectExpandableModelLogTreeKeys/);
+  assert.match(pageSource, /expandedTreeKeys/);
+  assert.match(pageSource, /toggleTreeItem\(item\)/);
+  assert.match(pageSource, /expandAllTreeItems/);
+  assert.match(pageSource, /collapseAllTreeItems/);
+  assert.match(pageSource, /model-logs-page__outline-row/);
+  assert.match(pageSource, /model-logs-page__outline-toggle/);
+  assert.match(pageSource, /:aria-expanded="item\.hasChildren \? item\.expanded : undefined"/);
   assert.match(pageSource, /model-logs-page__retention/);
   assert.match(pageSource, /providerCacheSummary/);
   assert.match(pageSource, /cacheHitRateLabel/);
@@ -129,4 +136,25 @@ test("ModelLogsPage renders a themed paginated raw model request log", () => {
   assert.match(pageSource, /\.model-logs-page__stream-raw \{[\s\S]*overflow:\s*auto;/);
   assert.match(pageSource, /@media \(max-width:\s*980px\) \{[\s\S]*\.model-logs-page__raw-grid \{[\s\S]*grid-template-columns:\s*1fr;/);
   assert.doesNotMatch(pageSource, /LM Core Monitor/);
+});
+
+test("ModelLogsPage keeps the left log tree collapsed and name-first", () => {
+  assert.match(pageSource, /runTrees\.value = page\.run_trees;\s*expandedTreeKeys\.value = new Set\(\);/);
+  assert.doesNotMatch(pageSource, /runTrees\.value = page\.run_trees;\s*expandedTreeKeys\.value = collectExpandableModelLogTreeKeys\(page\.run_trees\);/);
+  assert.doesNotMatch(pageSource, /<span class="model-logs-page__outline-meta">[\s\S]*treeItemTimestamp/);
+  assert.doesNotMatch(pageSource, /<span class="model-logs-page__outline-meta">[\s\S]*treeItemDuration/);
+  assert.doesNotMatch(pageSource, /<span class="model-logs-page__outline-meta">[\s\S]*treeItemProvider/);
+  assert.match(pageSource, /model-logs-page__outline-label/);
+  assert.match(pageSource, /model-logs-page__outline-count/);
+  assert.match(pageSource, /treeItemCallCountLabel/);
+  assert.match(pageSource, /modelLogs\.capabilityLoop/);
+  assert.match(pageSource, /item\.kind === 'loop_group'/);
+  assert.doesNotMatch(pageSource, /model-logs-page__tree-node/);
+  assert.doesNotMatch(pageSource, /model-logs-page__tree-badges/);
+});
+
+test("ModelLogsPage keeps outline call counts numeric only", () => {
+  assert.match(pageSource, /return t\("modelLogs\.callCount", \{ count: item\.logIds\.length \}\);/);
+  assert.doesNotMatch(pageSource, /callCount:\s*"\{count\} 次"/);
+  assert.doesNotMatch(pageSource, /callCount:\s*"\{count\} calls"/);
 });
