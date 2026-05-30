@@ -154,19 +154,15 @@ test("ModelProvidersPage shows and edits provider models from each card", () => 
   assert.match(pageSource, /\.model-providers-page__model-picker-option--selected \{[\s\S]*color:\s*rgb\(37,\s*99,\s*235\);/);
 });
 
-test("ModelProvidersPage shows a provider capability matrix", () => {
-  assert.match(pageSource, /settings\.providerCapabilityMatrix/);
-  assert.match(pageSource, /settings\.providerCapabilityPromptCache/);
-  assert.match(pageSource, /shortLabel:\s*"Cache"/);
-  assert.match(pageSource, /class="model-providers-page__capability-matrix"/);
-  assert.match(pageSource, /v-for="capability in providerCapabilityOptions"/);
-  assert.match(pageSource, /type="checkbox"/);
-  assert.match(pageSource, /:checked="isModelCapabilityEnabled\(provider, modelName, capability\.key\)"/);
-  assert.match(pageSource, /@change="toggleProviderModelCapability\(provider, modelName, capability\.key\)"/);
-  assert.match(pageSource, /modelPermissionSummary\(provider, modelName\)/);
-  assert.match(pageSource, /function toggleProviderModelCapability\(provider: ProviderDraft, modelName: string, capabilityKey: ProviderModelCapabilityKey\)/);
-  assert.match(pageSource, /normalizePermissionsForCapabilities/);
-  assert.match(pageSource, /\.model-providers-page__capability-toggle \{[\s\S]*border:/);
+test("ModelProvidersPage does not expose provider capability routing controls", () => {
+  assert.doesNotMatch(pageSource, /settings\.providerCapabilityMatrix/);
+  assert.doesNotMatch(pageSource, /settings\.providerCapabilityPromptCache/);
+  assert.doesNotMatch(pageSource, /class="model-providers-page__capability-matrix"/);
+  assert.doesNotMatch(pageSource, /v-for="capability in providerCapabilityOptions"/);
+  assert.doesNotMatch(pageSource, /toggleProviderModelCapability/);
+  assert.doesNotMatch(pageSource, /modelPermissionSummary/);
+  assert.doesNotMatch(pageSource, /normalizePermissionsForCapabilities/);
+  assert.doesNotMatch(pageSource, /\.model-providers-page__capability-toggle \{/);
 });
 
 test("ModelProvidersPage opens provider configuration in a compact popover", () => {

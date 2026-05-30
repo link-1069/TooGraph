@@ -432,67 +432,13 @@ def rerank_documents_with_model_ref(
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
     _LAST_MODEL_REQUEST_LOG.set({})
 
-    try:
-        return _rerank_documents_with_model_ref_once(
-            model_ref=requested_model_ref,
-            saved_providers=saved_providers,
-            query=query,
-            documents=documents,
-            top_n=top_n,
-        )
-    except Exception as primary_exc:
-        fallback_result = resolve_provider_fallback(
-            {
-                "requested_model_ref": requested_model_ref,
-                "required_capabilities": ["rerank"],
-                "required_permissions": ["rerank"],
-                "failure_event": _provider_failure_event(
-                    model_ref=requested_model_ref,
-                    provider_id=provider_id,
-                    model_name=model_name,
-                    exc=primary_exc,
-                ),
-                "provider_candidates": _provider_fallback_candidates(
-                    requested_provider_id=provider_id,
-                    requested_model_name=model_name,
-                    saved_providers=saved_providers,
-                    default_permissions=["rerank"],
-                ),
-            }
-        )
-        selected_model_ref = str(fallback_result.get("selected_model_ref") or "").strip()
-        if not selected_model_ref or selected_model_ref == requested_model_ref:
-            raise
-
-        fallback_trace = _runtime_fallback_trace(fallback_result)
-        fallback_errors: list[str] = []
-        for candidate_model_ref in _fallback_candidate_model_refs(fallback_result, fallback_trace, requested_model_ref):
-            try:
-                results, meta = _rerank_documents_with_model_ref_once(
-                    model_ref=candidate_model_ref,
-                    saved_providers=saved_providers,
-                    query=query,
-                    documents=documents,
-                    top_n=top_n,
-                )
-            except Exception as fallback_exc:
-                fallback_errors.append(f"{candidate_model_ref}: {fallback_exc}")
-                _append_failed_fallback_attempt(fallback_trace, candidate_model_ref, fallback_exc)
-                continue
-
-            _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
-            _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
-            return results, _with_provider_fallback_meta(
-                meta,
-                trace=fallback_trace,
-                requested_model_ref=requested_model_ref,
-                selected_model_ref=candidate_model_ref,
-                primary_error=primary_exc,
-            )
-
-        raise RuntimeError(
-            f"Primary rerank provider '{requested_model_ref}' failed and all compatible fallback providers failed: {'; '.join(fallback_errors)}"
-        ) from primary_exc
+    return _rerank_documents_with_model_ref_once(
+        model_ref=requested_model_ref,
+        saved_providers=saved_providers,
+        query=query,
+        documents=documents,
+        top_n=top_n,
+    )
 
 
 def _rerank_documents_with_model_ref_once(
@@ -533,65 +479,12 @@ def embed_text_with_model_ref(
     requested_model_ref = f"{provider_id}/{model_name}".strip("/")
     _LAST_MODEL_REQUEST_LOG.set({})
 
-    try:
-        return _embed_text_with_model_ref_once(
-            model_ref=requested_model_ref,
-            saved_providers=saved_providers,
-            text=text,
-            dimensions=dimensions,
-        )
-    except Exception as primary_exc:
-        fallback_result = resolve_provider_fallback(
-            {
-                "requested_model_ref": requested_model_ref,
-                "required_capabilities": ["embedding"],
-                "required_permissions": ["embedding"],
-                "failure_event": _provider_failure_event(
-                    model_ref=requested_model_ref,
-                    provider_id=provider_id,
-                    model_name=model_name,
-                    exc=primary_exc,
-                ),
-                "provider_candidates": _provider_fallback_candidates(
-                    requested_provider_id=provider_id,
-                    requested_model_name=model_name,
-                    saved_providers=saved_providers,
-                    default_permissions=["embedding"],
-                ),
-            }
-        )
-        selected_model_ref = str(fallback_result.get("selected_model_ref") or "").strip()
-        if not selected_model_ref or selected_model_ref == requested_model_ref:
-            raise
-
-        fallback_trace = _runtime_fallback_trace(fallback_result)
-        fallback_errors: list[str] = []
-        for candidate_model_ref in _fallback_candidate_model_refs(fallback_result, fallback_trace, requested_model_ref):
-            try:
-                vector, meta = _embed_text_with_model_ref_once(
-                    model_ref=candidate_model_ref,
-                    saved_providers=saved_providers,
-                    text=text,
-                    dimensions=dimensions,
-                )
-            except Exception as fallback_exc:
-                fallback_errors.append(f"{candidate_model_ref}: {fallback_exc}")
-                _append_failed_fallback_attempt(fallback_trace, candidate_model_ref, fallback_exc)
-                continue
-
-            _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
-            _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
-            return vector, _with_provider_fallback_meta(
-                meta,
-                trace=fallback_trace,
-                requested_model_ref=requested_model_ref,
-                selected_model_ref=candidate_model_ref,
-                primary_error=primary_exc,
-            )
-
-        raise RuntimeError(
-            f"Primary embedding provider '{requested_model_ref}' failed and all compatible fallback providers failed: {'; '.join(fallback_errors)}"
-        ) from primary_exc
+    return _embed_text_with_model_ref_once(
+        model_ref=requested_model_ref,
+        saved_providers=saved_providers,
+        text=text,
+        dimensions=dimensions,
+    )
 
 
 def _embed_text_with_model_ref_once(
@@ -1950,78 +1843,6 @@ def chat_with_model_ref_with_meta(
             persist_credential_state=persist_credential_state,
             primary_exc=budget_exc,
         )
-    except ProviderRateProfileExceeded:
-        raise
-    except Exception as primary_exc:
-        fallback_result = resolve_provider_fallback(
-            {
-                "requested_model_ref": requested_model_ref,
-                "required_capabilities": _required_chat_capabilities(
-                    input_attachments=input_attachments,
-                    structured_output_schema=structured_output_schema,
-                ),
-                "required_permissions": ["text_generation"],
-                "failure_event": _provider_failure_event(
-                    model_ref=requested_model_ref,
-                    provider_id=provider_id,
-                    model_name=model_name,
-                    exc=primary_exc,
-                ),
-                "provider_candidates": _provider_fallback_candidates(
-                    requested_provider_id=provider_id,
-                    requested_model_name=model_name,
-                    saved_providers=saved_providers,
-                ),
-            }
-        )
-        selected_model_ref = str(fallback_result.get("selected_model_ref") or "").strip()
-        if not selected_model_ref or selected_model_ref == requested_model_ref:
-            raise
-
-        fallback_trace = _runtime_fallback_trace(fallback_result)
-        fallback_errors: list[str] = []
-        for candidate_model_ref in _fallback_candidate_model_refs(fallback_result, fallback_trace, requested_model_ref):
-            try:
-                content, meta = _chat_with_model_ref_once(
-                    model_ref=candidate_model_ref,
-                    saved_providers=saved_providers,
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    thinking_enabled=thinking_enabled,
-                    thinking_level=thinking_level,
-                    on_delta=on_delta,
-                    input_attachments=input_attachments,
-                    structured_output_schema=structured_output_schema,
-                    model_runtime_fixture=fixture,
-                    prompt_cache_policy=prompt_cache_policy,
-                    provider_cost_budget=provider_cost_budget,
-                    provider_cost_budget_approval=provider_cost_budget_approval,
-                    provider_rate_profile=provider_rate_profile,
-                    request_timeout_seconds=request_timeout_seconds,
-                    persist_credential_state=persist_credential_state,
-                )
-            except (ProviderCostBudgetExceeded, ProviderRateProfileExceeded):
-                raise
-            except Exception as fallback_exc:
-                fallback_errors.append(f"{candidate_model_ref}: {fallback_exc}")
-                _append_failed_fallback_attempt(fallback_trace, candidate_model_ref, fallback_exc)
-                continue
-
-            _append_selected_fallback_attempt(fallback_trace, candidate_model_ref)
-            _annotate_last_model_request_log_with_provider_fallback(fallback_trace, candidate_model_ref)
-            return content, _with_provider_fallback_meta(
-                meta,
-                trace=fallback_trace,
-                requested_model_ref=requested_model_ref,
-                selected_model_ref=candidate_model_ref,
-                primary_error=primary_exc,
-            )
-
-        raise RuntimeError(
-            f"Primary provider '{requested_model_ref}' failed and all compatible fallback providers failed: {'; '.join(fallback_errors)}"
-        ) from primary_exc
 
 
 def _chat_with_model_ref_cost_budget_degradation(

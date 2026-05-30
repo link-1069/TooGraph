@@ -91,7 +91,6 @@ test("buildProviderSavePayload includes enabled providers and omits blank api ke
       api_key_configured: true,
       discovered_models: ["gpt-4.1"],
       selected_models: ["gpt-4.1"],
-      model_profiles: {},
     },
   });
 
@@ -101,7 +100,7 @@ test("buildProviderSavePayload includes enabled providers and omits blank api ke
   assert.equal(payload.openai.request_timeout_seconds, 45);
 });
 
-test("provider drafts preserve model capabilities and permissions", () => {
+test("provider model save payload stays minimal instead of routing by capabilities", () => {
   const drafts = buildProviderDraftsFromSettings({
     model: {
       text_model: "rerank-test",
@@ -139,23 +138,15 @@ test("provider drafts preserve model capabilities and permissions", () => {
     tools: [],
   });
 
-  assert.deepEqual(drafts.local.model_profiles["rerank-test"].capabilities, {
-    chat: false,
-    structured_output: false,
-    rerank: true,
-    prompt_cache: true,
-  });
-  assert.deepEqual(drafts.local.model_profiles["rerank-test"].permissions, ["rerank"]);
+  assert.deepEqual(drafts.local.selected_models, ["rerank-test"]);
   assert.equal(drafts.local.request_timeout_seconds, 33);
 
   const payload = buildProviderSavePayload(drafts);
-  assert.deepEqual(payload.local.models[0].capabilities, {
-    chat: false,
-    structured_output: false,
-    rerank: true,
-    prompt_cache: true,
+  assert.deepEqual(payload.local.models[0], {
+    model: "rerank-test",
+    label: "rerank-test",
+    modalities: ["text"],
   });
-  assert.deepEqual(payload.local.models[0].permissions, ["rerank"]);
   assert.equal(payload.local.request_timeout_seconds, 33);
 });
 

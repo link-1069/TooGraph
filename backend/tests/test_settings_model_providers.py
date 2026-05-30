@@ -136,6 +136,70 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(saved_payload["model_providers"]["openai"]["transport"], "openai-compatible")
         build_payload.assert_called_once_with(force_refresh_models=False)
 
+    def test_update_settings_removes_provider_omitted_from_full_provider_payload(self) -> None:
+        existing_settings = {
+            "model_providers": {
+                "openai": {
+                    "label": "OpenAI",
+                    "transport": "openai-compatible",
+                    "base_url": "https://primary.test/v1",
+                    "api_key": "sk-test",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "gpt-primary", "label": "gpt-primary"}],
+                },
+                "local": {
+                    "label": "Local",
+                    "transport": "openai-compatible",
+                    "base_url": "http://127.0.0.1:8888/v1",
+                    "enabled": False,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [],
+                },
+            }
+        }
+        saved_payload: dict = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.update(payload)
+            return payload
+
+        with patch("app.api.routes_settings.load_app_settings", return_value=existing_settings):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}):
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/api/settings",
+                            json={
+                                "model": {
+                                    "text_model_ref": "",
+                                    "video_model_ref": "",
+                                },
+                                "agent_runtime_defaults": {
+                                    "model": "",
+                                    "thinking_enabled": False,
+                                    "temperature": 0.2,
+                                },
+                                "model_providers": {
+                                    "local": {
+                                        "label": "Local",
+                                        "transport": "openai-compatible",
+                                        "base_url": "http://127.0.0.1:8888/v1",
+                                        "enabled": False,
+                                        "auth_header": "Authorization",
+                                        "auth_scheme": "Bearer",
+                                        "models": [],
+                                    }
+                                },
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("openai", saved_payload["model_providers"])
+        self.assertIn("local", saved_payload["model_providers"])
+
     def test_update_settings_persists_model_capabilities_and_permissions(self) -> None:
         saved_payload: dict = {}
 

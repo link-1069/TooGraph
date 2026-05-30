@@ -236,7 +236,8 @@ def _merge_model_providers(
 
     next_settings = dict(existing_settings)
     existing_providers = next_settings.get("model_providers")
-    merged_providers = dict(existing_providers) if isinstance(existing_providers, dict) else {}
+    existing_providers = existing_providers if isinstance(existing_providers, dict) else {}
+    merged_providers: dict[str, dict[str, object]] = {}
 
     for provider_id, provider_payload in incoming_providers.items():
         provider_key = str(provider_id or "").strip()
@@ -244,7 +245,7 @@ def _merge_model_providers(
             continue
 
         template = get_provider_template(provider_key)
-        existing_provider = merged_providers.get(provider_key)
+        existing_provider = existing_providers.get(provider_key)
         existing_provider = existing_provider if isinstance(existing_provider, dict) else {}
         incoming_api_key = str(provider_payload.api_key or "").strip()
         transport = normalize_transport(provider_payload.transport or existing_provider.get("transport") or template["transport"])
