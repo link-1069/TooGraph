@@ -6,6 +6,7 @@ import {
   buildToolSourceOptions,
   buildToolStatusOptions,
   filterToolsForManagement,
+  resolveToolDisplayText,
 } from "./toolsPageModel.ts";
 import type { ToolDefinition } from "@/types/tools";
 
@@ -18,6 +19,7 @@ function createTool(overrides: Partial<ToolDefinition> = {}): ToolDefinition {
     version: "1.0.0",
     permissions: ["local-file-read"],
     runtime: { type: "python", entrypoint: "run.py", timeoutSeconds: 30 },
+    localized: {},
     inputSchema: [{ key: "value", name: "Value", valueType: "json", description: "Input value." }],
     outputSchema: [{ key: "result", name: "Result", valueType: "json", description: "Output value." }],
     sourceScope: "official",
@@ -56,6 +58,60 @@ test("filterToolsForManagement filters by status source and searchable manifest 
   );
   assert.deepEqual(
     filterToolsForManagement(tools, { query: "", status: "active", source: "official" }).map((tool) => tool.toolKey),
+    ["json_passthrough"],
+  );
+});
+
+test("resolveToolDisplayText switches tool names and descriptions by locale", () => {
+  const tool = createTool({
+    localized: {
+      "zh-CN": {
+        name: "JSON 透传",
+        description: "返回 JSON 输入。",
+      },
+      "en-US": {
+        name: "JSON Passthrough",
+        description: "Return JSON input.",
+      },
+    },
+  });
+
+  assert.deepEqual(resolveToolDisplayText(tool, "zh-CN"), {
+    name: "JSON 透传",
+    description: "返回 JSON 输入。",
+  });
+  assert.deepEqual(resolveToolDisplayText(tool, "en-US"), {
+    name: "JSON Passthrough",
+    description: "Return JSON input.",
+  });
+  assert.deepEqual(resolveToolDisplayText(tool, "ja-JP"), {
+    name: "JSON Passthrough",
+    description: "Return JSON input.",
+  });
+});
+
+test("filterToolsForManagement searches localized tool introductions", () => {
+  const tools = [
+    createTool({
+      localized: {
+        "zh-CN": {
+          name: "记忆搜索上下文加载器",
+          description: "搜索结构化长期记忆并返回可审计上下文包。",
+        },
+        "en-US": {
+          name: "Memory Search Context Loader",
+          description: "Searches structured long-term memories and returns an auditable context package.",
+        },
+      },
+    }),
+  ];
+
+  assert.deepEqual(
+    filterToolsForManagement(tools, { query: "长期记忆", status: "all", source: "all" }).map((tool) => tool.toolKey),
+    ["json_passthrough"],
+  );
+  assert.deepEqual(
+    filterToolsForManagement(tools, { query: "auditable context", status: "all", source: "all" }).map((tool) => tool.toolKey),
     ["json_passthrough"],
   );
 });

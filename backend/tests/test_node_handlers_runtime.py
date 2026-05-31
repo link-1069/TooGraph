@@ -1617,8 +1617,8 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             {
                 "selected_capability": {
                     "kind": "tool",
-                    "key": "provider_fallback_resolver",
-                    "name": "Provider Fallback Resolver",
+                    "key": "fixture_context_tool",
+                    "name": "Fixture Context Tool",
                 }
             },
             {"state": {}},
@@ -1626,15 +1626,15 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             state={"run_id": "run-1"},
             get_action_registry_func=lambda *, include_disabled: {},
             get_action_definition_registry_func=lambda *, include_disabled: {},
-            get_tool_registry_func=lambda *, include_disabled: {"provider_fallback_resolver": "provider_fallback_resolver"},
+            get_tool_registry_func=lambda *, include_disabled: {"fixture_context_tool": "fixture_context_tool"},
             get_tool_definition_registry_func=lambda *, include_disabled: {
-                "provider_fallback_resolver": ToolDefinition(
-                    toolKey="provider_fallback_resolver",
-                    name="Provider Fallback Resolver",
-                    inputSchema=[ToolIoField(key="requested_model_ref", name="Requested", valueType="text")],
+                "fixture_context_tool": ToolDefinition(
+                    toolKey="fixture_context_tool",
+                    name="Fixture Context Tool",
+                    inputSchema=[ToolIoField(key="query", name="Query", valueType="text")],
                     outputSchema=[
-                        ToolIoField(key="selected_model_ref", name="Selected Model", valueType="text"),
-                        ToolIoField(key="provider_fallback_trace", name="Trace", valueType="json"),
+                        ToolIoField(key="answer", name="Answer", valueType="text"),
+                        ToolIoField(key="evidence", name="Evidence", valueType="json"),
                     ],
                     runtimeReady=True,
                     runtimeRegistered=True,
@@ -1643,8 +1643,8 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             invoke_tool_func=lambda tool_func, tool_inputs, **kwargs: captured_inputs.append(dict(tool_inputs))
             or {
                 "status": "succeeded",
-                "selected_model_ref": "fixture-fallback/gpt-fallback",
-                "provider_fallback_trace": {"selected": {"model_ref": "fixture-fallback/gpt-fallback"}},
+                "answer": "fixture answer",
+                "evidence": {"source": "fixture"},
             },
             resolve_agent_runtime_config_func=lambda agent_node: {},
             build_agent_stream_delta_callback_func=lambda *, state, node_name, output_keys: None,
@@ -1657,17 +1657,17 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         )
 
         self.assertEqual(captured_inputs, [{}])
-        self.assertEqual(result["selected_capabilities"], [{"kind": "tool", "key": "provider_fallback_resolver"}])
+        self.assertEqual(result["selected_capabilities"], [{"kind": "tool", "key": "fixture_context_tool"}])
         self.assertEqual(result["tool_outputs"][0]["node_id"], "tool_executor")
-        self.assertEqual(result["tool_outputs"][0]["tool_key"], "provider_fallback_resolver")
+        self.assertEqual(result["tool_outputs"][0]["tool_key"], "fixture_context_tool")
         self.assertEqual(result["tool_outputs"][0]["status"], "succeeded")
         self.assertEqual(
-            result["outputs"]["dynamic_result"]["outputs"]["selected_model_ref"]["value"],
-            "fixture-fallback/gpt-fallback",
+            result["outputs"]["dynamic_result"]["outputs"]["answer"]["value"],
+            "fixture answer",
         )
         self.assertEqual(
-            result["outputs"]["dynamic_result"]["outputs"]["provider_fallback_trace"]["value"]["selected"]["model_ref"],
-            "fixture-fallback/gpt-fallback",
+            result["outputs"]["dynamic_result"]["outputs"]["evidence"]["value"]["source"],
+            "fixture",
         )
         self.assertIn('"sourceType": "tool"', result["final_result"].replace("'", '"'))
 

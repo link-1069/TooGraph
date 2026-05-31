@@ -5,7 +5,6 @@ import type {
   BuddyCommandRecord,
   BuddyCommandResponse,
   BuddyHomeFiles,
-  BuddyImprovementCandidate,
   BuddyMemoryReviewTemplateBinding,
   BuddyMemoryDocument,
   BuddyIdentity,
@@ -92,64 +91,6 @@ export function updateBuddyMemoryReviewTemplateBinding(payload: BuddyMemoryRevie
 export function fetchBuddyBackgroundReviews(sourceRunId?: string, init?: Pick<RequestInit, "signal">) {
   const query = sourceRunId ? `?source_run_id=${encodeURIComponent(sourceRunId)}` : "";
   return apiGet<BuddyBackgroundReviewRun[]>(`/api/buddy/background-reviews${query}`, init);
-}
-
-export function fetchBuddyImprovementCandidates(
-  filters: {
-    sourceRunId?: string;
-    reviewId?: string;
-    reviewRunId?: string;
-    status?: string;
-  } = {},
-  init?: Pick<RequestInit, "signal">,
-) {
-  const params = new URLSearchParams();
-  if (filters.sourceRunId) {
-    params.set("source_run_id", filters.sourceRunId);
-  }
-  if (filters.reviewId) {
-    params.set("review_id", filters.reviewId);
-  }
-  if (filters.reviewRunId) {
-    params.set("review_run_id", filters.reviewRunId);
-  }
-  if (filters.status) {
-    params.set("status", filters.status);
-  }
-  const query = params.toString();
-  return apiGet<BuddyImprovementCandidate[]>(`/api/buddy/improvement-candidates${query ? `?${query}` : ""}`, init);
-}
-
-export function linkBuddyImprovementCandidateValidationRun(candidateId: string, validationRunId: string) {
-  return apiPost<BuddyImprovementCandidate>(
-    `/api/buddy/improvement-candidates/${encodeURIComponent(candidateId)}/validation-run`,
-    { validation_run_id: validationRunId },
-  );
-}
-
-export function syncBuddyImprovementCandidateValidationStatus(candidateId: string) {
-  return apiPost<BuddyImprovementCandidate>(
-    `/api/buddy/improvement-candidates/${encodeURIComponent(candidateId)}/sync-validation-status`,
-    null,
-  );
-}
-
-export function decideBuddyImprovementCandidate(
-  candidateId: string,
-  decision: "approve" | "reject",
-  reason: string,
-) {
-  return apiPost<BuddyImprovementCandidate>(
-    `/api/buddy/improvement-candidates/${encodeURIComponent(candidateId)}/decision`,
-    { decision, reason },
-  );
-}
-
-export function applyBuddyImprovementCandidate(candidateId: string, changeReason: string) {
-  return apiPost<BuddyImprovementCandidate>(
-    `/api/buddy/improvement-candidates/${encodeURIComponent(candidateId)}/apply`,
-    { change_reason: changeReason },
-  );
 }
 
 export function enqueueBuddyBackgroundReview(payload: {

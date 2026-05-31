@@ -8,7 +8,7 @@ import { createCommandEnvironment, parseGitChangedPaths, resolveOfficialAssetGat
 test("official asset gate runs template layout checks for official template changes", () => {
   const plan = resolveOfficialAssetGatePlan({
     changedPaths: [
-      "graph_template/official/delegation_worker_batch_workflow/template.json",
+      "graph_template/official/embedding_maintenance/template.json",
       "docs/hermes-agent-capability-parity-roadmap.md",
     ],
   });
@@ -25,7 +25,7 @@ test("official asset gate runs template layout checks for official template chan
 
 test("official asset gate keeps template changes on the template gate", () => {
   const plan = resolveOfficialAssetGatePlan({
-    changedPaths: ["graph_template/official/delegation_worker_batch_workflow/template.json"],
+    changedPaths: ["graph_template/official/embedding_maintenance/template.json"],
   });
 
   assert.deepEqual(
@@ -51,7 +51,7 @@ test("official asset gate runs action and tool contract checks for official capa
   const plan = resolveOfficialAssetGatePlan({
     changedPaths: [
       "action/official/toograph_capability_selector/action.json",
-      "tool/official/delegation_kanban_board_builder/tool.json",
+      "tool/official/buddy_history_context_loader/tool.json",
     ],
   });
 
@@ -63,7 +63,7 @@ test("official asset gate runs action and tool contract checks for official capa
       "-m unittest backend.tests.test_action_manifest_contract backend.tests.test_backend_action_package_naming backend.tests.test_node_system_validator_actions",
       "-m unittest backend.tests.test_toograph_capability_selector_action",
       "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
-      "-m unittest backend.tests.test_delegation_kanban_board_builder_tool",
+      "-m unittest backend.tests.test_buddy_history_context_loader_tool",
     ],
   );
 });
@@ -72,7 +72,7 @@ test("official asset gate adds package-specific tests for changed official actio
   const plan = resolveOfficialAssetGatePlan({
     changedPaths: [
       "action/official/buddy_session_recall/after_llm.py",
-      "tool/official/provider_fallback_resolver/run.py",
+      "tool/official/session_search_context_loader/run.py",
     ],
   });
 
@@ -83,24 +83,22 @@ test("official asset gate adds package-specific tests for changed official actio
       "-m unittest backend.tests.test_action_manifest_contract backend.tests.test_backend_action_package_naming backend.tests.test_node_system_validator_actions",
       "-m unittest backend.tests.test_buddy_session_recall_action",
       "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
-      "-m unittest backend.tests.test_provider_fallback_resolver_tool",
-      "-m unittest backend.tests.test_provider_fallback_resolver",
+      "-m unittest backend.tests.test_session_search_context_loader_tool",
     ],
   );
 });
 
 test("official asset gate runs manifest-declared verification commands for capability packages", () => {
   const plan = resolveOfficialAssetGatePlan({
-    changedPaths: ["tool/official/provider_fallback_resolver/tool.json"],
+    changedPaths: ["action/official/toograph_graph_template_reader/action.json"],
   });
 
   assert.deepEqual(
     plan.commands.map((command) => command.args.join(" ")),
     [
       "diff --check",
-      "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
-      "-m unittest backend.tests.test_provider_fallback_resolver_tool",
-      "-m unittest backend.tests.test_provider_fallback_resolver",
+      "-m unittest backend.tests.test_action_manifest_contract backend.tests.test_backend_action_package_naming backend.tests.test_node_system_validator_actions",
+      "-m unittest backend.tests.test_toograph_graph_template_actions",
     ],
   );
 });

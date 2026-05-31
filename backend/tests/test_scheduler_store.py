@@ -26,9 +26,9 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
-                        "input_bindings": {"curator_scope": "整理官方能力库"},
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
+                        "input_bindings": {"job_limit": 10},
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                     },
@@ -40,7 +40,7 @@ class SchedulerStoreTests(unittest.TestCase):
         self.assertEqual(job["schedule_kind"], "interval")
         self.assertEqual(job["schedule_expr"], "PT6H")
         self.assertEqual(job["next_run_at"], "2026-05-27T06:00:00Z")
-        self.assertEqual(job["input_bindings"], {"curator_scope": "整理官方能力库"})
+        self.assertEqual(job["input_bindings"], {"job_limit": 10})
         self.assertEqual(not_due, [])
         self.assertEqual([item["job_id"] for item in due], [job["job_id"]])
 
@@ -83,9 +83,9 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
-                        "input_bindings": {"curator_scope": "整理官方能力库"},
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
+                        "input_bindings": {"job_limit": 10},
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                         "enabled": True,
@@ -95,7 +95,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="manual",
                     status="completed",
                     started_at="2026-05-27T01:00:00Z",
@@ -128,7 +128,7 @@ class SchedulerStoreTests(unittest.TestCase):
         self.assertEqual(updated["schedule_expr"], "PT1H")
         self.assertFalse(updated["enabled"])
         self.assertEqual(updated["next_run_at"], "")
-        self.assertEqual(updated["last_run_id"], "run_curator_1")
+        self.assertEqual(updated["last_run_id"], "run_embedding_1")
         self.assertEqual(updated["created_at"], job["created_at"])
         self.assertEqual(updated["updated_at"], "2026-05-27T02:00:00Z")
         self.assertEqual(updated["delivery_target"]["kind"], "message_outlet")
@@ -147,7 +147,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 job = store.create_scheduled_graph_job(
                     {
                         "name": "定时摘要",
-                        "template_id": "buddy_capability_curator",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "manual",
                         "delivery_target": {
                             "kind": "message_outlet",
@@ -183,8 +183,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                     },
@@ -192,7 +192,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 job_run = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="schedule",
                     status="running",
                     started_at="2026-05-27T06:00:00Z",
@@ -201,9 +201,9 @@ class SchedulerStoreTests(unittest.TestCase):
                 reloaded = store.load_scheduled_graph_job(job["job_id"])
                 runs = store.list_scheduled_graph_job_runs(job_id=job["job_id"])
 
-        self.assertEqual(job_run["run_id"], "run_curator_1")
+        self.assertEqual(job_run["run_id"], "run_embedding_1")
         self.assertEqual(job_run["status"], "running")
-        self.assertEqual(reloaded["last_run_id"], "run_curator_1")
+        self.assertEqual(reloaded["last_run_id"], "run_embedding_1")
         self.assertEqual(reloaded["next_run_at"], "2026-05-27T12:00:00Z")
         self.assertEqual([item["job_run_id"] for item in runs], [job_run["job_run_id"]])
 
@@ -219,8 +219,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                         "retry_policy": {
@@ -233,7 +233,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 first_run = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="schedule",
                     status="running",
                     started_at="2026-05-27T06:00:00Z",
@@ -272,8 +272,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                         "retry_policy": {"max_attempts": 2, "delay_seconds": 600},
@@ -282,7 +282,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 first_run = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="schedule",
                     status="running",
                     started_at="2026-05-27T06:00:00Z",
@@ -295,7 +295,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 retry_run = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_retry",
+                    run_id="run_embedding_retry",
                     trigger_reason="retry",
                     status="running",
                     started_at="2026-05-27T06:15:00Z",
@@ -329,8 +329,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                         "retry_policy": {"max_attempts": 3, "delay_seconds": 600},
@@ -368,8 +368,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                     },
@@ -399,13 +399,13 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "interval",
                         "schedule_expr": "PT6H",
                         "delivery_target": {
                             "kind": "local_audit",
-                            "label": "Curator report",
+                            "label": "Embedding report",
                             "token": "secret-token",
                         },
                     },
@@ -413,7 +413,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 running = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="schedule",
                     status="running",
                     started_at="2026-05-27T06:00:00Z",
@@ -431,8 +431,8 @@ class SchedulerStoreTests(unittest.TestCase):
         self.assertEqual(delivery["delivered_at"], "2026-05-27T06:04:00Z")
         self.assertEqual(delivery["job_id"], job["job_id"])
         self.assertEqual(delivery["job_run_id"], running["job_run_id"])
-        self.assertEqual(delivery["run_ref"], {"kind": "graph_run", "run_id": "run_curator_1"})
-        self.assertEqual(delivery["target"], {"kind": "local_audit", "label": "Curator report", "token": "[redacted]"})
+        self.assertEqual(delivery["run_ref"], {"kind": "graph_run", "run_id": "run_embedding_1"})
+        self.assertEqual(delivery["target"], {"kind": "local_audit", "label": "Embedding report", "token": "[redacted]"})
 
     def test_unsupported_delivery_target_is_skipped_in_audit_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -446,8 +446,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "manual",
                         "delivery_target": {"kind": "slack", "channel": "ops"},
                     },
@@ -455,7 +455,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 completed = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="manual",
                     status="completed",
                     started_at="2026-05-27T06:00:00Z",
@@ -479,8 +479,8 @@ class SchedulerStoreTests(unittest.TestCase):
 
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "manual",
                         "delivery_target": {
                             "kind": "webhook",
@@ -492,7 +492,7 @@ class SchedulerStoreTests(unittest.TestCase):
                 )
                 completed = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="manual",
                     status="completed",
                     started_at="2026-05-27T06:00:00Z",

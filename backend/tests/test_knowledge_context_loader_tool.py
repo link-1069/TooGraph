@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -110,7 +111,7 @@ class KnowledgeContextLoaderToolTests(unittest.TestCase):
         first_expanded = expand_context_package(package)
         chunk_id = package["items"][0]["source_ref"]["source_id"]
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             connection.execute(
                 "DELETE FROM content_blobs WHERE content_hash = ?",
                 (first_expanded["assembly"]["rendered_content_hash"],),

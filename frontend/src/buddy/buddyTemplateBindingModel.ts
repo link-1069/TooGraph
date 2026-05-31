@@ -18,7 +18,6 @@ const BUDDY_MEMORY_REVIEW_INTERNAL_STATES = new Set([
   "review_context_report",
   "session_recall_context",
   "autonomous_review",
-  "improvement_candidates",
   "memory_update_plan",
   "user_context_update_plan",
   "structured_memory_update_plan",

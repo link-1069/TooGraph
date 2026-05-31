@@ -277,7 +277,7 @@ function createReviewTemplate(): TemplateRecord {
   return {
     template_id: "buddy_autonomous_review",
     label: "自主复盘",
-    description: "Review buddy turns after the visible reply and produce reviewable improvement candidates.",
+    description: "Review buddy turns after the visible reply and autonomously write low-risk memory updates.",
     default_graph_name: "自主复盘",
     status: "active",
     state_schema: {
@@ -301,7 +301,6 @@ function createReviewTemplate(): TemplateRecord {
       capability_review: { name: "capability_review", description: "", type: "json", value: {}, color: "#0f766e" },
       public_response: { name: "public_response", description: "", type: "markdown", value: "", color: "#16a34a" },
       autonomous_review: { name: "autonomous_review", description: "", type: "json", value: {}, color: "#9333ea" },
-      improvement_candidates: { name: "improvement_candidates", description: "", type: "json", value: [], color: "#7c3aed" },
       memory_update_plan: { name: "memory_update_plan", description: "", type: "json", value: { has_updates: true, commands: [{ action: "stale" }] }, color: "#22c55e" },
       user_context_update_plan: { name: "user_context_update_plan", description: "", type: "json", value: { has_updates: true, commands: [{ action: "stale" }] }, color: "#2563eb" },
       structured_memory_update_plan: { name: "structured_memory_update_plan", description: "", type: "json", value: { has_updates: true, commands: [{ action: "stale" }] }, color: "#14b8a6" },
@@ -391,7 +390,6 @@ function createReviewTemplate(): TemplateRecord {
         ],
         writes: [
           { state: "autonomous_review", mode: "replace" },
-          { state: "improvement_candidates", mode: "replace" },
           { state: "memory_update_plan", mode: "replace" },
           { state: "structured_memory_update_plan", mode: "replace" },
         ],
@@ -760,7 +758,6 @@ test("buildBuddyReviewGraph hydrates an internal autonomous review run from the 
     selected: ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"],
   });
   assert.deepEqual(graph.state_schema.autonomous_review.value, {});
-  assert.deepEqual(graph.state_schema.improvement_candidates.value, []);
   assert.deepEqual(graph.state_schema.memory_update_plan.value, { has_updates: false, commands: [] });
   assert.deepEqual(graph.state_schema.user_context_update_plan.value, { has_updates: false, commands: [] });
   assert.deepEqual(graph.state_schema.structured_memory_update_plan.value, { has_updates: false, commands: [] });

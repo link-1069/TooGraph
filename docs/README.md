@@ -198,7 +198,7 @@ npm start
 - `discover` 支持 snippet、bookend_start、messages、bookend_end、messages_before、messages_after、rank/newest/oldest 排序、CJK trigram 和短 token LIKE fallback。
 - `buddy_sessions` 已包含 `parent_session_id`、`source`、`ended_at`、`end_reason` 等字段。
 - `memory_review_template_binding` 已进入 Buddy store 和 command 路径，默认绑定 `buddy_autonomous_review`，变更可记录 revision。
-- `buddy_autonomous_review` 是后台复盘加低风险记忆写回流程：召回相关会话，产出 `memory_update_plan`、`user_context_update_plan`、`buddy_identity_update_plan` 和可审查改进候选，并在同一模板内通过 `buddy_home_writer` 写入低风险 Buddy Home 更新。
+- `buddy_autonomous_review` is the background review and low-risk memory writeback flow: it recalls related sessions, prepares `memory_update_plan`, `user_context_update_plan`, `structured_memory_update_plan`, `buddy_identity_update_plan`, and `capability_usage_update_plan`, then writes safe updates through controlled writer nodes with revisions.
 - `buddy_home_writer` 负责 `memory_document.update` 等低风险 Buddy Home 写回，并留下 command/revision；它仍是唯一写入口，不把写文件逻辑藏进后端策略。
 - `buddy_context_compaction` 是独立内部模板，专门处理会话压缩摘要：保护最近原文，迭代更新 `session_summary`，只允许生成 `session_summary.update` 写回命令，不触碰 `MEMORY.md`、`USER.md`、伙伴身份设定或全局运行权限设置。
 
@@ -519,7 +519,7 @@ operation:
 
 - 官方默认主循环是 `buddy_autonomous_loop`。它已经切换到改良输入边界：绑定页只绑定当前用户消息，历史、会话摘要、当前 session id 等运行时上下文由 `buddy_history_context_loader` Tool 在图内组装；同时保留上下文压力检查、可选上下文压缩、回复与能力选择、一次动态能力执行、能力结果复盘和 output-boundary 胶囊。
 - 临时的 `buddy_main_loop_test` 已并入官方主循环，不再作为独立官方模板保留。
-- `buddy_autonomous_review` 已经是后台复盘图：它从已完成 run snapshot 加载上下文，召回相关历史和记忆，输出长期记忆、用户文件、伙伴身份和改进候选，并通过受控 writer 写入低风险 Buddy Home 更新。
+- `buddy_autonomous_review` is the background review graph: it loads context from a completed run snapshot, recalls related history and memory, prepares long-term memory, user context, Buddy identity, structured memory, and capability usage updates, then writes low-risk updates through controlled writer nodes.
 - Buddy Home 规范形态是 `AGENTS.md`、`SOUL.md`、`USER.md`、`MEMORY.md`。`AGENTS.md` 是运行/项目上下文说明，通常不由复盘记忆自动更新；`SOUL.md`、`USER.md`、`MEMORY.md` 和结构化数据库记忆分别承担身份、用户画像、长期记忆正文和召回索引。
 
 Hermes Agent 参考基线：
@@ -528,7 +528,7 @@ Hermes Agent 参考基线：
 - `demo/hermes-agent/tools/memory_tool.py` 的长期记忆写入目标主要是 `MEMORY.md` 和 `USER.md`，不是 `AGENTS.md`。
 - `demo/hermes-agent/agent/background_review.py` 会在每轮之后 fork 后台 review：一条线判断是否写 memory，一条线判断是否更新 skill；后台 review 使用受限工具白名单，不污染主对话 prompt cache。
 - Hermes 的通用 Agent loop 更接近传统 while-loop：模型反复思考、调用工具、读取结果、继续下一步，直到完成、预算耗尽或失败。
-- Hermes 的能力生态包括 toolsets、skills、plugins、外部 memory providers、session search、context compression、cron、kanban、delegation、skill curator、provider 适配和运行恢复。
+- Hermes 的能力生态包括 toolsets、skills、plugins、外部 memory providers、session search、context compression、cron、provider 适配和运行恢复。
 
 差距矩阵：
 
@@ -539,14 +539,13 @@ Hermes Agent 参考基线：
 | 上下文压缩 | `buddy_context_pressure_check` 和 `buddy_context_compaction` 已进入官方主路径 | Hermes 有 context compressor 和 prompt cache 管理 | 预算报告、压缩触发、摘要版本和恢复链路仍需更透明 | 压缩节点输出 `context_package`、保留窗口、摘要版本、source refs、omitted refs 和写回 revision |
 | 记忆召回 | SQLite FTS、trigram、embedding vectors、`memory_entries` 和 `buddy_session_recall` 已存在 | Hermes 有本地文件记忆、外部 memory providers、turn 后 sync/prefetch | embedding 召回、rerank、去重、lineage 投影和质量检查还不够生产级 | 建完整 hybrid recall：query planning -> FTS/vector 多路召回 -> lineage 去重 -> rerank -> context budget -> trace/audit |
 | 长期文件记忆 | `SOUL.md`、`USER.md`、`MEMORY.md` 和结构化 DB 记忆双线存在 | Hermes 区分 SOUL、USER、MEMORY；AGENTS 是项目上下文 | 写入目标说明还需持续体现在模板 prompt 和审计结果中 | 复盘图必须显式输出写入矩阵：身份写 `SOUL.md`，用户稳定信息写 `USER.md`，长期经验写 `MEMORY.md`，可检索事实写 DB memory |
-| AGENTS.md 用途 | Buddy Home 中保留 `AGENTS.md`，作为运行/项目上下文 | Hermes 从工作目录读取 AGENTS 作为 agent 工作说明 | 容易被误解为记忆文件或自动复盘输出目标 | AGENTS 作为上下文输入和人工维护文件；自动复盘只在确有必要时产出“建议更新 AGENTS”的改进候选，不直接写入 |
+| AGENTS.md usage | Buddy Home keeps `AGENTS.md` as runtime/project context | Hermes reads AGENTS from the working directory as agent instructions | It can be mistaken for an automatic memory-write target | Keep AGENTS as context input and human-maintained project guidance; autonomous review does not write it automatically |
 | 能力选择 | `toograph_capability_selector` 可发现 Action/Subgraph/Tool 并输出单个 capability | Hermes 直接使用丰富 tool schemas 和模型 tool call | selector 排名、置信度、失败 fallback、预算和候选解释仍弱 | selector 输出候选评分、拒绝理由、调用预算、失败记忆和可审计 selection trace |
 | 能力生态 | 官方 Action/Tool/Subgraph 已有骨架和若干关键包 | Hermes toolsets、skills、plugins 更丰富 | TooGraph 官方能力数量、质量、测试和文档不足 | 扩充官方 Action/Tool/Subgraph，并用 manifest metadata、权限标签和示例 run 作为准入 |
 | 多步骤自治 | 通过图模板、Condition、Subgraph 和动态 capability 表达 | Hermes while-loop 多轮 tool use 很成熟 | 图模板还缺统一的循环预算、stop reason、失败恢复和分支诊断 | 建立通用 Agent graph primitives：iteration budget、capability budget、stop reason、retry policy、recover path、failure output |
-| 自我改进 | `buddy_autonomous_review` 能产出 improvement candidates | Hermes background review 可写 memory 和 skill，curator 管理 skills | 候选到实际 Action/模板/子图 revision 的闭环还没打通 | 建“改进候选 -> 验证 -> diff -> approval -> revision -> run record”的图模板，不用隐藏自修改 |
-| 技能/能力沉淀 | TooGraph 当前是 Action/Tool/Subgraph，不使用 Hermes skill 语义 | Hermes 有 skills 和 skill curator | 缺少从成功 run 中沉淀可复用能力的成熟机制 | 以 Action package、Tool package、graph template 和 reusable subgraph 承接沉淀；curator 行为表现为显式整理图 |
-| 后台任务 | 回复后可跑后台复盘图 | Hermes 有 cron、curator、后台 review、外部 memory sync | 缺少通用 scheduler、队列、周期任务和失败重试 | 增加 graph scheduler：周期复盘、记忆清理、Action 健康检查、模板健康检查、知识库重建都作为图运行 |
-| 委派与子任务 | Subgraph 和 batch worker 基础存在 | Hermes 有 delegation、kanban/subagents | 缺少通用 worker task packet、结果合并、并发预算和审计 UI | 用 Subgraph worker protocol 表达委派：task packet、context package、budget、result package、merge/review 节点 |
+| Self improvement | `buddy_autonomous_review` now performs low-risk autonomous memory and identity writeback | Hermes background review can write memory and skill updates | Higher-risk Action/template/subgraph changes still need a separate explicit workflow | Keep low-risk memory writeback autonomous; design high-risk evolution later as visible graph workflows with revision and rollback |
+| 技能/能力沉淀 | TooGraph 当前是 Action/Tool/Subgraph，不使用 Hermes skill 语义 | Hermes 有 skills 和 skill curator | 缺少从成功 run 中沉淀可复用能力的成熟机制 | 以 Action package、Tool package、graph template 和 reusable subgraph 承接沉淀；需要整理时用显式图和人工 review，而不是隐藏常驻服务 |
+| 后台任务 | 回复后可跑后台复盘图 | Hermes 有 cron、后台 review、外部 memory sync | 缺少通用 scheduler、队列、周期任务和失败重试 | 增加 graph scheduler：周期复盘、记忆清理、Action 健康检查、模板健康检查、知识库重建都作为图运行 |
 | 权限和审批 | command/revision、Action 权限和 Buddy Home writer 已有方向 | Hermes 有工具白名单、保护文件、运行边界 | operation 级权限、风险分类和 review surface 仍需完善 | Action/Tool manifest 标注 scope、risk、network、file、graph、cost；高风险能力必须进入 approval/revision |
 | 运行诊断 | run detail、run tree、Buddy 胶囊已有基础 | Hermes TUI/日志/错误恢复信息更成熟 | 用户还不容易看清“为什么这么选、为什么停、召回了什么” | 增加 Agent Diagnostic view：输入来源、召回命中、context budget、selection trace、capability call、stop reason、失败恢复 |
 | Provider/runtime 鲁棒性 | Model Providers 页面和结构化输出基础存在 | Hermes provider 适配、fallback、streaming、prompt cache 更成熟 | provider 能力矩阵、fallback、repair retry 和错误解释不足 | 补 provider capability matrix、结构化输出 repair、模型 fallback、运行详情原始输出和 validation trace |
@@ -558,9 +557,9 @@ Hermes Agent 参考基线：
 | P0 | 官方主循环输入边界收敛 | 已将改良设计并入官方 `buddy_autonomous_loop` | Buddy 绑定页只需绑定当前用户消息；历史、摘要、session id、Buddy Home 都能在图内可见组装 |
 | P0 | run record 作为唯一事实源 | run 记录保存 graph run snapshot、state 结果、context assembly refs、capability calls、output refs | Buddy 胶囊、运行记录、历史回放都能从 run record 和 DB 引用重建 |
 | P1 | 完整 embedding 召回 | 统一 DB memory/message/run chunks embedding、hybrid search、rerank、audit | 每次召回能看到 query、命中、分数、source refs、预算和 omitted reason |
-| P1 | 记忆复盘质量提升 | 复盘模板输出写入矩阵、证据、去重、diff、revision、skipped reason | 自动写低风险记忆；高风险变更只产出改进候选和审批入口 |
+| P1 | Memory review quality | Review template outputs write matrix, evidence, dedupe, revision, skipped reason | Low-risk memory writes happen automatically; high-risk changes are skipped with reasons for future explicit workflows |
 | P1 | 能力选择质量提升 | selector scoring、fallback、失败记忆、budget 和候选解释 | 每次 capability 选择都能解释为什么选、为什么不选、还剩多少预算 |
-| P2 | 自我改进闭环 | improvement candidates -> 验证图 -> diff -> approval -> revision -> run record | 成功 run 能沉淀为 Action/Tool/Subgraph/template 修订，但所有副作用可审查、可撤销 |
+| Self improvement | `buddy_autonomous_review` now performs low-risk autonomous memory and identity writeback | Hermes background review can write memory and skill updates | Higher-risk Action/template/subgraph changes still need a separate explicit workflow | Keep low-risk memory writeback autonomous; design high-risk evolution later as visible graph workflows with revision and rollback |
 | P2 | Agent 诊断视图 | 单页展示主循环输入、召回、压缩、能力、输出、错误和 stop reason | 用户不用读原始 JSON 也能判断一次 Buddy run 是否合理 |
 | P3 | 调度与委派 | graph scheduler、worker subgraph protocol、批量任务合并 | 周期复盘、知识库重建、模板健康检查、并行子任务都作为可审计图运行 |
 
@@ -568,8 +567,8 @@ Hermes Agent 参考基线：
 
 ```text
 current_user_message
--> runtime_context_loader
-   输出 current_session_id、conversation_history_ref、existing_session_summary_ref、history_context_report
+-> buddy_session_runtime_state
+   图运行时直接提供 current_session_id、conversation_history_ref、existing_session_summary_ref、history_context_report
 -> buddy_home_input
    输出 AGENTS.md、SOUL.md、USER.md、MEMORY.md 的 file state
 -> memory_recall_planner
@@ -640,7 +639,7 @@ run record 和对话历史的目标存储原则：
 - 不把 Hermes 的隐藏 monolithic loop 移植进后端。
 - 不让单个 LLM 节点承担多步骤自治；整张图才是 Agent。
 - 不让 provider tool call 绕过 TooGraph 的 Action、Tool、Subgraph、权限和 run record。
-- 不让记忆复盘自动修改 `AGENTS.md`、Action、模板、图资产或权限设置；这些只能作为改进候选进入审批流。
+- Do not let memory review automatically modify `AGENTS.md`, Actions, templates, graph assets, permissions, or other high-risk runtime settings; those require separate explicit graph workflows with review and rollback.
 - 不把完整聊天全文作为每轮 run 的递归输入事实源。
 - 不把召回结果、session summary 或 generated memory 当作更高优先级指令。
 

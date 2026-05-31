@@ -1,7 +1,7 @@
 {
   "template_id": "buddy_autonomous_review",
   "label": "自主复盘",
-  "description": "可见 Buddy 回复完成后的后台复盘模板：从源 run 记录恢复上下文，召回相关会话，产出长期文件更新、结构化召回记忆、伙伴身份和改进候选，并在同一图内写入低风险更新。",
+  "description": "可见 Buddy 回复完成后的后台复盘模板：从源 run 恢复上下文，召回相关会话，判断并自主写入低风险记忆、用户上下文、伙伴身份和能力使用统计更新。",
   "default_graph_name": "自主复盘",
   "state_schema": {
     "source_run_id": {
@@ -143,18 +143,10 @@
     },
     "autonomous_review": {
       "name": "autonomous_review",
-      "description": "本轮自主复盘结论，包含候选数量、证据、风险、跳过原因和后续建议。",
+      "description": "本轮自主复盘结论，包含写回数量、证据、风险、跳过原因和后续建议。",
       "type": "json",
       "value": {},
       "color": "#9333ea",
-      "binding": null
-    },
-    "improvement_candidates": {
-      "name": "improvement_candidates",
-      "description": "可审查的 Action、模板、工作流或策略改进候选；后台复盘不直接应用。",
-      "type": "json",
-      "value": [],
-      "color": "#7c3aed",
       "binding": null
     },
     "memory_update_plan": {
@@ -737,10 +729,6 @@
           "mode": "replace"
         },
         {
-          "state": "improvement_candidates",
-          "mode": "replace"
-        },
-        {
           "state": "memory_update_plan",
           "mode": "replace"
         },
@@ -777,7 +765,7 @@
         "actionKey": "",
         "actionBindings": [],
         "actionInstructionBlocks": {},
-        "taskInstruction": "可见 Buddy 回复完成后，执行后台自主复盘。使用 user_message、conversation_history、buddy_context、request_understanding、capability_result、capability_review、public_response、review_context_report 和 session_recall_context。当前 run 的用户消息、输出和 run record 是主要证据；召回会话作为辅助证据。\n\n先按写入目标矩阵归类候选：\n- SOUL.md / buddy_identity_update_plan: 用户明确调整 Buddy 名称、身份设定、语气、回复风格、显示名称或显示语言。Map \"call yourself X from now on\" and \"rename yourself to X\" to payload.name. Use display_preferences.display_name for a separately requested display label. Ambiguous nicknames, jokes, roleplay, or unclear intent go to requires_confirmation with commands=[].\n- USER.md / user_context_update_plan: 关于用户本人的稳定事实、长期偏好、称呼、时区、沟通方式、长期目标和反复出现的协作要求。\n- MEMORY.md / memory_update_plan: 每轮都适合注入的稳定上下文、项目级决策、长期有效的纠错、常用工作方式和跨会话经验。\n- 数据库结构化记忆 / structured_memory_update_plan: 适合未来按语义召回的事实、事件、选择依据、一次任务中的关键上下文；每条记录包含 source refs、confidence、salience、scope_kind、scope_id、layer、memory_type、title 和 content。\n- 能力使用统计 / capability_usage_update_plan: 从 capability_result、capability_review、review_context_report 或 run record 中识别实际运行过的 Action、Subgraph 或 Tool；commands 使用 capability_usage_stats.update，payload.entries 每项包含 capability.kind、capability.key、success、run_id、summary，存在 duration_ms 时一并写入。\n- 复盘结果或改进候选 / autonomous_review、improvement_candidates、risk_flags: 临时进展、一次性错误、原始日志、较长运行细节、敏感信息、权限升级、可从项目或图运行重新读取的信息、能力改进建议、模板改进建议和需要人工确认的候选。\n\nWrite exactly ten states:\n1. autonomous_review: JSON with should_propose, source_run_id, evidence, risk_flags, skipped_reason, candidate_counts, storage_classification, and next_review_actions. Count MEMORY.md plan items, USER.md plan items, structured memory plan items, buddy identity plan items, capability usage entries, and improvement candidates separately.\n2. improvement_candidates: JSON array of reviewable Action, template, workflow, evaluation, or policy improvement candidates. Put high-risk changes in this candidate list with risk_flags.\n3. memory_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are low-risk memory_document.update entries with complete MEMORY.md content and change_reason. Use this plan for stable, compact facts that should appear in Buddy Home context every run.\n4. user_context_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are low-risk user_context.update entries with complete USER.md content and change_reason. Use this plan for stable facts about the human, durable collaboration preferences, current long-horizon focus, and repeated corrections.\n5. structured_memory_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are memory_entry.create, memory_entry.update, or memory_entry.archive entries. Use this plan for recall-oriented facts with source refs, confidence, salience, scope_kind, scope_id, layer, memory_type, title, and content.\n6. capability_usage_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are capability_usage_stats.update entries. Each command payload can use entries for multiple capabilities from the same source_run_id.\n7. memory_review_result: Markdown summary of accepted, rejected, duplicate, evidence-gap, confirmation-needed, MEMORY.md-ready, and structured-memory-ready candidates.\n8. user_context_review_result: Markdown summary of accepted, rejected, duplicate, evidence-gap, confirmation-needed, and USER.md-ready candidates.\n9. buddy_identity_update_plan: JSON shaped as {\"has_updates\": boolean, \"requires_confirmation\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": []}. Include buddy_identity.update commands for explicit low-risk requests to change Buddy name, persona, tone, response_style, display_preferences.display_name, or display_preferences.language.\n10. buddy_identity_review_result: Markdown summary of accepted, rejected, confirmation-needed, and write-ready buddy identity candidates.\n\nDurability rules: user corrections and explicit durable preferences have priority; stable low-risk facts that reduce future repeated steering are useful. Downstream writer nodes apply the prepared command arrays and produce auditable revisions.",
+        "taskInstruction": "Perform the background Buddy review for the completed visible Buddy run. Use user_message, conversation_history, buddy_context, request_understanding, capability_result, capability_review, public_response, review_context_report, and session_recall_context as bounded evidence.\n\nThis node performs autonomous low-risk writeback only. Keep secondary review workflows, user notifications, manual queues, and human-gated follow-up records outside this graph. Unsafe automatic writeback items go into autonomous_review.risk_flags, skipped_reason, or next_review_actions for future natural context.\n\nWrite exactly nine states:\n1. autonomous_review: JSON with should_write, source_run_id, evidence, risk_flags, skipped_reason, storage_classification, write_counts, and next_review_actions. Count MEMORY.md plan items, USER.md plan items, structured memory plan items, buddy identity plan items, and capability usage entries separately.\n2. memory_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are low-risk memory_document.update entries with complete MEMORY.md content and change_reason. Use this plan for stable, compact facts that should appear in Buddy Home context every run.\n3. user_context_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are low-risk user_context.update entries with complete USER.md content and change_reason. Use this plan for stable facts about the human, durable collaboration preferences, current long-horizon focus, and repeated corrections.\n4. structured_memory_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are memory_entry.create, memory_entry.update, or memory_entry.archive entries with source refs, confidence, salience, scope_kind, scope_id, layer, memory_type, title, and content.\n5. capability_usage_update_plan: JSON shaped as {\"has_updates\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": [], \"duplicates\": [], \"risk_flags\": []}. Commands are capability_usage_stats.update entries. Each command payload can use entries for multiple capabilities from the same source_run_id.\n6. memory_review_result: Markdown summary of accepted, rejected, duplicate, evidence-gap, confirmation-needed, MEMORY.md-ready, and structured-memory-ready items.\n7. user_context_review_result: Markdown summary of accepted, rejected, duplicate, evidence-gap, confirmation-needed, and USER.md-ready items.\n8. buddy_identity_update_plan: JSON shaped as {\"has_updates\": boolean, \"requires_confirmation\": boolean, \"commands\": [], \"accepted\": [], \"rejected\": []}. Include buddy_identity.update commands for explicit low-risk requests to change Buddy name, persona, tone, response_style, display_preferences.display_name, or display_preferences.language. Map \"call yourself X from now on\" and \"rename yourself to X\" to payload.name. Use display_preferences.display_name for a separately requested display label. Ambiguous nicknames, jokes, roleplay, or unclear intent go to requires_confirmation with commands=[].\n9. buddy_identity_review_result: Markdown summary of accepted, rejected, confirmation-needed, and write-ready buddy identity items.\n\nDurability rules: user corrections and explicit durable preferences have priority; stable low-risk facts that reduce future repeated steering are useful. Downstream writer nodes apply the prepared command arrays and produce auditable revisions. The Buddy window rollback mechanism is the recovery path for these autonomous low-risk updates.",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "medium",
@@ -1373,35 +1361,6 @@
         "fileNameTemplate": ""
       }
     },
-    "output_improvement_candidates": {
-      "kind": "output",
-      "name": "改进候选",
-      "description": "",
-      "ui": {
-        "position": {
-          "x": 2000,
-          "y": 300
-        },
-        "collapsed": false,
-        "size": {
-          "width": 420,
-          "height": 220
-        }
-      },
-      "reads": [
-        {
-          "state": "improvement_candidates",
-          "required": true
-        }
-      ],
-      "writes": [],
-      "config": {
-        "displayMode": "json",
-        "persistEnabled": false,
-        "persistFormat": "auto",
-        "fileNameTemplate": ""
-      }
-    },
     "output_memory_review_result": {
       "kind": "output",
       "name": "记忆整理结果",
@@ -1869,10 +1828,6 @@
     },
     {
       "source": "draft_autonomous_review",
-      "target": "output_improvement_candidates"
-    },
-    {
-      "source": "draft_autonomous_review",
       "target": "output_memory_review_result"
     },
     {
@@ -2000,7 +1955,6 @@
       "background",
       "session-recall",
       "memory-plan",
-      "evolution-plan",
       "memory-writeback",
       "source-run-context"
     ],

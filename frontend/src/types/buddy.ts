@@ -113,32 +113,6 @@ export type BuddyBackgroundReviewImprovementSummary = {
   warnings: string[];
 };
 
-export type BuddyImprovementCandidate = {
-  candidate_id: string;
-  kind: string;
-  status: string;
-  status_reason: string;
-  source_run_id: string;
-  review_id: string;
-  review_run_id: string;
-  target_ref: Record<string, unknown>;
-  evidence_refs: Array<Record<string, unknown>>;
-  risk_level: string;
-  expected_benefit: string;
-  proposed_change_summary: string;
-  approval_required: boolean;
-  validation_run_id: string;
-  validation_result: Record<string, unknown>;
-  applied_revision_id: string;
-  applied_command: Record<string, unknown>;
-  applied_at: string;
-  decision: Record<string, unknown>;
-  decided_at: string;
-  payload: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-};
-
 export type BuddyRunTemplateBindingValidation = {
   valid: boolean;
   issues: string[];

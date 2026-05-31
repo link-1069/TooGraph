@@ -394,8 +394,6 @@ type BuddyAutoResumedPageOperationFinishOptions = {
 };
 type BuddyFinishVisibleRunOptions = {
   includeOutputTrace?: boolean;
-  sourceTurn?: BuddyQueuedTurn;
-  sessionSummary?: string;
 };
 
 const DRAG_THRESHOLD_PX = 4;
@@ -954,10 +952,7 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
       handleBuddyRunAwaitingHuman(runDetail, assistantMessage.id, { persist: true });
       return;
     }
-    finishBuddyVisibleRun(runDetail, assistantMessage.id, turn.sessionId, boundRun.runId, {
-      sourceTurn: turn,
-      sessionSummary: boundRun.sessionSummary,
-    });
+    finishBuddyVisibleRun(runDetail, assistantMessage.id, turn.sessionId, boundRun.runId);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       return;
@@ -1114,9 +1109,6 @@ function finishBuddyVisibleRun(
   }
   void startBuddyVisibleRunTemplateEffects({
     runDetail,
-    runId,
-    sourceTurn: options.sourceTurn,
-    sessionSummary: options.sessionSummary,
   });
   mood.value = runDetail.status === "failed" ? "error" : runDetail.status === "cancelled" ? "idle" : "speaking";
   if (runDetail.status === "completed") {
@@ -1315,7 +1307,6 @@ const {
   startBuddyVisibleRunTemplateEffects,
   abortBuddyVisibleRunTemplateEffects,
 } = useBuddyVisibleRunTemplateEffects({
-  currentSessionId,
   buddyModelRef,
   pollRunUntilFinished,
   notifyBuddyDataChanged: buddyContextStore.notifyBuddyDataChanged,

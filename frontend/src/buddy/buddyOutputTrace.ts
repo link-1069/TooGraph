@@ -1,7 +1,5 @@
 import type { ConditionalEdge, GraphEdge, GraphNode, GraphPayload } from "../types/node-system.ts";
 import type { NodeExecutionDetail, RunDetail } from "../types/run.ts";
-import { listDelegationBoardTraceLabels } from "../lib/delegationBoardDiagnostic.ts";
-import { listDelegationWorkerTraceLabels } from "../lib/delegationWorkerDiagnostic.ts";
 import { summarizeVirtualOperationActivity, type VirtualOperationGraphRevision } from "../lib/virtual-operation-activity.ts";
 import type { BuddyPublicOutputBinding } from "./buddyPublicOutput.ts";
 
@@ -1266,8 +1264,6 @@ function buildAgentLoopArtifactLabels(execution: NodeExecutionDetail, agentLoopE
   return uniqueTextList([
     ...buildAgentLoopEventArtifactLabels(agentLoopEvents),
     ...buildAgentLoopReportArtifactLabels(report),
-    ...buildDelegationWorkerArtifactLabels(execution, outputs),
-    ...buildDelegationBoardArtifactLabels(execution, outputs),
   ].filter(Boolean));
 }
 
@@ -1335,26 +1331,6 @@ function buildAgentLoopReportArtifactLabels(report: Record<string, unknown> | nu
       ? `capabilities: ${capabilityCallCount ?? "?"} / ${maxCapabilityCalls ?? "?"}`
       : "",
   ];
-}
-
-function buildDelegationWorkerArtifactLabels(
-  execution: NodeExecutionDetail,
-  outputs: Record<string, unknown> | null,
-) {
-  const stateWritePackage = findStateWriteValue(execution, "worker_result_package");
-  return listDelegationWorkerTraceLabels(outputs?.worker_result_package ?? stateWritePackage);
-}
-
-function buildDelegationBoardArtifactLabels(
-  execution: NodeExecutionDetail,
-  outputs: Record<string, unknown> | null,
-) {
-  const stateWriteBoard = findStateWriteValue(execution, "delegation_board_snapshot");
-  return listDelegationBoardTraceLabels(outputs?.delegation_board_snapshot ?? stateWriteBoard);
-}
-
-function findStateWriteValue(execution: NodeExecutionDetail, stateKey: string) {
-  return (execution.artifacts?.state_writes ?? []).find((write) => normalizeText(write.state_key) === stateKey)?.value;
 }
 
 function buildDynamicCapabilityTimelineContext(context: DynamicCapabilityTraceContext | undefined) {

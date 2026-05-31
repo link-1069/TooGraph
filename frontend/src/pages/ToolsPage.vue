@@ -120,7 +120,7 @@
                 :aria-pressed="selectedToolKey === tool.toolKey"
                 @click="selectTool(tool.toolKey)"
               >
-                <span>{{ tool.name }}</span>
+                <span>{{ toolDisplayName(tool) }}</span>
               </button>
               <ElSwitch
                 :model-value="tool.status === 'active'"
@@ -135,8 +135,8 @@
             <header class="tools-page__detail-header">
               <div>
                 <div class="tools-page__id">{{ selectedTool.toolKey }}</div>
-                <h3>{{ selectedTool.name }}</h3>
-                <p>{{ selectedTool.description }}</p>
+                <h3>{{ selectedToolDisplayText.name }}</h3>
+                <p>{{ selectedToolDisplayText.description }}</p>
               </div>
             </header>
 
@@ -286,6 +286,7 @@ import {
   buildToolSourceOptions,
   buildToolStatusOptions,
   filterToolsForManagement,
+  resolveToolDisplayText,
   type ToolSourceFilter,
   type ToolStatusFilter,
 } from "./toolsPageModel.ts";
@@ -314,7 +315,7 @@ const selectedFilePath = ref("");
 const toolFileContent = ref<ToolFileContentResponse | null>(null);
 const toolFileContentLoading = ref(false);
 const toolFileContentError = ref<string | null>(null);
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 let fileTreeRequestId = 0;
 let fileContentRequestId = 0;
@@ -322,6 +323,14 @@ let fileContentRequestId = 0;
 const overview = computed(() => buildToolOverview(tools.value));
 const filteredTools = computed(() => filterToolsForManagement(tools.value, { query: query.value, status: statusFilter.value, source: sourceFilter.value }));
 const selectedTool = computed(() => filteredTools.value.find((tool) => tool.toolKey === selectedToolKey.value) ?? null);
+const selectedToolDisplayText = computed(() =>
+  selectedTool.value
+    ? resolveToolDisplayText(selectedTool.value, String(locale.value))
+    : {
+        name: "",
+        description: "",
+      },
+);
 const flattenedToolFiles = computed<FlatToolFileNode[]>(() => flattenToolFiles(toolFileTree.value?.root.children ?? []));
 const selectedFile = computed(() => flattenedToolFiles.value.find((file) => file.path === selectedFilePath.value) ?? null);
 const statusOptions = computed(() =>
@@ -375,6 +384,10 @@ function replaceTool(updatedTool: ToolDefinition) {
 function selectTool(toolKey: string) {
   selectedToolKey.value = toolKey;
   confirmingToolDeleteKey.value = null;
+}
+
+function toolDisplayName(tool: ToolDefinition): string {
+  return resolveToolDisplayText(tool, String(locale.value)).name;
 }
 
 function enabledToggleLabel(tool: ToolDefinition) {

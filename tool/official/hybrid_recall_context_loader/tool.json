@@ -128,5 +128,15 @@
       "valueType": "json",
       "description": "Search query, memory ids, message ids, source refs, retrieval modes, budget, and warnings."
     }
-  ]
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "混合召回上下文加载器",
+      "description": "结合会话消息搜索和长期记忆召回，返回带来源引用、排序元数据、预算信息和警告的可审计上下文包。"
+    },
+    "en-US": {
+      "name": "Hybrid Recall Context Loader",
+      "description": "Combines session-message search and long-term memory recall into one auditable context package with source refs, ranking metadata, budgets, and warnings."
+    }
+  }
 }

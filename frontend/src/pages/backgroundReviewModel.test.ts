@@ -54,8 +54,6 @@ test("buildBackgroundReviewDisplayItems exposes review run links and audit badge
       revisions: [],
       skippedCommands: [],
       evidenceItems: [],
-      improvementBadges: [],
-      improvementCandidates: [],
       warnings: [],
     },
   ]);
@@ -129,58 +127,4 @@ test("buildBackgroundReviewDisplayItems exposes writeback revisions skipped comm
   ]);
   assert.deepEqual(items[0]?.skippedCommands, ["user_context policy.update: unsupported_action - 旧 policy 写回不再支持。"]);
   assert.deepEqual(items[0]?.evidenceItems, ["autonomous_review.evidence: 用户明确要求后续回答先给结论。"]);
-});
-
-test("buildBackgroundReviewDisplayItems exposes improvement candidate summary", () => {
-  const items = buildBackgroundReviewDisplayItems([
-    review({
-      improvement_summary: {
-        candidate_count: 1,
-        risk_counts: { medium: 1 },
-        candidates: [
-          {
-            candidate_id: "cand_template_retry_budget",
-            kind: "template_revision",
-            status: "proposed",
-            source_run_id: "run_source",
-            risk_level: "medium",
-            expected_benefit: "减少能力循环超预算时的无效重试。",
-            proposed_change_summary: "为 Buddy 主循环增加针对 capability_budget_exhausted 的恢复分支。",
-            approval_required: true,
-            has_apply_command: true,
-            evidence_refs: [{ kind: "graph_run", id: "run_source" }],
-          },
-        ],
-        warnings: [],
-      },
-    }),
-  ]);
-
-  assert.deepEqual(items[0]?.improvementBadges, ["improvements: 1", "medium: 1"]);
-  assert.deepEqual(items[0]?.improvementCandidates, [
-    {
-      candidateId: "cand_template_retry_budget",
-      kind: "template_revision",
-      status: "proposed",
-      sourceRunId: "run_source",
-      riskLevel: "medium",
-      expectedBenefit: "减少能力循环超预算时的无效重试。",
-      proposedChangeSummary: "为 Buddy 主循环增加针对 capability_budget_exhausted 的恢复分支。",
-      approvalRequired: true,
-      hasApplyCommand: true,
-      evidenceRefs: ["graph_run:run_source"],
-      payload: {
-        candidate_id: "cand_template_retry_budget",
-        kind: "template_revision",
-        status: "proposed",
-        source_run_id: "run_source",
-        risk_level: "medium",
-        expected_benefit: "减少能力循环超预算时的无效重试。",
-        proposed_change_summary: "为 Buddy 主循环增加针对 capability_budget_exhausted 的恢复分支。",
-        approval_required: true,
-        has_apply_command: true,
-        evidence_refs: [{ kind: "graph_run", id: "run_source" }],
-      },
-    },
-  ]);
 });

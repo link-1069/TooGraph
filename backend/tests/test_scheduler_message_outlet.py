@@ -29,7 +29,7 @@ def test_scheduled_message_outlet_persists_buddy_transcript_for_public_outputs()
             job = store.create_scheduled_graph_job(
                 {
                     "name": "日报",
-                    "template_id": "buddy_capability_curator",
+                    "template_id": "embedding_maintenance",
                     "schedule_kind": "manual",
                     "delivery_target": {
                         "kind": "message_outlet",
@@ -78,7 +78,7 @@ def test_create_session_message_outlet_binds_created_buddy_session_for_future_ru
             job = store.create_scheduled_graph_job(
                 {
                     "name": "日报",
-                    "template_id": "buddy_capability_curator",
+                    "template_id": "embedding_maintenance",
                     "schedule_kind": "manual",
                     "delivery_target": {
                         "kind": "message_outlet",

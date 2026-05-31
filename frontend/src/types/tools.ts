@@ -7,6 +7,11 @@ export type ToolIoField = {
   description: string;
 };
 
+export type ToolLocalizedText = {
+  name: string;
+  description: string;
+};
+
 export type ToolRuntimeSpec = {
   type: string;
   entrypoint: string;
@@ -18,6 +23,7 @@ export type ToolDefinition = {
   toolKey: string;
   name: string;
   description: string;
+  localized?: Record<string, ToolLocalizedText>;
   schemaVersion: string;
   version: string;
   permissions: string[];

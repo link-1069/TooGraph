@@ -231,7 +231,6 @@ export function buildBuddyReviewGraph(template: TemplateRecord, input: BuildBudd
 
   const outputDefaults: Record<string, unknown> = {
     autonomous_review: {},
-    improvement_candidates: [],
     memory_update_plan: { has_updates: false, commands: [] },
     user_context_update_plan: { has_updates: false, commands: [] },
     structured_memory_update_plan: { has_updates: false, commands: [] },

@@ -13,11 +13,14 @@ test("ToolsPage loads the full tool catalog into a searchable management surface
   assert.match(toolsApiSource, /export async function fetchToolCatalog/);
   assert.match(componentSource, /fetchToolCatalog/);
   assert.match(componentSource, /fetchToolFiles/);
+  assert.match(componentSource, /resolveToolDisplayText/);
   assert.match(componentSource, /const tools = ref<ToolDefinition\[\]>\(\[\]\);/);
   assert.match(componentSource, /const filteredTools = computed\(\(\) => filterToolsForManagement/);
+  assert.match(componentSource, /const selectedToolDisplayText = computed/);
   assert.match(componentSource, /<ElInput[\s\S]*v-model="query"[\s\S]*class="tools-page__search"/);
   assert.match(componentSource, /role="tablist"[\s\S]*class="tools-page__filter-tabs"/);
   assert.match(componentSource, /v-for="tool in filteredTools"/);
+  assert.match(componentSource, /toolDisplayName\(tool\)/);
 });
 
 test("ToolsPage mirrors ActionsPage with a two-column inspector and enabled switch", () => {
@@ -64,4 +67,12 @@ test("ToolsPage exposes upload management actions with local button styling", ()
 
 test("ToolsPage participates in i18n source coverage", () => {
   assert.match(sourceCoverageTest, /"src\/pages\/ToolsPage\.vue"/);
+});
+
+test("ToolsPage uses the active locale for Tool manifest introductions", () => {
+  assert.match(componentSource, /const \{ t, locale \} = useI18n\(\);/);
+  assert.match(componentSource, /resolveToolDisplayText\(selectedTool\.value, String\(locale\.value\)\)/);
+  assert.match(componentSource, /resolveToolDisplayText\(tool, String\(locale\.value\)\)\.name/);
+  assert.match(componentSource, /\{\{ selectedToolDisplayText\.name \}\}/);
+  assert.match(componentSource, /\{\{ selectedToolDisplayText\.description \}\}/);
 });

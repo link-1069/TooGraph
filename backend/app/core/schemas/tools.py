@@ -29,6 +29,13 @@ class ToolIoField(BaseModel):
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
 
 
+class ToolLocalizedText(BaseModel):
+    name: str = ""
+    description: str = ""
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True, extra="forbid")
+
+
 class ToolRuntimeSpec(BaseModel):
     type: str = "none"
     entrypoint: str = ""
@@ -42,6 +49,7 @@ class ToolDefinition(BaseModel):
     tool_key: str = Field(..., min_length=1, alias="toolKey")
     name: str = Field(..., min_length=1)
     description: str = ""
+    localized: dict[str, ToolLocalizedText] = Field(default_factory=dict)
     schema_version: str = Field(default="", alias="schemaVersion")
     version: str = ""
     permissions: list[str] = Field(default_factory=list)

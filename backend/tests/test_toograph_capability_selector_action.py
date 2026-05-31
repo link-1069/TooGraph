@@ -280,7 +280,7 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
                 json.dumps(
                     {
                         "actionKey": "web_lookup",
-                        "description": "Fetch public web context.",
+                        "description": "Fetch public web pages.",
                         "permissions": ["network"],
                     }
                 ),

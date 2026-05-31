@@ -349,7 +349,7 @@ class BuddyBackgroundReviewRouteTests(unittest.TestCase):
         validation_run["status"] = "running"
         validation_run["metadata"] = {
             "origin": "buddy",
-            "buddy_template_id": "buddy_improvement_review_workflow",
+            "buddy_template_id": "legacy_candidate_review_workflow",
             "buddy_improvement_candidate_review": True,
             "buddy_improvement_candidate_id": "cand_status_progression",
         }

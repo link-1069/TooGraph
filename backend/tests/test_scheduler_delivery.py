@@ -56,8 +56,8 @@ class SchedulerDeliveryTests(unittest.TestCase):
                 database.initialize_storage()
                 job = store.create_scheduled_graph_job(
                     {
-                        "name": "能力库整理",
-                        "template_id": "buddy_capability_curator",
+                        "name": "Embedding 维护",
+                        "template_id": "embedding_maintenance",
                         "schedule_kind": "manual",
                         "delivery_target": {
                             "kind": "webhook",
@@ -71,7 +71,7 @@ class SchedulerDeliveryTests(unittest.TestCase):
                 )
                 completed = store.record_scheduled_graph_job_run(
                     job["job_id"],
-                    run_id="run_curator_1",
+                    run_id="run_embedding_1",
                     trigger_reason="manual",
                     status="completed",
                     started_at="2026-05-27T06:00:00Z",

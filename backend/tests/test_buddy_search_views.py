@@ -294,7 +294,7 @@ class BuddySearchViewTests(unittest.TestCase):
                 )
                 context_ref = create_context_assembly(
                     target_state_key="runtime_context",
-                    renderer_key="runtime_context_loader",
+                    renderer_key="runtime_context_view",
                     renderer_version="1",
                     rendered_text="api-context-evidence",
                     sources=[

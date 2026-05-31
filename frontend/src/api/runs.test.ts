@@ -118,7 +118,7 @@ test("fetchRunTree requests the nested run tree endpoint", async () => {
   globalThis.fetch = originalFetch;
 });
 
-test("fetchRuns can request curator template runs and internal scheduled runs", async () => {
+test("fetchRuns can request template runs and internal scheduled runs", async () => {
   let requestedUrl = "";
 
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -132,12 +132,12 @@ test("fetchRuns can request curator template runs and internal scheduled runs", 
   }) as typeof fetch;
 
   await fetchRuns({
-    templateId: " buddy_capability_curator ",
+    templateId: " embedding_maintenance ",
     status: " completed ",
     includeInternal: true,
   });
 
-  assert.equal(requestedUrl, "/api/runs?status=completed&template_id=buddy_capability_curator&include_internal=true");
+  assert.equal(requestedUrl, "/api/runs?status=completed&template_id=embedding_maintenance&include_internal=true");
 
   globalThis.fetch = originalFetch;
 });

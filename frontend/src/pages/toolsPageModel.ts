@@ -17,6 +17,11 @@ export type ToolOverview = {
   officialTools: number;
 };
 
+export type ToolDisplayText = {
+  name: string;
+  description: string;
+};
+
 export function buildToolStatusOptions(): ToolStatusFilter[] {
   return ["all", "active", "disabled"];
 }
@@ -52,6 +57,14 @@ export function buildToolOverview(tools: ToolDefinition[]): ToolOverview {
   };
 }
 
+export function resolveToolDisplayText(tool: ToolDefinition, locale: string): ToolDisplayText {
+  const localizedText = resolveLocalizedToolText(tool, locale);
+  return {
+    name: localizedText?.name.trim() || tool.name,
+    description: localizedText?.description.trim() || tool.description,
+  };
+}
+
 function matchesToolStatus(tool: ToolDefinition, filter: ToolStatusFilter): boolean {
   if (filter === "active") {
     return tool.status === "active";
@@ -72,11 +85,37 @@ function matchesToolSource(tool: ToolDefinition, filter: ToolSourceFilter): bool
   return true;
 }
 
+function resolveLocalizedToolText(tool: ToolDefinition, locale: string) {
+  const localized = tool.localized ?? {};
+  for (const candidate of buildLocaleCandidates(locale)) {
+    const text = localized[candidate];
+    if (text && (text.name.trim() || text.description.trim())) {
+      return text;
+    }
+  }
+  return null;
+}
+
+function buildLocaleCandidates(locale: string): string[] {
+  const normalizedLocale = locale.trim();
+  const language = normalizedLocale.split("-")[0] ?? "";
+  const candidates = [
+    normalizedLocale,
+    language,
+    language === "zh" ? "zh-CN" : "",
+    language === "en" ? "en-US" : "",
+    "en-US",
+    "zh-CN",
+  ];
+  return candidates.filter((candidate, index) => Boolean(candidate) && candidates.indexOf(candidate) === index);
+}
+
 function buildToolSearchText(tool: ToolDefinition): string {
   return [
     tool.toolKey,
     tool.name,
     tool.description,
+    ...Object.values(tool.localized ?? {}).flatMap((localizedText) => [localizedText.name, localizedText.description]),
     tool.version,
     tool.sourceScope,
     tool.sourcePath,

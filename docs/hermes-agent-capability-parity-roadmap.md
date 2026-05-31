@@ -21,7 +21,7 @@
 这个判断来自当前代码事实：
 
 - 主循环、上下文装配、历史、召回、能力选择、动态能力执行、后台复盘、权限暂停、provider fallback、节点级 provider profile override、上下文压缩、运行诊断、Buddy 胶囊重放、模型日志树和消息平台入口已经形成可用闭环。
-- Scheduler、delegation、provider profile、记忆质量、能力包覆盖、Scheduler 外部投递、消息平台生产硬化和长期任务状态仍是主要缺口。
+- Scheduler、provider profile、记忆质量、能力包覆盖、Scheduler 外部投递、消息平台生产硬化和长期任务状态仍是主要缺口。
 - `Gateway / 多入口 / 消息平台` 的基础链路已经合并回 `dev`：当前以 Message Platforms 页面、Telegram / Feishu-Lark bindings、消息平台 runtime、外部消息进入 Buddy 会话和可见回复投递为事实边界。
 - `Plugin / Extension` 暂不作为本文档目标。
 - 完整 RAG ingestion、索引构建和知识问答链路本轮只保留承载入口，不进入本轮追赶开发。
@@ -37,11 +37,10 @@
 | Buddy 主循环 | `graph_template/official/buddy_autonomous_loop/template.json`、`tool/official/buddy_history_context_loader/run.py`、`tool/official/buddy_context_pressure_check/run.py` |
 | 上下文装配 | `backend/app/core/storage/context_assembly_store.py`、`backend/app/core/runtime/agent_prompt.py`、`tool/official/*_context_loader/run.py` |
 | 历史、搜索、记忆 | `backend/app/buddy/store.py`、`backend/app/core/storage/memory_store.py`、`backend/app/core/storage/retrieval_store.py`、`backend/app/core/storage/embedding_store.py` |
-| 后台复盘与改进候选 | `backend/app/buddy/background_review.py`、`backend/app/buddy/improvement_candidates.py`、`graph_template/official/buddy_autonomous_review/template.json`、`graph_template/official/buddy_improvement_review_workflow/template.json` |
+| Background review and writeback | `backend/app/buddy/background_review.py`, `graph_template/official/buddy_autonomous_review/template.json` |
 | 能力选择与能力包 | `action/official/toograph_capability_selector/`、`action/official/*`、`tool/official/*`、`scripts/official-asset-gate.mjs` |
 | Scheduler | `backend/app/scheduler/store.py`、`backend/app/scheduler/runner.py`、`backend/app/scheduler/service.py`、`frontend/src/pages/SchedulerPage.vue` |
 | 消息平台 / 多入口 | `backend/app/messaging/`、`backend/app/api/routes_message_platforms.py`、`frontend/src/pages/MessagePlatformsPage.vue`、`frontend/src/api/message-platforms.ts` |
-| Delegation | `tool/official/delegation_worker_result_packager/`、`tool/official/delegation_worker_result_merger/`、`tool/official/delegation_kanban_board_builder/`、`graph_template/official/delegation_*` |
 | Provider runtime | `backend/app/core/schemas/node_system.py`、`backend/app/core/runtime/agent_runtime_config.py`、`backend/app/tools/model_provider_client.py`、`backend/app/core/provider_fallback.py`、`backend/app/api/routes_settings.py`、`frontend/src/pages/ModelProvidersPage.vue` |
 | 权限、安全、artifact | `backend/app/core/capability_permissions.py`、`backend/app/core/context_security.py`、`backend/app/core/storage/capability_artifact_store.py`、`backend/tests/test_permission_approval.py` |
 | 诊断与 UI | `frontend/src/pages/RunDetailPage.vue`、`frontend/src/pages/agentDiagnosticModel.ts`、`frontend/src/buddy/buddyOutputTrace.ts`、`frontend/src/pages/EvidenceSearchPage.vue`、`frontend/src/pages/ModelLogsPage.vue` |
@@ -62,12 +61,11 @@
 | Session persistence 与搜索 | 基本完成 | 原子消息、会话摘要、run refs、FTS/trigram、Evidence 搜索 | `backend/tests/test_buddy_store.py`、`backend/tests/test_buddy_search_views.py`、`frontend/src/pages/EvidenceSearchPage.structure.test.ts` | 复杂 lineage、summary source refs 和 run output 召回联动 |
 | 长期记忆与 Embedding 召回 | 进行中 | 文件稳定上下文与 DB memory 双线；embedding jobs/vectors；hybrid recall；rerank | `backend/tests/test_memory_store.py`、`backend/tests/test_embedding_store.py`、`backend/tests/test_hybrid_recall_context_loader_tool.py`、`backend/tests/test_buddy_search_views.py` | 弱语义去重、人工复核候选、召回质量报告 |
 | Background Review | 进行中 | 可见回复后触发后台复盘图，记录 source/review run，写入 revision 和候选 | `backend/tests/test_buddy_background_review_routes.py`、`frontend/src/buddy/BuddyWidget.structure.test.ts` | 失败处理、预算隔离、周期化整理 |
-| 自我改进与 Curator | 进行中 | improvement candidates、验证 run 链接、approve/reject/apply API、Curator reports 页面 | `backend/tests/test_buddy_background_review_routes.py`、`backend/tests/test_template_layouts.py`、`frontend/src/pages/CuratorReportsPage.vue` | 自动验证、真实 diff 应用路径、更多 writer 覆盖 |
+| Self improvement | In progress | autonomous review writes low-risk memory/user-context/identity/capability usage updates with revisions | `backend/tests/test_buddy_background_review_routes.py`, `backend/tests/test_template_layouts.py`, `frontend/src/pages/RunDetailPage.vue` | higher-risk evolution workflows for Action/Tool/Subgraph/template revisions |
 | Capability Selector 与能力路由 | 进行中 | capability profile、权限过滤、selection trace、usage events、失败 fallback 输入 | `backend/tests/test_toograph_capability_selector_action.py`、`scripts/capability-selector-loop.test.mjs`、`frontend/src/buddy/buddyOutputTrace.test.ts` | 跨能力组合 fallback 和长期 usage 学习 |
 | Action / Tool / Subgraph 生态 | 进行中 | 官方 Action/Tool/Subgraph 包、manifest gate、动态 Tool/Subgraph capability、artifact 输出 | `backend/tests/test_action_manifest_contract.py`、`backend/tests/test_tool_node_runtime.py`、`scripts/official-asset-gate.mjs` | 高风险写入 Action、Subgraph worker 组合、artifact 端到端覆盖 |
 | Scheduler / Cron | 进行中 | job/store/API/runner/lifespan tick、retry policy、local delivery audit、权限边界、经审批 webhook/http delivery adapter、delivery attempt 审计 | `backend/tests/test_scheduler_store.py`、`backend/tests/test_scheduler_routes.py`、`backend/tests/test_scheduler_service.py`、`backend/tests/test_scheduler_delivery.py`、`frontend/src/pages/SchedulerPage.vue` | delivery 失败重试链、Scheduler/RunDetail 投递诊断 UI |
 | Gateway / 多入口 / 消息平台 | 进行中 | Message Platforms 页面、Telegram / Feishu-Lark binding、runtime/adapters、外部消息进入 Buddy 会话、斜杠命令、可见回复投递、audit/dedup/session resolver | `backend/tests/test_message_platform_*.py`、`frontend/src/api/message-platforms.test.ts`、`frontend/src/pages/MessagePlatformsPage.structure.test.ts`、`frontend/src/pages/messagePlatformsPageModel.test.ts` | 多模态 `state_bundle`、生产级凭据/部署、外部投递诊断、更多平台 adapter |
-| Delegation / Subagents / Kanban | 进行中 | worker packet/result/merge/board state、Batch/Subgraph worker、RunDetail/胶囊诊断 | `backend/tests/test_delegation_worker_result_packager_tool.py`、`backend/tests/test_delegation_worker_result_merger_tool.py`、`backend/tests/test_delegation_kanban_board_builder_tool.py`、`backend/tests/test_batch_node_system.py` | 持久 board、claim/ownership、长期任务状态 |
 | Provider Runtime 与模型能力矩阵 | 进行中 | provider fallback trace、embedding/rerank fallback、模型能力矩阵、保存级请求超时 profile、节点级 `providerProfile.requestTimeoutSeconds` override、`cachePolicy=disabled` prompt cache 审计决策、OpenAI/Codex Responses `prompt_cache_key` payload、Gemini `cachedContents` resource payload、Gemini cachedContent 本地复用与 TTL 过期、Model Logs cache hit-rate/resource summary、cache resource retention/pruning、OpenAI-compatible `prompt_cache` capability opt-in payload、model call provider profile meta、RunDetail Provider Profile 诊断、RunDetail budget degradation diagnostic UI、provider credential pool schema、credential failure/cooldown 写回、repeated-failure credential exhausted 隔离、least-recently-used credential 轮换、跨调用成本预算累计审计、预算耗尽 preflight 阻断、`costBudget.onExceeded=request_approval` 审批请求事实、预算审批 pause/resume 放行、`costBudget.onExceeded=degrade_model` 显式模型降级、`rateProfile` 最近窗口 preflight 阻断、进程内 `rateProfile.concurrency` gate、`tokensPerMinute` 请求 token 预测阻断、rate preflight `retry_after` 诊断、显式 `rateProfile.waitStrategy=wait` 预算内多次等待重试、进程内 provider 级 FIFO wait 队列、DB-backed in-flight 请求/Token 预留、reservation meta/log 诊断事实、Model Logs reservation 诊断 UI、DB-backed provider rate wait queue、Model Logs credential diagnostic UI、Model Logs cost/rate diagnostic UI、Model Logs cache diagnostic UI、Model Logs fallback diagnostic UI、Model Logs budget degradation diagnostic UI | `backend/tests/test_agent_runtime_config.py`、`backend/tests/test_agent_response_generation.py`、`backend/tests/test_agent_action_input_generation.py`、`backend/tests/test_agent_subgraph_input_generation.py`、`backend/tests/test_node_handlers_runtime.py`、`backend/tests/test_model_request_logs.py`、`backend/tests/test_model_provider_client.py`、`backend/tests/test_settings_model_providers.py`、`backend/tests/test_provider_fallback_resolver.py`、`backend/tests/test_openai_compatible_provider_runtime.py`、`frontend/src/pages/agentDiagnosticModel.test.ts`、`frontend/src/pages/runDetailModel.test.ts`、`frontend/src/pages/settingsPageModel.test.ts`、`frontend/src/pages/RunDetailPage.structure.test.ts`、`frontend/src/pages/ModelProvidersPage.structure.test.ts`、`frontend/src/pages/modelLogProviderDiagnostics.test.ts`、`frontend/src/pages/ModelLogsPage.structure.test.ts`、`frontend/src/api/modelLogs.test.ts`、`backend/tests/test_model_provider_credentials.py`、`backend/tests/test_storage_database.py` | 更多 provider-specific cache adapter |
 | 上下文压缩与 Prompt Cache | 进行中 | 上下文压力检查、压缩子图、summary source refs、prompt audit metadata | `backend/tests/test_buddy_context_pressure_tool.py`、`backend/tests/test_template_layouts.py`、`frontend/src/buddy/buddyContextCompaction.test.ts` | provider 级 cache-control、稳定前缀拆分、节点级 cache override |
 | 权限、安全与注入防护 | 进行中 | context scanner、secret redaction、高风险阻断、permission approval、artifact 路径隔离 | `backend/tests/test_context_assembly_store.py`、`backend/tests/test_permission_approval.py`、`backend/tests/test_graph_run_db_store_permission_audit.py`、`backend/tests/test_capability_artifact_store.py` | 能力包保护策略、审批 review surface、外部投递审批 |
@@ -116,7 +114,7 @@
 
 - `pytest backend/tests/test_context_assembly_store.py -q`
 - `pytest backend/tests/test_agent_state_prompt_semantics.py -q`
-- `pytest backend/tests/test_buddy_history_context_loader_tool.py backend/tests/test_runtime_context_loader_tool.py -q`
+- `pytest backend/tests/test_buddy_history_context_loader_tool.py -q`
 
 ### 4.3 会话历史已经改为原子消息、摘要和引用重建
 
@@ -158,18 +156,18 @@
 - `pytest backend/tests/test_hybrid_recall_context_loader_tool.py backend/tests/test_memory_search_context_loader_tool.py -q`
 - `pytest backend/tests/test_buddy_search_views.py -q`
 
-### 4.5 后台复盘和自我改进候选已经可审计
+### 4.5 Background review and autonomous writeback are auditable
 
 代码事实：
 
 - `backend/app/buddy/background_review.py` 从已完成 source run 创建后台复盘 run。
-- `buddy_background_review_runs`、`improvement_candidates` 已持久化。
-- `/improvements` 和 curator reports 有前端入口：`frontend/src/router/index.ts`。
+- `buddy_background_review_runs`, writer commands, and revisions are persisted.
+- The old improvements queue is removed from the visible product path.
 
 增强内容：
 
 - 可见回复路径和复盘路径解耦，复盘不会阻塞主回复。
-- 记忆写回、用户上下文写回、身份写回和改进候选都有 revision 或候选状态。
+- Memory, user-context, structured-memory, identity, and capability-usage writebacks leave command and revision records.
 - 候选可以绑定验证 run、审批、拒绝、应用。
 
 验证方式：
@@ -216,7 +214,7 @@
 验证方式：
 
 - `pytest backend/tests/test_scheduler_store.py backend/tests/test_scheduler_routes.py backend/tests/test_scheduler_service.py backend/tests/test_scheduler_delivery.py -q`
-- `pytest backend/tests/test_scheduler_permission_policy.py backend/tests/test_scheduler_run_context_loader_tool.py -q`
+- `pytest backend/tests/test_scheduler_permission_policy.py -q`
 
 ### 4.8 Provider runtime 已经统一 fallback 和请求超时 profile
 
@@ -237,7 +235,7 @@
 
 - `pytest backend/tests/test_model_provider_client.py -q`
 - `pytest backend/tests/test_settings_model_providers.py -q`
-- `pytest backend/tests/test_provider_fallback_resolver.py backend/tests/test_provider_fallback_resolver_tool.py -q`
+- `pytest backend/tests/test_provider_fallback_resolver.py -q`
 - `pytest backend/tests/test_openai_compatible_provider_runtime.py -q`
 
 ### 4.9 权限、安全和 artifact 边界已经进入运行时
@@ -589,27 +587,6 @@
 - 扩展 `backend/tests/test_message_platform_runtime.py`、`backend/tests/test_message_platform_buddy_ingress.py`、`backend/tests/test_message_platform_routes.py`。
 - 扩展 `frontend/src/pages/MessagePlatformsPage.structure.test.ts` 和 `frontend/src/pages/messagePlatformsPageModel.test.ts`。
 
-### 阶段 C：Delegation 持久协作 board
-
-目标：把当前一次性 worker board snapshot 升级成可跨 run 追踪的长期任务状态。
-
-当前缺口：
-
-- worker packet/result/merge 已存在，但 board snapshot 主要跟随单次 run。
-- claim、ownership、长期任务状态、重试归属还没有表结构和 UI 操作。
-
-实现方案：
-
-1. 新增 delegation board 表：board、task、claim、worker run refs、status history。
-2. 让 `delegation_kanban_board_builder` 支持从持久 board + 当前 worker 结果合成 snapshot。
-3. RunDetail 保持单次诊断；Scheduler/Improvements 可引用长期 board。
-4. UI 增加 claim/release/retry/history 操作，所有变更走 command/revision 或 run record。
-
-建议验证：
-
-- 新增 `backend/tests/test_delegation_board_store.py`。
-- 扩展 `backend/tests/test_delegation_kanban_board_builder_tool.py`、`frontend/src/pages/agentDiagnosticModel.test.ts`。
-
 ### 阶段 D：记忆召回质量提升
 
 目标：让 memory recall 从“能召回”提升到“能解释质量、能去重、能人工复核”。
@@ -644,7 +621,7 @@
 实现方案：
 
 1. 给高风险 Action 增加 package-specific tests 和 manifest verification commands。
-2. 给关键官方模板增加真实 graph run 检查，重点覆盖 workspace executor、graph writer、page operator、delegation worker。
+2. 给关键官方模板增加真实 graph run 检查，重点覆盖 workspace executor、graph writer 和 page operator。
 3. 让官方资产门禁按 changed paths 自动跑对应 package tests 和 graph run checks。
 4. RunDetail 检查 artifact refs、permission waits、child run tree 和 output boundary。
 
@@ -663,7 +640,7 @@
 | 图运行 | `graph_runs`、`graph_run_snapshots`、`graph_model_calls`、`content_blobs` |
 | Agent loop / capability | `agent_loop_events`、`capability_usage_events` |
 | Buddy 会话 | `buddy_sessions`、`buddy_messages`、`buddy_message_revisions`、`buddy_message_run_refs`、`buddy_session_summaries` |
-| Buddy 写回与复盘 | `buddy_revisions`、`buddy_commands`、`buddy_background_review_runs`、`improvement_candidates` |
+- `buddy_background_review_runs`, writer commands, and revisions are persisted.
 | Scheduler | `scheduled_graph_jobs`、`scheduled_graph_job_runs` |
 | 消息平台 | `message_platform_bindings`、`message_platform_connection_status`、`message_platform_secrets`、`message_platform_sessions`、`message_platform_audit_events`、`message_platform_dedup` |
 | Retrieval / Embedding | `retrieval_documents`、`retrieval_chunks`、`retrieval_queries`、`retrieval_results`、`embedding_models`、`embedding_vectors`、`embedding_jobs` |
@@ -716,12 +693,11 @@ rg -n "TO[D]O|TB[D]|待[补]" docs/hermes-agent-capability-parity-roadmap.md
 1. Provider-specific cache adapter 扩展。Provider profile 主链路已基本落地，剩余适合按具体 provider/transport 继续补齐。
 2. 消息平台生产硬化。基础入口已经合并，下一步补 `state_bundle`、delivery diagnostics、凭据轮换和 adapter health。
 3. Scheduler 外部投递闭环。当前已经有 store、runner、retry、权限边界、审批后 webhook/http 投递和 attempt 记录，下一步是 delivery 失败重试链和 Scheduler/RunDetail 诊断 UI。
-4. Delegation 持久 board。当前 worker 协议已经能跑，下一步需要长期状态、ownership 和 UI 操作。
-5. 记忆召回质量提升。当前 recall 可用，下一步提高去重、解释性和人工复核。
-6. 官方能力包端到端覆盖。作为所有能力继续扩展前的防回归基础。
+4. 记忆召回质量提升。当前 recall 可用，下一步提高去重、解释性和人工复核。
+5. 官方能力包端到端覆盖。作为所有能力继续扩展前的防回归基础。
 
 继续开发前的判断标准：
 
 - 当前文档中的“已完成增强”都能通过对应测试或 UI 入口验证。
 - 当前文档中的“下一步”都有明确文件落点和测试落点。
-- 新开发只扩展一个能力域，不同时混做 provider、scheduler、delegation 和 memory quality。
+- 新开发只扩展一个能力域，不同时混做 provider、scheduler 和 memory quality。

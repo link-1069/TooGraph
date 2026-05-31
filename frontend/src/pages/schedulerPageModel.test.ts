@@ -19,35 +19,24 @@ import {
 test("buildSchedulerOverview summarizes total, enabled, disabled, and official jobs", () => {
   const jobs = [
     createJob("official_embedding_maintenance", true, "official_seed"),
-    createJob("official_buddy_capability_curator", false, "official_seed"),
     createJob("user_job", false, "user"),
   ];
 
   assert.deepEqual(buildSchedulerOverview(jobs), [
-    { key: "total", label: "全部任务", value: 3 },
+    { key: "total", label: "全部任务", value: 2 },
     { key: "enabled", label: "已启用", value: 1 },
-    { key: "disabled", label: "已停用", value: 2 },
-    { key: "official", label: "官方任务", value: 2 },
+    { key: "disabled", label: "已停用", value: 1 },
+    { key: "official", label: "官方任务", value: 1 },
   ]);
 });
 
 test("buildOfficialSchedulerEnableRecommendations highlights official maintenance jobs by enabled state", () => {
   const jobs = [
     createJob("user_job", false, "user"),
-    createJob("official_buddy_capability_curator", false, "official_seed"),
     createJob("official_embedding_maintenance", true, "official_seed"),
   ];
 
   assert.deepEqual(buildOfficialSchedulerEnableRecommendations(jobs), [
-    {
-      job_id: "official_buddy_capability_curator",
-      title: "能力整理",
-      description: "周期性检查能力目录、使用记录和改进候选，生成可审查整理报告。",
-      enabled: false,
-      template_id: "official_buddy_capability_curator",
-      schedule: "每 1 小时",
-      action: "enable",
-    },
     {
       job_id: "official_embedding_maintenance",
       title: "Embedding 维护",

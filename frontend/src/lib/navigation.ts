@@ -8,7 +8,6 @@ export type NavigationIconKey =
   | "Collection"
   | "CollectionTag"
   | "Connection"
-  | "DataBoard"
   | "DataLine"
   | "DocumentChecked"
   | "EditPen"
@@ -39,7 +38,6 @@ export const PRIMARY_NAVIGATION_ITEMS: PrimaryNavigationItem[] = [
   navigationItem("/runs", "runs", "nav.runs", "Clock"),
   navigationItem("/library", "graphLibrary", "nav.graphLibrary", "Collection", "library"),
   navigationItem("/scheduler", "scheduler", "nav.scheduler", "Timer"),
-  navigationItem("/curator-reports", "curatorReports", "nav.curatorReports", "DataBoard", "curatorReports", "developer"),
   navigationItem("/knowledge", "knowledge", "nav.knowledge", "Reading"),
   {
     ...navigationItem("/buddy", "buddy", "nav.buddy", "ChatDotRound"),
@@ -51,7 +49,6 @@ export const PRIMARY_NAVIGATION_ITEMS: PrimaryNavigationItem[] = [
   navigationItem("/presets", "presets", "nav.presets", "CollectionTag"),
   navigationItem("/actions", "actions", "nav.actions", "Opportunity"),
   navigationItem("/tools", "tools", "nav.tools", "Tools"),
-  navigationItem("/improvements", "improvements", "nav.improvements", "TrendCharts", "improvements", "developer"),
   navigationItem("/models", "models", "nav.models", "DataLine"),
   navigationItem("/model-logs", "modelLogs", "nav.modelLogs", "Tickets", "modelLogs"),
   navigationItem("/evidence", "evidenceSearch", "nav.evidenceSearch", "DocumentChecked", "evidenceSearch", "developer"),

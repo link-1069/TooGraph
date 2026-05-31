@@ -251,7 +251,7 @@ def _resolve_capability_artifact_path(local_path: str, *, backend_root: Path) ->
 
 
 def _existing_file(path: Path, *, error_type: str) -> Path:
-    resolved = path.expanduser().resolve()
+    resolved = _resolve_path(path)
     if not resolved.is_file():
         raise VideoSegmenterError(error_type, f"Video file does not exist: {path}")
     return resolved
@@ -270,7 +270,7 @@ def _resolve_artifact_dir() -> Path:
     raw_dir = str(os.environ.get("TOOGRAPH_ACTION_ARTIFACT_DIR") or "").strip()
     if not raw_dir:
         raise VideoSegmenterError("artifact_dir_missing", "Tool artifact directory is not available.")
-    artifact_dir = Path(raw_dir).expanduser().resolve()
+    artifact_dir = _resolve_path(Path(raw_dir))
     artifact_dir.mkdir(parents=True, exist_ok=True)
     return artifact_dir
 
@@ -300,8 +300,12 @@ def _ensure_backend_on_sys_path() -> Path:
 def _repo_root() -> Path:
     configured = str(os.environ.get("TOOGRAPH_REPO_ROOT") or "").strip()
     if configured:
-        return Path(configured).expanduser().resolve()
+        return _resolve_path(Path(configured))
     return Path(__file__).resolve().parents[3]
+
+
+def _resolve_path(path: Path) -> Path:
+    return path.expanduser().resolve() if str(path).startswith("~") else path.resolve()
 
 
 def _first_text(payload: dict[str, Any], keys: tuple[str, ...]) -> str:

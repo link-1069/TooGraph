@@ -1,6 +1,4 @@
 import type { RunDetail } from "../types/run.ts";
-import { buildDelegationBoardDiagnostic, type DelegationBoardDiagnostic } from "../lib/delegationBoardDiagnostic.ts";
-import { buildDelegationWorkerDiagnostic, type DelegationWorkerDiagnostic } from "../lib/delegationWorkerDiagnostic.ts";
 
 const PROVIDER_FALLBACK_TRACE_RUNTIME_KEYS = [
   "provider_fallback_trace",
@@ -35,8 +33,6 @@ export type AgentDiagnostic = {
   providerFallback: ProviderFallbackDiagnostic;
   providerCostBudgetDegradation: ProviderCostBudgetDegradationDiagnostic;
   permissionApproval: PermissionApprovalDiagnostic;
-  delegationWorker: DelegationWorkerDiagnostic;
-  delegationBoard: DelegationBoardDiagnostic;
 };
 
 export type ProviderProfileDiagnostic = {
@@ -122,11 +118,6 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     resolveProviderCostBudgetDegradation(run, stateValues),
   );
   const permissionApproval = buildPermissionApprovalDiagnostic(run);
-  const delegationWorker = buildDelegationWorkerDiagnostic(
-    resolveDelegationWorkerPackage(run, stateValues),
-    { workerRuns: resolveDelegationWorkerRuns(run) },
-  );
-  const delegationBoard = buildDelegationBoardDiagnostic(resolveDelegationBoardSnapshot(run, stateValues));
   const selectedCapabilityRef = textFromUnknown(report.selected_capability_ref);
   const warnings = diagnosticWarningsFromReport(report);
   const hasLoopEvidence = Boolean(
@@ -138,8 +129,6 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     || providerFallback.visible
     || providerCostBudgetDegradation.visible
     || permissionApproval.visible
-    || delegationWorker.visible
-    || delegationBoard.visible
   );
   const hasNonDefaultStopReason = Boolean(stopReason && stopReason !== "completed");
   const badges = [
@@ -163,8 +152,6 @@ export function buildAgentDiagnostic(run: RunDetail): AgentDiagnostic {
     providerFallback,
     providerCostBudgetDegradation,
     permissionApproval,
-    delegationWorker,
-    delegationBoard,
   };
 }
 
@@ -316,51 +303,6 @@ function formatRateLimit(value: number | null, unit: string, options: { prefix?:
 
 function formatCompactNumber(value: number) {
   return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(4)));
-}
-
-function resolveDelegationWorkerPackage(run: RunDetail, stateValues: Record<string, unknown>) {
-  const statePackage = recordFromUnknown(stateValues.worker_result_package);
-  if (Object.keys(statePackage).length > 0) {
-    return statePackage;
-  }
-  for (const execution of [...listNodeExecutionsDeep(run.node_executions)].reverse()) {
-    const outputs = recordFromUnknown(execution.artifacts?.outputs);
-    const outputPackage = recordFromUnknown(outputs.worker_result_package);
-    if (Object.keys(outputPackage).length > 0) {
-      return outputPackage;
-    }
-    const stateWritePackage = recordFromUnknown(findStateWriteValue(execution, "worker_result_package"));
-    if (Object.keys(stateWritePackage).length > 0) {
-      return stateWritePackage;
-    }
-  }
-  return {};
-}
-
-function resolveDelegationBoardSnapshot(run: RunDetail, stateValues: Record<string, unknown>) {
-  const stateBoard = recordFromUnknown(stateValues.delegation_board_snapshot);
-  if (Object.keys(stateBoard).length > 0) {
-    return stateBoard;
-  }
-  for (const execution of [...listNodeExecutionsDeep(run.node_executions)].reverse()) {
-    const outputs = recordFromUnknown(execution.artifacts?.outputs);
-    const outputBoard = recordFromUnknown(outputs.delegation_board_snapshot);
-    if (Object.keys(outputBoard).length > 0) {
-      return outputBoard;
-    }
-    const stateWriteBoard = recordFromUnknown(findStateWriteValue(execution, "delegation_board_snapshot"));
-    if (Object.keys(stateWriteBoard).length > 0) {
-      return stateWriteBoard;
-    }
-  }
-  return {};
-}
-
-function resolveDelegationWorkerRuns(run: RunDetail) {
-  return (run.children ?? []).filter((child) => {
-    const invocationKind = textFromUnknown(child.invocation_kind);
-    return invocationKind === "batch_subgraph_worker" || invocationKind === "delegation_worker";
-  });
 }
 
 function findStateWriteValue(execution: NonNullable<RunDetail["node_executions"]>[number], stateKey: string) {

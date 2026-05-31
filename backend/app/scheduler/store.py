@@ -135,6 +135,28 @@ def update_scheduled_graph_job(job_id: str, payload: dict[str, Any], *, now: str
     return load_scheduled_graph_job(existing["job_id"])
 
 
+def delete_scheduled_graph_job(job_id: str) -> bool:
+    normalized_job_id = _compact_text(job_id)
+    if not normalized_job_id:
+        return False
+    with get_connection() as connection:
+        run_rows = connection.execute(
+            "SELECT job_run_id FROM scheduled_graph_job_runs WHERE job_id = ?",
+            (normalized_job_id,),
+        ).fetchall()
+        job_run_ids = [str(row["job_run_id"]) for row in run_rows]
+        if job_run_ids:
+            placeholders = ",".join("?" for _ in job_run_ids)
+            connection.execute(
+                f"DELETE FROM scheduled_delivery_attempts WHERE job_run_id IN ({placeholders})",
+                tuple(job_run_ids),
+            )
+        connection.execute("DELETE FROM scheduled_delivery_attempts WHERE job_id = ?", (normalized_job_id,))
+        connection.execute("DELETE FROM scheduled_graph_job_runs WHERE job_id = ?", (normalized_job_id,))
+        cursor = connection.execute("DELETE FROM scheduled_graph_jobs WHERE job_id = ?", (normalized_job_id,))
+    return cursor.rowcount > 0
+
+
 def load_scheduled_graph_job(job_id: str) -> dict[str, Any]:
     normalized_job_id = _compact_text(job_id)
     with get_connection() as connection:

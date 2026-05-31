@@ -80,5 +80,15 @@
       "valueType": "json",
       "description": "Search query, hit message ids, session lineage, source refs, budget, and warnings."
     }
-  ]
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "会话搜索上下文加载器",
+      "description": "在 Buddy 历史消息中搜索相关会话片段，并返回带消息引用、上下文窗口、会话链路、预算信息和警告的可审计上下文包。"
+    },
+    "en-US": {
+      "name": "Session Search Context Loader",
+      "description": "Searches Buddy history messages and returns an auditable context package with message refs, nearby context windows, session lineage, budgets, and warnings."
+    }
+  }
 }

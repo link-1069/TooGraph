@@ -243,6 +243,50 @@ class RuntimeActionInvocationTests(unittest.TestCase):
         self.assertEqual(result["no_proxy"], "127.0.0.1,localhost")
         self.assertFalse(result["openai_key_present"])
 
+    def test_script_action_runner_inherits_windows_home_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            action_dir = Path(temp_dir) / "windows_home_echo"
+            action_dir.mkdir()
+            entrypoint = action_dir / "run.py"
+            entrypoint.write_text(
+                "\n".join(
+                    [
+                        "import json",
+                        "import os",
+                        "print(json.dumps({",
+                        "  'status': 'succeeded',",
+                        "  'userprofile': os.environ.get('USERPROFILE'),",
+                        "  'homedrive': os.environ.get('HOMEDRIVE'),",
+                        "  'homepath': os.environ.get('HOMEPATH'),",
+                        "}))",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            runner = ScriptActionRunner(
+                action_key="windows_home_echo",
+                action_dir=action_dir,
+                runtime_type="python",
+                entrypoint="run.py",
+            )
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "USERPROFILE": "C:\\Users\\tester",
+                    "HOMEDRIVE": "C:",
+                    "HOMEPATH": "\\Users\\tester",
+                },
+                clear=False,
+            ):
+                result = invoke_action(runner, {})
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["userprofile"], "C:\\Users\\tester")
+        self.assertEqual(result["homedrive"], "C:")
+        self.assertEqual(result["homepath"], "\\Users\\tester")
+
     def test_script_action_runner_spools_large_runtime_context_to_file_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             action_dir = Path(temp_dir) / "runtime_context_echo"

@@ -5,13 +5,11 @@ export type PrimaryNavigationSection =
   | "graphLibrary"
   | "knowledge"
   | "scheduler"
-  | "curatorReports"
   | "buddy"
   | "messagePlatforms"
   | "presets"
   | "actions"
   | "tools"
-  | "improvements"
   | "models"
   | "modelLogs"
   | "evidenceSearch"
@@ -47,9 +45,6 @@ export function resolvePrimaryNavigationSection(pathname: string): PrimaryNaviga
   if (pathname === "/scheduler" || pathname.startsWith("/scheduler/")) {
     return "scheduler";
   }
-  if (pathname === "/curator-reports" || pathname.startsWith("/curator-reports/")) {
-    return "curatorReports";
-  }
   if (pathname === "/buddy" || pathname.startsWith("/buddy/")) {
     return "buddy";
   }
@@ -64,9 +59,6 @@ export function resolvePrimaryNavigationSection(pathname: string): PrimaryNaviga
   }
   if (pathname === "/tools" || pathname.startsWith("/tools/")) {
     return "tools";
-  }
-  if (pathname === "/improvements" || pathname.startsWith("/improvements/")) {
-    return "improvements";
   }
   if (pathname === "/models" || pathname.startsWith("/models/")) {
     return "models";

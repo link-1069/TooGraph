@@ -4,11 +4,9 @@ import { fetchSettings } from "@/api/settings";
 import { isDeveloperNavigationPath } from "@/lib/navigation";
 
 const BuddyPage = () => import("@/pages/BuddyPage.vue");
-const CuratorReportsPage = () => import("@/pages/CuratorReportsPage.vue");
 const EditorPage = () => import("@/pages/EditorPage.vue");
 const GraphLibraryPage = () => import("@/pages/GraphLibraryPage.vue");
 const HomePage = () => import("@/pages/HomePage.vue");
-const ImprovementCandidatesPage = () => import("@/pages/ImprovementCandidatesPage.vue");
 const KnowledgePage = () => import("@/pages/KnowledgePage.vue");
 const MessagePlatformsPage = () => import("@/pages/MessagePlatformsPage.vue");
 const ModelLogsPage = () => import("@/pages/ModelLogsPage.vue");
@@ -33,13 +31,11 @@ export const router = createRouter({
     { path: "/library", component: GraphLibraryPage },
     { path: "/knowledge", component: KnowledgePage },
     { path: "/scheduler", component: SchedulerPage },
-    { path: "/curator-reports", component: CuratorReportsPage },
     { path: "/buddy", component: BuddyPage },
     { path: "/message-platforms", component: MessagePlatformsPage },
     { path: "/presets", component: PresetsPage },
     { path: "/actions", component: ActionsPage },
     { path: "/tools", component: ToolsPage },
-    { path: "/improvements", component: ImprovementCandidatesPage },
     { path: "/models", component: ModelProvidersPage },
     { path: "/model-logs", component: ModelLogsPage },
     { path: "/evidence", component: EvidenceSearchPage },

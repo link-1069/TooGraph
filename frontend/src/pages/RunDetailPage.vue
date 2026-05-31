@@ -398,11 +398,8 @@
                 <div v-if="item.writebackBadges.length > 0" class="run-detail__badges run-detail__badges--writeback">
                   <span v-for="badge in item.writebackBadges" :key="`${item.key}-writeback-${badge}`">{{ badge }}</span>
                 </div>
-                <div v-if="item.improvementBadges.length > 0" class="run-detail__badges run-detail__badges--improvement">
-                  <span v-for="badge in item.improvementBadges" :key="`${item.key}-improvement-${badge}`">{{ badge }}</span>
-                </div>
                 <div
-                  v-if="item.revisions.length > 0 || item.improvementCandidates.length > 0 || item.skippedCommands.length > 0 || item.evidenceItems.length > 0 || item.warnings.length > 0"
+                  v-if="item.revisions.length > 0 || item.skippedCommands.length > 0 || item.evidenceItems.length > 0 || item.warnings.length > 0"
                   class="run-detail__background-review-facts"
                 >
                   <div v-if="item.revisions.length > 0">
@@ -427,63 +424,6 @@
                   <div v-if="item.skippedCommands.length > 0">
                     <strong>{{ t("runDetail.backgroundReviewSkipped") }}</strong>
                     <span v-for="skipped in item.skippedCommands" :key="`${item.key}-skipped-${skipped}`">{{ skipped }}</span>
-                  </div>
-                  <div v-if="item.improvementCandidates.length > 0">
-                    <strong>{{ t("runDetail.backgroundReviewImprovements") }}</strong>
-                    <section
-                      v-for="candidate in item.improvementCandidates"
-                      :key="`${item.key}-candidate-${candidate.candidateId}`"
-                      class="run-detail__background-review-candidate"
-                    >
-                      <div class="run-detail__badges">
-                        <span v-if="candidate.kind">{{ candidate.kind }}</span>
-                        <span v-if="candidate.status">{{ candidate.status }}</span>
-                        <span v-if="candidate.riskLevel">{{ candidate.riskLevel }}</span>
-                        <span v-if="candidate.approvalRequired">{{ t("runDetail.backgroundReviewApprovalRequired") }}</span>
-                      </div>
-                      <span v-if="candidate.proposedChangeSummary">{{ candidate.proposedChangeSummary }}</span>
-                      <span v-if="candidate.expectedBenefit">{{ t("runDetail.backgroundReviewExpectedBenefit", { value: candidate.expectedBenefit }) }}</span>
-                      <div v-if="candidate.evidenceRefs.length > 0" class="run-detail__badges">
-                        <span v-for="evidenceRef in candidate.evidenceRefs" :key="`${candidate.candidateId}-${evidenceRef}`">{{ evidenceRef }}</span>
-                      </div>
-                      <ElButton
-                        size="small"
-                        :loading="validatingImprovementCandidateKey === candidate.candidateId"
-                        :disabled="Boolean(validatingImprovementCandidateKey || decidingImprovementCandidateKey)"
-                        @click="startImprovementCandidateReview(item, candidate)"
-                      >
-                        {{ t("runDetail.backgroundReviewValidateCandidate") }}
-                      </ElButton>
-                      <ElButton
-                        v-if="canApproveImprovementCandidate(candidate)"
-                        size="small"
-                        type="primary"
-                        :loading="decidingImprovementCandidateKey === `${candidate.candidateId}:approve`"
-                        :disabled="Boolean(validatingImprovementCandidateKey || decidingImprovementCandidateKey)"
-                        @click="decideImprovementCandidate(item, candidate, 'approve')"
-                      >
-                        {{ t("runDetail.backgroundReviewApproveCandidate") }}
-                      </ElButton>
-                      <ElButton
-                        v-if="canRejectImprovementCandidate(candidate)"
-                        size="small"
-                        :loading="decidingImprovementCandidateKey === `${candidate.candidateId}:reject`"
-                        :disabled="Boolean(validatingImprovementCandidateKey || decidingImprovementCandidateKey)"
-                        @click="decideImprovementCandidate(item, candidate, 'reject')"
-                      >
-                        {{ t("runDetail.backgroundReviewRejectCandidate") }}
-                      </ElButton>
-                      <ElButton
-                        v-if="canApplyImprovementCandidate(candidate)"
-                        size="small"
-                        type="success"
-                        :loading="applyingImprovementCandidateKey === candidate.candidateId"
-                        :disabled="Boolean(validatingImprovementCandidateKey || decidingImprovementCandidateKey || applyingImprovementCandidateKey)"
-                        @click="applyImprovementCandidate(item, candidate)"
-                      >
-                        {{ t("runDetail.backgroundReviewApplyCandidate") }}
-                      </ElButton>
-                    </section>
                   </div>
                   <div v-if="item.evidenceItems.length > 0">
                     <strong>{{ t("runDetail.backgroundReviewEvidence") }}</strong>
@@ -669,135 +609,6 @@
                 </li>
               </ul>
             </div>
-            <div v-if="agentDiagnostic.delegationWorker.visible" class="run-detail__capability-selection run-detail__delegation-worker">
-              <h4>{{ t("runDetail.delegationWorker") }}</h4>
-              <dl class="run-detail__diagnostic-facts">
-                <div v-if="agentDiagnostic.delegationWorker.taskId">
-                  <dt>{{ t("runDetail.delegationWorkerTask") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationWorker.taskId }}</dd>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.status">
-                  <dt>{{ t("runDetail.delegationWorkerStatus") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationWorker.status }}</dd>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.summary">
-                  <dt>{{ t("runDetail.delegationWorkerSummary") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationWorker.summary }}</dd>
-                </div>
-              </dl>
-              <div v-if="agentDiagnostic.delegationWorker.evidenceLabels.length > 0" class="run-detail__badges">
-                <span v-for="label in agentDiagnostic.delegationWorker.evidenceLabels" :key="label">{{ label }}</span>
-              </div>
-              <div
-                v-if="agentDiagnostic.delegationWorker.outputLabels.length > 0 || agentDiagnostic.delegationWorker.artifactLabels.length > 0 || agentDiagnostic.delegationWorker.sourceRefLabels.length > 0"
-                class="run-detail__capability-candidates"
-              >
-                <div v-if="agentDiagnostic.delegationWorker.outputLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerOutputs") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationWorker.outputLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.artifactLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerArtifacts") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationWorker.artifactLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.sourceRefLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerSources") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationWorker.sourceRefLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.workerRunLinks.length > 0 || agentDiagnostic.delegationWorker.workerRunLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerRuns") }}</strong>
-                  <template v-if="agentDiagnostic.delegationWorker.workerRunLinks.length > 0">
-                    <RouterLink
-                      v-for="link in agentDiagnostic.delegationWorker.workerRunLinks"
-                      :key="link.runId"
-                      class="run-detail__inline-link"
-                      :to="link.href"
-                    >
-                      {{ link.label }}<span v-if="link.status"> · {{ link.status }}</span>
-                    </RouterLink>
-                  </template>
-                  <template v-else>
-                    <span v-for="label in agentDiagnostic.delegationWorker.workerRunLabels" :key="label">{{ label }}</span>
-                  </template>
-                </div>
-              </div>
-              <div
-                v-if="agentDiagnostic.delegationWorker.budgetLabels.length > 0 || agentDiagnostic.delegationWorker.capabilityLabels.length > 0 || agentDiagnostic.delegationWorker.followupLabels.length > 0"
-                class="run-detail__capability-candidates"
-              >
-                <div v-if="agentDiagnostic.delegationWorker.budgetLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerBudget") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationWorker.budgetLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.capabilityLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerCapabilities") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationWorker.capabilityLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationWorker.followupLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationWorkerFollowups") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationWorker.followupLabels" :key="label">{{ label }}</span>
-                </div>
-              </div>
-              <ul v-if="agentDiagnostic.delegationWorker.errorLabels.length > 0" class="run-detail__diagnostic-warnings">
-                <li v-for="label in agentDiagnostic.delegationWorker.errorLabels" :key="label" class="run-detail__diagnostic-warning">
-                  {{ label }}
-                </li>
-              </ul>
-            </div>
-            <div v-if="agentDiagnostic.delegationBoard.visible" class="run-detail__capability-selection run-detail__delegation-board">
-              <h4>{{ t("runDetail.delegationBoard") }}</h4>
-              <dl class="run-detail__diagnostic-facts">
-                <div v-if="agentDiagnostic.delegationBoard.boardId">
-                  <dt>{{ t("runDetail.delegationBoardId") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationBoard.boardId }}</dd>
-                </div>
-                <div v-if="agentDiagnostic.delegationBoard.title">
-                  <dt>{{ t("runDetail.delegationBoardTitle") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationBoard.title }}</dd>
-                </div>
-                <div v-if="agentDiagnostic.delegationBoard.status">
-                  <dt>{{ t("runDetail.delegationBoardStatus") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationBoard.status }}</dd>
-                </div>
-                <div v-if="agentDiagnostic.delegationBoard.cardCount > 0">
-                  <dt>{{ t("runDetail.delegationBoardCards") }}</dt>
-                  <dd>{{ agentDiagnostic.delegationBoard.cardCount }}</dd>
-                </div>
-              </dl>
-              <div v-if="agentDiagnostic.delegationBoard.evidenceLabels.length > 0" class="run-detail__badges">
-                <span v-for="label in agentDiagnostic.delegationBoard.evidenceLabels" :key="label">{{ label }}</span>
-              </div>
-              <div
-                v-if="agentDiagnostic.delegationBoard.statusLabels.length > 0 || agentDiagnostic.delegationBoard.blockedLabels.length > 0 || agentDiagnostic.delegationBoard.reviewLabels.length > 0"
-                class="run-detail__capability-candidates"
-              >
-                <div v-if="agentDiagnostic.delegationBoard.statusLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationBoardColumns") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationBoard.statusLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationBoard.blockedLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationBoardBlocked") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationBoard.blockedLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationBoard.reviewLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationBoardReview") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationBoard.reviewLabels" :key="label">{{ label }}</span>
-                </div>
-              </div>
-              <div
-                v-if="agentDiagnostic.delegationBoard.nextActionLabels.length > 0 || agentDiagnostic.delegationBoard.sourceRefLabels.length > 0"
-                class="run-detail__capability-candidates"
-              >
-                <div v-if="agentDiagnostic.delegationBoard.nextActionLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationBoardNextActions") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationBoard.nextActionLabels" :key="label">{{ label }}</span>
-                </div>
-                <div v-if="agentDiagnostic.delegationBoard.sourceRefLabels.length > 0">
-                  <strong>{{ t("runDetail.delegationBoardSources") }}</strong>
-                  <span v-for="label in agentDiagnostic.delegationBoard.sourceRefLabels" :key="label">{{ label }}</span>
-                </div>
-              </div>
-            </div>
             <ul v-if="agentDiagnostic.warnings.length > 0" class="run-detail__diagnostic-warnings">
               <li v-for="warning in agentDiagnostic.warnings" :key="warning" class="run-detail__diagnostic-warning">
                 {{ warning }}
@@ -947,14 +758,13 @@
 import { Promotion, RefreshLeft } from "@element-plus/icons-vue";
 import { ElButton, ElIcon, ElMessage, ElMessageBox } from "element-plus";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useI18n } from "vue-i18n";
 
-import { fetchBuddyBackgroundReviews, enqueueBuddyBackgroundReview, restoreBuddyRevision, linkBuddyImprovementCandidateValidationRun, decideBuddyImprovementCandidate, applyBuddyImprovementCandidate } from "@/api/buddy";
-import { fetchTemplate, restoreGraphRevision, runGraph } from "@/api/graphs";
+import { fetchBuddyBackgroundReviews, enqueueBuddyBackgroundReview, restoreBuddyRevision } from "@/api/buddy";
+import { restoreGraphRevision } from "@/api/graphs";
 import { fetchOperationJournal } from "@/api/operationJournal";
 import { fetchRun, fetchRunTree, resumeRun } from "@/api/runs";
-import { buildBuddyImprovementReviewGraph, BUDDY_IMPROVEMENT_REVIEW_TEMPLATE_ID } from "@/buddy/buddyImprovementReviewGraph";
 import {
   buildLiveStreamingOutput,
   buildRunEventStreamUrl,
@@ -971,7 +781,7 @@ import type { OperationJournalPage } from "@/types/operationJournal";
 import type { BuddyBackgroundReviewRun } from "@/types/buddy";
 import type { RunDetail, RunTreeNode } from "@/types/run";
 
-import { buildBackgroundReviewDisplayItems, type BackgroundReviewDisplayItem, type BackgroundReviewImprovementCandidateItem } from "./backgroundReviewModel.ts";
+import { buildBackgroundReviewDisplayItems, type BackgroundReviewDisplayItem } from "./backgroundReviewModel.ts";
 import {
   buildRunAggregatedTimeline,
   buildAgentDiagnostic,
@@ -985,7 +795,6 @@ import { buildOperationJournalDisplayItems, type OperationJournalDisplayItem } f
 import ArtifactDocumentPager from "./ArtifactDocumentPager.vue";
 
 const route = useRoute();
-const router = useRouter();
 const { t, locale } = useI18n();
 const run = ref<RunDetail | null>(null);
 const runTree = ref<RunTreeNode | null>(null);
@@ -1004,9 +813,6 @@ const backgroundReviewLoading = ref(false);
 const backgroundReviewError = ref<string | null>(null);
 const rerunningBackgroundReview = ref(false);
 const restoringBackgroundReviewRevisionId = ref("");
-const validatingImprovementCandidateKey = ref("");
-const decidingImprovementCandidateKey = ref("");
-const applyingImprovementCandidateKey = ref("");
 const restoringGraphRevisionKey = ref<string | null>(null);
 const permissionApprovalActionBusy = ref<"approve" | "deny" | "">("");
 const runId = computed(() => String(route.params.runId ?? ""));
@@ -1351,126 +1157,6 @@ async function restoreBackgroundReviewRevision(item: BackgroundReviewDisplayItem
   }
 }
 
-async function startImprovementCandidateReview(item: BackgroundReviewDisplayItem, candidate: BackgroundReviewImprovementCandidateItem) {
-  const candidateKey = candidate.candidateId || `${item.key}:candidate`;
-  if (validatingImprovementCandidateKey.value) {
-    return;
-  }
-
-  validatingImprovementCandidateKey.value = candidateKey;
-  try {
-    const template = await fetchTemplate(BUDDY_IMPROVEMENT_REVIEW_TEMPLATE_ID);
-    const graph = buildBuddyImprovementReviewGraph(template, {
-      candidate: candidate.payload,
-      sourceRunId: candidate.sourceRunId || item.sourceRunId,
-    });
-    const response = await runGraph(graph);
-    await linkBuddyImprovementCandidateValidationRun(candidate.candidateId, response.run_id);
-    ElMessage.success(t("runDetail.backgroundReviewValidationQueued", { runId: response.run_id }));
-    await router.push(`/runs/${encodeURIComponent(response.run_id)}`);
-  } catch (validationError) {
-    ElMessage.error(validationError instanceof Error ? validationError.message : t("common.failedToSave", { error: "" }));
-  } finally {
-    validatingImprovementCandidateKey.value = "";
-  }
-}
-
-type ImprovementCandidateDecision = "approve" | "reject";
-
-function canApproveImprovementCandidate(candidate: BackgroundReviewImprovementCandidateItem) {
-  return candidate.status === "validated" || candidate.status === "waiting_for_approval";
-}
-
-function canRejectImprovementCandidate(candidate: BackgroundReviewImprovementCandidateItem) {
-  return !["approved", "rejected", "applied", "superseded"].includes(candidate.status);
-}
-
-function canApplyImprovementCandidate(candidate: BackgroundReviewImprovementCandidateItem) {
-  return Boolean(candidate.candidateId) && candidate.status === "approved" && candidate.hasApplyCommand;
-}
-
-async function decideImprovementCandidate(
-  item: BackgroundReviewDisplayItem,
-  candidate: BackgroundReviewImprovementCandidateItem,
-  decision: ImprovementCandidateDecision,
-) {
-  const candidateKey = candidate.candidateId || `${item.key}:candidate`;
-  if (decidingImprovementCandidateKey.value) {
-    return;
-  }
-  const approving = decision === "approve";
-  const reason = approving
-    ? t("runDetail.backgroundReviewApproveCandidateReason")
-    : t("runDetail.backgroundReviewRejectCandidateReason");
-  try {
-    await ElMessageBox.confirm(
-      approving
-        ? t("runDetail.backgroundReviewApproveCandidateConfirm", { candidateId: candidateKey })
-        : t("runDetail.backgroundReviewRejectCandidateConfirm", { candidateId: candidateKey }),
-      approving ? t("runDetail.backgroundReviewApproveCandidateTitle") : t("runDetail.backgroundReviewRejectCandidateTitle"),
-      {
-        confirmButtonText: approving
-          ? t("runDetail.backgroundReviewApproveCandidate")
-          : t("runDetail.backgroundReviewRejectCandidate"),
-        cancelButtonText: t("common.cancel"),
-        type: approving ? "warning" : "info",
-      },
-    );
-  } catch {
-    return;
-  }
-
-  decidingImprovementCandidateKey.value = `${candidateKey}:${decision}`;
-  try {
-    await decideBuddyImprovementCandidate(candidate.candidateId, decision, reason);
-    ElMessage.success(
-      approving
-        ? t("runDetail.backgroundReviewCandidateApproved", { candidateId: candidateKey })
-        : t("runDetail.backgroundReviewCandidateRejected", { candidateId: candidateKey }),
-    );
-    void loadBackgroundReviews(item.sourceRunId);
-  } catch (decisionError) {
-    ElMessage.error(decisionError instanceof Error ? decisionError.message : t("common.failedToSave", { error: "" }));
-  } finally {
-    decidingImprovementCandidateKey.value = "";
-  }
-}
-
-async function applyImprovementCandidate(
-  item: BackgroundReviewDisplayItem,
-  candidate: BackgroundReviewImprovementCandidateItem,
-) {
-  const candidateKey = candidate.candidateId || `${item.key}:candidate`;
-  if (applyingImprovementCandidateKey.value) {
-    return;
-  }
-  const reason = t("runDetail.backgroundReviewApplyCandidateReason");
-  try {
-    await ElMessageBox.confirm(
-      t("runDetail.backgroundReviewApplyCandidateConfirm", { candidateId: candidateKey }),
-      t("runDetail.backgroundReviewApplyCandidateTitle"),
-      {
-        confirmButtonText: t("runDetail.backgroundReviewApplyCandidate"),
-        cancelButtonText: t("common.cancel"),
-        type: "warning",
-      },
-    );
-  } catch {
-    return;
-  }
-
-  applyingImprovementCandidateKey.value = candidateKey;
-  try {
-    await applyBuddyImprovementCandidate(candidate.candidateId, reason);
-    ElMessage.success(t("runDetail.backgroundReviewCandidateApplied", { candidateId: candidateKey }));
-    void loadBackgroundReviews(item.sourceRunId);
-  } catch (applyError) {
-    ElMessage.error(applyError instanceof Error ? applyError.message : t("common.failedToSave", { error: "" }));
-  } finally {
-    applyingImprovementCandidateKey.value = "";
-  }
-}
-
 async function restoreGraphRevisionFromOperation(item: OperationJournalDisplayItem) {
   if (!item.graphRevision || restoringGraphRevisionKey.value) {
     return;
@@ -1704,7 +1390,6 @@ function resetRunView() {
   backgroundReviewError.value = null;
   rerunningBackgroundReview.value = false;
   restoringBackgroundReviewRevisionId.value = "";
-  validatingImprovementCandidateKey.value = "";
   selectedSnapshotIdDraft.value = null;
   expandedContentKeys.value = new Set();
   liveStreamingOutputs.value = {};

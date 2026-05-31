@@ -34,7 +34,6 @@ export type BuddyBoundRunTemplateResult = {
   runId: string;
   graph: GraphPayload;
   publicOutputBindings: BuddyPublicOutputBinding[];
-  sessionSummary: string;
 };
 
 export function useBuddyBoundRunTemplate({
@@ -69,7 +68,6 @@ export function useBuddyBoundRunTemplate({
       runId: run.run_id,
       graph,
       publicOutputBindings,
-      sessionSummary: sessionSummary.content,
     };
   }
 

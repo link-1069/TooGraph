@@ -27,6 +27,7 @@ const contextCompactionRunPath = resolve(currentDirectory, "useBuddyContextCompa
 const contextCompactionRunSource = existsSync(contextCompactionRunPath)
   ? readFileSync(contextCompactionRunPath, "utf8")
   : "";
+const contextCompactionModelPath = resolve(currentDirectory, "buddyContextCompaction.ts");
 const messagesSource = readFileSync(resolve(currentDirectory, "useBuddyMessages.ts"), "utf8");
 const pageOperationContextSource = readFileSync(resolve(currentDirectory, "useBuddyPageOperationContext.ts"), "utf8");
 const graphEditPlaybackBridgeSource = readFileSync(resolve(currentDirectory, "buddyGraphEditPlaybackBridge.ts"), "utf8");
@@ -755,9 +756,13 @@ test("BuddyWidget starts autonomous review as a separate background run after th
   assert.doesNotMatch(autonomousReviewRunSource, /buildBuddyReviewGraph/);
   assert.doesNotMatch(autonomousReviewRunSource, /fetchBuddyMemoryReviewTemplateBinding/);
   assert.match(visibleRunTemplateEffectsSource, /useBuddyAutonomousReviewRun/);
-  assert.match(visibleRunTemplateEffectsSource, /useBuddyContextCompactionRun/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /useBuddyContextCompactionRun/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /startBuddyContextCompactionRun/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /abortContextCompactionRuns/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /trigger: "background"/);
   assert.match(componentSource, /import \{ useBuddyVisibleRunTemplateEffects \} from "\.\/useBuddyVisibleRunTemplateEffects\.ts";/);
-  assert.match(componentSource, /const \{[\s\S]*startBuddyVisibleRunTemplateEffects,[\s\S]*abortBuddyVisibleRunTemplateEffects,[\s\S]*\} = useBuddyVisibleRunTemplateEffects\(\{[\s\S]*currentSessionId,[\s\S]*buddyModelRef,[\s\S]*pollRunUntilFinished,[\s\S]*notifyBuddyDataChanged: buddyContextStore\.notifyBuddyDataChanged,[\s\S]*\}\);/);
+  assert.match(componentSource, /const \{[\s\S]*startBuddyVisibleRunTemplateEffects,[\s\S]*abortBuddyVisibleRunTemplateEffects,[\s\S]*\} = useBuddyVisibleRunTemplateEffects\(\{[\s\S]*buddyModelRef,[\s\S]*pollRunUntilFinished,[\s\S]*notifyBuddyDataChanged: buddyContextStore\.notifyBuddyDataChanged,[\s\S]*\}\);/);
+  assert.doesNotMatch(componentSource, /useBuddyVisibleRunTemplateEffects\(\{[\s\S]*currentSessionId,/);
   assert.match(componentSource, /void startBuddyVisibleRunTemplateEffects\(\{/);
   assert.match(visibleRunTemplateEffectsSource, /void startBuddyAutonomousReviewRun\(request\.runDetail\);/);
   assert.match(autonomousReviewRunSource, /async function startBuddyAutonomousReviewRun\(mainRun: RunDetail\)/);
@@ -780,8 +785,13 @@ test("BuddyWidget leaves visible context compaction inside the official run temp
   assert.match(boundRunTemplateSource, /fetchBuddySessionSummary/);
   assert.match(boundRunTemplateSource, /const sessionSummary = await fetchBuddySessionSummary\(\);/);
   assert.match(boundRunTemplateSource, /sessionSummary: sessionSummary\.content,/);
-  assert.match(visibleRunTemplateEffectsSource, /startBuddyContextCompactionRun/);
-  assert.match(visibleRunTemplateEffectsSource, /trigger: "background"/);
+  assert.equal(contextCompactionRunSource, "");
+  assert.equal(existsSync(contextCompactionRunPath), false);
+  assert.equal(existsSync(contextCompactionModelPath), false);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /startBuddyContextCompactionRun/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /trigger: "background"/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /BUDDY_CONTEXT_COMPACTION_TEMPLATE_ID/);
+  assert.doesNotMatch(visibleRunTemplateEffectsSource, /buddyContextCompaction/);
   assert.doesNotMatch(componentSource, /import \{ useBuddyContextCompactionRun \} from "\.\/useBuddyContextCompactionRun\.ts";/);
   assert.doesNotMatch(componentSource, /fetchBuddySessionSummary/);
   assert.doesNotMatch(componentSource, /startBuddyContextCompactionRun/);
@@ -791,9 +801,6 @@ test("BuddyWidget leaves visible context compaction inside the official run temp
   assert.doesNotMatch(componentSource, /contextCompactionRetried/);
   assert.doesNotMatch(componentSource, /trigger: "preflight"/);
   assert.doesNotMatch(componentSource, /trigger: "overflow_recovery"/);
-  assert.match(contextCompactionRunSource, /buildBuddyContextCompactionGraph/);
-  assert.match(contextCompactionRunSource, /BUDDY_CONTEXT_COMPACTION_TEMPLATE_ID/);
-  assert.match(contextCompactionRunSource, /shouldRunBuddyContextCompaction/);
   assert.doesNotMatch(componentSource, /async function startBuddyContextCompactionRun/);
 });
 

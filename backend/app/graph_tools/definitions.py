@@ -8,6 +8,7 @@ from app.core.schemas.tools import (
     ToolCatalogStatus,
     ToolDefinition,
     ToolIoField,
+    ToolLocalizedText,
     ToolRuntimeSpec,
     ToolSourceScope,
 )
@@ -103,6 +104,7 @@ def _parse_tool_dir(tool_dir: Path, source_scope: ToolSourceScope) -> ToolDefini
         toolKey=tool_key,
         name=str(payload.get("name") or tool_key),
         description=str(payload.get("description") or "").strip(),
+        localized=_parse_localized_text(payload.get("localized") or payload.get("locales") or {}),
         schemaVersion=str(payload.get("schemaVersion") or payload.get("schema_version") or ""),
         version=str(payload.get("version") or ""),
         permissions=[str(item) for item in payload.get("permissions", [])],
@@ -161,6 +163,21 @@ def _parse_io_fields(fields: list[dict]) -> list[ToolIoField]:
             )
         )
     return parsed_fields
+
+
+def _parse_localized_text(payload: object) -> dict[str, ToolLocalizedText]:
+    if not isinstance(payload, dict):
+        return {}
+    localized: dict[str, ToolLocalizedText] = {}
+    for locale, value in payload.items():
+        locale_key = str(locale).strip()
+        if not locale_key or not isinstance(value, dict):
+            continue
+        localized[locale_key] = ToolLocalizedText(
+            name=str(value.get("name") or "").strip(),
+            description=str(value.get("description") or "").strip(),
+        )
+    return localized
 
 
 def _parse_float(value: object, fallback: float) -> float:

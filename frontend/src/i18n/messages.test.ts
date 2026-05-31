@@ -68,26 +68,15 @@ test("i18n messages expose scheduler management labels", () => {
   assert.equal(messages["en-US"].scheduler.sessionModeExisting, "Bind existing session");
 });
 
-test("i18n messages expose capability curator report labels", () => {
-  assert.equal(messages["zh-CN"].nav.curatorReports, "能力报告");
-  assert.equal(messages["zh-CN"].curatorReports.title, "能力整理报告");
-  assert.equal(messages["zh-CN"].curatorReports.report, "整理报告");
-  assert.equal(messages["zh-CN"].curatorReports.schedulerRecommendation, "调度建议");
-  assert.equal(messages["en-US"].nav.curatorReports, "Capability Reports");
-  assert.equal(messages["en-US"].curatorReports.title, "Capability Curator Reports");
-  assert.equal(messages["en-US"].curatorReports.report, "Curator report");
-  assert.equal(messages["en-US"].curatorReports.schedulerRecommendation, "Scheduler recommendation");
-});
-
 test("i18n messages expose developer mode labels", () => {
   assert.equal(messages["zh-CN"].nav.developerBadge, "Dev");
   assert.equal(messages["zh-CN"].settings.developerOptions, "开发者选项");
   assert.equal(messages["zh-CN"].settings.developerMode, "开发者模式");
-  assert.match(messages["zh-CN"].settings.developerModeHelp, /能力报告/);
+  assert.match(messages["zh-CN"].settings.developerModeHelp, /Evidence Search/);
   assert.equal(messages["en-US"].nav.developerBadge, "Dev");
   assert.equal(messages["en-US"].settings.developerOptions, "Developer options");
   assert.equal(messages["en-US"].settings.developerMode, "Developer mode");
-  assert.match(messages["en-US"].settings.developerModeHelp, /Capability Reports/);
+  assert.match(messages["en-US"].settings.developerModeHelp, /Evidence Search/);
 });
 
 test("Preset management labels localize node families in Chinese", () => {

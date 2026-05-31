@@ -351,18 +351,12 @@ function officialSchedulerJobTitle(job: ScheduledGraphJob): string {
   if (job.job_id === "official_embedding_maintenance") {
     return translate("scheduler.embeddingMaintenanceTask");
   }
-  if (job.job_id === "official_buddy_capability_curator") {
-    return translate("scheduler.capabilityCuratorTask");
-  }
   return job.name || job.job_id;
 }
 
 function officialSchedulerJobDescription(job: ScheduledGraphJob): string {
   if (job.job_id === "official_embedding_maintenance") {
     return translate("scheduler.embeddingMaintenanceDescription");
-  }
-  if (job.job_id === "official_buddy_capability_curator") {
-    return translate("scheduler.capabilityCuratorDescription");
   }
   return translate("scheduler.officialMaintenanceDescriptionFallback");
 }

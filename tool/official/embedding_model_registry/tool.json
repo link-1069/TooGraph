@@ -92,5 +92,15 @@
       "valueType": "text",
       "description": "Error detail when the operation fails."
     }
-  ]
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "嵌入模型注册器",
+      "description": "注册或列出检索维护使用的嵌入模型，用于让图明确选择 provider、模型、向量维度、距离度量和启用状态。"
+    },
+    "en-US": {
+      "name": "Embedding Model Registry",
+      "description": "Registers and lists embedding models used by retrieval maintenance, including provider, model, dimensions, distance metric, and enabled state."
+    }
+  }
 }

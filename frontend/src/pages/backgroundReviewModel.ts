@@ -18,20 +18,6 @@ export type BackgroundReviewRevisionItem = {
   canRestore: boolean;
 };
 
-export type BackgroundReviewImprovementCandidateItem = {
-  candidateId: string;
-  kind: string;
-  status: string;
-  sourceRunId: string;
-  riskLevel: string;
-  expectedBenefit: string;
-  proposedChangeSummary: string;
-  approvalRequired: boolean;
-  hasApplyCommand: boolean;
-  evidenceRefs: string[];
-  payload: Record<string, unknown>;
-};
-
 export type BackgroundReviewDisplayItem = {
   key: string;
   reviewId: string;
@@ -51,8 +37,6 @@ export type BackgroundReviewDisplayItem = {
   revisions: BackgroundReviewRevisionItem[];
   skippedCommands: string[];
   evidenceItems: string[];
-  improvementBadges: string[];
-  improvementCandidates: BackgroundReviewImprovementCandidateItem[];
   warnings: string[];
 };
 
@@ -85,8 +69,6 @@ export function buildBackgroundReviewDisplayItems(records: BuddyBackgroundReview
       revisions: revisionItems(record.writeback_summary?.revisions),
       skippedCommands: skippedCommandLabels(record.writeback_summary?.skipped_commands),
       evidenceItems: evidenceLabels(record.writeback_summary?.evidence_items),
-      improvementBadges: improvementBadges(record.improvement_summary),
-      improvementCandidates: improvementCandidates(record.improvement_summary?.candidates),
       warnings: [
         ...stringList(record.writeback_summary?.warnings),
         ...stringList(record.improvement_summary?.warnings),
@@ -114,52 +96,6 @@ function numberLabel(label: string, value: unknown) {
 
 function stringList(value: unknown) {
   return Array.isArray(value) ? value.map((item) => normalizeText(item)).filter(Boolean) : [];
-}
-
-function improvementBadges(summary: BuddyBackgroundReviewRun["improvement_summary"]): string[] {
-  if (!summary) {
-    return [];
-  }
-  const badges = [numberLabel("improvements", summary.candidate_count)];
-  const riskCounts = recordFromUnknown(summary.risk_counts);
-  for (const [risk, count] of Object.entries(riskCounts)) {
-    badges.push(numberLabel(risk, count));
-  }
-  return badges.filter(Boolean);
-}
-
-function improvementCandidates(value: unknown): BackgroundReviewImprovementCandidateItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.map((item) => {
-    const record = recordFromUnknown(item);
-    return {
-      candidateId: normalizeText(record.candidate_id),
-      kind: normalizeText(record.kind),
-      status: normalizeText(record.status),
-      sourceRunId: normalizeText(record.source_run_id),
-      riskLevel: normalizeText(record.risk_level),
-      expectedBenefit: normalizeText(record.expected_benefit),
-      proposedChangeSummary: normalizeText(record.proposed_change_summary),
-      approvalRequired: Boolean(record.approval_required),
-      hasApplyCommand: Boolean(record.has_apply_command),
-      evidenceRefs: evidenceRefLabels(record.evidence_refs),
-      payload: record,
-    };
-  }).filter((item) => item.candidateId || item.proposedChangeSummary);
-}
-
-function evidenceRefLabels(value: unknown) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.map((item) => {
-    const record = recordFromUnknown(item);
-    const kind = normalizeText(record.kind || record.source_kind || record.type);
-    const id = normalizeText(record.id || record.source_id || record.run_id || record.message_id);
-    return [kind, id].filter(Boolean).join(":");
-  }).filter(Boolean);
 }
 
 function revisionItems(value: unknown): BackgroundReviewRevisionItem[] {

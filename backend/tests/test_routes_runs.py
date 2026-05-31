@@ -175,8 +175,8 @@ class RunRouteTests(unittest.TestCase):
         with _temporary_run_database():
             run_store.save_run(
                 _run_summary(
-                    "run_curator_latest",
-                    template_id="buddy_capability_curator",
+                    "run_embedding_latest",
+                    template_id="embedding_maintenance",
                     started_at="2026-05-11T07:28:50Z",
                 )
             )
@@ -189,16 +189,16 @@ class RunRouteTests(unittest.TestCase):
             )
             run_store.save_run(
                 _run_summary(
-                    "run_curator_old",
-                    template_id="buddy_capability_curator",
+                    "run_embedding_old",
+                    template_id="embedding_maintenance",
                     started_at="2026-05-11T07:28:48Z",
                 )
             )
             with TestClient(app) as client:
-                response = client.get("/api/runs", params={"template_id": "buddy_capability_curator"})
+                response = client.get("/api/runs", params={"template_id": "embedding_maintenance"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([run["run_id"] for run in response.json()], ["run_curator_latest", "run_curator_old"])
+        self.assertEqual([run["run_id"] for run in response.json()], ["run_embedding_latest", "run_embedding_old"])
 
     def test_get_run_detail_includes_direct_child_run_summaries(self) -> None:
         root = _run_summary("run_root")

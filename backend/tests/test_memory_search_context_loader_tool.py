@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -162,12 +163,12 @@ class MemorySearchContextLoaderToolTests(unittest.TestCase):
         self.assertEqual(result["memory_search_report"]["reranker_model_ref"], "local-rerank/bge-reranker-v2")
 
     def _delete_blob(self, content_hash: str) -> None:
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             connection.execute("DELETE FROM content_blobs WHERE content_hash = ?", (content_hash,))
             connection.commit()
 
     def _update_memory(self, memory_id: str, content: str) -> None:
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             connection.execute("UPDATE memory_entries SET content = ? WHERE memory_id = ?", (content, memory_id))
             connection.commit()
 

@@ -92,5 +92,15 @@
       "valueType": "json",
       "description": "Search query, memory ids, source refs, retrieval ranking reports, budget, and warnings."
     }
-  ]
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "记忆搜索上下文加载器",
+      "description": "搜索结构化长期记忆，并返回包含记忆引用、来源引用、检索元数据、预算信息和警告的可审计上下文包。"
+    },
+    "en-US": {
+      "name": "Memory Search Context Loader",
+      "description": "Searches structured long-term memories and returns an auditable context package with memory refs, source refs, retrieval metadata, budgets, and warnings."
+    }
+  }
 }

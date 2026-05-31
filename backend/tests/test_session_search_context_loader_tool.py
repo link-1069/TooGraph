@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -133,12 +134,12 @@ class SessionSearchContextLoaderToolTests(unittest.TestCase):
         self.assertEqual(rebuilt["package"]["source_kind"], "session")
 
     def _delete_blob(self, content_hash: str) -> None:
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             connection.execute("DELETE FROM content_blobs WHERE content_hash = ?", (content_hash,))
             connection.commit()
 
     def _update_message(self, message_id: str, content: str) -> None:
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             connection.execute("UPDATE buddy_messages SET content = ? WHERE message_id = ?", (content, message_id))
             connection.commit()
 

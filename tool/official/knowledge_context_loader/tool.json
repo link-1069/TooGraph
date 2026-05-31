@@ -62,5 +62,15 @@
       "valueType": "json",
       "description": "Search query, knowledge base, budget, source refs, retrieval metadata, and warnings."
     }
-  ]
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "知识库上下文加载器",
+      "description": "按查询从知识库检索相关片段，并组装为带来源引用、检索元数据、预算信息和警告的可审计上下文包。"
+    },
+    "en-US": {
+      "name": "Knowledge Context Loader",
+      "description": "Retrieves relevant knowledge-base chunks for a query and packages them with source refs, retrieval metadata, budget data, and warnings."
+    }
+  }
 }
