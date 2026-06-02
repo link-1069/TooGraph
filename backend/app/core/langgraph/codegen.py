@@ -461,8 +461,49 @@ def _compile_graph_plan(graph: dict[str, Any]) -> dict[str, Any]:
             add_runtime_condition_route(RUNTIME_START, target)
             continue
 
+    runtime_successors: dict[str, set[str]] = {node_name: set() for node_name in runtime_nodes}
+    runtime_predecessors: dict[str, set[str]] = {node_name: set() for node_name in runtime_nodes}
+    for edge in runtime_edges:
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        runtime_successors.setdefault(source, set()).add(target)
+        runtime_predecessors.setdefault(target, set()).add(source)
+    for route in runtime_condition_routes:
+        source = str(route.get("source") or "")
+        if source == RUNTIME_START:
+            continue
+        for target in dict(route.get("branches") or {}).values():
+            target = str(target or "")
+            if target == RUNTIME_END:
+                continue
+            runtime_successors.setdefault(source, set()).add(target)
+            runtime_predecessors.setdefault(target, set()).add(source)
+
+    def runtime_node_reaches(source: str, target: str) -> bool:
+        pending = list(runtime_successors.get(source, set()))
+        visited: set[str] = set()
+        while pending:
+            node_name = pending.pop()
+            if node_name == target:
+                return True
+            if node_name in visited:
+                continue
+            visited.add(node_name)
+            pending.extend(runtime_successors.get(node_name, set()) - visited)
+        return False
+
+    def has_acyclic_runtime_predecessor(node_name: str) -> bool:
+        for predecessor in runtime_predecessors.get(node_name, set()):
+            if not runtime_node_reaches(node_name, predecessor):
+                return True
+        return False
+
     runtime_entry_nodes = sorted({
-        *runtime_entry_candidates,
+        *[
+            node_name
+            for node_name in runtime_entry_candidates
+            if not has_acyclic_runtime_predecessor(node_name)
+        ],
         *[
             node_name
             for node_name in runtime_nodes

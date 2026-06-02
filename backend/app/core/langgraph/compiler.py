@@ -219,6 +219,39 @@ def compile_graph_to_langgraph_plan(graph: NodeSystemGraphPayload) -> LangGraphB
             _add_runtime_condition_route(RUNTIME_START, edge.target)
             continue
 
+    runtime_successors: dict[str, set[str]] = {node_name: set() for node_name in runtime_nodes}
+    runtime_predecessors: dict[str, set[str]] = {node_name: set() for node_name in runtime_nodes}
+    for edge in runtime_edges:
+        runtime_successors.setdefault(edge.source, set()).add(edge.target)
+        runtime_predecessors.setdefault(edge.target, set()).add(edge.source)
+    for route in runtime_condition_routes:
+        if route.source == RUNTIME_START:
+            continue
+        for target in route.branches.values():
+            if target == RUNTIME_END:
+                continue
+            runtime_successors.setdefault(route.source, set()).add(target)
+            runtime_predecessors.setdefault(target, set()).add(route.source)
+
+    def _runtime_node_reaches(source: str, target: str) -> bool:
+        pending = list(runtime_successors.get(source, set()))
+        visited: set[str] = set()
+        while pending:
+            node_name = pending.pop()
+            if node_name == target:
+                return True
+            if node_name in visited:
+                continue
+            visited.add(node_name)
+            pending.extend(runtime_successors.get(node_name, set()) - visited)
+        return False
+
+    def _has_acyclic_runtime_predecessor(node_name: str) -> bool:
+        for predecessor in runtime_predecessors.get(node_name, set()):
+            if not _runtime_node_reaches(node_name, predecessor):
+                return True
+        return False
+
     entry_nodes = [
         node_name
         for node_name in graph.nodes
@@ -231,7 +264,11 @@ def compile_graph_to_langgraph_plan(graph: NodeSystemGraphPayload) -> LangGraphB
     ]
     runtime_entry_nodes = sorted(
         {
-            *runtime_entry_candidates,
+            *[
+                node_name
+                for node_name in runtime_entry_candidates
+                if not _has_acyclic_runtime_predecessor(node_name)
+            ],
             *[
                 node_name
                 for node_name in runtime_nodes

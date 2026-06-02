@@ -1904,10 +1904,23 @@ class TemplateLayoutTests(unittest.TestCase):
         template = next(record for record in _official_template_records() if record["template_id"] == "buddy_autonomous_loop")
         states = template["state_schema"]
         nodes = template["nodes"]
+        graph = NodeSystemGraphPayload.model_validate(
+            {
+                **{
+                    key: value
+                    for key, value in template.items()
+                    if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+                },
+                "graph_id": "test_buddy_autonomous_loop",
+                "name": template["default_graph_name"],
+            }
+        )
+        plan = compile_graph_to_langgraph_plan(graph)
 
         self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
         self.assertEqual(template["metadata"]["origin"], "buddy")
         self.assertEqual(template["metadata"]["role"], "buddy_autonomous_loop")
+        self.assertEqual(plan.requirements.runtime_entry_nodes, ["load_history_context"])
         self.assertEqual(template["metadata"]["requiredActions"], ["toograph_capability_selector", "buddy_session_recall"])
         self.assertEqual(
             template["metadata"]["requiredTools"],
