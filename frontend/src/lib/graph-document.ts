@@ -1,6 +1,6 @@
 import { toRaw } from "vue";
 
-import { normalizeFixedConditionConfig } from "./condition-protocol.ts";
+import { conditionRuleSourceUsesState, normalizeFixedConditionConfig, resolveConditionRuleSourceStateKey } from "./condition-protocol.ts";
 import {
   canConnectConditionRoute,
   canConnectFlowNodes,
@@ -118,7 +118,7 @@ export function pruneUnreferencedStateSchemaInDocument<T extends GraphPayload | 
       referencedStateKeys.add(binding.state);
     }
     if (node.kind === "condition" && node.config.rule.source) {
-      referencedStateKeys.add(node.config.rule.source);
+      referencedStateKeys.add(resolveConditionRuleSourceStateKey(node.config.rule.source, Object.keys(document.state_schema)) || node.config.rule.source);
     }
   }
 
@@ -1289,7 +1289,7 @@ function removeManagedStateKeysFromDocument(document: GraphPayload | GraphDocume
       node.writes = nextWrites;
     }
 
-    if (node.kind === "condition" && stateKeys.has(node.config.rule.source)) {
+    if (node.kind === "condition" && [...stateKeys].some((stateKey) => conditionRuleSourceUsesState(node.config.rule.source, stateKey))) {
       node.config.rule.source = node.reads[0]?.state ?? "";
       touchedNodeIds.add(nodeId);
     }

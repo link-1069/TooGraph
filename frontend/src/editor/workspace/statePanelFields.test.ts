@@ -143,8 +143,31 @@ test("renameStateFieldInDocument updates bindings and condition rule source", ()
   assert.ok(!nextDocument.state_schema.answer);
 });
 
+test("renameStateFieldInDocument updates condition rule sources using state expressions", () => {
+  const document = buildDocument();
+  const scoreGate = document.nodes.score_gate;
+  assert.equal(scoreGate.kind, "condition");
+  scoreGate.config.rule.source = "$state.answer";
+
+  const nextDocument = renameStateFieldInDocument(document, "answer", "final_answer");
+  const nextScoreGate = nextDocument.nodes.score_gate;
+  assert.equal(nextScoreGate.kind, "condition");
+
+  assert.equal(nextScoreGate.config.rule.source, "$state.final_answer");
+});
+
 test("listStateFieldUsageLabels returns unique node labels using a state", () => {
   const document = buildDocument();
+
+  assert.deepEqual(listStateFieldUsageLabels(document, "answer"), ["answer_helper", "score_gate"]);
+});
+
+test("listStateFieldUsageLabels recognizes condition rule state expressions", () => {
+  const document = buildDocument();
+  const scoreGate = document.nodes.score_gate;
+  assert.equal(scoreGate.kind, "condition");
+  scoreGate.reads = [];
+  scoreGate.config.rule.source = "$state.answer";
 
   assert.deepEqual(listStateFieldUsageLabels(document, "answer"), ["answer_helper", "score_gate"]);
 });
@@ -160,6 +183,20 @@ test("deleteStateFieldFromDocument refuses to delete states still referenced by 
   assert.deepEqual(nextDocument.nodes.answer_helper.writes, [{ state: "answer", mode: "replace" }]);
   assert.deepEqual(scoreGate.reads, [{ state: "answer", required: true }]);
   assert.equal(scoreGate.config.rule.source, "answer");
+});
+
+test("deleteStateFieldFromDocument refuses states referenced by condition rule state expressions", () => {
+  const document = buildDocument();
+  document.nodes.answer_helper.writes = [];
+  const scoreGate = document.nodes.score_gate;
+  assert.equal(scoreGate.kind, "condition");
+  scoreGate.reads = [];
+  scoreGate.config.rule.source = "$state.answer";
+
+  const nextDocument = deleteStateFieldFromDocument(document, "answer");
+
+  assert.equal(nextDocument, document);
+  assert.ok(nextDocument.state_schema.answer);
 });
 
 test("deleteStateFieldFromDocument removes unreferenced state definitions immutably", () => {

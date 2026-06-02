@@ -1,4 +1,5 @@
 import { cloneGraphDocument, reconcileAgentCapabilityInputBindingsInPlace } from "../../lib/graph-document.ts";
+import { conditionRuleSourceUsesState, replaceConditionRuleSourceStateKey } from "../../lib/condition-protocol.ts";
 import type { GraphDocument, GraphPayload, StateDefinition } from "../../types/node-system.ts";
 
 export type StateFieldDraft = {
@@ -206,8 +207,8 @@ export function renameStateFieldInDocument<T extends GraphPayload | GraphDocumen
     node.reads = node.reads.map((binding) => (binding.state === currentKey ? { ...binding, state: normalizedNextKey } : binding));
     node.writes = node.writes.map((binding) => (binding.state === currentKey ? { ...binding, state: normalizedNextKey } : binding));
 
-    if (node.kind === "condition" && node.config.rule.source === currentKey) {
-      node.config.rule.source = normalizedNextKey;
+    if (node.kind === "condition") {
+      node.config.rule.source = replaceConditionRuleSourceStateKey(node.config.rule.source, currentKey, normalizedNextKey);
     }
   }
 
@@ -222,7 +223,7 @@ export function listStateFieldUsageLabels(document: GraphPayload | GraphDocument
     const usesState =
       node.reads.some((binding) => binding.state === stateKey) ||
       node.writes.some((binding) => binding.state === stateKey) ||
-      (node.kind === "condition" && node.config.rule.source === stateKey);
+      (node.kind === "condition" && conditionRuleSourceUsesState(node.config.rule.source, stateKey));
 
     if (!usesState || seenNodeIds.has(nodeId)) {
       continue;

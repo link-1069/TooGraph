@@ -1,4 +1,5 @@
 import type { ConditionNode, StateDefinition } from "@/types/node-system";
+import { resolveConditionRuleSourceStateKey as resolveConditionRuleSourceStateKeyFromKeys } from "../../lib/condition-protocol.ts";
 
 export type ConditionRuleSourceOption = {
   value: string;
@@ -38,7 +39,8 @@ export function buildConditionRuleEditorModel(
     value: stateKey,
     label: definition.name?.trim() || stateKey,
   }));
-  const resolvedSource = sourceOptions.some((option) => option.value === rule.source) ? rule.source : (sourceOptions[0]?.value ?? "");
+  const sourceStateKey = resolveConditionRuleSourceStateKey(rule.source, stateSchema);
+  const resolvedSource = sourceStateKey || (sourceOptions[0]?.value ?? "");
   const sourceType = resolveConditionRuleSourceType(rule.source, stateSchema);
   const isValueDisabled = isConditionRuleValueInputDisabled(rule.operator);
   const valueEditorMode = isValueDisabled ? "disabled" : resolveConditionRuleValueEditorMode(sourceType);
@@ -123,14 +125,5 @@ function resolveConditionRuleSourceStateKey(
   source: string,
   stateSchema: Record<string, StateDefinition>,
 ) {
-  if (stateSchema[source]) {
-    return source;
-  }
-
-  if (!source.startsWith("$state.")) {
-    return "";
-  }
-
-  const statePath = source.slice("$state.".length);
-  return statePath && !statePath.includes(".") && stateSchema[statePath] ? statePath : "";
+  return resolveConditionRuleSourceStateKeyFromKeys(source, Object.keys(stateSchema));
 }

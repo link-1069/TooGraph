@@ -2106,11 +2106,12 @@ class TemplateLayoutTests(unittest.TestCase):
             selector_node["writes"],
             [
                 {"state": "public_response", "mode": "replace"},
+                {"state": "show_result_package", "mode": "replace"},
                 {"state": "needs_capability", "mode": "replace"},
                 {"state": "selected_capability", "mode": "replace"},
             ],
         )
-        self.assertNotIn("show_result_package", selector_node["config"]["taskInstruction"])
+        self.assertIn("show_result_package", selector_node["config"]["taskInstruction"])
         self.assertNotIn(
             "show_result_package",
             selector_node["config"]["actionInstructionBlocks"]["toograph_capability_selector"]["content"],
@@ -2127,7 +2128,7 @@ class TemplateLayoutTests(unittest.TestCase):
         )
         self.assertNotIn("context_compaction_report", selector_node["config"]["taskInstruction"])
         self.assertIn("capability.kind=none", selector_node["config"]["taskInstruction"])
-        self.assertIn("public_response 和 needs_capability/capability", selector_node["config"]["taskInstruction"])
+        self.assertIn("public_response、show_result_package 和 needs_capability/capability", selector_node["config"]["taskInstruction"])
         self.assertIn("buddy_session_recall", selector_node["config"]["taskInstruction"])
         self.assertIn("conversation_history metadata", selector_node["config"]["taskInstruction"])
         self.assertIn(

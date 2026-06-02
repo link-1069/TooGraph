@@ -78,6 +78,20 @@ test("buildConditionRuleEditorModel disables value input for exists operator", (
   assert.equal(model.isValueDisabled, true);
 });
 
+test("buildConditionRuleEditorModel resolves state expression sources to the matching option", () => {
+  const model = buildConditionRuleEditorModel(
+    {
+      source: "$state.answer",
+      operator: "contains",
+      value: "ok",
+    },
+    stateSchema,
+  );
+
+  assert.equal(model.resolvedSource, "answer");
+  assert.equal(model.sourceType, "text");
+});
+
 test("condition rule operator options include string contains checks", () => {
   assert.ok(CONDITION_RULE_OPERATOR_OPTIONS.some((option) => option.value === "contains" && option.label === "contains"));
   assert.ok(

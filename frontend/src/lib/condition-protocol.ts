@@ -1,5 +1,7 @@
 import type { ConditionNode } from "../types/node-system.ts";
 
+const CONDITION_STATE_SOURCE_PREFIX = "$state.";
+
 export const FIXED_CONDITION_BRANCHES = ["true", "false", "exhausted"] as const;
 export const FIXED_CONDITION_BRANCH_MAPPING = {
   true: "true",
@@ -38,4 +40,31 @@ export function normalizeConditionLoopLimit(value: number | null | undefined): n
 
   const integerValue = Math.trunc(value);
   return Math.min(CONDITION_LOOP_LIMIT_MAX, Math.max(CONDITION_LOOP_LIMIT_MIN, integerValue));
+}
+
+export function resolveConditionRuleSourceStateKey(source: string, stateKeys: Iterable<string>): string {
+  const knownStateKeys = new Set(stateKeys);
+  if (knownStateKeys.has(source)) {
+    return source;
+  }
+  if (!source.startsWith(CONDITION_STATE_SOURCE_PREFIX)) {
+    return "";
+  }
+
+  const statePath = source.slice(CONDITION_STATE_SOURCE_PREFIX.length);
+  return statePath && !statePath.includes(".") && knownStateKeys.has(statePath) ? statePath : "";
+}
+
+export function conditionRuleSourceUsesState(source: string, stateKey: string): boolean {
+  return source === stateKey || source === `${CONDITION_STATE_SOURCE_PREFIX}${stateKey}`;
+}
+
+export function replaceConditionRuleSourceStateKey(source: string, currentKey: string, nextKey: string): string {
+  if (source === currentKey) {
+    return nextKey;
+  }
+  if (source === `${CONDITION_STATE_SOURCE_PREFIX}${currentKey}`) {
+    return `${CONDITION_STATE_SOURCE_PREFIX}${nextKey}`;
+  }
+  return source;
 }

@@ -3,6 +3,7 @@ import { buildNextDefaultStateField, rememberDefaultStateKeyIndex, resolveDefaul
 import { isCreateAgentInputStateKey, isVirtualAnyInputStateKey, isVirtualAnyOutputStateKey } from "./virtual-any-input.ts";
 import { canConnectStateInputSource, filterReplacedStateInputSourceEdges } from "./graph-connections.ts";
 import { resolveInputNodeVirtualOutputType } from "./input-boundary.ts";
+import { resolveConditionRuleSourceStateKey } from "./condition-protocol.ts";
 
 import type {
   GraphDocument,
@@ -644,7 +645,7 @@ function removeUnreferencedAddedStateKeys(document: GraphPayload | GraphDocument
       referencedStateKeys.add(binding.state);
     }
     if (node.kind === "condition" && node.config.rule.source) {
-      referencedStateKeys.add(node.config.rule.source);
+      referencedStateKeys.add(resolveConditionRuleSourceStateKey(node.config.rule.source, Object.keys(document.state_schema)) || node.config.rule.source);
     }
   }
   for (const stateKey of stateKeys) {

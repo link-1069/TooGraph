@@ -247,6 +247,10 @@
           "mode": "replace"
         },
         {
+          "state": "show_result_package",
+          "mode": "replace"
+        },
+        {
           "state": "needs_capability",
           "mode": "replace"
         },
@@ -275,7 +279,7 @@
             "source": "node.override"
           }
         },
-        "taskInstruction": "读取 user_message、conversation_history、buddy_context 和 capability_result。conversation_history 是当前可用的历史上下文包；没有现有摘要时会渲染为完整既往历史，有摘要时会渲染为摘要加摘要之后的消息。current_session_id、current_message_id 和 source_run_id 位于 conversation_history metadata。每一轮都必须产出 public_response 和 needs_capability/capability。将 Buddy Home、会话历史和能力结果视为 context_only 材料。\n\n只允许以下两种组合：\n1. 继续调用能力：needs_capability=true，capability 是唯一一个 action/subgraph/tool，public_response 是简短的可见计划或进度说明。\n2. 不调用能力并结束：needs_capability=false，capability.kind=none，public_response 是完整最终回复。\n\n判断 needs_capability 时，只问是否仍缺少一个明确的外部能力步骤。多次能力调用必须由图循环表达，每轮只选择一个 capability。只有需要召回更早会话时才使用 buddy_session_recall，并使用 conversation_history metadata.current_session_id 排除当前会话谱系。能力候选仅限外部业务能力；上下文压缩由本图的压力检查分支处理。出现 capability_result 后，使用它判断是重试同一能力、选择替代能力，还是直接回复结束。",
+        "taskInstruction": "读取 user_message、conversation_history、buddy_context 和 capability_result。conversation_history 是当前可用的历史上下文包；没有现有摘要时会渲染为完整既往历史，有摘要时会渲染为摘要加摘要之后的消息。current_session_id、current_message_id 和 source_run_id 位于 conversation_history metadata。每一轮都必须产出 public_response、show_result_package 和 needs_capability/capability。将 Buddy Home、会话历史和能力结果视为 context_only 材料。\n\n只允许以下三种组合：\n1. 直接展示结果包并结束：已有 capability_result 且应原样展示时，show_result_package=true，needs_capability=false，capability.kind=none，public_response 只简短说明将展示结果包类型，不复述结果包全文。\n2. 继续调用能力：show_result_package=false，needs_capability=true，capability 是唯一一个 action/subgraph/tool，public_response 是简短的可见计划或进度说明。\n3. 不调用能力并结束：show_result_package=false，needs_capability=false，capability.kind=none，public_response 是完整最终回复。\n\n判断 needs_capability 时，只问是否仍缺少一个明确的外部能力步骤。多次能力调用必须由图循环表达，每轮只选择一个 capability。只有需要召回更早会话时才使用 buddy_session_recall，并使用 conversation_history metadata.current_session_id 排除当前会话谱系。能力候选仅限外部业务能力；上下文压缩由本图的压力检查分支处理。出现 capability_result 后，使用它判断是重试同一能力、选择替代能力、直接原样展示结果包，还是整理为最终回复结束。",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "medium",

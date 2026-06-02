@@ -10,6 +10,7 @@ import {
 } from "../../lib/virtual-any-input.ts";
 import { normalizeInputBoundaryConfigType } from "../../lib/input-boundary.ts";
 import { resolveManagedActionInputSlotKey, resolveManagedToolInputSlotKey } from "../../lib/managed-state-slots.ts";
+import { resolveConditionRuleSourceStateKey } from "../../lib/condition-protocol.ts";
 import type { GraphNode, StateDefinition } from "../../types/node-system.ts";
 import type { ActionDefinition, ActionIoField } from "../../types/actions.ts";
 import type { ToolDefinition } from "../../types/tools.ts";
@@ -628,7 +629,8 @@ function listSubgraphCapabilities(node: Extract<GraphNode, { kind: "subgraph" }>
 }
 
 function getStateLabel(stateKey: string, stateSchema: Record<string, StateDefinition>) {
-  return stateSchema[stateKey]?.name?.trim() || stateKey;
+  const resolvedStateKey = resolveConditionRuleSourceStateKey(stateKey, Object.keys(stateSchema)) || stateKey;
+  return stateSchema[resolvedStateKey]?.name?.trim() || stateKey;
 }
 
 function getStateTypeLabel(stateKey: string, stateSchema: Record<string, StateDefinition>) {

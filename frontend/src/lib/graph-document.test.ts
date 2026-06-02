@@ -1677,7 +1677,7 @@ test("pruneUnreferencedStateSchemaInDocument removes states that no node still r
             false: "false",
           },
           rule: {
-            source: "branch_source",
+            source: "$state.branch_source",
             operator: "equals",
             value: "go",
           },

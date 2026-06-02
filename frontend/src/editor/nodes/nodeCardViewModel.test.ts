@@ -1416,6 +1416,35 @@ test("buildNodeCardViewModel derives proxy-style condition routing controls", ()
   assert.deepEqual(model.stateSummary?.writes, []);
 });
 
+test("buildNodeCardViewModel labels condition state expression sources with the referenced state", () => {
+  const node: GraphNode = {
+    kind: "condition",
+    name: "continue_check",
+    description: "Continue or retry.",
+    ui: { position: { x: 780, y: 220 } },
+    reads: [{ state: "answer", required: true }],
+    writes: [],
+    config: {
+      branches: ["true", "false", "exhausted"],
+      loopLimit: 5,
+      branchMapping: {
+        true: "true",
+        false: "false",
+      },
+      rule: {
+        source: "$state.answer",
+        operator: "exists",
+        value: null,
+      },
+    },
+  };
+
+  const model = buildNodeCardViewModel("continue_check", node, stateSchema);
+
+  assert.equal(model.body.kind, "condition");
+  assert.equal(model.body.sourceLabel, "answer");
+});
+
 test("buildNodeCardViewModel derives condition route target labels for proxy outputs", () => {
   const node: GraphNode = {
     kind: "condition",
