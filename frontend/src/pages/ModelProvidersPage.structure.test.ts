@@ -124,9 +124,14 @@ test("ModelProvidersPage shows and edits provider models from each card", () => 
   assert.match(pageSource, /class="model-providers-page__provider-model-row-main"/);
   assert.match(pageSource, /class="model-providers-page__provider-model-capabilities"/);
   assert.match(pageSource, /modelCapabilityBadges\(provider, modelName\)/);
-  assert.match(pageSource, /@click\.stop="toggleModelConfigPanel\(provider, modelName\)"/);
   assert.match(pageSource, /@click\.stop="removeProviderModel\(provider, modelName\)"/);
-  assert.match(pageSource, /isModelConfigExpanded\(provider, modelName\)/);
+  assert.match(pageSource, /popper-class="model-providers-page__model-config-popper"/);
+  assert.match(pageSource, /:visible="isModelConfigPopoverOpen\(provider, modelName\)"/);
+  assert.match(pageSource, /:popper-style="modelConfigPopoverStyle"/);
+  assert.match(pageSource, /@click\.stop="toggleModelConfigPopover\(provider, modelName\)"/);
+  assert.match(pageSource, /@update:visible="\(visible: boolean\) => handleModelConfigVisibleChange\(provider, modelName, visible\)"/);
+  assert.match(pageSource, /class="model-providers-page__model-config-popover-panel"/);
+  assert.doesNotMatch(pageSource, /<div v-if="isModelConfigExpanded\(provider, modelName\)" class="model-providers-page__provider-model-config-panel">/);
   assert.doesNotMatch(pageSource, /class="model-providers-page__provider-model-pills"/);
   assert.doesNotMatch(pageSource, /class="model-providers-page__model-budget-list"/);
   assert.match(pageSource, /<Close \/>/);
@@ -169,19 +174,35 @@ test("ModelProvidersPage shows and edits provider models from each card", () => 
   assert.match(pageSource, /\.model-providers-page__provider-model-row-main \{/);
   assert.match(pageSource, /\.model-providers-page__provider-model-name \{[\s\S]*text-overflow:\s*ellipsis;/);
   assert.match(pageSource, /\.model-providers-page__provider-model-capability \{/);
-  assert.match(pageSource, /\.model-providers-page__provider-model-config-panel \{/);
+  assert.match(pageSource, /\.model-providers-page__model-config-popover-panel \{/);
   assert.match(pageSource, /\.model-providers-page__model-capability-grid \{/);
   assert.match(pageSource, /@media \(max-width: 760px\) \{[\s\S]*\.model-providers-page__provider-model-row-main \{/);
   assert.match(pageSource, /\.model-providers-page__model-picker-option--selected \{[\s\S]*color:\s*rgb\(37,\s*99,\s*235\);/);
 });
 
-test("ModelProvidersPage exposes per-model capability controls inside expanded rows", () => {
-  assert.match(pageSource, /settings\.modelCapabilities/);
+test("ModelProvidersPage exposes per-model capability controls inside the config popover", () => {
+  assert.match(pageSource, /settings\.modelPurpose/);
+  assert.match(pageSource, /settings\.modelChatCapabilities/);
   assert.match(pageSource, /settings\.modelCapabilityChat/);
   assert.match(pageSource, /settings\.modelCapabilityEmbedding/);
+  assert.match(pageSource, /settings\.modelCapabilityRerankFuture/);
   assert.match(pageSource, /settings\.modelEmbeddingDimensions/);
-  assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]embedding['"]\)/);
+  assert.match(pageSource, /class="model-providers-page__model-purpose-segments"/);
+  assert.match(pageSource, /role="tablist"/);
+  assert.match(pageSource, /v-for="option in modelPurposeOptions"/);
+  assert.match(pageSource, /modelPurpose\(provider, modelName\) === option\.value/);
+  assert.match(pageSource, /@click="setModelPurpose\(provider, modelName, option\.value\)"/);
+  assert.doesNotMatch(pageSource, /toggleModelCapability\(provider, modelName, ['"]chat['"]\)/);
+  assert.doesNotMatch(pageSource, /toggleModelCapability\(provider, modelName, ['"]embedding['"]\)/);
+  assert.doesNotMatch(pageSource, /toggleModelCapability\(provider, modelName, ['"]rerank['"]\)/);
+  assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]vision['"]\)/);
+  assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]tool_call['"]\)/);
+  assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]structured_output['"]\)/);
   assert.match(pageSource, /handleModelEmbeddingDimensionsChange\(provider, modelName, \$event\)/);
+  assert.doesNotMatch(pageSource, /settings\.modelEmbeddingUseForMemory/);
+  assert.doesNotMatch(pageSource, /settings\.modelEmbeddingUseForKnowledge/);
+  assert.doesNotMatch(pageSource, /modelEmbeddingScopeEnabled/);
+  assert.doesNotMatch(pageSource, /handleModelEmbeddingScopeChange/);
   assert.match(pageSource, /v-if="modelHasCapability\(provider, modelName, 'chat'\)"/);
   assert.match(pageSource, /v-if="modelHasCapability\(provider, modelName, 'embedding'\)"/);
   assert.doesNotMatch(pageSource, /model-config-placeholder/);

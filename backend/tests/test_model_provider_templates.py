@@ -29,6 +29,20 @@ class ModelProviderTemplateTests(unittest.TestCase):
         self.assertEqual(template["base_url"], "https://chatgpt.com/backend-api/codex")
         self.assertEqual(template["auth_mode"], "chatgpt")
         self.assertEqual(template["example_model_refs"][0], "openai-codex/gpt-5.5")
+        self.assertEqual(template["models"][0]["model"], "gpt-5.5")
+        self.assertEqual(
+            template["models"][0]["capabilities"],
+            {
+                "chat": True,
+                "embedding": False,
+                "rerank": False,
+                "vision": True,
+                "tool_call": False,
+                "structured_output": True,
+            },
+        )
+        self.assertEqual(template["models"][0]["context_window"], 256000)
+        self.assertEqual(template["models"][0]["compression_threshold"], 0.8)
 
     def test_openrouter_template_is_openai_compatible(self) -> None:
         template = get_provider_template("openrouter")

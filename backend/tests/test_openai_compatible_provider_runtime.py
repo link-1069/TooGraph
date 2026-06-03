@@ -160,13 +160,13 @@ class OpenAiCompatibleProviderRuntimeTests(unittest.TestCase):
         default_text_model.assert_not_called()
         local_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "local")
 
-        self.assertEqual(local_provider["label"], "OpenAI-compatible Custom Provider")
+        self.assertEqual(local_provider["label"], "LM Studio")
         self.assertEqual(
             local_provider["description"],
-            "Custom OpenAI-compatible endpoint used by TooGraph for local or private model routing.",
+            "LM Studio OpenAI-compatible endpoint used by TooGraph for local or private model routing.",
         )
         self.assertEqual(local_provider["transport"], "openai-compatible")
-        self.assertEqual(local_provider["base_url"], "http://127.0.0.1:8888/v1")
+        self.assertEqual(local_provider["base_url"], "http://127.0.0.1:1234/v1")
         self.assertFalse(local_provider["configured"])
         self.assertFalse(local_provider["enabled"])
         self.assertEqual(local_provider["models"], [])
@@ -211,6 +211,35 @@ class OpenAiCompatibleProviderRuntimeTests(unittest.TestCase):
         self.assertEqual(local_provider["models"][0]["model_ref"], "local/gemma-4-26b-a4b-it")
         self.assertEqual(local_provider["models"][0]["label"], "Gemma 4 26B")
         self.assertEqual(openrouter_provider["base_url"], "https://openrouter.ai/api/v1")
+
+    def test_build_model_catalog_upgrades_legacy_local_provider_default_label(self) -> None:
+        saved_settings = {
+            "model_providers": {
+                "local": {
+                    "label": "OpenAI-compatible Custom Provider",
+                    "description": "Custom OpenAI-compatible endpoint used by TooGraph for local or private model routing.",
+                    "base_url": "http://127.0.0.1:8888/v1",
+                    "enabled": False,
+                    "models": [],
+                }
+            },
+        }
+
+        with self._patched_local_provider_env(LOCAL_BASE_URL="http://127.0.0.1:8801/v1"):
+            _local_llm, model_catalog = self._reload_target_modules()
+
+            with patch.object(model_catalog, "load_app_settings", return_value=saved_settings):
+                with patch.object(model_catalog, "get_local_gateway_runtime_config", return_value={"cloud": None, "llama": None}):
+                    with patch.object(model_catalog, "get_local_route_model_names", return_value=[]):
+                        catalog = model_catalog.build_model_catalog()
+
+        local_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "local")
+
+        self.assertEqual(local_provider["label"], "LM Studio")
+        self.assertEqual(
+            local_provider["description"],
+            "LM Studio OpenAI-compatible endpoint used by TooGraph for local or private model routing.",
+        )
 
     def test_local_route_models_auto_discover_openai_compatible_models(self) -> None:
         saved_settings = {

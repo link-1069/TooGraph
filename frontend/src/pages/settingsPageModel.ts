@@ -24,11 +24,10 @@ export type ModelCapabilityKey =
   | "structured_output";
 
 export type ProviderModelCapabilities = Record<ModelCapabilityKey, boolean>;
+export type ModelPurpose = "chat" | "embedding" | "rerank";
 
 export type ProviderModelEmbeddingDraft = {
   dimensions: number | null;
-  use_for_memory: boolean;
-  use_for_knowledge: boolean;
 };
 
 export type ProviderModelDraft = {
@@ -121,6 +120,7 @@ const MODEL_CAPABILITY_KEYS: ModelCapabilityKey[] = [
   "tool_call",
   "structured_output",
 ];
+const MODEL_PURPOSE_KEYS: ModelPurpose[] = ["chat", "embedding", "rerank"];
 
 const EMBEDDING_MODEL_PATTERNS = [
   "embedding",
@@ -156,10 +156,42 @@ function defaultModelCapabilities(chat = true): ProviderModelCapabilities {
   };
 }
 
+export function isModelPurposeKey(value: ModelCapabilityKey): value is ModelPurpose {
+  return MODEL_PURPOSE_KEYS.includes(value as ModelPurpose);
+}
+
+export function resolveModelPurpose(capabilities: ProviderModelCapabilities): ModelPurpose {
+  if (capabilities.embedding) {
+    return "embedding";
+  }
+  if (capabilities.rerank) {
+    return "rerank";
+  }
+  return "chat";
+}
+
+export function applyModelPurpose(
+  capabilities: ProviderModelCapabilities,
+  purpose: ModelPurpose,
+): ProviderModelCapabilities {
+  const next: ProviderModelCapabilities = {
+    ...capabilities,
+    chat: purpose === "chat",
+    embedding: purpose === "embedding",
+    rerank: purpose === "rerank",
+  };
+  if (purpose !== "chat") {
+    next.vision = false;
+    next.tool_call = false;
+    next.structured_output = false;
+  }
+  return next;
+}
+
 function normalizeModelCapabilities(value: unknown, fallback: ProviderModelCapabilities): ProviderModelCapabilities {
   const normalized = { ...fallback };
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return normalized;
+    return applyModelPurpose(normalized, resolveModelPurpose(normalized));
   }
   const record = value as Record<string, unknown>;
   for (const key of MODEL_CAPABILITY_KEYS) {
@@ -167,7 +199,7 @@ function normalizeModelCapabilities(value: unknown, fallback: ProviderModelCapab
       normalized[key] = Boolean(record[key]);
     }
   }
-  return normalized;
+  return applyModelPurpose(normalized, resolveModelPurpose(normalized));
 }
 
 function includesAnyPattern(modelName: string, patterns: string[]) {
@@ -188,8 +220,6 @@ export function inferModelCapabilities(modelName: string, explicit?: unknown): P
 function defaultEmbeddingDraft(): ProviderModelEmbeddingDraft {
   return {
     dimensions: null,
-    use_for_memory: true,
-    use_for_knowledge: true,
   };
 }
 
@@ -202,8 +232,6 @@ function normalizeEmbeddingDraft(value: unknown): ProviderModelEmbeddingDraft {
   const dimensions = Number(record.dimensions);
   return {
     dimensions: Number.isFinite(dimensions) && dimensions > 0 ? Math.trunc(dimensions) : null,
-    use_for_memory: typeof record.use_for_memory === "boolean" ? record.use_for_memory : true,
-    use_for_knowledge: typeof record.use_for_knowledge === "boolean" ? record.use_for_knowledge : true,
   };
 }
 
@@ -377,8 +405,6 @@ export function applyDiscoveredModelItemsToDraft(
       const dimensions = Number(item.embedding.dimensions);
       modelSettings.embedding = {
         dimensions: Number.isFinite(dimensions) && dimensions > 0 ? Math.trunc(dimensions) : null,
-        use_for_memory: item.embedding.use_for_memory !== false,
-        use_for_knowledge: item.embedding.use_for_knowledge !== false,
       };
     }
   }
@@ -464,7 +490,7 @@ export function buildProviderSavePayload(drafts: Record<string, ProviderDraft>):
             compression_threshold: modelSettings.capabilities.chat
               ? clampModelCompressionThreshold(modelSettings.compression_threshold)
               : null,
-            embedding: modelSettings.capabilities.embedding ? { ...modelSettings.embedding } : undefined,
+            embedding: modelSettings.capabilities.embedding ? { dimensions: modelSettings.embedding.dimensions } : undefined,
           };
         }),
       },

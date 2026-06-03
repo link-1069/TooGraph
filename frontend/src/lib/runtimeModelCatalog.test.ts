@@ -48,7 +48,7 @@ test("buildRuntimeModelOptions uses the same configured catalog rules as LLM nod
         },
         {
           provider_id: "local",
-          label: "OpenAI-compatible Custom Provider",
+          label: "LM Studio",
           description: "",
           transport: "openai-compatible",
           configured: true,

@@ -17,6 +17,29 @@ SUPPORTED_TRANSPORTS = {
 
 DIRECT_PROVIDER_IDS = ("openai", "openai-codex", "openrouter", "anthropic", "gemini", "local")
 
+CODEX_DEFAULT_MODEL_CAPABILITIES: dict[str, bool] = {
+    "chat": True,
+    "embedding": False,
+    "rerank": False,
+    "vision": True,
+    "tool_call": False,
+    "structured_output": True,
+}
+CODEX_DEFAULT_CONTEXT_WINDOW = 256_000
+CODEX_DEFAULT_COMPRESSION_THRESHOLD = 0.8
+
+
+def build_codex_default_model_item(model: str) -> dict[str, Any]:
+    model_name = str(model or "").strip()
+    return {
+        "model": model_name,
+        "label": model_name,
+        "modalities": ["text", "image"],
+        "capabilities": deepcopy(CODEX_DEFAULT_MODEL_CAPABILITIES),
+        "context_window": CODEX_DEFAULT_CONTEXT_WINDOW,
+        "compression_threshold": CODEX_DEFAULT_COMPRESSION_THRESHOLD,
+    }
+
 
 def _openai_template(provider_id: str, label: str, base_url: str, *, group: str = "compatible") -> dict[str, Any]:
     return {
@@ -36,8 +59,8 @@ def _openai_template(provider_id: str, label: str, base_url: str, *, group: str 
 
 PROVIDER_TEMPLATES: dict[str, dict[str, Any]] = {
     "local": {
-        **_openai_template("local", "Local / Custom OpenAI-compatible", "http://127.0.0.1:8888/v1", group="direct"),
-        "description": "Local or private OpenAI-compatible endpoint.",
+        **_openai_template("local", "LM Studio", "http://127.0.0.1:1234/v1", group="direct"),
+        "description": "LM Studio OpenAI-compatible endpoint.",
     },
     "openai": {
         **_openai_template("openai", "OpenAI", "https://api.openai.com/v1", group="direct"),
@@ -56,7 +79,7 @@ PROVIDER_TEMPLATES: dict[str, dict[str, Any]] = {
         "requires_login": True,
         "enabled": False,
         "template_group": "direct",
-        "models": [],
+        "models": [build_codex_default_model_item("gpt-5.5")],
         "example_model_refs": ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4-mini"],
     },
     "openrouter": {

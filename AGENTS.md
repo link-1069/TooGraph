@@ -34,7 +34,7 @@
 - 本地 LLM 和运行时说明应统一放在 Model Providers 页面。
 - 首选本地或私有网关流程：
   - 启动要使用的 OpenAI-compatible gateway。
-  - 在 Model Providers 页面配置 `local` / Custom OpenAI-compatible Provider；当前本地默认 base URL 是 `http://127.0.0.1:8888/v1`。
+  - 在 Model Providers 页面配置 `local` / Custom OpenAI-compatible Provider；当前本地默认 base URL 是 `http://127.0.0.1:1234/v1`。
   - 在 UI 中保存或发现模型列表，然后在那里选择默认文本模型。
 - 模型执行只读取已保存的 Model Providers 配置和 UI 中的默认模型选择。不要重新文档化或恢复通过启动环境变量配置模型 provider 的方式。
 - TooGraph 自身启动说明仍然是 `npm start` 和 `node scripts/start.mjs`；这些命令不会被本地运行时说明替代。

@@ -301,7 +301,7 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(saved_embedding_model["capabilities"]["embedding"], True)
         self.assertEqual(
             saved_embedding_model["embedding"],
-            {"dimensions": 4096, "use_for_memory": True, "use_for_knowledge": False},
+            {"dimensions": 4096},
         )
         self.assertEqual(saved_model["permissions"], ["rerank"])
 
@@ -417,6 +417,13 @@ class SettingsModelProviderTests(unittest.TestCase):
             if item["provider_id"] == "lmstudio"
         )
         self.assertEqual(provider["structured_output_mode"], "validate_then_repair")
+        local_provider = next(
+            item
+            for item in payload["model_catalog"]["provider_templates"]
+            if item["provider_id"] == "local"
+        )
+        self.assertEqual(local_provider["label"], "LM Studio")
+        self.assertEqual(local_provider["base_url"], "http://127.0.0.1:1234/v1")
 
     def test_update_model_provider_persists_structured_output_mode(self) -> None:
         saved_payload: dict = {}
@@ -1191,7 +1198,7 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(local_provider["models"][0]["capabilities"], {"chat": False, "rerank": True})
         self.assertEqual(
             local_provider["models"][0]["embedding"],
-            {"dimensions": 1024, "use_for_memory": False, "use_for_knowledge": True},
+            {"dimensions": 1024},
         )
         self.assertEqual(local_provider["models"][0]["permissions"], ["rerank"])
 

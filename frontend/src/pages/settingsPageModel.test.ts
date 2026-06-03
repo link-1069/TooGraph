@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  applyModelPurpose,
   buildProviderDraftsFromSettings,
   buildProviderSavePayload,
   clampSettingsTemperature,
@@ -9,6 +10,7 @@ import {
   listAddableProviderTemplates,
   listProviderModelBadges,
   modelHasCapability,
+  resolveModelPurpose,
 } from "./settingsPageModel.ts";
 
 test("clampSettingsTemperature keeps values inside the legacy 0-2 range", () => {
@@ -176,8 +178,6 @@ test("provider save payload includes structured output mode and model reasoning 
           },
           embedding: {
             dimensions: null,
-            use_for_memory: true,
-            use_for_knowledge: true,
           },
         },
       },
@@ -186,6 +186,48 @@ test("provider save payload includes structured output mode and model reasoning 
 
   assert.equal(payload.local.structured_output_mode, "native_schema_first");
   assert.equal(payload.local.models[0]?.reasoning, true);
+});
+
+test("embedding model save payload only carries embedding model parameters", () => {
+  const payload = buildProviderSavePayload({
+    local: {
+      provider_id: "local",
+      label: "LM Studio",
+      transport: "openai-compatible",
+      structured_output_mode: "validate_then_repair",
+      base_url: "http://127.0.0.1:1234/v1",
+      enabled: true,
+      auth_header: "Authorization",
+      auth_scheme: "Bearer",
+      request_timeout_seconds: 180,
+      credential_pool: [],
+      api_key: "",
+      api_key_configured: false,
+      discovered_models: ["text-embedding-qwen3-embedding-8b"],
+      selected_models: ["text-embedding-qwen3-embedding-8b"],
+      model_settings: {
+        "text-embedding-qwen3-embedding-8b": {
+          model: "text-embedding-qwen3-embedding-8b",
+          reasoning: null,
+          context_window_ktokens: null,
+          compression_threshold: 0.9,
+          capabilities: {
+            chat: false,
+            embedding: true,
+            rerank: false,
+            vision: false,
+            tool_call: false,
+            structured_output: false,
+          },
+          embedding: {
+            dimensions: 4096,
+          },
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(payload.local.models[0]?.embedding, { dimensions: 4096 });
 });
 
 test("inferModelCapabilities marks Qwen embedding names as embedding-only", () => {
@@ -204,6 +246,52 @@ test("inferModelCapabilities marks reranker names as rerank-only", () => {
     chat: false,
     embedding: false,
     rerank: true,
+    vision: false,
+    tool_call: false,
+    structured_output: false,
+  });
+});
+
+test("inferModelCapabilities keeps chat embedding and rerank mutually exclusive", () => {
+  assert.deepEqual(
+    inferModelCapabilities("mixed-capability-model", {
+      chat: true,
+      embedding: true,
+      rerank: true,
+      vision: true,
+      tool_call: true,
+      structured_output: true,
+    }),
+    {
+      chat: false,
+      embedding: true,
+      rerank: false,
+      vision: false,
+      tool_call: false,
+      structured_output: false,
+    },
+  );
+});
+
+test("applyModelPurpose switches primary purpose without keeping chat add-ons on non-chat models", () => {
+  const chatModel = inferModelCapabilities("gpt-5.5", { vision: true, structured_output: true });
+  assert.equal(resolveModelPurpose(chatModel), "chat");
+
+  const embeddingModel = applyModelPurpose(chatModel, "embedding");
+  assert.deepEqual(embeddingModel, {
+    chat: false,
+    embedding: true,
+    rerank: false,
+    vision: false,
+    tool_call: false,
+    structured_output: false,
+  });
+  assert.equal(resolveModelPurpose(embeddingModel), "embedding");
+
+  assert.deepEqual(applyModelPurpose(embeddingModel, "chat"), {
+    chat: true,
+    embedding: false,
+    rerank: false,
     vision: false,
     tool_call: false,
     structured_output: false,
@@ -423,8 +511,6 @@ test("provider drafts default model compression threshold and save context windo
     },
     embedding: {
       dimensions: null,
-      use_for_memory: true,
-      use_for_knowledge: true,
     },
   };
   const payload = buildProviderSavePayload(drafts);
@@ -570,7 +656,7 @@ test("buildProviderDraftsFromSettings keeps discovered model options separate fr
       providers: [
         {
           provider_id: "local",
-          label: "OpenAI-compatible Custom Provider",
+          label: "LM Studio",
           description: "Local gateway",
           transport: "openai-compatible",
           configured: true,

@@ -20,8 +20,16 @@ from app.tools.model_provider_http import normalize_request_timeout_seconds
 from app.tools.openai_codex_client import get_codex_auth_status
 
 
-LOCAL_PROVIDER_LABEL = "OpenAI-compatible Custom Provider"
-LOCAL_PROVIDER_DESCRIPTION = "Custom OpenAI-compatible endpoint used by TooGraph for local or private model routing."
+LOCAL_PROVIDER_LABEL = "LM Studio"
+LOCAL_PROVIDER_DESCRIPTION = "LM Studio OpenAI-compatible endpoint used by TooGraph for local or private model routing."
+LEGACY_LOCAL_PROVIDER_LABELS = {
+    "OpenAI-compatible Custom Provider",
+    "Local / Custom OpenAI-compatible",
+}
+LEGACY_LOCAL_PROVIDER_DESCRIPTIONS = {
+    "Custom OpenAI-compatible endpoint used by TooGraph for local or private model routing.",
+    "Local or private OpenAI-compatible endpoint.",
+}
 DEFAULT_CONTEXT_COMPRESSION_THRESHOLD = 0.9
 
 
@@ -134,8 +142,6 @@ def normalize_model_embedding_settings(value: Any) -> dict[str, Any]:
         dimensions = None
     return {
         "dimensions": dimensions,
-        "use_for_memory": bool(value.get("use_for_memory", True)),
-        "use_for_knowledge": bool(value.get("use_for_knowledge", True)),
     }
 
 
@@ -178,6 +184,13 @@ def _safe_transport(value: Any, fallback: str) -> str:
         return fallback
 
 
+def _resolve_saved_provider_text(value: Any, *, default: str, legacy_defaults: set[str] | None = None) -> str:
+    text = str(value or "").strip()
+    if not text or (legacy_defaults and text in legacy_defaults):
+        return default
+    return text
+
+
 def _is_local_base_url(base_url: str) -> bool:
     normalized = str(base_url or "").lower()
     return "localhost" in normalized or "127.0.0.1" in normalized or normalized.startswith("http://0.0.0.0")
@@ -214,12 +227,22 @@ def _normalize_provider_config(
     description_default = (
         LOCAL_PROVIDER_DESCRIPTION if provider_id == "local" else str(template.get("description") or f"{label_default} provider.")
     )
+    label_legacy_defaults = LEGACY_LOCAL_PROVIDER_LABELS if provider_id == "local" else None
+    description_legacy_defaults = LEGACY_LOCAL_PROVIDER_DESCRIPTIONS if provider_id == "local" else None
     return {
         **template,
         **saved_provider,
         "provider_id": provider_id,
-        "label": str(saved_provider.get("label") or label_default),
-        "description": str(saved_provider.get("description") or description_default),
+        "label": _resolve_saved_provider_text(
+            saved_provider.get("label"),
+            default=label_default,
+            legacy_defaults=label_legacy_defaults,
+        ),
+        "description": _resolve_saved_provider_text(
+            saved_provider.get("description"),
+            default=description_default,
+            legacy_defaults=description_legacy_defaults,
+        ),
         "transport": transport,
         "base_url": base_url,
         "enabled": bool(enabled),

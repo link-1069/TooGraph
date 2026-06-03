@@ -527,6 +527,49 @@ class OpenAICodexProviderTests(unittest.TestCase):
         self.assertEqual(request["params"], {"client_version": "1.0.0"})
         self.assertEqual(request["headers"]["Authorization"], "Bearer codex-access-token")
 
+    def test_discovers_codex_model_items_with_default_capabilities(self) -> None:
+        from app.tools.model_provider_client import discover_provider_model_items
+
+        fake_client = FakeHttpClient(
+            [
+                FakeResponse(
+                    {
+                        "models": [
+                            {"slug": "gpt-5.5", "priority": 1},
+                            {"slug": "hidden-model", "visibility": "hidden", "priority": 2},
+                            {"slug": "api-disabled", "supported_in_api": False, "priority": 3},
+                        ]
+                    }
+                )
+            ]
+        )
+        with patch("app.tools.model_provider_client.resolve_codex_access_token", return_value="codex-access-token"):
+            with patch.dict(os.environ, PROXY_ENV, clear=False):
+                with patch("app.tools.model_provider_client.httpx.Client", return_value=fake_client):
+                    items = discover_provider_model_items(
+                        provider_id="openai-codex",
+                        transport="codex-responses",
+                        base_url="https://chatgpt.com/backend-api/codex",
+                    )
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["model"], "gpt-5.5")
+        self.assertEqual(items[0]["label"], "gpt-5.5")
+        self.assertEqual(items[0]["modalities"], ["text", "image"])
+        self.assertEqual(
+            items[0]["capabilities"],
+            {
+                "chat": True,
+                "embedding": False,
+                "rerank": False,
+                "vision": True,
+                "tool_call": False,
+                "structured_output": True,
+            },
+        )
+        self.assertEqual(items[0]["context_window"], 256000)
+        self.assertEqual(items[0]["compression_threshold"], 0.8)
+
     def test_chat_codex_responses_posts_streaming_responses_payload(self) -> None:
         from app.tools.model_provider_client import chat_with_model_provider
 

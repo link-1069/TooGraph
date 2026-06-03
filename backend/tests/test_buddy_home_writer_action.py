@@ -71,7 +71,7 @@ class BuddyHomeWriterActionTests(unittest.TestCase):
                         {
                             "action": "memory_document.update",
                             "payload": {
-                                "content": "# MEMORY.md - Long-Term Memory\n\n- 用户希望先给结论。\n",
+                                "content": "# MEMORY.md - 长期记忆\n\n- 用户希望先给结论。\n",
                             },
                             "change_reason": "自主复盘识别到稳定回复偏好。",
                         }
@@ -103,7 +103,7 @@ class BuddyHomeWriterActionTests(unittest.TestCase):
                     "commands": [
                         {
                             "action": "user_context.update",
-                            "payload": {"content": "# USER.md - About Your Human\n\n- 用户偏好直接中文回复。\n"},
+                            "payload": {"content": "# USER.md - 关于你的协作者\n\n- 用户偏好直接中文回复。\n"},
                             "change_reason": "自主复盘更新 USER.md。",
                         }
                     ],

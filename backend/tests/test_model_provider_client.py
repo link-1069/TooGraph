@@ -358,8 +358,6 @@ class ModelProviderClientTests(unittest.TestCase):
                     "context_window": 40960,
                     "embedding": {
                         "dimensions": None,
-                        "use_for_memory": True,
-                        "use_for_knowledge": True,
                     },
                 },
             ],

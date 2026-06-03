@@ -11,7 +11,7 @@ MESSAGE = dedent(
 
     Use the model manager for your OpenAI-compatible gateway, then configure it in TooGraph:
 
-      TooGraph -> Model Providers -> Local / Custom OpenAI-compatible
+      TooGraph -> Model Providers -> LM Studio
 
     This script exits without downloading models.
     """

@@ -88,11 +88,35 @@ class BuddyStoreTests(unittest.TestCase):
             self.assertIn("自主复盘写入目标", agents)
             self.assertIn("写入 `USER.md`", agents)
             self.assertIn("写入数据库结构化记忆", agents)
-            self.assertIn("# USER.md - About Your Human", user)
-            self.assertIn("# MEMORY.md - Long-Term Memory", memory)
+            self.assertIn("# USER.md - 关于你的协作者", user)
+            self.assertIn("# MEMORY.md - 长期记忆", memory)
             for home_text in [soul, agents, user, memory]:
                 for discouraged_prompt_fragment in ["Do not", "Avoid", "must not", "不要", "不得", "你已绑定", "LLM节点"]:
                     self.assertNotIn(discouraged_prompt_fragment, home_text)
+
+    def test_buddy_home_default_markdown_is_clean_simplified_chinese(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            buddy_home = Path(temp_dir) / "buddy_home"
+            with patch.object(store, "BUDDY_HOME_DIR", buddy_home):
+                buddy_identity = store.load_buddy_identity()
+
+            files = {
+                relative_path: (buddy_home / relative_path).read_text(encoding="utf-8")
+                for relative_path in ["AGENTS.md", "SOUL.md", "USER.md", "MEMORY.md"]
+            }
+
+        self.assertEqual(buddy_identity["name"], "图图")
+        self.assertIn("# AGENTS.md - Buddy Home 使用说明", files["AGENTS.md"])
+        self.assertIn("## 文件分工", files["AGENTS.md"])
+        self.assertIn("## 自主复盘写入目标", files["AGENTS.md"])
+        self.assertIn("这个文件定义 Buddy 的持久身份", files["SOUL.md"])
+        self.assertIn("# USER.md - 关于你的协作者", files["USER.md"])
+        self.assertIn("# MEMORY.md - 长期记忆", files["MEMORY.md"])
+        for content in files.values():
+            for external_pattern_fragment in ["Hermes", "OpenClaw", "SOUL.md` 分层模式"]:
+                self.assertNotIn(external_pattern_fragment, content)
+            for mojibake_fragment in ["鍥", "浣跨", "銆", "€"]:
+                self.assertNotIn(mojibake_fragment, content)
 
     def test_buddy_identity_update_creates_revision_with_previous_and_next_values(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -112,7 +136,7 @@ class BuddyStoreTests(unittest.TestCase):
             buddy_home = Path(temp_dir) / "buddy_home"
             with patch.object(store, "BUDDY_HOME_DIR", buddy_home):
                 updated = store.save_memory_document(
-                    {"content": "# MEMORY.md - Long-Term Memory\n\n- 用户喜欢先给结论。\n"},
+                    {"content": "# MEMORY.md - 长期记忆\n\n- 用户喜欢先给结论。\n"},
                     changed_by="memory_curator",
                     change_reason="自动记忆整理",
                 )
@@ -124,17 +148,17 @@ class BuddyStoreTests(unittest.TestCase):
         self.assertEqual(updated["path"], "MEMORY.md")
         self.assertIn("用户喜欢先给结论", document_text)
         self.assertEqual(revisions[0]["previous_value"]["path"], "MEMORY.md")
-        self.assertIn("No durable memories yet.", revisions[0]["previous_value"]["content"])
+        self.assertIn("暂时没有长期记忆。", revisions[0]["previous_value"]["content"])
         self.assertEqual(restored["target_type"], "home_file")
         self.assertEqual(restored["target_id"], "MEMORY.md")
-        self.assertIn("No durable memories yet.", restored_text)
+        self.assertIn("暂时没有长期记忆。", restored_text)
 
     def test_user_context_update_writes_user_md_and_restore_creates_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             buddy_home = Path(temp_dir) / "buddy_home"
             with patch.object(store, "BUDDY_HOME_DIR", buddy_home):
                 updated = store.save_user_context_document(
-                    {"content": "# USER.md - About Your Human\n\n- 用户偏好直接中文回复。\n"},
+                    {"content": "# USER.md - 关于你的协作者\n\n- 用户偏好直接中文回复。\n"},
                     changed_by="user_context_curator",
                     change_reason="自动用户上下文整理",
                 )
@@ -146,10 +170,10 @@ class BuddyStoreTests(unittest.TestCase):
         self.assertEqual(updated["path"], "USER.md")
         self.assertIn("用户偏好直接中文回复", document_text)
         self.assertEqual(revisions[0]["previous_value"]["path"], "USER.md")
-        self.assertIn("# USER.md - About Your Human", revisions[0]["previous_value"]["content"])
+        self.assertIn("# USER.md - 关于你的协作者", revisions[0]["previous_value"]["content"])
         self.assertEqual(restored["target_type"], "home_file")
         self.assertEqual(restored["target_id"], "USER.md")
-        self.assertIn("Current focus", restored_text)
+        self.assertIn("当前重点", restored_text)
 
     def test_buddy_database_uses_message_fts_without_buddy_memories_table(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

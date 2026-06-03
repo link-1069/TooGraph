@@ -72,7 +72,7 @@ TooGraph 的推荐模型配置入口是 Model Providers 页面。你可以在界
 
 1. 启动你要使用的 OpenAI-compatible gateway。
 2. 打开 TooGraph 的 Model Providers 页面。
-3. 配置 `local` / Custom OpenAI-compatible Provider 的 base URL、API key 和模型列表；当前本地默认 base URL 是 `http://127.0.0.1:8888/v1`。
+3. 配置 `local` / LM Studio Provider 的 base URL、API key 和模型列表；当前本地默认 base URL 是 `http://127.0.0.1:1234/v1`。
 4. 保存后，编辑器和运行时会从已保存的 Provider 配置读取模型入口。
 
 模型运行只读取 Model Providers 页面保存的 Provider 配置和默认模型选择。启动环境变量不会配置模型入口。
@@ -404,6 +404,7 @@ TooGraph/
 
 - `README.md`：项目入口、启动方式、项目结构和使用说明。
 - `docs/README.md`：唯一长期代码事实、部署说明、RAG/记忆/运行树/结构化输出/本地工作区路线图。
+- `docs/embedding-retrieval-lifecycle-design.md`：唯一全局 embedding / retrieval / 记忆召回 / 知识库入库设计参考。
 - `action/ACTION_AUTHORING_GUIDE.md`：Action 包结构、生命周期入口、权限边界和新建 Action 注意事项。
 - `knowledge/TooGraph-official/`：可导入的项目官方知识库源文档。
 - `AGENTS.md`：协作代理工作约定。

@@ -6,7 +6,7 @@ cat >&2 <<'EOF'
 
 Start the OpenAI-compatible local or private gateway you want to use, then configure it in TooGraph:
 
-  TooGraph -> Model Providers -> Local / Custom OpenAI-compatible
+  TooGraph -> Model Providers -> LM Studio
 
 This script exits without starting a runtime.
 EOF

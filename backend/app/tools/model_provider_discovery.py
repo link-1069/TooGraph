@@ -8,6 +8,7 @@ from app.core.model_provider_templates import (
     TRANSPORT_CODEX_RESPONSES,
     TRANSPORT_GEMINI_GENERATE_CONTENT,
     TRANSPORT_OPENAI_COMPATIBLE,
+    build_codex_default_model_item,
     normalize_transport,
 )
 from app.tools.model_provider_http import (
@@ -57,29 +58,118 @@ def parse_gemini_model_ids(payload: dict[str, Any]) -> list[str]:
     return dedupe_strings(model_ids)
 
 
-def parse_codex_model_ids(payload: dict[str, Any]) -> list[str]:
+def _codex_model_slug(item: dict[str, Any]) -> str:
+    return str(item.get("slug") or item.get("id") or item.get("name") or "").strip()
+
+
+def _codex_model_rank(item: dict[str, Any]) -> int:
+    priority = item.get("priority")
+    return int(priority) if isinstance(priority, (int, float)) else 10_000
+
+
+def _codex_model_is_visible(item: dict[str, Any]) -> bool:
+    if item.get("supported_in_api") is False:
+        return False
+    visibility = item.get("visibility")
+    return not (isinstance(visibility, str) and visibility.strip().lower() in {"hide", "hidden"})
+
+
+def _codex_capabilities(item: dict[str, Any], fallback: dict[str, bool]) -> dict[str, bool]:
+    native_capabilities = item.get("capabilities")
+    native_capabilities = native_capabilities if isinstance(native_capabilities, dict) else {}
+    capabilities = dict(fallback)
+    for key in fallback:
+        value = native_capabilities.get(key)
+        if isinstance(value, bool):
+            capabilities[key] = value
+    if capabilities["embedding"]:
+        purpose = "embedding"
+    elif capabilities["rerank"]:
+        purpose = "rerank"
+    else:
+        purpose = "chat"
+    capabilities["chat"] = purpose == "chat"
+    capabilities["embedding"] = purpose == "embedding"
+    capabilities["rerank"] = purpose == "rerank"
+    if purpose != "chat":
+        capabilities["vision"] = False
+        capabilities["tool_call"] = False
+        capabilities["structured_output"] = False
+    return capabilities
+
+
+def _codex_modalities(item: dict[str, Any], capabilities: dict[str, bool], fallback: list[str]) -> list[str]:
+    native_modalities = item.get("modalities")
+    if isinstance(native_modalities, list):
+        modalities = dedupe_strings([str(modality) for modality in native_modalities])
+        if modalities:
+            return modalities
+    return ["text", "image"] if capabilities.get("vision") else list(fallback)
+
+
+def _codex_positive_int(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, int) and value > 0:
+            return value
+    return None
+
+
+def _codex_compression_threshold(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and 0 < float(value) <= 1:
+        return float(value)
+    return None
+
+
+def parse_codex_model_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
     models = payload.get("models")
     if not isinstance(models, list):
         raise RuntimeError("Model discovery returned an unexpected payload shape.")
 
-    sortable: list[tuple[int, str]] = []
+    sortable: list[tuple[int, str, dict[str, Any]]] = []
     for item in models:
         if not isinstance(item, dict):
             continue
-        if item.get("supported_in_api") is False:
+        if not _codex_model_is_visible(item):
             continue
-        visibility = item.get("visibility")
-        if isinstance(visibility, str) and visibility.strip().lower() in {"hide", "hidden"}:
-            continue
-        slug = str(item.get("slug") or item.get("id") or item.get("name") or "").strip()
+        slug = _codex_model_slug(item)
         if not slug:
             continue
-        priority = item.get("priority")
-        rank = int(priority) if isinstance(priority, (int, float)) else 10_000
-        sortable.append((rank, slug))
+        model_item = build_codex_default_model_item(slug)
+        model_item["label"] = str(
+            item.get("display_name")
+            or item.get("label")
+            or item.get("title")
+            or item.get("name")
+            or slug
+        ).strip() or slug
+        model_item["capabilities"] = _codex_capabilities(item, model_item["capabilities"])
+        model_item["modalities"] = _codex_modalities(item, model_item["capabilities"], model_item["modalities"])
+        context_window = _codex_positive_int(
+            item.get("context_window"),
+            item.get("context_window_tokens"),
+            item.get("max_context_length"),
+        )
+        if context_window is not None:
+            model_item["context_window"] = context_window
+        compression_threshold = _codex_compression_threshold(item.get("compression_threshold"))
+        if compression_threshold is not None:
+            model_item["compression_threshold"] = compression_threshold
+        sortable.append((_codex_model_rank(item), slug, model_item))
 
     sortable.sort(key=lambda entry: (entry[0], entry[1]))
-    return dedupe_strings([slug for _rank, slug in sortable])
+    model_items: list[dict[str, Any]] = []
+    seen = set()
+    for _rank, slug, model_item in sortable:
+        identity = slug.lower()
+        if identity in seen:
+            continue
+        seen.add(identity)
+        model_items.append(model_item)
+    return model_items
+
+
+def parse_codex_model_ids(payload: dict[str, Any]) -> list[str]:
+    return [item["model"] for item in parse_codex_model_items(payload)]
 
 
 def derive_lmstudio_native_base_url(openai_base_url: str) -> str:
@@ -185,8 +275,6 @@ def parse_lmstudio_model_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if model_type == "embedding":
             model_item["embedding"] = {
                 "dimensions": None,
-                "use_for_memory": True,
-                "use_for_knowledge": True,
             }
         model_items.append(model_item)
     return model_items
@@ -236,6 +324,36 @@ def discover_provider_model_items(
             return parse_lmstudio_model_items(payload)
         except RuntimeError:
             pass
+    if normalized_transport == TRANSPORT_CODEX_RESPONSES:
+        resolve_token = resolve_codex_access_token_fn or resolve_codex_access_token
+        refresh_token = refresh_codex_access_token_fn or refresh_codex_access_token
+        access_token = resolve_token()
+        try:
+            payload = request_json(
+                method="GET",
+                url=f"{normalized_base_url}/models",
+                timeout_sec=timeout_sec,
+                headers=build_auth_headers(api_key=access_token),
+                params={"client_version": "1.0.0"},
+                error_label="Model discovery failed",
+                client_kwargs=codex_http_client_kwargs(timeout=timeout_sec),
+            )
+        except RuntimeError as exc:
+            if "HTTP 401" in str(exc):
+                access_token = refresh_token()
+                payload = request_json(
+                    method="GET",
+                    url=f"{normalized_base_url}/models",
+                    timeout_sec=timeout_sec,
+                    headers=build_auth_headers(api_key=access_token),
+                    params={"client_version": "1.0.0"},
+                    error_label="Model discovery failed",
+                    client_kwargs=codex_http_client_kwargs(timeout=timeout_sec),
+                )
+            else:
+                return [build_codex_default_model_item(model_id) for model_id in DEFAULT_CODEX_MODEL_IDS]
+        model_items = parse_codex_model_items(payload)
+        return model_items or [build_codex_default_model_item(model_id) for model_id in DEFAULT_CODEX_MODEL_IDS]
     return [
         {"model": model_id, "label": model_id, "modalities": ["text"]}
         for model_id in discover_provider_models(

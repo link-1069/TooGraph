@@ -156,13 +156,126 @@
                         </div>
                       </div>
                       <div class="model-providers-page__provider-model-actions">
-                        <button
-                          type="button"
-                          class="model-providers-page__button model-providers-page__model-config-button"
-                          @click.stop="toggleModelConfigPanel(provider, modelName)"
+                        <ElPopover
+                          :trigger="manualPopoverTrigger"
+                          :visible="isModelConfigPopoverOpen(provider, modelName)"
+                          placement="bottom-end"
+                          :width="420"
+                          :show-arrow="false"
+                          :popper-style="modelConfigPopoverStyle"
+                          popper-class="model-providers-page__model-config-popper"
+                          @update:visible="(visible: boolean) => handleModelConfigVisibleChange(provider, modelName, visible)"
                         >
-                          {{ isModelConfigExpanded(provider, modelName) ? t("settings.collapseModelSettings") : t("settings.configureModel") }}
-                        </button>
+                          <template #reference>
+                            <button
+                              type="button"
+                              class="model-providers-page__button model-providers-page__model-config-button"
+                              @click.stop="toggleModelConfigPopover(provider, modelName)"
+                            >
+                              {{ isModelConfigPopoverOpen(provider, modelName) ? t("settings.collapseModelSettings") : t("settings.configureModel") }}
+                            </button>
+                          </template>
+                          <div class="model-providers-page__model-config-popover-panel" @pointerdown.stop @click.stop>
+                            <div class="model-providers-page__model-capability-controls">
+                              <span class="model-providers-page__provider-field-label">{{ t("settings.modelPurpose") }}</span>
+                              <div class="model-providers-page__model-purpose-segments" role="tablist" :aria-label="t('settings.modelPurpose')">
+                                <button
+                                  v-for="option in modelPurposeOptions"
+                                  :key="option.value"
+                                  type="button"
+                                  class="model-providers-page__model-purpose-segment"
+                                  :class="{ 'model-providers-page__model-purpose-segment--active': modelPurpose(provider, modelName) === option.value }"
+                                  role="tab"
+                                  :aria-selected="modelPurpose(provider, modelName) === option.value"
+                                  :tabindex="modelPurpose(provider, modelName) === option.value ? 0 : -1"
+                                  @click="setModelPurpose(provider, modelName, option.value)"
+                                >
+                                  {{ option.label }}
+                                </button>
+                              </div>
+                            </div>
+
+                            <div v-if="modelHasCapability(provider, modelName, 'chat')" class="model-providers-page__model-capability-controls">
+                              <span class="model-providers-page__provider-field-label">{{ t("settings.modelChatCapabilities") }}</span>
+                              <div class="model-providers-page__model-capability-grid">
+                                <label class="model-providers-page__model-capability-toggle">
+                                  <input
+                                    type="checkbox"
+                                    :checked="modelHasCapability(provider, modelName, 'vision')"
+                                    @change="toggleModelCapability(provider, modelName, 'vision')"
+                                  />
+                                  <span>{{ t("settings.modelCapabilityVision") }}</span>
+                                </label>
+                                <label class="model-providers-page__model-capability-toggle">
+                                  <input
+                                    type="checkbox"
+                                    :checked="modelHasCapability(provider, modelName, 'tool_call')"
+                                    @change="toggleModelCapability(provider, modelName, 'tool_call')"
+                                  />
+                                  <span>{{ t("settings.modelCapabilityToolCall") }}</span>
+                                </label>
+                                <label class="model-providers-page__model-capability-toggle">
+                                  <input
+                                    type="checkbox"
+                                    :checked="modelHasCapability(provider, modelName, 'structured_output')"
+                                    @change="toggleModelCapability(provider, modelName, 'structured_output')"
+                                  />
+                                  <span>{{ t("settings.modelCapabilityStructuredOutput") }}</span>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div v-if="modelHasCapability(provider, modelName, 'chat')" class="model-providers-page__model-config-section">
+                              <span class="model-providers-page__provider-field-label">{{ t("settings.modelChatSettings") }}</span>
+                              <div class="model-providers-page__model-config-fields">
+                                <label class="model-providers-page__model-budget-field">
+                                  <span>{{ t("settings.modelContextWindowKTokens") }}</span>
+                                  <input
+                                    class="model-providers-page__model-budget-input"
+                                    :value="modelContextWindowKTokens(provider, modelName) ?? ''"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    inputmode="numeric"
+                                    @change="handleModelContextWindowChange(provider, modelName, $event)"
+                                  />
+                                </label>
+                                <label class="model-providers-page__model-budget-field">
+                                  <span>{{ t("settings.modelCompressionThresholdPercent") }}</span>
+                                  <input
+                                    class="model-providers-page__model-budget-input"
+                                    :value="modelCompressionThresholdPercent(provider, modelName)"
+                                    type="number"
+                                    min="1"
+                                    max="100"
+                                    step="1"
+                                    inputmode="numeric"
+                                    @change="handleModelCompressionThresholdChange(provider, modelName, $event)"
+                                  />
+                                </label>
+                              </div>
+                            </div>
+
+                            <div v-if="modelHasCapability(provider, modelName, 'embedding')" class="model-providers-page__model-config-section">
+                              <span class="model-providers-page__provider-field-label">{{ t("settings.modelEmbeddingSettings") }}</span>
+                              <div class="model-providers-page__model-config-fields">
+                                <label class="model-providers-page__model-budget-field">
+                                  <span>{{ t("settings.modelEmbeddingDimensions") }}</span>
+                                  <input
+                                    class="model-providers-page__model-budget-input"
+                                    :value="modelEmbeddingDimensions(provider, modelName) ?? ''"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    inputmode="numeric"
+                                    :placeholder="t('settings.modelEmbeddingDefaultDimensions')"
+                                    @change="handleModelEmbeddingDimensionsChange(provider, modelName, $event)"
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          </div>
+                        </ElPopover>
                         <button
                           type="button"
                           class="model-providers-page__icon-button"
@@ -172,127 +285,6 @@
                         >
                           <ElIcon aria-hidden="true"><Close /></ElIcon>
                         </button>
-                      </div>
-                    </div>
-                    <div v-if="isModelConfigExpanded(provider, modelName)" class="model-providers-page__provider-model-config-panel">
-                      <div class="model-providers-page__model-capability-controls">
-                        <span class="model-providers-page__provider-field-label">{{ t("settings.modelCapabilities") }}</span>
-                        <div class="model-providers-page__model-capability-grid">
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelHasCapability(provider, modelName, 'chat')"
-                              @change="toggleModelCapability(provider, modelName, 'chat')"
-                            />
-                            <span>{{ t("settings.modelCapabilityChat") }}</span>
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelHasCapability(provider, modelName, 'embedding')"
-                              @change="toggleModelCapability(provider, modelName, 'embedding')"
-                            />
-                            <span>{{ t("settings.modelCapabilityEmbedding") }}</span>
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelHasCapability(provider, modelName, 'rerank')"
-                              @change="toggleModelCapability(provider, modelName, 'rerank')"
-                            />
-                            <span>{{ t("settings.modelCapabilityRerank") }}</span>
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelHasCapability(provider, modelName, 'vision')"
-                              @change="toggleModelCapability(provider, modelName, 'vision')"
-                            />
-                            <span>{{ t("settings.modelCapabilityVision") }}</span>
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelHasCapability(provider, modelName, 'tool_call')"
-                              @change="toggleModelCapability(provider, modelName, 'tool_call')"
-                            />
-                            <span>{{ t("settings.modelCapabilityToolCall") }}</span>
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelHasCapability(provider, modelName, 'structured_output')"
-                              @change="toggleModelCapability(provider, modelName, 'structured_output')"
-                            />
-                            <span>{{ t("settings.modelCapabilityStructuredOutput") }}</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div v-if="modelHasCapability(provider, modelName, 'chat')" class="model-providers-page__model-config-section">
-                        <span class="model-providers-page__provider-field-label">{{ t("settings.modelChatSettings") }}</span>
-                        <div class="model-providers-page__model-config-fields">
-                          <label class="model-providers-page__model-budget-field">
-                            <span>{{ t("settings.modelContextWindowKTokens") }}</span>
-                            <input
-                              class="model-providers-page__model-budget-input"
-                              :value="modelContextWindowKTokens(provider, modelName) ?? ''"
-                              type="number"
-                              min="1"
-                              step="1"
-                              inputmode="numeric"
-                              @change="handleModelContextWindowChange(provider, modelName, $event)"
-                            />
-                          </label>
-                          <label class="model-providers-page__model-budget-field">
-                            <span>{{ t("settings.modelCompressionThresholdPercent") }}</span>
-                            <input
-                              class="model-providers-page__model-budget-input"
-                              :value="modelCompressionThresholdPercent(provider, modelName)"
-                              type="number"
-                              min="1"
-                              max="100"
-                              step="1"
-                              inputmode="numeric"
-                              @change="handleModelCompressionThresholdChange(provider, modelName, $event)"
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div v-if="modelHasCapability(provider, modelName, 'embedding')" class="model-providers-page__model-config-section">
-                        <span class="model-providers-page__provider-field-label">{{ t("settings.modelEmbeddingSettings") }}</span>
-                        <div class="model-providers-page__model-config-fields">
-                          <label class="model-providers-page__model-budget-field">
-                            <span>{{ t("settings.modelEmbeddingDimensions") }}</span>
-                            <input
-                              class="model-providers-page__model-budget-input"
-                              :value="modelEmbeddingDimensions(provider, modelName) ?? ''"
-                              type="number"
-                              min="1"
-                              step="1"
-                              inputmode="numeric"
-                              :placeholder="t('settings.modelEmbeddingDefaultDimensions')"
-                              @change="handleModelEmbeddingDimensionsChange(provider, modelName, $event)"
-                            />
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelEmbeddingScopeEnabled(provider, modelName, 'use_for_memory')"
-                              @change="handleModelEmbeddingScopeChange(provider, modelName, 'use_for_memory')"
-                            />
-                            <span>{{ t("settings.modelEmbeddingUseForMemory") }}</span>
-                          </label>
-                          <label class="model-providers-page__model-capability-toggle">
-                            <input
-                              type="checkbox"
-                              :checked="modelEmbeddingScopeEnabled(provider, modelName, 'use_for_knowledge')"
-                              @change="handleModelEmbeddingScopeChange(provider, modelName, 'use_for_knowledge')"
-                            />
-                            <span>{{ t("settings.modelEmbeddingUseForKnowledge") }}</span>
-                          </label>
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -965,6 +957,7 @@ import AppShell from "@/layouts/AppShell.vue";
 import type { AgentThinkingLevel, SettingsModelProvider, SettingsPayload, SettingsProviderModel } from "@/types/settings";
 
 import {
+  applyModelPurpose,
   applyDiscoveredModelItemsToDraft,
   buildProviderDraftsFromSettings,
   buildProviderSavePayload,
@@ -972,12 +965,15 @@ import {
   clampSettingsTemperature,
   ensureProviderModelDraft,
   inferModelCapabilities,
+  isModelPurposeKey,
   listAddableProviderTemplates,
   modelHasCapability,
   normalizeContextWindowKTokens,
   normalizeStructuredOutputMode,
   readProviderModelDraft,
+  resolveModelPurpose,
   type ModelCapabilityKey,
+  type ModelPurpose,
   type ProviderDraft,
 } from "./settingsPageModel.ts";
 
@@ -1004,7 +1000,7 @@ const discoveringProviderId = ref<string | null>(null);
 const activeModelPickerProviderId = ref<string | null>(null);
 const refreshingModelPickerProviderId = ref<string | null>(null);
 const activeProviderConfigProviderId = ref<string | null>(null);
-const expandedModelConfigKeys = ref<Record<string, boolean>>({});
+const activeModelConfigKey = ref<string | null>(null);
 const activeLogoutConfirmProviderId = ref<string | null>(null);
 const logoutConfirmTimeoutRef = ref<number | null>(null);
 const codexBrowserLoginSession = ref<OpenAICodexBrowserAuthStartResponse | null>(null);
@@ -1025,6 +1021,15 @@ const modelPickerPopoverStyle = {
   padding: "0",
 } as const;
 const providerConfigPopoverStyle = {
+  "--el-popover-bg-color": "transparent",
+  "--el-popover-border-color": "transparent",
+  "--el-popover-padding": "0px",
+  background: "transparent",
+  border: "none",
+  boxShadow: "none",
+  padding: "0",
+} as const;
+const modelConfigPopoverStyle = {
   "--el-popover-bg-color": "transparent",
   "--el-popover-border-color": "transparent",
   "--el-popover-padding": "0px",
@@ -1134,8 +1139,6 @@ function buildProviderDraftFromTemplate(provider: SettingsModelProvider): Provid
       capabilities: inferModelCapabilities(modelName, model.capabilities),
       embedding: {
         dimensions: typeof model.embedding?.dimensions === "number" ? model.embedding.dimensions : null,
-        use_for_memory: model.embedding?.use_for_memory !== false,
-        use_for_knowledge: model.embedding?.use_for_knowledge !== false,
       },
     };
   }
@@ -1266,6 +1269,11 @@ const thinkingLevelOptions = computed<Array<{ value: AgentThinkingLevel; label: 
   { value: "high", label: t("settings.thinkingHigh") },
   { value: "xhigh", label: t("settings.thinkingExtraHigh") },
 ]);
+const modelPurposeOptions = computed<Array<{ value: ModelPurpose; label: string }>>(() => [
+  { value: "chat", label: t("settings.modelCapabilityChat") },
+  { value: "embedding", label: t("settings.modelCapabilityEmbedding") },
+  { value: "rerank", label: t("settings.modelCapabilityRerankFuture") },
+]);
 const thinkingMode = computed({
   get: () => draft.value?.thinking_level ?? "off",
   set: (value: string) => {
@@ -1316,16 +1324,18 @@ function modelConfigKey(provider: ProviderDraft, modelName: string) {
   return `${provider.provider_id}:${modelName.trim().toLowerCase()}`;
 }
 
-function isModelConfigExpanded(provider: ProviderDraft, modelName: string) {
-  return Boolean(expandedModelConfigKeys.value[modelConfigKey(provider, modelName)]);
+function isModelConfigPopoverOpen(provider: ProviderDraft, modelName: string) {
+  return activeModelConfigKey.value === modelConfigKey(provider, modelName);
 }
 
-function toggleModelConfigPanel(provider: ProviderDraft, modelName: string) {
+function toggleModelConfigPopover(provider: ProviderDraft, modelName: string) {
   const key = modelConfigKey(provider, modelName);
-  expandedModelConfigKeys.value = {
-    ...expandedModelConfigKeys.value,
-    [key]: !expandedModelConfigKeys.value[key],
-  };
+  activeModelConfigKey.value = activeModelConfigKey.value === key ? null : key;
+}
+
+function handleModelConfigVisibleChange(provider: ProviderDraft, modelName: string, visible: boolean) {
+  const key = modelConfigKey(provider, modelName);
+  activeModelConfigKey.value = visible ? key : activeModelConfigKey.value === key ? null : activeModelConfigKey.value;
 }
 
 function modelCapabilityBadges(provider: ProviderDraft, modelName: string) {
@@ -1333,7 +1343,7 @@ function modelCapabilityBadges(provider: ProviderDraft, modelName: string) {
   const badges: string[] = [];
   if (capabilities.chat) badges.push(t("settings.modelCapabilityChat"));
   if (capabilities.embedding) badges.push(t("settings.modelCapabilityEmbedding"));
-  if (capabilities.rerank) badges.push(t("settings.modelCapabilityRerank"));
+  if (capabilities.rerank) badges.push(t("settings.modelCapabilityRerankFuture"));
   if (capabilities.vision) badges.push(t("settings.modelCapabilityVision"));
   if (capabilities.tool_call) badges.push(t("settings.modelCapabilityToolCall"));
   if (capabilities.structured_output) badges.push(t("settings.modelCapabilityStructuredOutput"));
@@ -1384,7 +1394,26 @@ function modelCompressionThresholdPercent(provider: ProviderDraft, modelName: st
   return Math.round(clampModelCompressionThreshold(readProviderModelDraft(provider, modelName).compression_threshold) * 100);
 }
 
+function modelPurpose(provider: ProviderDraft, modelName: string) {
+  return resolveModelPurpose(readProviderModelDraft(provider, modelName).capabilities);
+}
+
+function setModelPurpose(provider: ProviderDraft, modelName: string, purpose: ModelPurpose) {
+  const modelSettings = ensureProviderModelDraft(provider, modelName);
+  modelSettings.capabilities = applyModelPurpose(modelSettings.capabilities, purpose);
+  providerDrafts.value = {
+    ...providerDrafts.value,
+    [provider.provider_id]: provider,
+  };
+  alignDefaultModelsToProviderSelection();
+  void persistSettings();
+}
+
 function toggleModelCapability(provider: ProviderDraft, modelName: string, capability: ModelCapabilityKey) {
+  if (isModelPurposeKey(capability)) {
+    setModelPurpose(provider, modelName, capability);
+    return;
+  }
   const modelSettings = ensureProviderModelDraft(provider, modelName);
   modelSettings.capabilities = {
     ...modelSettings.capabilities,
@@ -1402,14 +1431,6 @@ function modelEmbeddingDimensions(provider: ProviderDraft, modelName: string) {
   return readProviderModelDraft(provider, modelName).embedding.dimensions;
 }
 
-function modelEmbeddingScopeEnabled(
-  provider: ProviderDraft,
-  modelName: string,
-  scope: "use_for_memory" | "use_for_knowledge",
-) {
-  return readProviderModelDraft(provider, modelName).embedding[scope];
-}
-
 function handleModelEmbeddingDimensionsChange(provider: ProviderDraft, modelName: string, event: Event) {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
@@ -1418,23 +1439,6 @@ function handleModelEmbeddingDimensionsChange(provider: ProviderDraft, modelName
   const parsed = Number(target.value);
   const modelSettings = ensureProviderModelDraft(provider, modelName);
   modelSettings.embedding.dimensions = Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
-  providerDrafts.value = {
-    ...providerDrafts.value,
-    [provider.provider_id]: provider,
-  };
-  void persistSettings();
-}
-
-function handleModelEmbeddingScopeChange(
-  provider: ProviderDraft,
-  modelName: string,
-  scope: "use_for_memory" | "use_for_knowledge",
-) {
-  const modelSettings = ensureProviderModelDraft(provider, modelName);
-  modelSettings.embedding = {
-    ...modelSettings.embedding,
-    [scope]: !modelSettings.embedding[scope],
-  };
   providerDrafts.value = {
     ...providerDrafts.value,
     [provider.provider_id]: provider,
@@ -2617,12 +2621,25 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
-.model-providers-page__provider-model-config-panel {
+.model-providers-page__model-config-popover-panel {
   display: grid;
   gap: 12px;
-  border-top: 1px solid rgba(37, 99, 235, 0.1);
-  padding: 10px;
-  background: linear-gradient(180deg, rgba(248, 250, 252, 0.78), rgba(255, 250, 244, 0.78));
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 96px));
+  overflow: auto;
+  border: 1px solid rgba(154, 52, 18, 0.12);
+  border-radius: 16px;
+  padding: 12px;
+  background: linear-gradient(180deg, rgb(255, 255, 255), rgb(255, 250, 244));
+  box-shadow: 0 22px 46px rgba(60, 41, 20, 0.16);
+}
+
+:deep(.model-providers-page__model-config-popper.el-popper) {
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .model-providers-page__model-capability-controls,
@@ -2630,6 +2647,53 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 8px;
   min-width: 0;
+}
+
+.model-providers-page__model-purpose-segments {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(154, 52, 18, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 248, 240, 0.72);
+  padding: 4px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+.model-providers-page__model-purpose-segment {
+  flex: 0 0 auto;
+  min-height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  padding: 0 12px;
+  color: rgba(90, 58, 28, 0.74);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.model-providers-page__model-purpose-segment:not(.model-providers-page__model-purpose-segment--active):hover {
+  background: rgba(255, 255, 255, 0.56);
+  color: rgba(124, 45, 18, 0.92);
+}
+
+.model-providers-page__model-purpose-segment--active {
+  border: 1px solid rgba(154, 52, 18, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--toograph-accent-strong);
+  font-weight: 800;
+  box-shadow: 0 8px 18px rgba(120, 53, 15, 0.1);
+}
+
+.model-providers-page__model-purpose-segment:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(210, 162, 117, 0.3);
 }
 
 .model-providers-page__model-capability-grid {
@@ -2646,7 +2710,7 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 
-.model-providers-page__panel .model-providers-page__model-capability-toggle {
+.model-providers-page__model-capability-toggle {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -2662,7 +2726,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
 }
 
-.model-providers-page__panel .model-providers-page__model-capability-toggle input[type="checkbox"] {
+.model-providers-page__model-capability-toggle input[type="checkbox"] {
   flex: 0 0 auto;
   width: 14px;
   height: 14px;

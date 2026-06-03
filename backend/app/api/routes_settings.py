@@ -76,8 +76,6 @@ class AgentRuntimeDefaultsPayload(BaseModel):
 
 class SettingsProviderModelEmbeddingPayload(BaseModel):
     dimensions: int | None = Field(default=None, ge=1)
-    use_for_memory: bool = Field(default=True, alias="use_for_memory")
-    use_for_knowledge: bool = Field(default=True, alias="use_for_knowledge")
 
     model_config = ConfigDict(populate_by_name=True)
 

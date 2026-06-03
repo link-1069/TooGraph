@@ -1,6 +1,6 @@
 # TooGraph 长期代码事实与路线图
 
-最后整理日期：2026-05-28。
+最后整理日期：2026-06-03。
 
 本文是 `docs/` 下的长期参考总入口。它的维护原则是：先看代码、官方模板 JSON、Action manifest 和测试，再写结论；已经完成的事情写成事实，未完成的事情写成路线图，历史计划只保留仍然有效的细节。独立专题路线图可以作为长期参考文档保留，但必须从本文或相关代码路径可发现。
 
@@ -18,6 +18,7 @@
 - Buddy Home 和记忆：`backend/app/buddy/`、`action/official/buddy_session_recall/`、`action/official/buddy_home_writer/`。
 - 消息平台和外部入口：`backend/app/messaging/`、`backend/app/api/routes_message_platforms.py`、`frontend/src/pages/MessagePlatformsPage.vue`。
 - 知识库和 RAG 基础：`backend/app/knowledge/loader.py`、`backend/app/core/runtime/knowledge_retrieval.py`。
+- Embedding、retrieval、聊天记忆召回、上下文压缩和知识库入库的唯一全局设计参考：`docs/embedding-retrieval-lifecycle-design.md`。
 - 前端页面和展示模型：`frontend/src/`。
 - 自动化测试：`backend/tests/`、`frontend/src/**/*.test.ts`、`scripts/*.test.mjs`。
 
@@ -220,6 +221,12 @@ npm start
 - 记忆复盘图只自动写入低风险 `MEMORY.md` 更新；Action 更新、模板更新、persona 或全局运行权限设置改动应拆成独立模板、子图或审批流；会话压缩摘要由 `buddy_context_compaction` 负责。
 
 ### 2.5 Hybrid RAG 和知识库
+
+全局设计约束：
+
+- Embedding、retrieval、聊天记忆召回、上下文压缩和知识库入库的目标架构只参考 `docs/embedding-retrieval-lifecycle-design.md`。
+- 旧的 embedding 讨论文档已经删除；历史 spec 中的 embedding 细节只作为迁移背景，不作为新实现依据。
+- 场景模板可以描述自己的业务 RAG 流程，但不能重新定义全局 retrieval substrate、embedding 数据契约或记忆写入边界。
 
 已完成：
 

@@ -78,7 +78,7 @@ class BuddyCommandRouteTests(unittest.TestCase):
                         "/api/buddy/commands",
                         json={
                             "action": "user_context.update",
-                            "payload": {"content": "# USER.md - About Your Human\n\n- 用户偏好直接中文回复。\n"},
+                            "payload": {"content": "# USER.md - 关于你的协作者\n\n- 用户偏好直接中文回复。\n"},
                             "run_id": "run_user_context_1",
                             "change_reason": "Manual user context update.",
                         },
@@ -108,7 +108,7 @@ class BuddyCommandRouteTests(unittest.TestCase):
                         "/api/buddy/commands",
                         json={
                             "action": "memory_document.update",
-                            "payload": {"content": "# MEMORY.md - Long-Term Memory\n\n- Keep replies short.\n"},
+                            "payload": {"content": "# MEMORY.md - 长期记忆\n\n- 保持回复简短。\n"},
                             "run_id": "run_memory_1",
                             "change_reason": "Manual memory document update.",
                         },
@@ -126,7 +126,7 @@ class BuddyCommandRouteTests(unittest.TestCase):
         self.assertEqual(body["command"]["target_id"], "MEMORY.md")
         self.assertEqual(body["command"]["run_id"], "run_memory_1")
         self.assertEqual(body["result"]["path"], "MEMORY.md")
-        self.assertIn("Keep replies short", memory_text)
+        self.assertIn("保持回复简短", memory_text)
         self.assertTrue(body["command"]["revision_id"].startswith("rev_"))
         self.assertEqual(revisions_response.status_code, 200)
         self.assertEqual(revisions_response.json()[-1]["target_id"], "MEMORY.md")

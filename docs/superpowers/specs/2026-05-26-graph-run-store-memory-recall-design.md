@@ -1,5 +1,7 @@
 # 图运行存储与记忆召回设计
 
+> 历史说明：本文保留图运行存储、Buddy 历史和早期记忆召回设计背景。Embedding、retrieval、聊天记忆召回、上下文压缩和知识库入库的全局目标设计已由 `docs/embedding-retrieval-lifecycle-design.md` 接管；本文中的 embedding 相关段落不再作为新实现依据。
+
 ## 背景
 
 TooGraph 的长期方向是图优先：Buddy 的可见行为、能力选择、文件写入、页面操作、记忆整理和自我改进，都应该表现为可审计的图运行，而不是隐藏在产品特化的命令式代码里。

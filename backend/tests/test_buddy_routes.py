@@ -57,7 +57,7 @@ class BuddyRouteTests(unittest.TestCase):
                         "/api/buddy/commands",
                         json={
                             "action": "memory_document.update",
-                            "payload": {"content": "# MEMORY.md - Long-Term Memory\n\n- 喜欢简短回答。\n"},
+                            "payload": {"content": "# MEMORY.md - 长期记忆\n\n- 喜欢简短回答。\n"},
                             "change_reason": "用户直接编辑 MEMORY.md。",
                         },
                     )
@@ -70,12 +70,12 @@ class BuddyRouteTests(unittest.TestCase):
                     restored_response = client.get("/api/buddy/memory-document")
 
         self.assertEqual(initial_response.status_code, 200)
-        self.assertIn("No durable memories yet.", initial_response.json()["content"])
+        self.assertIn("暂时没有长期记忆。", initial_response.json()["content"])
         self.assertEqual(update_response.status_code, 200)
         self.assertEqual(update_response.json()["command"]["action"], "memory_document.update")
         self.assertIn("喜欢简短回答", current_response.json()["content"])
         self.assertEqual(restore_response.status_code, 200)
-        self.assertIn("No durable memories yet.", restored_response.json()["content"])
+        self.assertIn("暂时没有长期记忆。", restored_response.json()["content"])
 
     def test_user_context_update_and_restore(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -87,7 +87,7 @@ class BuddyRouteTests(unittest.TestCase):
                         "/api/buddy/commands",
                         json={
                             "action": "user_context.update",
-                            "payload": {"content": "# USER.md - About Your Human\n\n- 偏好直接中文回复。\n"},
+                            "payload": {"content": "# USER.md - 关于你的协作者\n\n- 偏好直接中文回复。\n"},
                             "change_reason": "用户直接编辑 USER.md。",
                         },
                     )
@@ -100,12 +100,12 @@ class BuddyRouteTests(unittest.TestCase):
                     restored_response = client.get("/api/buddy/user-context")
 
         self.assertEqual(initial_response.status_code, 200)
-        self.assertIn("# USER.md - About Your Human", initial_response.json()["content"])
+        self.assertIn("# USER.md - 关于你的协作者", initial_response.json()["content"])
         self.assertEqual(update_response.status_code, 200)
         self.assertEqual(update_response.json()["command"]["action"], "user_context.update")
         self.assertIn("偏好直接中文回复", current_response.json()["content"])
         self.assertEqual(restore_response.status_code, 200)
-        self.assertIn("Current focus", restored_response.json()["content"])
+        self.assertIn("当前重点", restored_response.json()["content"])
 
     def test_home_files_endpoint_exposes_buddy_home_inventory_and_readable_content(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

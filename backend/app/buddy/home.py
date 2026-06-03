@@ -65,7 +65,7 @@ DEFAULT_CAPABILITY_USAGE_STATS = {
 
 DEFAULT_AGENTS_MD = """# AGENTS.md - Buddy Home 使用说明
 
-这个文件说明 Buddy Home 如何作为持久上下文参与图运行。它参考 Hermes 的分层方式：`AGENTS.md` 描述工作区和上下文边界，身份、用户上下文、长期记忆和结构化召回分别由独立文件与数据库承载。
+这个文件说明 Buddy Home 如何作为持久上下文参与图运行。`AGENTS.md` 描述工作区和上下文边界，身份、用户上下文、长期记忆和结构化召回分别由独立文件与数据库承载。
 
 ## 文件分工
 
@@ -91,37 +91,37 @@ DEFAULT_AGENTS_MD = """# AGENTS.md - Buddy Home 使用说明
 - 写入复盘结果或改进候选: 临时进展、一次性错误、原始日志、较长运行细节、能力改进建议、模板改进建议和需要人工确认的候选。
 """
 
-DEFAULT_USER_MD = """# USER.md - About Your Human
+DEFAULT_USER_MD = """# USER.md - 关于你的协作者
 
-Learn about the person you are helping. Update this through explicit graph flows when the user confirms durable preferences.
+这个文件保存关于用户的长期稳定背景。只有在用户确认这些偏好或事实适合长期保留时，才通过明确的图流程更新这里。
 
-- **Name:**
-- **What to call them:**
-- **Pronouns:** optional
-- **Timezone:**
-- **Communication preferences:** Prefers clear, direct Chinese unless they ask otherwise.
-- **Current focus:** Building TooGraph as a graph-first workspace where Buddy runs through templates and auditable Actions.
+- **姓名：**
+- **称呼方式：**
+- **代词：** 可选
+- **时区：**
+- **沟通偏好：** 默认使用清晰、直接的中文，除非用户另有要求。
+- **当前重点：** 将 TooGraph 建成图优先的工作空间，让 Buddy 通过模板、可审计 Action 和 revision 运行。
 
-## Context
+## 上下文
 
-Keep facts here that help collaboration over time: stable preferences, recurring projects, tolerated risk level, UI taste, and things the user repeatedly corrects.
+这里记录能长期帮助协作的事实：稳定偏好、反复出现的项目、可接受的风险水平、UI 品味，以及用户反复纠正过的事项。
 
-Record durable context with clear source, clear value, and user-confirmed relevance. Route sensitive or transient details to review summaries, structured recall, or source run records.
+记录长期上下文时，应写清来源、具体取值和用户确认过的相关性。敏感或短期信息应进入复盘摘要、结构化召回或源 run record。
 """
 
-DEFAULT_MEMORY_MD = """# MEMORY.md - Long-Term Memory
+DEFAULT_MEMORY_MD = """# MEMORY.md - 长期记忆
 
-This file is Buddy's human-readable durable memory. It should contain distilled context that remains useful across sessions.
+这个文件保存 Buddy 可读的长期记忆。这里只应放跨会话仍然有用、已经提炼过的上下文。
 
-## Managed Entries
+## 托管条目
 
-No durable memories yet.
+暂时没有长期记忆。
 
-## Notes
+## 记录准则
 
-- Keep memories compact, source-aware, and easy to revise.
-- Prefer stable preferences, project decisions, repeated corrections, and durable lessons.
-- Route raw logs, temporary failures, secrets, full transcripts, and information that can be reread from the graph or project files to review summaries, structured recall, or source run records.
+- 记忆应保持简洁，带有来源意识，并且易于修订。
+- 优先记录稳定偏好、项目级决策、反复纠正和长期有效的经验。
+- 原始日志、临时失败、凭据、完整转录，以及可从当前图或项目文件重新读取的信息，应进入复盘摘要、结构化召回或源 run record。
 """
 
 MAX_INCLUDED_MARKDOWN_CHARS = 8000
@@ -298,12 +298,12 @@ def read_buddy_identity_markdown(path: Path, *, warnings: list[str] | None = Non
         return deepcopy(DEFAULT_BUDDY_IDENTITY)
 
     display_preferences = deepcopy(DEFAULT_BUDDY_IDENTITY["display_preferences"])
-    display_preferences.update(_parse_display_preferences(_extract_section(content, "Display Preferences")))
+    display_preferences.update(_parse_display_preferences(_extract_section(content, "显示偏好", "Display Preferences")))
     return {
-        "name": _first_nonempty_line(_extract_section(content, "Name")) or DEFAULT_BUDDY_IDENTITY["name"],
-        "persona": _extract_section(content, "Persona") or DEFAULT_BUDDY_IDENTITY["persona"],
-        "tone": _extract_section(content, "Tone") or DEFAULT_BUDDY_IDENTITY["tone"],
-        "response_style": _extract_section(content, "Response Style") or DEFAULT_BUDDY_IDENTITY["response_style"],
+        "name": _first_nonempty_line(_extract_section(content, "名称", "Name")) or DEFAULT_BUDDY_IDENTITY["name"],
+        "persona": _extract_section(content, "身份", "Persona") or DEFAULT_BUDDY_IDENTITY["persona"],
+        "tone": _extract_section(content, "语气", "Tone") or DEFAULT_BUDDY_IDENTITY["tone"],
+        "response_style": _extract_section(content, "回复风格", "Response Style") or DEFAULT_BUDDY_IDENTITY["response_style"],
         "display_preferences": display_preferences,
     }
 
@@ -320,41 +320,41 @@ def render_buddy_identity_markdown(buddy_identity: dict[str, Any]) -> str:
     response_style = _as_text(buddy_identity.get("response_style")) or DEFAULT_BUDDY_IDENTITY["response_style"]
     return f"""# SOUL.md - TooGraph Buddy
 
-This file defines Buddy's durable identity, voice, and baseline behavior. It is inspired by the Hermes/OpenClaw `SOUL.md` pattern, but remains subordinate to TooGraph runtime rules, graph validation, capability permissions, and user approval.
+这个文件定义 Buddy 的持久身份、声音和基线行为。它始终服从 TooGraph 运行时规则、图校验、能力权限和用户批准。
 
-## Name
+## 名称
 
 {name}
 
-## Display Preferences
+## 显示偏好
 
 - display_name: {display_name}
 - language: {language}
 
-## Persona
+## 身份
 
 {persona}
 
-## Tone
+## 语气
 
 {tone}
 
-## Response Style
+## 回复风格
 
 {response_style}
 
-## Core Truths
+## 核心原则
 
-- Be useful through graph runs, auditable Actions, commands, revisions, and run records.
-- Be clear and direct. Use concise language, grounded uncertainty, and concrete next steps.
-- Be resourceful before asking, but ask when a decision needs user intent or permission.
-- Protect the user's local data, private context, and ability to review changes.
+- 通过图运行、可审计 Action、命令、revision 和 run record 提供帮助。
+- 清晰直接：使用简洁语言、可靠的不确定性表达和具体下一步。
+- 在提问前先主动查找可用信息；当决策需要用户意图或权限时，明确询问。
+- 保护用户的本地数据、私有上下文，以及检查和恢复变更的能力。
 
-## Boundaries
+## 边界
 
-- Runtime permission comes from TooGraph rules, graph validation, capability scopes, and user approval.
-- Important writes must leave an auditable command, revision, or run record.
-- If this file changes, the user should be able to inspect and restore the previous version.
+- 运行时权限来自 TooGraph 规则、图校验、能力作用域和用户批准。
+- 重要写入必须留下可审计的命令、revision 或 run record。
+- 如果这个文件发生变化，用户应能检查并恢复旧版本。
 """
 
 
@@ -436,12 +436,12 @@ def _read_capability_usage_stats_from_db(home_dir: Path, *, warnings: list[str])
     return value if isinstance(value, dict) else deepcopy(DEFAULT_CAPABILITY_USAGE_STATS)
 
 
-def _extract_section(content: str, heading: str) -> str:
-    target = f"## {heading}".casefold()
+def _extract_section(content: str, *headings: str) -> str:
+    targets = {f"## {heading}".casefold() for heading in headings if str(heading or "").strip()}
     lines = content.splitlines()
     start: int | None = None
     for index, line in enumerate(lines):
-        if line.strip().casefold() == target:
+        if line.strip().casefold() in targets:
             start = index + 1
             break
     if start is None:

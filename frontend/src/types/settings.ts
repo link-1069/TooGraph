@@ -46,8 +46,6 @@ export type SettingsProviderModelCapabilities = Partial<Record<ModelCapabilityKe
 
 export type SettingsProviderModelEmbedding = {
   dimensions?: number | null;
-  use_for_memory?: boolean;
-  use_for_knowledge?: boolean;
 };
 
 export type SettingsProviderModel = {
