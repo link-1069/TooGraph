@@ -21,9 +21,8 @@ class RuntimeInputBoundaryTests(unittest.TestCase):
             {"kind": "action", "key": "web_search"},
         )
 
-    def test_coerce_input_boundary_value_preserves_text_and_knowledge_base_strings(self) -> None:
+    def test_coerce_input_boundary_value_preserves_text_strings(self) -> None:
         self.assertEqual(coerce_input_boundary_value('{"text": "value"}', NodeSystemStateType.TEXT), '{"text": "value"}')
-        self.assertEqual(coerce_input_boundary_value('{"kb": "docs"}', NodeSystemStateType.KNOWLEDGE_BASE), '{"kb": "docs"}')
         self.assertEqual(coerce_input_boundary_value("{invalid", NodeSystemStateType.JSON), "{invalid")
 
     def test_coerce_input_boundary_value_parses_uploaded_file_payloads_to_local_paths_for_file_types(self) -> None:
@@ -53,6 +52,7 @@ class RuntimeInputBoundaryTests(unittest.TestCase):
         self.assertNotIn("object", values)
         self.assertNotIn("array", values)
         self.assertNotIn("file_list", values)
+        self.assertNotIn("knowledge_base", values)
 
     def test_first_truthy_returns_first_truthy_value_or_none(self) -> None:
         self.assertEqual(first_truthy(["", 0, "answer", "later"]), "answer")

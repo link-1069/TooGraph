@@ -12,7 +12,6 @@ test("resolveStateTypeForInputBoundary maps input boundary types onto state fiel
   assert.equal(resolveStateTypeForInputBoundary("text"), "text");
   assert.equal(resolveStateTypeForInputBoundary("file"), "file");
   assert.equal(resolveStateTypeForInputBoundary("folder"), "file");
-  assert.equal(resolveStateTypeForInputBoundary("knowledge_base"), "knowledge_base");
   assert.equal(resolveStateTypeForInputBoundary("image"), "image");
   assert.equal(resolveStateTypeForInputBoundary("audio"), "audio");
   assert.equal(resolveStateTypeForInputBoundary("video"), "video");
@@ -21,19 +20,9 @@ test("resolveStateTypeForInputBoundary maps input boundary types onto state fiel
 test("resolveNextInputValueForBoundaryType follows legacy input switching rules", () => {
   assert.equal(
     resolveNextInputValueForBoundaryType({
-      nextType: "knowledge_base",
-      currentType: "text",
-      currentValue: "hello",
-      knowledgeBaseNames: ["toograph-official", "python-official-3.14"],
-    }),
-    "toograph-official",
-  );
-  assert.equal(
-    resolveNextInputValueForBoundaryType({
       nextType: "file",
       currentType: "text",
       currentValue: "hello",
-      knowledgeBaseNames: [],
     }),
     "",
   );
@@ -42,25 +31,14 @@ test("resolveNextInputValueForBoundaryType follows legacy input switching rules"
       nextType: "folder",
       currentType: "text",
       currentValue: "hello",
-      knowledgeBaseNames: [],
     }),
     { kind: "local_folder", root: "", selected: [] },
   );
   assert.equal(
     resolveNextInputValueForBoundaryType({
       nextType: "text",
-      currentType: "knowledge_base",
-      currentValue: "toograph-official",
-      knowledgeBaseNames: [],
-    }),
-    "",
-  );
-  assert.equal(
-    resolveNextInputValueForBoundaryType({
-      nextType: "text",
       currentType: "text",
       currentValue: "keep me",
-      knowledgeBaseNames: [],
     }),
     "keep me",
   );
@@ -69,7 +47,6 @@ test("resolveNextInputValueForBoundaryType follows legacy input switching rules"
       nextType: "text",
       currentType: "video",
       currentValue: JSON.stringify({ kind: "uploaded_file", detectedType: "video" }),
-      knowledgeBaseNames: [],
     }),
     "",
   );
@@ -78,7 +55,6 @@ test("resolveNextInputValueForBoundaryType follows legacy input switching rules"
       nextType: "text",
       currentType: "file",
       currentValue: JSON.stringify({ kind: "uploaded_file", detectedType: "file" }),
-      knowledgeBaseNames: [],
     }),
     "",
   );
@@ -88,7 +64,6 @@ test("isSwitchableInputBoundaryType exposes the manual input picker types", () =
   assert.equal(isSwitchableInputBoundaryType("text"), true);
   assert.equal(isSwitchableInputBoundaryType("file"), true);
   assert.equal(isSwitchableInputBoundaryType("folder"), true);
-  assert.equal(isSwitchableInputBoundaryType("knowledge_base"), true);
   assert.equal(isSwitchableInputBoundaryType("image"), false);
 });
 

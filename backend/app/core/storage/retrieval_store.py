@@ -13,9 +13,11 @@ from app.tools.model_provider_client import rerank_documents_with_model_ref
 
 SUPPORTED_RETRIEVAL_SOURCE_KINDS = {
     "buddy_message",
+    "buddy_session_summary",
     "graph_output",
     "node_summary",
     "memory_entry",
+    "knowledge_document",
     "graph_run",
     "retrieval_chunk",
 }

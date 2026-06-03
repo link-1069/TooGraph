@@ -17,7 +17,7 @@
 - 官方图模板：`graph_template/official/*/template.json`。
 - Buddy Home 和记忆：`backend/app/buddy/`、`action/official/buddy_session_recall/`、`action/official/buddy_home_writer/`。
 - 消息平台和外部入口：`backend/app/messaging/`、`backend/app/api/routes_message_platforms.py`、`frontend/src/pages/MessagePlatformsPage.vue`。
-- 知识库和 RAG 基础：`backend/app/knowledge/loader.py`、`backend/app/core/runtime/knowledge_retrieval.py`。
+- Retrieval 基础：`backend/app/core/storage/retrieval_store.py`、`backend/app/core/storage/embedding_store.py`、`tool/official/source_chunker/`、`tool/official/retrieval_ingestion_writer/`、`tool/official/retrieval_query_context_loader/`。
 - Embedding、retrieval、聊天记忆召回、上下文压缩和知识库入库的唯一全局设计参考：`docs/embedding-retrieval-lifecycle-design.md`。
 - 前端页面和展示模型：`frontend/src/`。
 - 自动化测试：`backend/tests/`、`frontend/src/**/*.test.ts`、`scripts/*.test.mjs`。
@@ -230,14 +230,12 @@ npm start
 
 已完成：
 
-- 后端知识库有 `knowledge_bases`、`knowledge_documents`、`knowledge_chunks`、`knowledge_chunks_fts`、`knowledge_chunk_embeddings` 等存储路径。
-- 默认官方知识库 ID 是 `toograph-official`。
-- `backend/app/knowledge/loader.py` 支持官方文档导入、chunk、SQLite FTS、LIKE fallback、本地 hash embedding、metadata filter 和知识库级 embedding rebuild。
-- 当前默认 embedding provider 是确定性的 `local-hash` / `hashing-v1`，维度 384。
-- `search_knowledge` 会合并关键词候选和本地向量候选，输出 score、retrieval mode、keyword_score、vector_score、metadata、chunk_id、citation_id。
-- `retrieve_knowledge_base_context` 会返回 `knowledge_context`，包含 `results`、`citations` 和可直接给 LLM 的 context 文本。
-- 知识库上下文当前通过显式知识库 input 和后续 RAG Action 方向承载，不再保留旧 fanout Action。
-- 知识库页面已有导入、检索、引用展示、重建索引、删除确认、检索质量检查等基础。
+- 旧知识库链路已经删除：不再保留 `/api/knowledge`、`backend/app/knowledge/loader.py`、`backend/app/core/runtime/knowledge_retrieval.py`、`knowledge_bases` / `knowledge_documents` / `knowledge_chunks` / `knowledge_chunk_embeddings` 等旧表，也不保留旧知识库页面。
+- 当前统一检索底座使用 `retrieval_documents`、`retrieval_chunks`、`retrieval_chunks_fts`、`embedding_models`、`embedding_vectors`、`embedding_jobs` 和 hybrid audit 表。
+- `source_chunker` 只负责确定性切片，不写库、不排 embedding job。
+- `retrieval_ingestion_writer` 负责把切片候选写入 `retrieval_documents` / `retrieval_chunks`，并按选定 embedding model refs 排队 `embedding_jobs`。
+- `embedding_job_processor` 负责处理待执行 embedding jobs，并把向量落到 `embedding_vectors`。
+- `retrieval_query_context_loader` 负责从统一 `retrieval_chunks` 执行 FTS / vector / rerank 召回，输出标准 `context_package`、`ranked_chunks` 和 `ranking_report`。
 
 当前判断：
 
@@ -378,10 +376,10 @@ RAG 工作流教学：
 
 RAG 路线图：
 
-- P0：建立标准 `context_package` 合同，明确 `knowledge_context` 和 `memory_context` 权威边界。
-- P1：新增 `knowledge_retrieval` Action，输出标准上下文包、citations、scores、budget、warnings。
+- P0：建立标准 `context_package` 合同，明确记忆召回、会话摘要和知识文档证据的来源边界与 authority。
+- P1：使用 `retrieval_query_context_loader` Tool 输出标准上下文包、scores、budget、warnings 和可审计 ranking report。
 - P1：明确 Buddy Home 只读能力；读取结果要在输出中标注 `authority=preference`。
-- P1：建立 `rag_question_answering` 模板：输入问题和知识库 -> query planning -> `knowledge_retrieval` -> citation-aware answer -> output。
+- P1：建立知识文档召回模板：输入问题和检索范围 -> query planning -> `retrieval_query_context_loader` -> citation-aware answer -> output。
 - P1：为 RAG 增加质量检查：检索命中、引用准确、资料不足拒答、过度引用、chunk 质量、上下文预算。
 - P2：接入真实 embedding provider 和 reranker，保留 `local-hash` 作为 deterministic fallback。
 - P2：支持用户文档知识库 ingestion：PDF/Word/HTML/Markdown、结构化 chunk、增量索引、删除一致性、版本管理。
@@ -748,12 +746,12 @@ run record 和对话历史的目标存储原则：
 1. 补 Buddy 展开真实子运行后的浏览器级交互测试，包括打开子 run 证据、打开运行回放和加载失败态。
 2. 如需要“刷新后仍保持展开”，再把 `expandedTraceMessageIds` 做成会话级 UI 状态；当前实现是刷新后再次展开重新拉取。
 
-### P1：RAG 标准化
+### P1：Retrieval 标准化
 
-1. 建立 `context_package` 合同。
-2. 新增 `knowledge_retrieval` Action。
-3. 新增 `rag_question_answering` 模板。
-4. 为 RAG 加 citation 检查和资料不足场景检查。
+1. 建立统一 `context_package` 合同。
+2. 使用 `retrieval_query_context_loader` 作为知识文档和记忆召回的标准查询 Tool。
+3. 新增基于 `source_chunker` -> `retrieval_ingestion_writer` -> `embedding_job_processor` 的入库模板。
+4. 新增 citation 检查和资料不足场景检查。
 5. 接入真实 embedding provider 和 reranker。
 
 ### P1：记忆复盘增强

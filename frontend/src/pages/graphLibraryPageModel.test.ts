@@ -108,6 +108,21 @@ const templates: TemplateRecord[] = [
     conditional_edges: [],
     metadata: {},
   },
+  {
+    template_id: "development_agent",
+    label: "Development Agent",
+    description: "Template still being built",
+    default_graph_name: "Development Agent",
+    source: "official",
+    status: "development",
+    capabilityDiscoverable: false,
+    capabilityDiscoverableBlockedReason: "development_template",
+    state_schema: {},
+    nodes: {},
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  },
 ];
 
 test("buildGraphLibraryItems marks official templates read-only and user-owned items manageable", () => {
@@ -128,6 +143,7 @@ test("buildGraphLibraryItems marks official templates read-only and user-owned i
       { id: "official_loop", kind: "template", source: "official", status: "active", capabilityDiscoverable: false, canManage: false },
       { id: "paused_loop", kind: "template", source: "user", status: "active", capabilityDiscoverable: false, canManage: true },
       { id: "user_summary", kind: "template", source: "user", status: "disabled", capabilityDiscoverable: false, canManage: true },
+      { id: "development_agent", kind: "template", source: "official", status: "development", capabilityDiscoverable: false, canManage: false },
     ],
   );
 });
@@ -168,24 +184,29 @@ test("filterGraphLibraryItems filters by kind, status, and search text", () => {
     filterGraphLibraryItems(items, { query: "official", kind: "templates", status: "active" }).map((item) => item.id),
     ["official_loop"],
   );
+  assert.deepEqual(
+    filterGraphLibraryItems(items, { query: "", kind: "templates", status: "development" }).map((item) => item.id),
+    ["development_agent"],
+  );
 });
 
 test("buildGraphLibraryOverview summarizes graph and template management inventory", () => {
   const items = buildGraphLibraryItems(graphs, templates);
 
   assert.deepEqual(buildGraphLibraryOverview(items), {
-    total: 5,
+    total: 6,
     graphs: 2,
-    templates: 3,
-    officialTemplates: 1,
+    templates: 4,
+    officialTemplates: 2,
     disabled: 2,
+    development: 1,
   });
 });
 
 test("splitGraphLibraryItems separates templates and graphs for the management columns", () => {
   const columns = splitGraphLibraryItems(buildGraphLibraryItems(graphs, templates));
 
-  assert.deepEqual(columns.templates.map((item) => item.id), ["official_loop", "paused_loop", "user_summary"]);
+  assert.deepEqual(columns.templates.map((item) => item.id), ["official_loop", "paused_loop", "user_summary", "development_agent"]);
   assert.deepEqual(columns.graphs.map((item) => item.id), ["graph_research", "graph_archived"]);
 });
 

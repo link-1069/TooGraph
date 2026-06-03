@@ -396,7 +396,6 @@
     "graphProtocol": "node_system",
     "role": "page_operation_workflow",
     "pageOperationTemplate": true,
-    "visible": true,
     "capabilityDiscoverableDefault": false,
     "outputContract": [
       {

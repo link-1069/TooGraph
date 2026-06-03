@@ -54,6 +54,7 @@ class GraphSaveResponse(BaseModel):
 class NodeSystemCatalogStatus(str, Enum):
     ACTIVE = "active"
     DISABLED = "disabled"
+    DEVELOPMENT = "development"
 
 
 class NodeSystemStateType(str, Enum):
@@ -67,7 +68,6 @@ class NodeSystemStateType(str, Enum):
     AUDIO = "audio"
     VIDEO = "video"
     FILE = "file"
-    KNOWLEDGE_BASE = "knowledge_base"
     CAPABILITY = "capability"
     RESULT_PACKAGE = "result_package"
 

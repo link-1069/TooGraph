@@ -1235,7 +1235,6 @@
     "category": "business",
     "graphProtocol": "node_system",
     "templateVersion": "0.1.0",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "headline": "把简历、项目经历和 JD 变成可审查的求职准备包。",
@@ -1415,5 +1414,6 @@
       "涉及薪资、城市和职业判断时必须保留不确定项和人工确认提示。"
     ],
     "toograph_state_key_counter": 1
-  }
+  },
+  "status": "development"
 }

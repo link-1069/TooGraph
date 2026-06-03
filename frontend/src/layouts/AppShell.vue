@@ -74,7 +74,6 @@ import {
   Memo,
   MessageBox,
   Operation,
-  Reading,
   Setting,
   TrendCharts,
 } from "@element-plus/icons-vue";
@@ -105,7 +104,6 @@ const navigationIconComponents: Record<NavigationIconKey, Component> = {
   Memo,
   MessageBox,
   Operation,
-  Reading,
   Setting,
   ToolWrench: ToolWrenchIcon,
   TrendCharts,

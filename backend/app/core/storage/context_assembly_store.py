@@ -18,7 +18,6 @@ SUPPORTED_SOURCE_KINDS = {
     "buddy_home_file",
     "buddy_session_summary",
     "memory_entry",
-    "knowledge_chunk",
     "capability_result_output",
     "runtime_context_item",
     "page_context_item",
@@ -344,11 +343,6 @@ def _render_sources(sources: list[dict[str, Any]]) -> str:
             if content:
                 lines.append(content)
             continue
-        if source_kind == "knowledge_chunk":
-            content = _read_knowledge_chunk_source(source)
-            if content:
-                lines.append(content)
-            continue
         if source_kind == "capability_result_output":
             content = _read_capability_result_output_source(source)
             if content:
@@ -496,15 +490,6 @@ def _read_retrieval_chunk_source(source: dict[str, Any]) -> str:
     try:
         with get_connection() as connection:
             row = connection.execute("SELECT content FROM retrieval_chunks WHERE chunk_id = ?", (str(source.get("source_id") or ""),)).fetchone()
-    except sqlite3.OperationalError:
-        return ""
-    return str(row["content"] or "").strip() if row is not None else ""
-
-
-def _read_knowledge_chunk_source(source: dict[str, Any]) -> str:
-    try:
-        with get_connection() as connection:
-            row = connection.execute("SELECT content FROM knowledge_chunks WHERE chunk_id = ?", (str(source.get("source_id") or ""),)).fetchone()
     except sqlite3.OperationalError:
         return ""
     return str(row["content"] or "").strip() if row is not None else ""

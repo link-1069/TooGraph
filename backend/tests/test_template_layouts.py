@@ -331,13 +331,13 @@ class TemplateLayoutTests(unittest.TestCase):
         buddy_message_chunk_template = templates["buddy_message_chunking_demo"]
         self.assertEqual(buddy_message_chunk_template["source"], "official")
         self.assertEqual(buddy_message_chunk_template["metadata"]["role"], "buddy_message_chunking_demo")
-        self.assertEqual(buddy_message_chunk_template["metadata"]["requiredTools"], ["source_chunker"])
+        self.assertEqual(buddy_message_chunk_template["metadata"]["requiredTools"], ["source_chunker", "retrieval_ingestion_writer"])
         self.assertIs(buddy_message_chunk_template["capabilityDiscoverable"], False)
 
         knowledge_chunk_template = templates["knowledge_document_chunking_demo"]
         self.assertEqual(knowledge_chunk_template["source"], "official")
         self.assertEqual(knowledge_chunk_template["metadata"]["role"], "knowledge_document_chunking_demo")
-        self.assertEqual(knowledge_chunk_template["metadata"]["requiredTools"], ["source_chunker"])
+        self.assertEqual(knowledge_chunk_template["metadata"]["requiredTools"], ["source_chunker", "retrieval_ingestion_writer"])
         self.assertIs(knowledge_chunk_template["capabilityDiscoverable"], False)
 
         page_operation_template = templates["toograph_page_operation_workflow"]
@@ -359,7 +359,8 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(policy_template["default_graph_name"], "政策导航助手")
         self.assertIn("政策原文", policy_template["description"])
         self.assertIs(policy_template["capabilityDiscoverable"], False)
-        self.assertEqual(policy_template["capabilityDiscoverableBlockedReason"], "hidden_template")
+        self.assertEqual(policy_template["status"], "development")
+        self.assertEqual(policy_template["capabilityDiscoverableBlockedReason"], "development_template")
 
         news_template = templates["ai_news_digest_to_wechat_article"]
         self.assertEqual(news_template["source"], "official")
@@ -419,11 +420,12 @@ class TemplateLayoutTests(unittest.TestCase):
                     metadata = graph.get("metadata") if isinstance(graph.get("metadata"), dict) else {}
                     self.assertEqual(sorted(FORBIDDEN_TEMPLATE_BREAKPOINT_KEYS.intersection(metadata)), [])
 
-    def test_evidence_heavy_business_templates_declare_knowledge_requirements(self) -> None:
+    def test_evidence_heavy_business_templates_declare_retrieval_requirements(self) -> None:
         expected_requirements = {
             "policy_navigator_agent": {
-                "state": "policy_knowledge_base",
-                "sourceStates": ["policy_sources", "raw_policy_text", "policy_knowledge_base"],
+                "metadataKey": "retrievalRequirements",
+                "state": "policy_retrieval_context",
+                "sourceStates": ["policy_sources", "raw_policy_text", "policy_retrieval_context"],
                 "citationOutput": "citation_map",
             },
             "ai_news_digest_to_wechat_article": {
@@ -470,11 +472,12 @@ class TemplateLayoutTests(unittest.TestCase):
                 template = templates[template_id]
                 states = template["state_schema"]
                 metadata = template["metadata"]
-                requirements = metadata.get("knowledgeRequirements") or {}
+                requirements = metadata.get(expected.get("metadataKey", "retrievalRequirements")) or {}
 
                 self.assertEqual(requirements.get("state"), expected["state"])
                 self.assertEqual(requirements.get("sourceStates"), expected["sourceStates"])
                 self.assertEqual(requirements.get("citationOutput"), expected["citationOutput"])
+                self.assertNotIn("knowledgeRequirements", metadata)
                 self.assertIn(expected["state"], states)
                 self.assertIn(expected["citationOutput"], states)
                 for state_name in expected["sourceStates"]:
@@ -542,6 +545,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 },
                 "source_state": "message_source",
                 "source_input_node": "input_message_source",
+                "writer_source_kind": "buddy_message",
                 "output_contract_label": "Buddy message chunk candidates",
             },
             "knowledge_document_chunking_demo": {
@@ -552,6 +556,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 },
                 "source_state": "document_source",
                 "source_input_node": "input_document_source",
+                "writer_source_kind": "knowledge_document",
                 "output_contract_label": "Knowledge document chunk candidates",
             },
         }
@@ -561,9 +566,10 @@ class TemplateLayoutTests(unittest.TestCase):
                 states = template["state_schema"]
                 nodes = template["nodes"]
                 tool_node = nodes["chunk_source_material"]
+                writer_node = nodes["write_retrieval_ingestion"]
 
                 self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
-                self.assertEqual(template["metadata"]["requiredTools"], ["source_chunker"])
+                self.assertEqual(template["metadata"]["requiredTools"], ["source_chunker", "retrieval_ingestion_writer"])
                 self.assertNotIn("source_kind", states)
                 self.assertNotIn("strategy", states)
                 self.assertNotIn("limits", states)
@@ -603,11 +609,54 @@ class TemplateLayoutTests(unittest.TestCase):
                     [{"state": "chunks", "mode": "replace"}],
                 )
                 self.assertEqual(states["chunks"]["binding"]["fieldKey"], "chunks")
+                self.assertEqual(states["ingestion_report"]["binding"]["toolKey"], "retrieval_ingestion_writer")
+                self.assertEqual(states["indexed_chunks"]["binding"]["fieldKey"], "indexed_chunks")
+                self.assertEqual(states["embedding_jobs"]["binding"]["fieldKey"], "embedding_jobs")
+                self.assertEqual(writer_node["kind"], "tool")
+                self.assertEqual(writer_node["config"]["toolKey"], "retrieval_ingestion_writer")
+                self.assertEqual(writer_node["config"]["staticInputs"]["source_kind"], expected["writer_source_kind"])
+                self.assertEqual(
+                    _read_contracts(writer_node["reads"]),
+                    [
+                        {
+                            "state": expected["source_state"],
+                            "required": True,
+                            "binding": {
+                                "kind": "tool_input",
+                                "actionKey": "",
+                                "toolKey": "retrieval_ingestion_writer",
+                                "fieldKey": "source",
+                                "managed": True,
+                            },
+                        },
+                        {
+                            "state": "chunks",
+                            "required": True,
+                            "binding": {
+                                "kind": "tool_input",
+                                "actionKey": "",
+                                "toolKey": "retrieval_ingestion_writer",
+                                "fieldKey": "chunks",
+                                "managed": True,
+                            },
+                        },
+                    ],
+                )
+                self.assertEqual(
+                    writer_node["writes"],
+                    [
+                        {"state": "ingestion_report", "mode": "replace"},
+                        {"state": "indexed_chunks", "mode": "replace"},
+                        {"state": "embedding_jobs", "mode": "replace"},
+                    ],
+                )
                 self.assertEqual(
                     template["edges"],
                     [
                         {"source": expected["source_input_node"], "target": "chunk_source_material"},
+                        {"source": "chunk_source_material", "target": "write_retrieval_ingestion"},
                         {"source": "chunk_source_material", "target": "output_chunks"},
+                        {"source": "write_retrieval_ingestion", "target": "output_ingestion_report"},
                     ],
                 )
                 self.assertIn({"source": "chunk_source_material", "target": "output_chunks"}, template["edges"])
@@ -618,7 +667,22 @@ class TemplateLayoutTests(unittest.TestCase):
                             "state": "chunks",
                             "role": "chunk_candidates",
                             "label": expected.get("output_contract_label"),
-                        }
+                        },
+                        {
+                            "state": "ingestion_report",
+                            "role": "retrieval_ingestion_report",
+                            "label": expected.get("output_contract_label").replace("chunk candidates", "retrieval ingestion"),
+                        },
+                        {
+                            "state": "indexed_chunks",
+                            "role": "retrieval_chunks",
+                            "label": "Indexed retrieval chunks",
+                        },
+                        {
+                            "state": "embedding_jobs",
+                            "role": "embedding_jobs",
+                            "label": "Queued embedding jobs",
+                        },
                     ],
                 )
 
@@ -750,15 +814,16 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(metadata["category"], "business")
         self.assertEqual(metadata["requiredActions"], ["buddy_session_recall"])
         self.assertEqual(metadata["requiredPermissions"], ["buddy_session_read"])
-        self.assertEqual(metadata["knowledgeRequirements"]["state"], "policy_knowledge_base")
-        self.assertEqual(metadata["knowledgeRequirements"]["citationOutput"], "citation_map")
-        self.assertIn("citation_id", metadata["knowledgeRequirements"]["retrievalFields"])
+        self.assertNotIn("knowledgeRequirements", metadata)
+        self.assertEqual(metadata["retrievalRequirements"]["state"], "policy_retrieval_context")
+        self.assertEqual(metadata["retrievalRequirements"]["citationOutput"], "citation_map")
+        self.assertIn("citation_id", metadata["retrievalRequirements"]["retrievalFields"])
         self.assertEqual(metadata["gallery"]["mockRun"], "mock_data/sample_policy_notice.md")
         self.assertEqual(
             [item["key"] for item in metadata["inputSchema"]],
-            ["policy_sources", "raw_policy_text", "policy_knowledge_base", "user_profile"],
+            ["policy_sources", "raw_policy_text", "policy_retrieval_context", "user_profile"],
         )
-        self.assertEqual(metadata["inputSchema"][2]["type"], "knowledge_base")
+        self.assertEqual(metadata["inputSchema"][2]["type"], "json")
         self.assertEqual(
             [item["key"] for item in metadata["outputContract"]],
             ["final_policy_package", "citation_map", "policy_cards", "uncertainty_report"],
@@ -780,7 +845,7 @@ class TemplateLayoutTests(unittest.TestCase):
 
         self.assertEqual(states["policy_sources"]["type"], "text")
         self.assertEqual(states["raw_policy_text"]["type"], "markdown")
-        self.assertEqual(states["policy_knowledge_base"]["type"], "knowledge_base")
+        self.assertEqual(states["policy_retrieval_context"]["type"], "json")
         self.assertEqual(states["session_recall_context"]["type"], "json")
         self.assertEqual(states["policy_source_review"]["type"], "json")
         self.assertEqual(states["policy_metadata"]["type"], "json")
@@ -793,7 +858,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["final_policy_package"]["type"], "markdown")
         self.assertFalse(any("promptVisible" in definition for definition in states.values()))
 
-        self.assertEqual(nodes["input_policy_knowledge_base"]["config"]["boundaryType"], "knowledge_base")
+        self.assertEqual(nodes["input_policy_retrieval_context"]["config"]["boundaryType"], "json")
         recall_node = nodes["recall_policy_memory"]
         self.assertEqual(recall_node["kind"], "agent")
         self.assertEqual(recall_node["config"]["actionKey"], "buddy_session_recall")
@@ -820,7 +885,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_session_recall_result": "replace",
             },
         )
-        self.assertIn("不得编造检索结果", nodes["policy_source_validator"]["config"]["taskInstruction"])
+        self.assertIn("do not invent retrieval results", nodes["policy_source_validator"]["config"]["taskInstruction"])
         self.assertIn("可能符合、可能不符合、信息不足", nodes["eligibility_matcher"]["config"]["taskInstruction"])
         self.assertIn("不得承诺", nodes["uncertainty_and_risk_checker"]["config"]["taskInstruction"])
         self.assertEqual(

@@ -20,11 +20,11 @@
       "color": "#2563eb",
       "binding": null
     },
-    "policy_knowledge_base": {
-      "name": "政策知识库",
-      "description": "可选知识库选择；用于后续知识库检索和 citation trace 扩展，轻量模式可为空。",
-      "type": "knowledge_base",
-      "value": "",
+    "policy_retrieval_context": {
+      "name": "Policy Retrieval Context",
+      "description": "Optional retrieval context_package, ranked_chunks, or retrieval scope notes. Use an empty object for lightweight mode.",
+      "type": "json",
+      "value": {},
       "color": "#7c3aed",
       "binding": null
     },
@@ -273,10 +273,10 @@
         "boundaryType": "text"
       }
     },
-    "input_policy_knowledge_base": {
+    "input_policy_retrieval_context": {
       "kind": "input",
-      "name": "选择政策知识库",
-      "description": "可选，选择已导入的政策或项目知识库。",
+      "name": "Input Policy Retrieval Context",
+      "description": "Optional context_package or ranked chunks returned by an upstream retrieval_query_context_loader.",
       "ui": {
         "position": {
           "x": 40,
@@ -291,13 +291,13 @@
       "reads": [],
       "writes": [
         {
-          "state": "policy_knowledge_base",
+          "state": "policy_retrieval_context",
           "mode": "replace"
         }
       ],
       "config": {
-        "value": "",
-        "boundaryType": "knowledge_base"
+        "value": {},
+        "boundaryType": "json"
       }
     },
     "input_user_profile": {
@@ -352,7 +352,7 @@
           "required": true
         },
         {
-          "state": "policy_knowledge_base",
+          "state": "policy_retrieval_context",
           "required": false
         },
         {
@@ -479,7 +479,7 @@
           "required": true
         },
         {
-          "state": "policy_knowledge_base",
+          "state": "policy_retrieval_context",
           "required": false
         },
         {
@@ -501,7 +501,7 @@
         "actionKey": "",
         "actionBindings": [],
         "actionInstructionBlocks": {},
-        "taskInstruction": "校验政策材料来源。policy_source_review 必须是 JSON，包含 source_type、publisher、published_at、effective_at、officiality、is_reprint、missing_pages、version_conflicts、confidence、warnings。citation_map 必须是数组，每项包含 citation_id、source、title_or_clause、location、quote_summary、confidence。只能根据 policy_sources、raw_policy_text 和已显式给出的知识库片段建立引用；policy_knowledge_base 若只是知识库名称，不得编造检索结果。",
+        "taskInstruction": "Validate policy source evidence. policy_source_review must be JSON with source_type, publisher, published_at, effective_at, officiality, is_reprint, missing_pages, version_conflicts, confidence, and warnings. citation_map must be an array whose items contain citation_id, source, title_or_clause, location, quote_summary, and confidence. Build citations only from policy_sources, raw_policy_text, and explicit policy_retrieval_context snippets. If policy_retrieval_context is empty or lacks retrieved snippets, do not invent retrieval results.",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "high",
@@ -876,7 +876,7 @@
       "target": "prepare_memory_request"
     },
     {
-      "source": "input_policy_knowledge_base",
+      "source": "input_policy_retrieval_context",
       "target": "prepare_memory_request"
     },
     {
@@ -925,7 +925,6 @@
     "category": "business",
     "templateVersion": "2026-05-18",
     "graphProtocol": "node_system",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "targetUsers": [
@@ -952,10 +951,10 @@
         "description": "政策正文、PDF/Word 抽取文本或 mock 政策正文。"
       },
       {
-        "key": "policy_knowledge_base",
-        "type": "knowledge_base",
+        "key": "policy_retrieval_context",
+        "type": "json",
         "required": false,
-        "description": "可选知识库，用于后续 RAG citation 扩展。"
+        "description": "Optional retrieval context_package or ranked chunks for citation expansion."
       },
       {
         "key": "user_profile",
@@ -970,25 +969,6 @@
     "requiredPermissions": [
       "buddy_session_read"
     ],
-    "knowledgeRequirements": {
-      "state": "policy_knowledge_base",
-      "sourceStates": [
-        "policy_sources",
-        "raw_policy_text",
-        "policy_knowledge_base"
-      ],
-      "retrievalFields": [
-        "citation_id",
-        "chunk_id",
-        "title",
-        "section",
-        "source",
-        "url",
-        "summary",
-        "score"
-      ],
-      "citationOutput": "citation_map"
-    },
     "artifactContract": [
       {
         "path": "policy_plain_summary.md",
@@ -1069,6 +1049,26 @@
       "不得承诺行政审批结果、法律意见或财务收益。",
       "来源、引用和人工确认事项必须保留在最终输出。"
     ],
-    "toograph_state_key_counter": 1
-  }
+    "toograph_state_key_counter": 1,
+    "retrievalRequirements": {
+      "state": "policy_retrieval_context",
+      "sourceStates": [
+        "policy_sources",
+        "raw_policy_text",
+        "policy_retrieval_context"
+      ],
+      "retrievalFields": [
+        "citation_id",
+        "chunk_id",
+        "title",
+        "section",
+        "source",
+        "url",
+        "summary",
+        "score"
+      ],
+      "citationOutput": "citation_map"
+    }
+  },
+  "status": "development"
 }

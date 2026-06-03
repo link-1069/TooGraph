@@ -19,25 +19,16 @@ export function resolveStateTypeForInputBoundary(type: InputBoundaryType): State
 }
 
 export function resolveNextInputValueForBoundaryType(input: {
-  nextType: Extract<InputBoundaryType, "text" | "file" | "folder" | "knowledge_base">;
+  nextType: Extract<InputBoundaryType, "text" | "file" | "folder">;
   currentType: string | null;
   currentValue: unknown;
-  knowledgeBaseNames: string[];
 }) {
-  if (input.nextType === "knowledge_base") {
-    return input.knowledgeBaseNames[0] ?? "";
-  }
-
   if (input.nextType === "file") {
     return "";
   }
 
   if (input.nextType === "folder") {
     return createDefaultLocalFolderInputValue();
-  }
-
-  if (input.currentType === "knowledge_base") {
-    return "";
   }
 
   if (isUploadedAssetBoundaryType(input.currentType)) {
@@ -47,8 +38,8 @@ export function resolveNextInputValueForBoundaryType(input: {
   return typeof input.currentValue === "string" ? input.currentValue : "";
 }
 
-export function isSwitchableInputBoundaryType(type: string): type is Extract<InputBoundaryType, "text" | "file" | "folder" | "knowledge_base"> {
-  return type === "text" || type === "file" || type === "folder" || type === "knowledge_base";
+export function isSwitchableInputBoundaryType(type: string): type is Extract<InputBoundaryType, "text" | "file" | "folder"> {
+  return type === "text" || type === "file" || type === "folder";
 }
 
 export { isInputBoundaryConfigType, normalizeInputBoundaryConfigType, resolveInputBoundarySelection };

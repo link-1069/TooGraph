@@ -1,13 +1,11 @@
 import { ref } from "vue";
 
-import type { KnowledgeBaseRecord } from "../../types/knowledge.ts";
 import type { PresetDocument } from "../../types/node-system.ts";
 import type { SettingsPayload } from "../../types/settings.ts";
 import type { ActionDefinition } from "../../types/actions.ts";
 import type { ToolDefinition } from "../../types/tools.ts";
 
 type WorkspaceResourceControllerInput = {
-  fetchKnowledgeBases: () => Promise<KnowledgeBaseRecord[]>;
   fetchSettings: () => Promise<SettingsPayload>;
   fetchActionDefinitions: () => Promise<ActionDefinition[]>;
   fetchToolDefinitions: () => Promise<ToolDefinition[]>;
@@ -15,7 +13,6 @@ type WorkspaceResourceControllerInput = {
 };
 
 export function useWorkspaceResourceController(input: WorkspaceResourceControllerInput) {
-  const knowledgeBases = ref<KnowledgeBaseRecord[]>([]);
   const settings = ref<SettingsPayload | null>(null);
   const actionDefinitions = ref<ActionDefinition[]>([]);
   const actionDefinitionsLoading = ref(true);
@@ -24,14 +21,6 @@ export function useWorkspaceResourceController(input: WorkspaceResourceControlle
   const toolDefinitionsLoading = ref(true);
   const toolDefinitionsError = ref<string | null>(null);
   const persistedPresets = ref<PresetDocument[]>([]);
-
-  async function loadKnowledgeBases() {
-    try {
-      knowledgeBases.value = await input.fetchKnowledgeBases();
-    } catch {
-      knowledgeBases.value = [];
-    }
-  }
 
   async function loadSettings() {
     try {
@@ -76,7 +65,6 @@ export function useWorkspaceResourceController(input: WorkspaceResourceControlle
   }
 
   function loadInitialWorkspaceResources() {
-    void loadKnowledgeBases();
     void loadSettings();
     void loadActionDefinitions();
     void loadToolDefinitions();
@@ -84,7 +72,6 @@ export function useWorkspaceResourceController(input: WorkspaceResourceControlle
   }
 
   return {
-    knowledgeBases,
     settings,
     actionDefinitions,
     actionDefinitionsLoading,
@@ -94,7 +81,6 @@ export function useWorkspaceResourceController(input: WorkspaceResourceControlle
     toolDefinitionsError,
     persistedPresets,
     loadInitialWorkspaceResources,
-    loadKnowledgeBases,
     loadSettings,
     refreshAgentModels,
     loadActionDefinitions,

@@ -112,35 +112,6 @@ test("buildNodeCardViewModel treats input node state schema value as the visible
   assert.equal(model.body.valueText, "来自 state_schema 的新值");
 });
 
-test("buildNodeCardViewModel derives knowledge-base input editor mode from primary output state type", () => {
-  const node: GraphNode = {
-    kind: "input",
-    name: "input_knowledge_base",
-    description: "Pick a knowledge base.",
-    ui: { position: { x: 80, y: 220 } },
-    reads: [],
-    writes: [{ state: "knowledge_base", mode: "replace" }],
-    config: {
-      value: "toograph-official",
-    },
-  };
-
-  const model = buildNodeCardViewModel("input_knowledge_base", node, {
-    ...stateSchema,
-    knowledge_base: {
-      name: "knowledge_base",
-      description: "Knowledge base selection.",
-      type: "knowledge_base",
-      value: "toograph-official",
-      color: "#0f766e",
-    },
-  });
-
-  assert.equal(model.body.kind, "input");
-  assert.equal(model.body.editorMode, "knowledge_base");
-  assert.equal(model.body.primaryOutput?.typeLabel, "knowledge base");
-});
-
 test("buildNodeCardViewModel derives uploaded-asset input editor mode from primary output state type", () => {
   const node: GraphNode = {
     kind: "input",
@@ -897,31 +868,13 @@ test("buildNodeCardViewModel derives empty input editor mode from its virtual bo
       boundaryType: "file",
     },
   };
-  const emptyKnowledgeInput: GraphNode = {
-    kind: "input",
-    name: "empty_kb_input",
-    description: "Input without a materialized state output.",
-    ui: { position: { x: 80, y: 420 } },
-    reads: [],
-    writes: [],
-    config: {
-      value: "docs",
-      boundaryType: "knowledge_base",
-    },
-  };
-
   const fileModel = buildNodeCardViewModel("empty_file_input", emptyFileInput, stateSchema);
-  const knowledgeModel = buildNodeCardViewModel("empty_kb_input", emptyKnowledgeInput, stateSchema);
 
   assert.equal(fileModel.body.kind, "input");
   assert.equal(fileModel.body.editorMode, "asset");
   assert.equal(fileModel.body.assetType, "file");
   assert.equal(fileModel.body.primaryOutput?.key, VIRTUAL_ANY_OUTPUT_STATE_KEY);
   assert.equal(fileModel.body.primaryOutput?.virtual, true);
-  assert.equal(knowledgeModel.body.kind, "input");
-  assert.equal(knowledgeModel.body.editorMode, "knowledge_base");
-  assert.equal(knowledgeModel.body.valueText, "docs");
-  assert.equal(knowledgeModel.body.primaryOutput?.key, VIRTUAL_ANY_OUTPUT_STATE_KEY);
 });
 
 test("buildNodeCardViewModel derives output preview source from state schema", () => {

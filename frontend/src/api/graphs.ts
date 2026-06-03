@@ -20,11 +20,16 @@ function encodePathSegment(value: string): string {
   return encodeURIComponent(value);
 }
 
-export async function fetchTemplates(options: { includeDisabled?: boolean } = {}): Promise<TemplateRecord[]> {
+export async function fetchTemplates(options: { includeDisabled?: boolean; includeDevelopment?: boolean } = {}): Promise<TemplateRecord[]> {
+  const params = new URLSearchParams();
   if (options.includeDisabled) {
-    return apiGet<TemplateRecord[]>("/api/templates?include_disabled=true");
+    params.set("include_disabled", "true");
   }
-  return apiGet<TemplateRecord[]>("/api/templates");
+  if (options.includeDevelopment) {
+    params.set("include_development", "true");
+  }
+  const suffix = params.toString();
+  return apiGet<TemplateRecord[]>(suffix ? `/api/templates?${suffix}` : "/api/templates");
 }
 
 export async function fetchTemplate(templateId: string): Promise<TemplateRecord> {

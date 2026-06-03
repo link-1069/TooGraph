@@ -12,8 +12,8 @@ from app.templates.loader import (
 )
 
 
-def list_templates(include_disabled: bool = False) -> list[dict]:
-    return list_template_records(include_disabled=include_disabled)
+def list_templates(include_disabled: bool = False, include_development: bool = False) -> list[dict]:
+    return list_template_records(include_disabled=include_disabled, include_development=include_development)
 
 
 def get_template(template_id: str) -> dict:

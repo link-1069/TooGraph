@@ -89,14 +89,14 @@ const presets: PresetDocument[] = [
     },
   },
   {
-    presetId: "preset.agent.lookup_kb",
+    presetId: "preset.agent.lookup_retrieval",
     sourcePresetId: null,
     createdAt: null,
     updatedAt: null,
     status: "active",
     definition: {
-      label: "Lookup KB",
-      description: "Read from a knowledge base.",
+      label: "Lookup Retrieval",
+      description: "Read from retrieval context.",
       state_schema: {
         query: {
           name: "query",
@@ -105,22 +105,22 @@ const presets: PresetDocument[] = [
           value: "",
           color: "#2563eb",
         },
-        knowledge_base: {
-          name: "knowledge_base",
+        retrieval_context: {
+          name: "retrieval_context",
           description: "",
-          type: "knowledge_base",
-          value: "",
+          type: "json",
+          value: {},
           color: "#16a34a",
         },
       },
       node: {
         kind: "agent",
-        name: "lookup_kb",
-        description: "Read from a knowledge base.",
+        name: "lookup_retrieval",
+        description: "Read from retrieval context.",
         ui: { position: { x: 0, y: 0 } },
         reads: [
           { state: "query", required: true },
-          { state: "knowledge_base", required: true },
+          { state: "retrieval_context", required: true },
         ],
         writes: [],
         config: {
@@ -214,7 +214,7 @@ test("buildNodeCreationEntries keeps node entries ahead of persisted presets wit
       "node-output",
       "preset-agent-empty",
       "preset-preset.agent.answer_text",
-      "preset-preset.agent.lookup_kb",
+      "preset-preset.agent.lookup_retrieval",
       "preset-condition-empty",
     ],
   );
@@ -233,11 +233,11 @@ test("buildNodeCreationEntries filters creation candidates by query and source t
   const entries = buildNodeCreationEntries({
     builtins: [...builtins],
     presets: [...presets],
-    query: "lookup",
-    sourceValueType: "knowledge_base",
+    query: "retrieval",
+    sourceValueType: "json",
   });
 
-  assert.deepEqual(entries.map((entry) => entry.id), ["preset-preset.agent.lookup_kb"]);
+  assert.deepEqual(entries.map((entry) => entry.id), ["preset-preset.agent.lookup_retrieval"]);
 });
 
 test("buildNodeCreationEntries exposes templates, not saved graphs, as subgraph creation entries", () => {
@@ -282,11 +282,11 @@ test("buildNodeCreationEntries limits reverse input drags to upstream writer nod
 
   assert.deepEqual(
     entries.map((entry) => entry.id),
-    ["node-input", "preset-agent-empty", "preset-preset.agent.answer_text", "preset-preset.agent.lookup_kb"],
+    ["node-input", "preset-agent-empty", "preset-preset.agent.answer_text", "preset-preset.agent.lookup_retrieval"],
   );
 });
 
-test("supportsCreationSourceType rejects text-only agent presets for knowledge base outputs", () => {
+test("supportsCreationSourceType rejects text-only agent presets for json outputs", () => {
   const textPresetEntry: NodeCreationEntry = {
     id: "preset-preset.agent.answer_text",
     family: "agent",
@@ -298,7 +298,7 @@ test("supportsCreationSourceType rejects text-only agent presets for knowledge b
     acceptsValueTypes: ["text"],
   };
 
-  assert.equal(supportsCreationSourceType(textPresetEntry, "knowledge_base"), false);
+  assert.equal(supportsCreationSourceType(textPresetEntry, "json"), false);
   assert.equal(supportsCreationSourceType(textPresetEntry, "text"), true);
   assert.equal(supportsCreationSourceType(builtins[0], null, "flow-out"), false);
   assert.equal(supportsCreationSourceType(builtins[0], "text", "state-in"), true);

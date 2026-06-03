@@ -1,7 +1,7 @@
 {
   "template_id": "knowledge_document_chunking_demo",
   "label": "知识库文档切片示例",
-  "description": "演示如何把规范化知识库文档包连接到 source_chunker，生成可检查的文档 chunk candidates；不写库、不排 embedding job。",
+  "description": "Demo: chunk normalized knowledge documents with source_chunker, then write chunk candidates into unified retrieval_documents / retrieval_chunks. Fill embedding_model_refs on the ingestion tool card when embeddings should be queued.",
   "default_graph_name": "知识库文档切片示例",
   "state_schema": {
     "document_source": {
@@ -34,6 +34,51 @@
         "toolKey": "source_chunker",
         "nodeId": "chunk_source_material",
         "fieldKey": "chunks",
+        "managed": true
+      }
+    },
+    "ingestion_report": {
+      "name": "Ingestion Report",
+      "description": "Report returned by retrieval_ingestion_writer.",
+      "type": "json",
+      "value": {},
+      "color": "#0f766e",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "retrieval_ingestion_writer",
+        "nodeId": "write_retrieval_ingestion",
+        "fieldKey": "ingestion_report",
+        "managed": true
+      }
+    },
+    "indexed_chunks": {
+      "name": "Indexed Chunks",
+      "description": "Chunk records written into unified retrieval_chunks.",
+      "type": "json",
+      "value": [],
+      "color": "#0891b2",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "retrieval_ingestion_writer",
+        "nodeId": "write_retrieval_ingestion",
+        "fieldKey": "indexed_chunks",
+        "managed": true
+      }
+    },
+    "embedding_jobs": {
+      "name": "Embedding Jobs",
+      "description": "Embedding jobs queued by embedding_model_refs configured on the ingestion tool card.",
+      "type": "json",
+      "value": [],
+      "color": "#d97706",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "retrieval_ingestion_writer",
+        "nodeId": "write_retrieval_ingestion",
+        "fieldKey": "embedding_jobs",
         "managed": true
       }
     }
@@ -128,8 +173,8 @@
       "description": "查看 source_chunker 生成的文档 chunk candidates。",
       "ui": {
         "position": {
-          "x": 1240,
-          "y": 240
+          "x": 1840,
+          "y": 180
         },
         "collapsed": false,
         "size": {
@@ -151,6 +196,104 @@
         "persistFormat": "auto",
         "fileNameTemplate": ""
       }
+    },
+    "write_retrieval_ingestion": {
+      "kind": "tool",
+      "name": "Write Retrieval Ingestion",
+      "description": "Write chunk candidates into retrieval_documents and retrieval_chunks, and optionally queue embedding jobs.",
+      "ui": {
+        "position": {
+          "x": 1240,
+          "y": 320
+        },
+        "collapsed": false,
+        "size": {
+          "width": 520,
+          "height": 500
+        }
+      },
+      "reads": [
+        {
+          "state": "document_source",
+          "required": true,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "retrieval_ingestion_writer",
+            "fieldKey": "source",
+            "managed": true
+          }
+        },
+        {
+          "state": "chunks",
+          "required": true,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "retrieval_ingestion_writer",
+            "fieldKey": "chunks",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [
+        {
+          "state": "ingestion_report",
+          "mode": "replace"
+        },
+        {
+          "state": "indexed_chunks",
+          "mode": "replace"
+        },
+        {
+          "state": "embedding_jobs",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "toolKey": "retrieval_ingestion_writer",
+        "staticInputs": {
+          "source_kind": "knowledge_document",
+          "embedding_model_refs": "",
+          "scope": {
+            "collection": "knowledge_document_demo"
+          },
+          "metadata": {
+            "template_id": "knowledge_document_chunking_demo",
+            "role": "knowledge_document_chunking_demo"
+          }
+        }
+      }
+    },
+    "output_ingestion_report": {
+      "kind": "output",
+      "name": "Ingestion Report",
+      "description": "Inspect retrieval ingestion counts, written chunks, and queued embedding jobs.",
+      "ui": {
+        "position": {
+          "x": 1840,
+          "y": 560
+        },
+        "collapsed": false,
+        "size": {
+          "width": 460,
+          "height": 300
+        }
+      },
+      "reads": [
+        {
+          "state": "ingestion_report",
+          "required": true,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
     }
   },
   "edges": [
@@ -160,7 +303,15 @@
     },
     {
       "source": "chunk_source_material",
+      "target": "write_retrieval_ingestion"
+    },
+    {
+      "source": "chunk_source_material",
       "target": "output_chunks"
+    },
+    {
+      "source": "write_retrieval_ingestion",
+      "target": "output_ingestion_report"
     }
   ],
   "conditional_edges": [],
@@ -170,7 +321,8 @@
     "role": "knowledge_document_chunking_demo",
     "capabilityDiscoverableDefault": false,
     "requiredTools": [
-      "source_chunker"
+      "source_chunker",
+      "retrieval_ingestion_writer"
     ],
     "permissions": [],
     "exampleOnly": true,
@@ -179,6 +331,21 @@
         "state": "chunks",
         "role": "chunk_candidates",
         "label": "Knowledge document chunk candidates"
+      },
+      {
+        "state": "ingestion_report",
+        "role": "retrieval_ingestion_report",
+        "label": "Knowledge document retrieval ingestion"
+      },
+      {
+        "state": "indexed_chunks",
+        "role": "retrieval_chunks",
+        "label": "Indexed retrieval chunks"
+      },
+      {
+        "state": "embedding_jobs",
+        "role": "embedding_jobs",
+        "label": "Queued embedding jobs"
       }
     ]
   }

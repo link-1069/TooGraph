@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { PresetDocument } from "@/types/node-system";
-import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { SettingsPayload } from "@/types/settings";
 import type { ActionDefinition } from "@/types/actions";
 import type { ToolDefinition } from "@/types/tools";
@@ -37,26 +36,6 @@ function createPreset(): PresetDocument {
     createdAt: null,
     updatedAt: null,
     status: "active",
-  };
-}
-
-function createKnowledgeBase(): KnowledgeBaseRecord {
-  return {
-    name: "kb_a",
-    kb_id: "kb_a",
-    label: "KB",
-    description: "",
-    sourceKind: "local",
-    sourceUrl: "",
-    version: "1",
-    documentCount: 0,
-    chunkCount: 0,
-    importedAt: "",
-    embeddingProvider: "",
-    embeddingModel: "",
-    embeddingDimension: 0,
-    embeddingCount: 0,
-    embeddingUpdatedAt: "",
   };
 }
 
@@ -131,20 +110,17 @@ function createToolDefinition(): ToolDefinition {
 
 test("useWorkspaceResourceController loads editor resources into refs", async () => {
   const controller = useWorkspaceResourceController({
-    fetchKnowledgeBases: async () => [createKnowledgeBase()],
     fetchSettings: async () => createSettings(),
     fetchActionDefinitions: async () => [createActionDefinition()],
     fetchToolDefinitions: async () => [createToolDefinition()],
     fetchPresets: async () => [createPreset()],
   });
 
-  await controller.loadKnowledgeBases();
   await controller.loadSettings();
   await controller.loadActionDefinitions();
   await controller.loadToolDefinitions();
   await controller.loadPersistedPresets();
 
-  assert.equal(controller.knowledgeBases.value[0]?.label, "KB");
   assert.equal(controller.settings.value?.model.text_model, "gpt");
   assert.equal(controller.actionDefinitions.value[0]?.actionKey, "action_a");
   assert.equal(controller.actionDefinitionsLoading.value, false);
@@ -157,9 +133,6 @@ test("useWorkspaceResourceController loads editor resources into refs", async ()
 
 test("useWorkspaceResourceController preserves fallback behavior on resource failures", async () => {
   const controller = useWorkspaceResourceController({
-    fetchKnowledgeBases: async () => {
-      throw new Error("kb down");
-    },
     fetchSettings: async () => {
       throw new Error("settings down");
     },
@@ -172,12 +145,10 @@ test("useWorkspaceResourceController preserves fallback behavior on resource fai
     fetchPresets: async () => [],
   });
 
-  await controller.loadKnowledgeBases();
   await controller.loadSettings();
   await controller.loadActionDefinitions();
   await controller.loadToolDefinitions();
 
-  assert.deepEqual(controller.knowledgeBases.value, []);
   assert.equal(controller.settings.value, null);
   assert.deepEqual(controller.actionDefinitions.value, []);
   assert.equal(controller.actionDefinitionsLoading.value, false);
@@ -190,7 +161,6 @@ test("useWorkspaceResourceController preserves fallback behavior on resource fai
 test("useWorkspaceResourceController refreshes agent models through settings reload", async () => {
   let settingsCalls = 0;
   const controller = useWorkspaceResourceController({
-    fetchKnowledgeBases: async () => [],
     fetchSettings: async () => {
       settingsCalls += 1;
       return createSettings(String(settingsCalls));

@@ -470,7 +470,7 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
         self.assertIn("LOG-START", prompt)
         self.assertNotIn("LOG-END", prompt)
 
-    def test_context_assembly_report_counts_states_files_result_outputs_memory_and_knowledge_chunks(self) -> None:
+    def test_context_assembly_report_counts_states_files_result_outputs_memory_and_retrieval_chunks(self) -> None:
         self.assertTrue(
             hasattr(agent_prompt, "build_context_assembly_report"),
             "agent_prompt.build_context_assembly_report should produce auditable LLM context metadata",
@@ -517,15 +517,14 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
                                     },
                                 },
                             },
-                            "knowledge_context": {
-                                "knowledge_base": "toograph-official",
+                            "retrieval_context": {
                                 "query": "context budget",
-                                "results": [
+                                "ranked_chunks": [
                                     {
                                         "title": "Context Budgeting",
                                         "section": "Runtime",
                                         "source": "docs/runtime.md",
-                                        "content": "Knowledge chunk body.",
+                                        "content": "Retrieval chunk body.",
                                     }
                                 ],
                             },
@@ -537,8 +536,8 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
                             "capability_result": NodeSystemStateDefinition.model_validate(
                                 {"name": "Capability Result", "type": "result_package"}
                             ),
-                            "knowledge_context": NodeSystemStateDefinition.model_validate(
-                                {"name": "Knowledge Context", "type": "knowledge_base"}
+                            "retrieval_context": NodeSystemStateDefinition.model_validate(
+                                {"name": "Retrieval Context", "type": "json"}
                             ),
                         },
                         llm_phases=["agent_response"],
@@ -553,7 +552,7 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
         self.assertEqual([item["state_key"] for item in report["state_reads"]], [
             "buddy_context",
             "capability_result",
-            "knowledge_context",
+            "retrieval_context",
         ])
         self.assertIn("public_response", [item["output_key"] for item in report["result_outputs"]])
         self.assertIn("source_document", [item["output_key"] for item in report["result_outputs"]])
@@ -565,8 +564,8 @@ class AgentStatePromptSemanticTests(unittest.TestCase):
         self.assertEqual(artifact_file_record["size_bytes"], len(b"Downloaded source paragraph for the capability result."))
         self.assertEqual(artifact_file_record["content_type"], "text/markdown")
         self.assertEqual(report["memories"][0]["name"], "MEMORY.md")
-        self.assertEqual(report["knowledge_chunks"][0]["title"], "Context Budgeting")
-        self.assertEqual(report["knowledge_chunks"][0]["char_count"], len("Knowledge chunk body."))
+        self.assertEqual(report["retrieval_chunks"][0]["title"], "Context Budgeting")
+        self.assertEqual(report["retrieval_chunks"][0]["char_count"], len("Retrieval chunk body."))
 
     def test_auto_prompt_does_not_read_media_paths_as_text_file_content(self) -> None:
         image_artifact = create_uploaded_capability_artifact(

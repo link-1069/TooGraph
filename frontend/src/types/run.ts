@@ -46,7 +46,7 @@ export type ContextAssemblyReport = {
   files: Array<Record<string, unknown>>;
   result_outputs: Array<Record<string, unknown>>;
   memories: Array<Record<string, unknown>>;
-  knowledge_chunks: Array<Record<string, unknown>>;
+  retrieval_chunks: Array<Record<string, unknown>>;
   action_results: Array<Record<string, unknown>>;
 };
 

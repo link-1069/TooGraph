@@ -28,8 +28,6 @@ def coerce_input_boundary_value(value: Any, state_type: NodeSystemStateType) -> 
             NodeSystemStateType.CAPABILITY,
         }:
             return parsed
-        if state_type == NodeSystemStateType.KNOWLEDGE_BASE:
-            return value
         return value
     except json.JSONDecodeError:
         return value

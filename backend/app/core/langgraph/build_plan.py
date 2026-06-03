@@ -52,7 +52,6 @@ class LangGraphRuntimeRequirements(BaseModel):
     runtime_terminal_nodes: list[str] = Field(default_factory=list)
     action_keys: list[str] = Field(default_factory=list)
     tool_keys: list[str] = Field(default_factory=list)
-    knowledge_base_states: list[str] = Field(default_factory=list)
     unsupported_reasons: list[str] = Field(default_factory=list)
 
 

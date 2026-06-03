@@ -188,17 +188,12 @@
         :local-folder-summary="localFolderSummary"
         :local-folder-loading="localFolderLoading"
         :local-folder-error="localFolderError"
-        :input-knowledge-base-options="inputKnowledgeBaseOptions"
-        :input-knowledge-base-value="inputKnowledgeBaseValue"
-        :selected-knowledge-base-description="selectedKnowledgeBaseDescription"
-        :show-knowledge-base-input="showKnowledgeBaseInput"
         :show-local-folder-input="showLocalFolderInput"
         :show-asset-upload-input="showAssetUploadInput"
         :show-legacy-uploaded-asset-hint="showLegacyUploadedAssetHint"
         :is-input-value-editable="isInputValueEditable"
         :input-value-text="inputValueText"
         @update:boundary-selection="handleInputBoundarySelection"
-        @update:knowledge-base="handleInputKnowledgeBaseSelect"
         @local-folder-root-input="handleLocalFolderRootInput"
         @local-folder-refresh="handleLocalFolderRefresh"
         @local-folder-selection-toggle="handleLocalFolderSelectionToggle"
@@ -609,7 +604,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ElIcon, ElInput, ElPopover } from "element-plus";
-import { Check, Clock, Coin, Collection, Document, FolderOpened } from "@element-plus/icons-vue";
+import { Check, Clock, Coin, Document, FolderOpened } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
 
 import AgentNodeBody from "./AgentNodeBody.vue";
@@ -622,7 +617,6 @@ import OutputNodeBody from "./OutputNodeBody.vue";
 import PrimaryStatePort from "./PrimaryStatePort.vue";
 import SubgraphNodeBody from "./SubgraphNodeBody.vue";
 import ToolNodeBody from "./ToolNodeBody.vue";
-import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { AgentNode, BatchNode, ConditionNode, GraphNode, InputNode, OutputNode, StateDefinition, TemplateRecord, ToolNode } from "@/types/node-system";
 import type { ActionDefinition } from "@/types/actions";
 import type { ToolDefinition } from "@/types/tools";
@@ -660,7 +654,6 @@ import {
   resolveConditionRuleValueDraft,
   resolveConditionRuleValuePatch,
 } from "./conditionRuleEditorModel";
-import { buildInputKnowledgeBaseOptions, resolveSelectedKnowledgeBaseDescription } from "./inputKnowledgeBaseModel";
 import {
   formatLocalFolderSelectionSummary,
   listSelectableLocalFolderFilePaths,
@@ -737,7 +730,6 @@ const props = defineProps<{
   node: GraphNode;
   graphNodes: Record<string, GraphNode>;
   stateSchema: Record<string, StateDefinition>;
-  knowledgeBases: KnowledgeBaseRecord[];
   actionDefinitions: ActionDefinition[];
   toolDefinitions: ToolDefinition[];
   templates: TemplateRecord[];
@@ -797,14 +789,13 @@ const { t } = useI18n();
 const outputDisplayModeOptions = OUTPUT_DISPLAY_MODE_OPTIONS;
 const outputPersistFormatOptions = OUTPUT_PERSIST_FORMAT_OPTIONS;
 const inputTypeOptions = computed<Array<{
-  value: "text" | "file" | "folder" | "knowledge_base";
+  value: "text" | "file" | "folder";
   label: string;
   icon: typeof Document;
 }>>(() => [
   { value: "text", label: t("nodeCard.inputTypeText"), icon: Document },
   { value: "file", label: t("nodeCard.inputTypeFile"), icon: FolderOpened },
   { value: "folder", label: t("nodeCard.inputTypeFolder"), icon: FolderOpened },
-  { value: "knowledge_base", label: t("nodeCard.inputTypeKnowledgeBase"), icon: Collection },
 ]);
 const confirmPopoverStyle = {
   padding: "0",
@@ -1012,7 +1003,6 @@ const {
   },
 });
 const stateColorOptions = computed(() => resolveStateColorOptions(stateEditorDraft.value?.definition.color ?? ""));
-const showKnowledgeBaseInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "knowledge_base");
 const showLocalFolderInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "folder");
 const showAssetUploadInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "asset");
 const isInputValueEditable = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "text");
@@ -1028,12 +1018,6 @@ const inputStateValue = computed(() => {
     return props.stateSchema[stateKey]?.value;
   }
   return props.node.config.value;
-});
-const inputKnowledgeBaseValue = computed(() => {
-  if (props.node.kind !== "input") {
-    return "";
-  }
-  return typeof inputStateValue.value === "string" ? inputStateValue.value : "";
 });
 const inputAssetType = computed(() => (view.value.body.kind === "input" ? view.value.body.assetType : null));
 const inputAssetEnvelope = computed(() =>
@@ -1060,7 +1044,7 @@ const inputStateType = computed(() => {
     ? normalizeInputBoundaryConfigType(props.stateSchema[stateKey]?.type)
     : normalizeInputBoundaryConfigType(props.node.kind === "input" ? props.node.config.boundaryType : "text");
 });
-const inputBoundarySelection = computed<"text" | "file" | "folder" | "knowledge_base">(() => {
+const inputBoundarySelection = computed<"text" | "file" | "folder">(() => {
   return resolveInputBoundarySelection(inputStateType.value, inputStateValue.value);
 });
 const inputAssetLabel = computed(() => resolveUploadedAssetLabel(inputAssetType.value));
@@ -1076,16 +1060,6 @@ const inputAssetPreviewUrl = computed(() => {
 });
 const showLegacyUploadedAssetHint = computed(
   () => showAssetUploadInput.value && !inputAssetEnvelope.value && inputValueText.value.trim().length > 0,
-);
-const inputKnowledgeBaseOptions = computed(() => buildInputKnowledgeBaseOptions(props.knowledgeBases, inputKnowledgeBaseValue.value));
-const selectedKnowledgeBaseDescription = computed(() =>
-  resolveSelectedKnowledgeBaseDescription({
-    showKnowledgeBaseInput: showKnowledgeBaseInput.value,
-    selectedValue: inputKnowledgeBaseValue.value,
-    options: inputKnowledgeBaseOptions.value,
-    emptyOptionsDescription: t("nodeCard.importKnowledgeHint"),
-    fallbackDescription: t("nodeCard.pickKnowledgeHint"),
-  }),
 );
 watch(
   () => [showLocalFolderInput.value, localFolderValue.value.root] as const,
@@ -2216,10 +2190,6 @@ function handleInputValueInput(event: Event) {
   emitInputValuePatch(target.value);
 }
 
-function handleInputKnowledgeBaseSelect(value: string | number | boolean | undefined) {
-  emitInputValuePatch(typeof value === "string" ? value : "");
-}
-
 function handleInputBoundarySelection(nextType: string | number | boolean) {
   if (guardLockedGraphInteraction()) {
     return;
@@ -2230,7 +2200,7 @@ function handleInputBoundarySelection(nextType: string | number | boolean) {
   updateInputBoundaryType(nextType);
 }
 
-function updateInputBoundaryType(nextType: "text" | "file" | "folder" | "knowledge_base") {
+function updateInputBoundaryType(nextType: "text" | "file" | "folder") {
   if (guardLockedGraphInteraction()) {
     return;
   }
@@ -2247,7 +2217,6 @@ function updateInputBoundaryType(nextType: "text" | "file" | "folder" | "knowled
     nextType,
     currentType: inputBoundarySelection.value,
     currentValue: inputStateValue.value,
-    knowledgeBaseNames: props.knowledgeBases.map((knowledgeBase) => knowledgeBase.name),
   });
   if (stateKey) {
     emitInputStatePatch(stateKey, {

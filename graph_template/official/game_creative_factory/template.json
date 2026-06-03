@@ -1513,7 +1513,6 @@
     "category": "business",
     "graphProtocol": "node_system",
     "templateVersion": "0.1.0",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "headline": "把游戏广告创意生产拆成可观察、可审核、可复跑的工作流。",
@@ -1739,5 +1738,6 @@
       "轻量模式只能基于用户提供或 mock 的素材分析，不编造真实投放数据。"
     ],
     "toograph_state_key_counter": 1
-  }
+  },
+  "status": "development"
 }

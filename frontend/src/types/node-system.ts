@@ -87,7 +87,7 @@ export type NodeUi = {
   size?: GraphNodeSize | null;
 };
 
-export type InputBoundaryConfigType = "text" | "file" | "knowledge_base" | "image" | "audio" | "video";
+export type InputBoundaryConfigType = "text" | "file" | "image" | "audio" | "video";
 
 export type InputNode = {
   kind: "input";
@@ -254,6 +254,7 @@ export type GraphPayload = GraphCorePayload & {
 };
 
 export type GraphCatalogStatus = "active" | "disabled";
+export type TemplateCatalogStatus = GraphCatalogStatus | "development";
 
 export type GraphDocument = GraphPayload & {
   graph_id: string;
@@ -332,7 +333,7 @@ export type TemplateRecord = {
   description: string;
   default_graph_name: string;
   source?: TemplateSource;
-  status?: GraphCatalogStatus;
+  status?: TemplateCatalogStatus;
   capabilityDiscoverable?: boolean;
   hasBreakpointMetadata?: boolean;
   capabilityDiscoverableBlockedReason?: string;

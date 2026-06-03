@@ -62,7 +62,7 @@ def initialize_storage() -> None:
 
 
 def ensure_schema(connection: sqlite3.Connection) -> None:
-    _ensure_knowledge_schema(connection)
+    _drop_legacy_knowledge_schema(connection)
     _ensure_graph_run_schema(connection)
     _ensure_scheduler_schema(connection)
     _ensure_buddy_schema(connection)
@@ -75,102 +75,19 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
     connection.commit()
 
 
-def _ensure_knowledge_schema(connection: sqlite3.Connection) -> None:
+def _drop_legacy_knowledge_schema(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
-        CREATE TABLE IF NOT EXISTS knowledge_bases (
-            kb_id TEXT PRIMARY KEY,
-            label TEXT NOT NULL,
-            description TEXT NOT NULL DEFAULT '',
-            source_kind TEXT NOT NULL DEFAULT '',
-            source_url TEXT NOT NULL DEFAULT '',
-            version TEXT NOT NULL DEFAULT '',
-            document_count INTEGER NOT NULL DEFAULT 0,
-            chunk_count INTEGER NOT NULL DEFAULT 0,
-            imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            payload_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS knowledge_documents (
-            kb_id TEXT NOT NULL,
-            doc_id TEXT NOT NULL,
-            title TEXT NOT NULL,
-            url TEXT NOT NULL DEFAULT '',
-            section TEXT NOT NULL DEFAULT '',
-            source_path TEXT NOT NULL DEFAULT '',
-            content TEXT NOT NULL,
-            content_hash TEXT NOT NULL,
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (kb_id, doc_id)
-        );
-
-        CREATE TABLE IF NOT EXISTS knowledge_chunks (
-            chunk_id TEXT PRIMARY KEY,
-            kb_id TEXT NOT NULL,
-            doc_id TEXT NOT NULL,
-            ordinal INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            section TEXT NOT NULL DEFAULT '',
-            url TEXT NOT NULL DEFAULT '',
-            summary TEXT NOT NULL DEFAULT '',
-            content TEXT NOT NULL,
-            content_hash TEXT NOT NULL DEFAULT '',
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS knowledge_chunk_embeddings (
-            chunk_id TEXT NOT NULL,
-            kb_id TEXT NOT NULL,
-            embedding_provider TEXT NOT NULL,
-            embedding_model TEXT NOT NULL,
-            embedding_dimension INTEGER NOT NULL,
-            content_hash TEXT NOT NULL,
-            embedding_json TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (chunk_id, embedding_provider, embedding_model)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_knowledge_documents_kb_id
-            ON knowledge_documents (kb_id);
-
-        CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_kb_id
-            ON knowledge_chunks (kb_id);
-
-        CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_doc_id
-            ON knowledge_chunks (kb_id, doc_id);
-
-        CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embeddings_kb_id
-            ON knowledge_chunk_embeddings (kb_id, embedding_provider, embedding_model);
-
-        CREATE INDEX IF NOT EXISTS idx_knowledge_chunk_embeddings_content_hash
-            ON knowledge_chunk_embeddings (kb_id, content_hash);
-        """
-    )
-    _ensure_column(connection, "knowledge_bases", "embedding_provider", "TEXT NOT NULL DEFAULT ''")
-    _ensure_column(connection, "knowledge_bases", "embedding_model", "TEXT NOT NULL DEFAULT ''")
-    _ensure_column(connection, "knowledge_bases", "embedding_dimension", "INTEGER NOT NULL DEFAULT 0")
-    _ensure_column(connection, "knowledge_bases", "embedding_count", "INTEGER NOT NULL DEFAULT 0")
-    _ensure_column(connection, "knowledge_bases", "embedding_updated_at", "TEXT NOT NULL DEFAULT ''")
-    _ensure_column(connection, "knowledge_chunks", "content_hash", "TEXT NOT NULL DEFAULT ''")
-    connection.execute(
-        """
-        CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_chunks_fts
-        USING fts5(
-            chunk_id UNINDEXED,
-            kb_id UNINDEXED,
-            doc_id UNINDEXED,
-            title,
-            section,
-            url,
-            content,
-            tokenize='porter unicode61 remove_diacritics 2'
-        )
+        DROP TABLE IF EXISTS knowledge_chunks_fts;
+        DROP INDEX IF EXISTS idx_knowledge_documents_kb_id;
+        DROP INDEX IF EXISTS idx_knowledge_chunks_kb_id;
+        DROP INDEX IF EXISTS idx_knowledge_chunks_doc_id;
+        DROP INDEX IF EXISTS idx_knowledge_chunk_embeddings_kb_id;
+        DROP INDEX IF EXISTS idx_knowledge_chunk_embeddings_content_hash;
+        DROP TABLE IF EXISTS knowledge_chunk_embeddings;
+        DROP TABLE IF EXISTS knowledge_chunks;
+        DROP TABLE IF EXISTS knowledge_documents;
+        DROP TABLE IF EXISTS knowledge_bases;
         """
     )
 

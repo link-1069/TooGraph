@@ -23,7 +23,6 @@ test("navigation orders stable product surfaces by primary workflow", () => {
       ["/library", "Collection"],
       ["/buddy", "ChatDotRound"],
       ["/runs", "Clock"],
-      ["/knowledge", "Reading"],
       ["/scheduler", "Calendar"],
       ["/message-platforms", "MessageBox"],
       ["/models", "Cpu"],

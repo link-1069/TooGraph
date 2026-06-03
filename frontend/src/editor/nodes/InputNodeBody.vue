@@ -19,24 +19,7 @@
       </ElSegmented>
       <slot name="primary-output" />
     </div>
-    <div v-if="showKnowledgeBaseInput" class="node-card__surface node-card__input-picker">
-      <label class="node-card__control-row">
-        <span class="node-card__control-label">{{ t("nodeCard.knowledgeBase") }}</span>
-        <ToographSelect
-          class="node-card__control-select node-card__input-select"
-          :model-value="inputKnowledgeBaseValue || undefined"
-          :placeholder="inputKnowledgeBaseOptions.length === 0 ? t('nodeCard.noKnowledgeBases') : t('nodeCard.selectKnowledgeBase')"
-          :disabled="inputKnowledgeBaseOptions.length === 0"
-          @update:model-value="emit('update:knowledge-base', $event)"
-        >
-          <ElOption v-for="option in inputKnowledgeBaseOptions" :key="option.value" :label="option.label" :value="option.value" />
-        </ToographSelect>
-      </label>
-      <div class="node-card__input-meta">
-        {{ selectedKnowledgeBaseDescription }}
-      </div>
-    </div>
-    <div v-else-if="showLocalFolderInput" class="node-card__surface node-card__local-folder">
+    <div v-if="showLocalFolderInput" class="node-card__surface node-card__local-folder">
       <label class="node-card__control-row">
         <span class="node-card__control-label">{{ t("nodeCard.localFolder") }}</span>
         <div class="node-card__local-folder-path-row">
@@ -239,19 +222,17 @@
 
 <script setup lang="ts">
 import { computed, ref, type Component } from "vue";
-import { ElOption, ElSegmented } from "element-plus";
+import { ElSegmented } from "element-plus";
 import { useI18n } from "vue-i18n";
 
-import ToographSelect from "@/components/ToographSelect.vue";
 import type { LocalFolderTreeEntry } from "@/api/localInputSources";
-import type { InputKnowledgeBaseOption } from "./inputKnowledgeBaseModel";
 import type { NodeCardViewModel } from "./nodeCardViewModel";
 import type { UploadedAssetEnvelope } from "./uploadedAssetModel";
 
 type InputBodyViewModel = Extract<NodeCardViewModel["body"], { kind: "input" }>;
 
 type InputTypeOption = {
-  value: "text" | "file" | "folder" | "knowledge_base";
+  value: "text" | "file" | "folder";
   label: string;
   icon: Component;
 };
@@ -259,7 +240,7 @@ type InputTypeOption = {
 const props = defineProps<{
   nodeId: string;
   body: InputBodyViewModel;
-  inputBoundarySelection: "text" | "file" | "folder" | "knowledge_base";
+  inputBoundarySelection: "text" | "file" | "folder";
   inputTypeOptions: InputTypeOption[];
   inputAssetEnvelope: UploadedAssetEnvelope | null;
   inputAssetSummary: string;
@@ -274,10 +255,6 @@ const props = defineProps<{
   localFolderSummary: string;
   localFolderLoading: boolean;
   localFolderError: string;
-  inputKnowledgeBaseOptions: InputKnowledgeBaseOption[];
-  inputKnowledgeBaseValue: string;
-  selectedKnowledgeBaseDescription: string;
-  showKnowledgeBaseInput: boolean;
   showLocalFolderInput: boolean;
   showAssetUploadInput: boolean;
   showLegacyUploadedAssetHint: boolean;
@@ -287,7 +264,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: "update:boundary-selection", value: string | number | boolean): void;
-  (event: "update:knowledge-base", value: string | number | boolean | undefined): void;
   (event: "local-folder-root-input", value: string): void;
   (event: "local-folder-refresh"): void;
   (event: "local-folder-selection-toggle", path: string, selected: boolean): void;

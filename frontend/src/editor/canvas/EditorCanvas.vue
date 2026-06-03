@@ -285,7 +285,6 @@
           :node="node"
           :graph-nodes="document.nodes"
           :state-schema="document.state_schema"
-          :knowledge-bases="knowledgeBases"
           :action-definitions="actionDefinitions"
           :tool-definitions="toolDefinitions"
           :templates="templates"
@@ -627,7 +626,6 @@ import { resolveMinimapCenterViewAction } from "./minimapModel";
 import { useNodeSelectionFocus, type NodeFocusRequest } from "./useNodeSelectionFocus";
 import { useViewport } from "./useViewport";
 import { isAgentBreakpointEnabledInDocument } from "@/lib/graph-document";
-import type { KnowledgeBaseRecord } from "@/types/knowledge";
 import type { ActionDefinition } from "@/types/actions";
 import type { ToolDefinition } from "@/types/tools";
 import type { RunNodeTiming } from "../workspace/runNodeTimingModel.ts";
@@ -652,7 +650,6 @@ type GraphEditPlaybackEnsureVisibleEventDetail = {
 
 const props = defineProps<{
   document: GraphPayload | GraphDocument;
-  knowledgeBases: KnowledgeBaseRecord[];
   actionDefinitions: ActionDefinition[];
   toolDefinitions: ToolDefinition[];
   templates: TemplateRecord[];

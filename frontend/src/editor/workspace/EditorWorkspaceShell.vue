@@ -94,7 +94,6 @@
               <EditorCanvas
                 v-else-if="documentsByTabId[tab.tabId]"
                 :document="documentsByTabId[tab.tabId]!"
-                :knowledge-bases="knowledgeBases"
                 :action-definitions="actionDefinitions"
                 :tool-definitions="toolDefinitions"
                 :action-definitions-loading="actionDefinitionsLoading"
@@ -399,7 +398,6 @@ import { ElButton, ElDialog, ElInput, ElMessage, ElMessageBox } from "element-pl
 import { useI18n } from "vue-i18n";
 
 import { fetchPreset, fetchPresets, savePreset } from "@/api/presets";
-import { fetchKnowledgeBases } from "@/api/knowledge";
 import { fetchRun, resumeRun } from "@/api/runs";
 import { fetchSettings } from "@/api/settings";
 import { fetchActionDefinitions } from "@/api/actions";
@@ -575,7 +573,6 @@ const graphReplayDebugCompileResult = ref<GraphReplayTargetCompileResult | null>
 const graphReplayDebugError = ref<string | null>(null);
 const graphReplayDebugBusy = ref(false);
 const {
-  knowledgeBases,
   settings,
   actionDefinitions,
   actionDefinitionsLoading,
@@ -587,7 +584,6 @@ const {
   loadInitialWorkspaceResources,
   refreshAgentModels,
 } = useWorkspaceResourceController({
-  fetchKnowledgeBases,
   fetchSettings,
   fetchActionDefinitions,
   fetchToolDefinitions: fetchToolCatalog,

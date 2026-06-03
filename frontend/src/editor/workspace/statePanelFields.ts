@@ -18,7 +18,6 @@ export type StateFieldType =
   | "audio"
   | "video"
   | "file"
-  | "knowledge_base"
   | "capability"
   | "result_package";
 
@@ -41,7 +40,6 @@ export const STATE_FIELD_TYPE_OPTIONS: StateFieldType[] = [
   "audio",
   "video",
   "file",
-  "knowledge_base",
   "capability",
   "result_package",
 ];

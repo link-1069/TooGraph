@@ -922,7 +922,6 @@
     "category": "business",
     "templateVersion": "2026-05-18",
     "graphProtocol": "node_system",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "targetUsers": [
@@ -1043,5 +1042,6 @@
       "人工反馈通过普通输入进入下一轮，不使用用户可见断点。"
     ],
     "toograph_state_key_counter": 1
-  }
+  },
+  "status": "development"
 }

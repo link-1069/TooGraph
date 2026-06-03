@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,7 +60,7 @@ class RetrievalStoreTests(unittest.TestCase):
             self.assertEqual(chunks[0]["source_ref"]["source_id"], f"{source_kind}_1")
             self.assertEqual(chunks[0]["source_ref"]["source_revision_id"], f"rev_{index}")
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             document_count = connection.execute("SELECT COUNT(*) FROM retrieval_documents").fetchone()[0]
             chunk_count = connection.execute("SELECT COUNT(*) FROM retrieval_chunks").fetchone()[0]
 
@@ -174,7 +175,7 @@ class RetrievalStoreTests(unittest.TestCase):
             document["document_id"],
             [{"chunk_id": "chunk_node", "content": "Node summary contains planning evidence."}],
         )
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             before = connection.execute("SELECT COUNT(*) FROM retrieval_chunks").fetchone()[0]
             connection.execute("DELETE FROM retrieval_chunks_fts")
             connection.execute("DELETE FROM retrieval_chunks_fts_trigram")
@@ -185,7 +186,7 @@ class RetrievalStoreTests(unittest.TestCase):
         report = rebuild_retrieval_indexes()
         results = search_retrieval_fts("planning evidence", filters={}, limit=5)
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             after = connection.execute("SELECT COUNT(*) FROM retrieval_chunks").fetchone()[0]
 
         self.assertEqual(report["chunk_count"], 1)

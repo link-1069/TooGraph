@@ -614,8 +614,11 @@ def _normalize_job_payload(payload: dict[str, Any], *, now: str | None) -> dict[
         template = load_template_record(template_id)
     except KeyError as exc:
         raise ValueError(f"template_id '{template_id}' does not exist.") from exc
-    if str(template.get("status") or "active") == "disabled":
+    template_status = str(template.get("status") or "active")
+    if template_status == "disabled":
         raise ValueError(f"template_id '{template_id}' is disabled.")
+    if template_status == "development":
+        raise ValueError(f"template_id '{template_id}' is in development.")
     schedule_kind = _compact_text(payload.get("schedule_kind") or "manual").lower()
     if schedule_kind not in SCHEDULE_KINDS:
         raise ValueError("schedule_kind must be manual, interval, or cron.")

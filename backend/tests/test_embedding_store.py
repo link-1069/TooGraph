@@ -108,6 +108,7 @@ class EmbeddingStoreTests(unittest.TestCase):
 
     def test_process_pending_embedding_jobs_builds_local_vectors_and_completes_jobs(self) -> None:
         from app.core.storage.embedding_store import (
+            build_local_text_embedding,
             process_pending_embedding_jobs,
             queue_embedding_job,
             register_embedding_model,
@@ -125,7 +126,7 @@ class EmbeddingStoreTests(unittest.TestCase):
 
         report = process_pending_embedding_jobs(model_ref=model["embedding_model_id"], limit=10)
         results = search_embedding_vectors(
-            report["processed_jobs"][0]["query_vector"],
+            build_local_text_embedding("Embedding processor should index memory recall content.", dimensions=16),
             {"embedding_model_ref": model["embedding_model_id"], "source_kind": "memory_entry"},
             limit=1,
         )
@@ -135,6 +136,7 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertEqual(report["processed_jobs"][0]["job_id"], job["job_id"])
         self.assertEqual(report["processed_jobs"][0]["status"], "completed")
         self.assertEqual(report["processed_jobs"][0]["chunk_id"], chunk["chunk_id"])
+        self.assertNotIn("query_vector", report["processed_jobs"][0])
         self.assertEqual(results[0]["chunk_id"], chunk["chunk_id"])
 
     def test_process_pending_embedding_jobs_uses_provider_vectors_for_external_models(self) -> None:

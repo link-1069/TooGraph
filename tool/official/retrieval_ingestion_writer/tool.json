@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "retrieval_ingestion_writer",
+  "name": "Retrieval Ingestion Writer",
+  "description": "把切片候选写入统一 retrieval_documents / retrieval_chunks，并按选定 embedding 模型排队 embedding_jobs；不负责切片、不直接生成向量。",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputPresentation": {
+    "source_kind": {
+      "mode": "static",
+      "control": "select",
+      "default": "buddy_message",
+      "options": [
+        {
+          "label": "聊天记录",
+          "value": "buddy_message"
+        },
+        {
+          "label": "会话摘要",
+          "value": "buddy_session_summary"
+        },
+        {
+          "label": "长期记忆",
+          "value": "memory_entry"
+        },
+        {
+          "label": "知识文档",
+          "value": "knowledge_document"
+        },
+        {
+          "label": "图运行输出",
+          "value": "graph_output"
+        }
+      ]
+    },
+    "source": {
+      "mode": "state"
+    },
+    "chunks": {
+      "mode": "state"
+    },
+    "embedding_model_refs": {
+      "mode": "static",
+      "control": "text",
+      "default": ""
+    },
+    "scope": {
+      "mode": "static",
+      "control": "object",
+      "default": {}
+    },
+    "metadata": {
+      "mode": "static",
+      "control": "object",
+      "default": {}
+    }
+  },
+  "inputSchema": [
+    {
+      "key": "source_kind",
+      "name": "Source Kind",
+      "valueType": "text",
+      "description": "统一 retrieval 来源类型，例如 buddy_message、buddy_session_summary、memory_entry、knowledge_document 或 graph_output。"
+    },
+    {
+      "key": "source",
+      "name": "Source",
+      "valueType": "json",
+      "description": "规范化原始材料包，可包含 documents、session_id、source_id、title、metadata 等。"
+    },
+    {
+      "key": "chunks",
+      "name": "Chunks",
+      "valueType": "json",
+      "description": "source_chunker 或上游节点生成的切片候选数组，也可以传入包含 chunks 字段的对象。"
+    },
+    {
+      "key": "embedding_model_refs",
+      "name": "Embedding Model Refs",
+      "valueType": "json",
+      "description": "需要为本次入库排队的 embedding model id 列表；也可以用逗号分隔字符串。"
+    },
+    {
+      "key": "scope",
+      "name": "Scope",
+      "valueType": "json",
+      "description": "写入 retrieval_documents 的作用域元数据，例如 workspace、session_id 或 collection。"
+    },
+    {
+      "key": "metadata",
+      "name": "Metadata",
+      "valueType": "json",
+      "description": "追加到 retrieval_documents 和 retrieval_chunks 的入库元数据。"
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "ingestion_report",
+      "name": "Ingestion Report",
+      "valueType": "json",
+      "description": "本次入库的文档数、切片数、embedding job 数和告警。"
+    },
+    {
+      "key": "indexed_chunks",
+      "name": "Indexed Chunks",
+      "valueType": "json",
+      "description": "已写入统一 retrieval_chunks 的切片记录。"
+    },
+    {
+      "key": "embedding_jobs",
+      "name": "Embedding Jobs",
+      "valueType": "json",
+      "description": "已排队的 embedding_jobs 记录。"
+    }
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "检索入库写入器",
+      "description": "把切片候选写入统一 retrieval_documents / retrieval_chunks，并按选定 embedding 模型排队 embedding_jobs；不负责切片、不直接生成向量。"
+    },
+    "en-US": {
+      "name": "Retrieval Ingestion Writer",
+      "description": "Writes chunk candidates into retrieval_documents / retrieval_chunks and queues embedding_jobs for selected embedding models."
+    }
+  }
+}

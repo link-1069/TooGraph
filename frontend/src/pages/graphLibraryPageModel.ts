@@ -1,9 +1,9 @@
-import type { GraphCatalogStatus, GraphDocument, TemplateRecord, TemplateSource } from "../types/node-system.ts";
+import type { GraphDocument, TemplateCatalogStatus, TemplateRecord, TemplateSource } from "../types/node-system.ts";
 
 export { buildGraphRevisionHistoryRows, type GraphRevisionHistoryRow } from "../lib/graphRevisionHistoryModel.ts";
 
 export type GraphLibraryKindFilter = "all" | "graphs" | "templates";
-export type GraphLibraryStatusFilter = "all" | GraphCatalogStatus;
+export type GraphLibraryStatusFilter = "all" | TemplateCatalogStatus;
 export type GraphLibraryItemKind = "graph" | "template";
 
 export type GraphLibraryItem = {
@@ -11,7 +11,7 @@ export type GraphLibraryItem = {
   kind: GraphLibraryItemKind;
   title: string;
   description: string;
-  status: GraphCatalogStatus;
+  status: TemplateCatalogStatus;
   source: TemplateSource;
   canManage: boolean;
   capabilityDiscoverable: boolean;
@@ -40,6 +40,7 @@ export type GraphLibraryOverview = {
   templates: number;
   officialTemplates: number;
   disabled: number;
+  development: number;
 };
 
 export type GraphLibraryColumns = {
@@ -77,7 +78,7 @@ export function buildGraphLibraryItems(graphs: GraphDocument[], templates: Templ
         status: template.status ?? "active",
         source,
         canManage: source === "user",
-        capabilityDiscoverable: template.status !== "disabled" && template.capabilityDiscoverable !== false,
+        capabilityDiscoverable: (template.status ?? "active") === "active" && template.capabilityDiscoverable !== false,
         canToggleCapabilityDiscoverable: (template.status ?? "active") === "active" && !capabilityDiscoverableBlockedReason,
         capabilityDiscoverableBlockedReason,
         nodeCount: Object.keys(template.nodes).length,
@@ -123,6 +124,7 @@ export function buildGraphLibraryOverview(items: GraphLibraryItem[]): GraphLibra
     templates: items.filter((item) => item.kind === "template").length,
     officialTemplates: items.filter((item) => item.kind === "template" && item.source === "official").length,
     disabled: items.filter((item) => item.status === "disabled").length,
+    development: items.filter((item) => item.status === "development").length,
   };
 }
 

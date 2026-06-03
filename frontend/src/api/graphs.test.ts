@@ -260,7 +260,7 @@ test("saveGraph can attach revision context to the saved graph request", async (
   }
 });
 
-test("fetchGraphs and fetchTemplates can request the management catalog including disabled items", async () => {
+test("fetchGraphs and fetchTemplates can request management catalogs including disabled and development items", async () => {
   const requestedUrls: string[] = [];
 
   globalThis.fetch = (async (input: string | URL | Request) => {
@@ -278,12 +278,14 @@ test("fetchGraphs and fetchTemplates can request the management catalog includin
     await fetchGraphs({ includeDisabled: true });
     await fetchTemplates();
     await fetchTemplates({ includeDisabled: true });
+    await fetchTemplates({ includeDisabled: true, includeDevelopment: true });
 
     assert.deepEqual(requestedUrls, [
       "/api/graphs",
       "/api/graphs?include_disabled=true",
       "/api/templates",
       "/api/templates?include_disabled=true",
+      "/api/templates?include_disabled=true&include_development=true",
     ]);
   } finally {
     globalThis.fetch = originalFetch;

@@ -72,7 +72,7 @@ test("official asset gate adds package-specific tests for changed official actio
   const plan = resolveOfficialAssetGatePlan({
     changedPaths: [
       "action/official/buddy_session_recall/after_llm.py",
-      "tool/official/session_search_context_loader/run.py",
+      "tool/official/retrieval_query_context_loader/run.py",
     ],
   });
 
@@ -83,7 +83,7 @@ test("official asset gate adds package-specific tests for changed official actio
       "-m unittest backend.tests.test_action_manifest_contract backend.tests.test_backend_action_package_naming backend.tests.test_node_system_validator_actions",
       "-m unittest backend.tests.test_buddy_session_recall_action",
       "-m unittest backend.tests.test_tool_catalog_routes backend.tests.test_node_system_validator_tools backend.tests.test_tool_node_runtime",
-      "-m unittest backend.tests.test_session_search_context_loader_tool",
+      "-m unittest backend.tests.test_retrieval_query_context_loader_tool",
     ],
   );
 });

@@ -300,7 +300,7 @@ def build_context_assembly_report(
     files: list[dict[str, Any]] = []
     result_outputs: list[dict[str, Any]] = []
     memories: list[dict[str, Any]] = []
-    knowledge_chunks: list[dict[str, Any]] = []
+    retrieval_chunks: list[dict[str, Any]] = []
     total_prompt_chars = 0
     total_value_chars = 0
 
@@ -329,21 +329,21 @@ def build_context_assembly_report(
         files.extend(state_files)
         memories.extend(_memory_records_from_file_records(state_files))
         if _is_result_package_prompt_state(definition):
-            output_records, output_file_records, output_knowledge_chunks = _build_result_package_context_records(
+            output_records, output_file_records, output_retrieval_chunks = _build_result_package_context_records(
                 state_key=state_key,
                 package=value,
             )
             result_outputs.extend(output_records)
             files.extend(output_file_records)
             memories.extend(_memory_records_from_file_records(output_file_records))
-            knowledge_chunks.extend(output_knowledge_chunks)
-        knowledge_chunks.extend(
-            _build_knowledge_chunk_context_records(
+            retrieval_chunks.extend(output_retrieval_chunks)
+        retrieval_chunks.extend(
+            _build_retrieval_chunk_context_records(
                 state_key=state_key,
                 value=value,
                 source_kind="state",
                 source_key=state_key,
-                enabled=_is_knowledge_context_state(state_key, definition),
+                enabled=_is_retrieval_context_state(state_key, definition),
             )
         )
         if _looks_like_memory_context(state_key, definition):
@@ -382,7 +382,7 @@ def build_context_assembly_report(
             "file_count": len(files),
             "result_output_count": len(result_outputs),
             "memory_count": len(memories),
-            "knowledge_chunk_count": len(knowledge_chunks),
+            "retrieval_chunk_count": len(retrieval_chunks),
             "action_result_count": len(action_results),
             "value_chars": total_value_chars,
             "prompt_chars": total_prompt_chars,
@@ -392,7 +392,7 @@ def build_context_assembly_report(
         "files": files,
         "result_outputs": result_outputs,
         "memories": memories,
-        "knowledge_chunks": knowledge_chunks,
+        "retrieval_chunks": retrieval_chunks,
         "action_results": action_results,
     }
 
@@ -990,7 +990,7 @@ def _build_result_package_context_records(
 
     output_records: list[dict[str, Any]] = []
     file_records: list[dict[str, Any]] = []
-    knowledge_chunks: list[dict[str, Any]] = []
+    retrieval_chunks: list[dict[str, Any]] = []
     for output_key, raw_output in outputs.items():
         output_value = raw_output.get("value") if isinstance(raw_output, dict) else raw_output
         output_type = (
@@ -1032,19 +1032,19 @@ def _build_result_package_context_records(
                 output_type=output_type,
             )
         )
-        knowledge_chunks.extend(
-            _build_knowledge_chunk_context_records(
+        retrieval_chunks.extend(
+            _build_retrieval_chunk_context_records(
                 state_key=state_key,
                 value=output_value,
                 source_kind="result_output",
                 source_key=str(output_key),
-                enabled=_is_knowledge_output(str(output_key), raw_output),
+                enabled=_is_retrieval_output(str(output_key), raw_output),
             )
         )
-    return output_records, file_records, knowledge_chunks
+    return output_records, file_records, retrieval_chunks
 
 
-def _build_knowledge_chunk_context_records(
+def _build_retrieval_chunk_context_records(
     *,
     state_key: str,
     value: Any,
@@ -1055,7 +1055,7 @@ def _build_knowledge_chunk_context_records(
     if not enabled:
         return []
     records: list[dict[str, Any]] = []
-    _append_knowledge_chunk_context_records(
+    _append_retrieval_chunk_context_records(
         value,
         records,
         state_key=state_key,
@@ -1065,7 +1065,7 @@ def _build_knowledge_chunk_context_records(
     return records
 
 
-def _append_knowledge_chunk_context_records(
+def _append_retrieval_chunk_context_records(
     value: Any,
     records: list[dict[str, Any]],
     *,
@@ -1075,7 +1075,7 @@ def _append_knowledge_chunk_context_records(
 ) -> None:
     if isinstance(value, list):
         for item in value:
-            _append_knowledge_chunk_context_records(
+            _append_retrieval_chunk_context_records(
                 item,
                 records,
                 state_key=state_key,
@@ -1107,10 +1107,10 @@ def _append_knowledge_chunk_context_records(
         )
         return
 
-    for nested_key in ("results", "chunks", "items", "knowledge_chunks", "knowledgeChunks"):
+    for nested_key in ("results", "chunks", "items", "retrieval_chunks", "retrievalChunks", "ranked_chunks", "rankedChunks"):
         nested_value = value.get(nested_key)
         if nested_value is not None:
-            _append_knowledge_chunk_context_records(
+            _append_retrieval_chunk_context_records(
                 nested_value,
                 records,
                 state_key=state_key,
@@ -1181,8 +1181,6 @@ def _classify_context_state(state_key: str, definition: NodeSystemStateDefinitio
     if definition is not None:
         if definition.type == NodeSystemStateType.RESULT_PACKAGE:
             return "result_package"
-        if definition.type == NodeSystemStateType.KNOWLEDGE_BASE:
-            return "knowledge_base"
         if definition.type in {
             NodeSystemStateType.FILE,
             NodeSystemStateType.IMAGE,
@@ -1195,9 +1193,7 @@ def _classify_context_state(state_key: str, definition: NodeSystemStateDefinitio
     return "state"
 
 
-def _is_knowledge_context_state(state_key: str, definition: NodeSystemStateDefinition | None) -> bool:
-    if definition is not None and definition.type == NodeSystemStateType.KNOWLEDGE_BASE:
-        return True
+def _is_retrieval_context_state(state_key: str, definition: NodeSystemStateDefinition | None) -> bool:
     searchable = " ".join(
         [
             state_key,
@@ -1205,12 +1201,11 @@ def _is_knowledge_context_state(state_key: str, definition: NodeSystemStateDefin
             definition.description if definition is not None else "",
         ]
     ).lower()
-    return "knowledge" in searchable or "chunk" in searchable
+    return "retrieval" in searchable or "knowledge" in searchable or "chunk" in searchable
 
 
-def _is_knowledge_output(output_key: str, raw_output: Any) -> bool:
+def _is_retrieval_output(output_key: str, raw_output: Any) -> bool:
     if isinstance(raw_output, dict):
-        output_type = str(raw_output.get("type") or "").lower()
         searchable = " ".join(
             [
                 output_key,
@@ -1218,7 +1213,7 @@ def _is_knowledge_output(output_key: str, raw_output: Any) -> bool:
                 str(raw_output.get("description") or ""),
             ]
         ).lower()
-        return output_type == "knowledge_base" or "knowledge" in searchable or "chunk" in searchable
+        return "retrieval" in searchable or "knowledge" in searchable or "chunk" in searchable
     return "knowledge" in output_key.lower() or "chunk" in output_key.lower()
 
 

@@ -1265,7 +1265,6 @@
     "category": "business",
     "graphProtocol": "node_system",
     "templateVersion": "0.1.0",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "headline": "把竞品资料和用户反馈变成带证据链的产品机会与 PRD 草稿。",
@@ -1332,7 +1331,7 @@
     "requiredPermissions": [
       "buddy_session_read"
     ],
-    "knowledgeRequirements": {
+    "retrievalRequirements": {
       "state": "existing_knowledge_notes",
       "sourceStates": [
         "competitor_sources",
@@ -1480,5 +1479,6 @@
       "PRD 中必须区分证据、推断和假设。"
     ],
     "toograph_state_key_counter": 1
-  }
+  },
+  "status": "development"
 }

@@ -15,7 +15,7 @@ test("resolveWorkspaceSelectTriggerLabel prefers selected option label", () => {
       placeholder: "打开已有图",
       options: [
         { value: "graph-1", label: "Starter Graph" },
-        { value: "graph-2", label: "Knowledge Base" },
+        { value: "graph-2", label: "Retrieval Graph" },
       ],
     }),
     "Starter Graph",
@@ -37,11 +37,11 @@ test("buildWorkspaceSelectOptions maps records to stable workspace options", () 
   assert.deepEqual(
     buildWorkspaceSelectOptions([
       { value: "starter_graph", label: "Starter Graph" },
-      { value: "knowledge_base", label: "知识库验证" },
+      { value: "retrieval_graph", label: "检索图验证" },
     ]),
     [
       { value: "starter_graph", label: "Starter Graph" },
-      { value: "knowledge_base", label: "知识库验证" },
+      { value: "retrieval_graph", label: "检索图验证" },
     ],
   );
 });

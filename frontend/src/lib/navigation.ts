@@ -15,7 +15,6 @@ export type NavigationIconKey =
   | "Memo"
   | "MessageBox"
   | "Operation"
-  | "Reading"
   | "Setting"
   | "ToolWrench"
   | "TrendCharts";
@@ -43,7 +42,6 @@ export const PRIMARY_NAVIGATION_ITEMS: PrimaryNavigationItem[] = [
     selfSurface: true,
   },
   navigationItem("/runs", "runs", "nav.runs", "Clock"),
-  navigationItem("/knowledge", "knowledge", "nav.knowledge", "Reading"),
   navigationItem("/scheduler", "scheduler", "nav.scheduler", "Calendar"),
   navigationItem("/message-platforms", "messagePlatforms", "nav.messagePlatforms", "MessageBox", "messagePlatforms"),
   navigationItem("/models", "models", "nav.models", "Cpu"),

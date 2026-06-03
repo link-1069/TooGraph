@@ -404,7 +404,7 @@ test("NodeCard delegates input body presentation while keeping the output state 
   const inputSection = inputSectionMatch[0];
 
   assert.match(componentSource, /import InputNodeBody from "\.\/InputNodeBody\.vue";/);
-  assert.match(inputSection, /<InputNodeBody[\s\S]*:body="view\.body"[\s\S]*:input-boundary-selection="inputBoundarySelection"[\s\S]*:input-type-options="inputTypeOptions"[\s\S]*:input-asset-envelope="inputAssetEnvelope"[\s\S]*:local-folder-root="localFolderValue\.root"[\s\S]*:local-folder-entries="localFolderEntries"[\s\S]*@update:boundary-selection="handleInputBoundarySelection"[\s\S]*@update:knowledge-base="handleInputKnowledgeBaseSelect"[\s\S]*@local-folder-root-input="handleLocalFolderRootInput"[\s\S]*@local-folder-refresh="handleLocalFolderRefresh"[\s\S]*@local-folder-selection-toggle="handleLocalFolderSelectionToggle"[\s\S]*@local-folder-select-all="selectAllLocalFolderFiles"[\s\S]*@local-folder-clear="clearLocalFolderSelection"[\s\S]*@asset-file-change="handleInputAssetFileChange"[\s\S]*@asset-drop="handleInputAssetDrop"[\s\S]*@clear-asset="clearInputAsset"[\s\S]*@input-value="handleInputValueInput"/);
+  assert.match(inputSection, /<InputNodeBody[\s\S]*:body="view\.body"[\s\S]*:input-boundary-selection="inputBoundarySelection"[\s\S]*:input-type-options="inputTypeOptions"[\s\S]*:input-asset-envelope="inputAssetEnvelope"[\s\S]*:local-folder-root="localFolderValue\.root"[\s\S]*:local-folder-entries="localFolderEntries"[\s\S]*@update:boundary-selection="handleInputBoundarySelection"[\s\S]*@local-folder-root-input="handleLocalFolderRootInput"[\s\S]*@local-folder-refresh="handleLocalFolderRefresh"[\s\S]*@local-folder-selection-toggle="handleLocalFolderSelectionToggle"[\s\S]*@local-folder-select-all="selectAllLocalFolderFiles"[\s\S]*@local-folder-clear="clearLocalFolderSelection"[\s\S]*@asset-file-change="handleInputAssetFileChange"[\s\S]*@asset-drop="handleInputAssetDrop"[\s\S]*@clear-asset="clearInputAsset"[\s\S]*@input-value="handleInputValueInput"/);
   assert.match(inputSection, /<template #primary-output>/);
   assert.match(inputNodeBodySource, /<slot name="primary-output" \/>/);
   assert.match(componentSource, /import PrimaryStatePort from "\.\/PrimaryStatePort\.vue";/);
@@ -429,7 +429,6 @@ test("NodeCard delegates input body presentation while keeping the output state 
   assert.match(componentSource, /from "@element-plus\/icons-vue"/);
   assert.match(componentSource, /icon:\s*Document/);
   assert.match(componentSource, /icon:\s*FolderOpened/);
-  assert.match(componentSource, /icon:\s*Collection/);
   assert.doesNotMatch(inputSection, /<ElSegmented/);
   assert.doesNotMatch(inputSection, /v-for="option in inputTypeOptions"/);
   assert.doesNotMatch(inputSection, /class="node-card__control-button"/);
@@ -443,20 +442,18 @@ test("NodeCard routes input value editing through the output state schema value"
   assert.match(componentSource, /emitInputStatePatch\(stateKey, \{ value \}\);/);
   assert.match(componentSource, /emitInputConfigPatch\(\{ value \}\);/);
   assert.match(componentSource, /function handleInputValueInput\(event: Event\) \{[\s\S]*emitInputValuePatch\(target\.value\);/);
-  assert.match(componentSource, /function handleInputKnowledgeBaseSelect\(value: string \| number \| boolean \| undefined\) \{[\s\S]*emitInputValuePatch\(typeof value === "string" \? value : ""\);/);
+  assert.doesNotMatch(componentSource, /handleInputKnowledgeBaseSelect/);
   assert.match(componentSource, /function clearInputAsset\(\) \{[\s\S]*emitInputValuePatch\(""\);/);
   assert.match(componentSource, /emitInputValuePatch\(envelope\.localPath\);/);
   assert.doesNotMatch(componentSource, /return typeof props\.node\.config\.value === "string" \? props\.node\.config\.value : "";/);
 });
 
-test("NodeCard delegates knowledge base input presentation to a model", () => {
-  assert.match(componentSource, /from "\.\/inputKnowledgeBaseModel";/);
-  assert.match(componentSource, /buildInputKnowledgeBaseOptions\(props\.knowledgeBases, inputKnowledgeBaseValue\.value\)/);
-  assert.match(componentSource, /resolveSelectedKnowledgeBaseDescription\(\{/);
-  assert.match(componentSource, /showKnowledgeBaseInput: showKnowledgeBaseInput\.value/);
-  assert.match(componentSource, /selectedValue: inputKnowledgeBaseValue\.value/);
-  assert.doesNotMatch(componentSource, /label: `\$\{currentValue\} \(current\)`/);
-  assert.doesNotMatch(componentSource, /This knowledge base is no longer available in the imported catalog\./);
+test("NodeCard does not depend on the old knowledge base picker model", () => {
+  assert.doesNotMatch(componentSource, /inputKnowledgeBaseModel/);
+  assert.doesNotMatch(componentSource, /buildInputKnowledgeBaseOptions/);
+  assert.doesNotMatch(componentSource, /resolveSelectedKnowledgeBaseDescription/);
+  assert.doesNotMatch(componentSource, /showKnowledgeBaseInput/);
+  assert.doesNotMatch(componentSource, /inputKnowledgeBaseValue/);
 });
 
 test("NodeCard does not expose manual system instruction editing for LLM nodes", () => {

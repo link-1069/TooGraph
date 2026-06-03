@@ -10,7 +10,7 @@
 
 ## 工作流
 
-1. 输入政策来源、政策正文、可选知识库和用户画像。
+1. 输入政策来源、政策正文、可选检索上下文和用户画像。
 2. 准备只读记忆召回请求，读取与用户偏好或历史资格信息相关的记忆。
 3. 校验来源可靠性，生成 citation map。
 4. 抽取政策元信息，结构化条款、资格规则、材料和办理流程。
@@ -23,7 +23,7 @@
 
 - `policy_sources`：政策来源、官网链接、文件来源或来源说明。
 - `raw_policy_text`：政策正文、PDF/Word 抽取文本或 mock 政策正文。
-- `policy_knowledge_base`：可选知识库，用于后续 RAG citation 扩展。
+- `policy_retrieval_context`：可选 retrieval context_package 或 ranked chunks，用于后续 citation 扩展。
 - `user_profile`：用户画像，用于资格初判。
 
 ## 输出
@@ -56,4 +56,4 @@
 
 ## Customization
 
-可以把 `policy_knowledge_base` 指向导入后的政策知识库，并在后续版本接入 URL/PDF 解析、多文件版本冲突识别和知识库检索质量评测。
+可以把 `policy_retrieval_context` 接到上游 `retrieval_query_context_loader` 的输出，并在后续版本接入 URL/PDF 解析、多文件版本冲突识别和检索质量评测。

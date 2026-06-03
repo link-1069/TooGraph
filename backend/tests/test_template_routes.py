@@ -106,23 +106,23 @@ class TemplateRouteTests(unittest.TestCase):
             self.assertEqual([template["source"] for template in templates], ["official", "user"])
             self.assertEqual([template["capabilityDiscoverable"] for template in templates], [True, True])
 
-    def test_hidden_templates_are_filtered_and_not_capability_discoverable(self) -> None:
+    def test_development_templates_are_only_listed_for_developer_catalogs(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             official_dir = root / "official"
             user_dir = root / "user"
             visible_template_dir = official_dir / "visible_loop"
-            hidden_template_dir = official_dir / "hidden_loop"
+            development_template_dir = official_dir / "development_loop"
             visible_template_dir.mkdir(parents=True)
-            hidden_template_dir.mkdir(parents=True)
+            development_template_dir.mkdir(parents=True)
             user_dir.mkdir()
             (visible_template_dir / "template.json").write_text(
                 json.dumps(_template_payload("visible_loop", "Visible Loop")),
                 encoding="utf-8",
             )
-            hidden_payload = _template_payload("hidden_loop", "Hidden Loop")
-            hidden_payload["metadata"] = {"visible": False}
-            (hidden_template_dir / "template.json").write_text(json.dumps(hidden_payload), encoding="utf-8")
+            development_payload = _template_payload("development_loop", "Development Loop")
+            development_payload["status"] = "development"
+            (development_template_dir / "template.json").write_text(json.dumps(development_payload), encoding="utf-8")
 
             with (
                 patch("app.templates.loader.OFFICIAL_TEMPLATES_ROOT", official_dir),
@@ -131,17 +131,24 @@ class TemplateRouteTests(unittest.TestCase):
                 TestClient(app) as client,
             ):
                 response = client.get("/api/templates?include_disabled=true")
-                hidden_detail_response = client.get("/api/templates/hidden_loop")
+                developer_response = client.get("/api/templates?include_disabled=true&include_development=true")
+                development_detail_response = client.get("/api/templates/development_loop")
                 discoverable_response = client.post(
-                    "/api/templates/hidden_loop/capability-discoverable",
+                    "/api/templates/development_loop/capability-discoverable",
                     json={"capabilityDiscoverable": True},
                 )
 
             self.assertEqual(response.status_code, 200)
             self.assertEqual([template["template_id"] for template in response.json()], ["visible_loop"])
-            self.assertEqual(hidden_detail_response.status_code, 200)
-            self.assertFalse(hidden_detail_response.json()["capabilityDiscoverable"])
-            self.assertEqual(hidden_detail_response.json()["capabilityDiscoverableBlockedReason"], "hidden_template")
+            self.assertEqual(developer_response.status_code, 200)
+            self.assertEqual(
+                [(template["template_id"], template["status"]) for template in developer_response.json()],
+                [("development_loop", "development"), ("visible_loop", "active")],
+            )
+            self.assertEqual(development_detail_response.status_code, 200)
+            self.assertEqual(development_detail_response.json()["status"], "development")
+            self.assertFalse(development_detail_response.json()["capabilityDiscoverable"])
+            self.assertEqual(development_detail_response.json()["capabilityDiscoverableBlockedReason"], "development_template")
             self.assertEqual(discoverable_response.status_code, 409)
 
     def test_save_template_writes_user_template_under_graph_template_user_folder(self) -> None:

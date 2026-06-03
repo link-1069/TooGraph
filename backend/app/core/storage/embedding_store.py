@@ -293,7 +293,6 @@ def process_pending_embedding_jobs(model_ref: str = "", limit: int = 50) -> dict
                     "chunk_id": str(row["chunk_id"] or ""),
                     "embedding_id": vector_record["embedding_id"],
                     "embedding_model_id": str(row["embedding_model_id"] or ""),
-                    "query_vector": vector,
                     "embedding_meta": embedding_meta,
                 }
             )

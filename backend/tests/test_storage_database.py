@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,7 +24,7 @@ class StorageDatabaseTests(unittest.TestCase):
                 patch("app.core.storage.database.DB_PATH", db_path),
             ):
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     table_names = {
                         row[0]
                         for row in connection.execute(
@@ -93,7 +94,7 @@ class StorageDatabaseTests(unittest.TestCase):
                 patch("app.core.storage.database.DB_PATH", db_path),
             ):
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     connection.execute(
                         """
                         INSERT INTO graph_runs (
@@ -119,7 +120,7 @@ class StorageDatabaseTests(unittest.TestCase):
                     connection.commit()
 
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     count = connection.execute(
                         "SELECT COUNT(*) FROM graph_runs WHERE run_id = ?",
                         ("run_schema_test",),
@@ -141,7 +142,7 @@ class StorageDatabaseTests(unittest.TestCase):
                 first = put_content_blob("重复上下文", "text/plain", {"source": "test"})
                 second = put_content_blob("重复上下文", "text/plain", {"source": "test"})
                 loaded = get_content_blob(first["content_hash"])
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     count = connection.execute("SELECT COUNT(*) FROM content_blobs").fetchone()[0]
 
         self.assertEqual(first["content_hash"], second["content_hash"])
@@ -154,7 +155,7 @@ class StorageDatabaseTests(unittest.TestCase):
             data_dir = Path(temp_dir) / "data"
             db_path = data_dir / "toograph.db"
             data_dir.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(db_path) as connection:
+            with closing(sqlite3.connect(db_path)) as connection:
                 connection.executescript(
                     """
                     CREATE TABLE memories (id TEXT PRIMARY KEY);
@@ -169,7 +170,7 @@ class StorageDatabaseTests(unittest.TestCase):
                 patch("app.core.storage.database.DB_PATH", db_path),
             ):
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     table_names = {
                         row[0]
                         for row in connection.execute(
@@ -177,7 +178,7 @@ class StorageDatabaseTests(unittest.TestCase):
                         ).fetchall()
                     }
 
-            self.assertIn("knowledge_bases", table_names)
+            self.assertNotIn("knowledge_bases", table_names)
             self.assertIn("memory_entries", table_names)
             self.assertIn("memory_revisions", table_names)
             self.assertIn("memory_events", table_names)
@@ -193,7 +194,7 @@ class StorageDatabaseTests(unittest.TestCase):
                 patch("app.core.storage.database.DB_PATH", db_path),
             ):
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     marker = connection.execute(
                         "SELECT value_json FROM buddy_kv WHERE key = ?",
                         ("schema.buddy_messages_fts",),
@@ -234,7 +235,7 @@ class StorageDatabaseTests(unittest.TestCase):
                     trigram_count = connection.execute("SELECT COUNT(*) FROM buddy_messages_fts_trigram").fetchone()[0]
 
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     marker_after_second_init = connection.execute(
                         "SELECT value_json FROM buddy_kv WHERE key = ?",
                         ("schema.buddy_messages_fts",),
@@ -259,7 +260,7 @@ class StorageDatabaseTests(unittest.TestCase):
                 patch("app.core.storage.database.DB_PATH", db_path),
             ):
                 database.initialize_storage()
-                with sqlite3.connect(db_path) as connection:
+                with closing(sqlite3.connect(db_path)) as connection:
                     table_names = {
                         row[0]
                         for row in connection.execute(

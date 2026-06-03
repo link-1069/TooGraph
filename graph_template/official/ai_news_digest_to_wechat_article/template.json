@@ -1220,7 +1220,6 @@
     "category": "business",
     "templateVersion": "2026-05-18",
     "graphProtocol": "node_system",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "targetUsers": [
@@ -1281,7 +1280,7 @@
       "secret_read",
       "browser_automation"
     ],
-    "knowledgeRequirements": {
+    "retrievalRequirements": {
       "state": "raw_news_items",
       "sourceStates": [
         "raw_news_items",
@@ -1385,5 +1384,6 @@
       "轻量 mock 模式默认不联网；联网补充需要显式开启 use_web_search。"
     ],
     "toograph_state_key_counter": 2
-  }
+  },
+  "status": "development"
 }

@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "toograph.tool/v1",
+  "toolKey": "retrieval_query_context_loader",
+  "name": "Retrieval Query Context Loader",
+  "description": "从统一 retrieval_chunks 执行 FTS / vector / rerank 召回，并输出标准 context package、ranked chunks 和 ranking report。",
+  "version": "0.1.0",
+  "timeoutSeconds": 30,
+  "permissions": [],
+  "runtime": {
+    "type": "python",
+    "entrypoint": "run.py",
+    "timeoutSeconds": 30
+  },
+  "inputPresentation": {
+    "query": {
+      "mode": "state"
+    },
+    "filters": {
+      "mode": "static",
+      "control": "object",
+      "default": {}
+    },
+    "embedding_model_ref": {
+      "mode": "static",
+      "control": "text",
+      "default": ""
+    },
+    "reranker_model_ref": {
+      "mode": "static",
+      "control": "text",
+      "default": ""
+    },
+    "limits": {
+      "mode": "static",
+      "control": "object",
+      "default": {
+        "limit": 8,
+        "max_chars": 8000
+      },
+      "properties": [
+        {
+          "key": "limit",
+          "name": "结果数量",
+          "valueType": "number",
+          "default": 8,
+          "min": 1,
+          "max": 50,
+          "step": 1
+        },
+        {
+          "key": "max_chars",
+          "name": "上下文字符上限",
+          "valueType": "number",
+          "default": 8000,
+          "min": 512,
+          "max": 50000,
+          "step": 500
+        }
+      ]
+    }
+  },
+  "inputSchema": [
+    {
+      "key": "query",
+      "name": "Query",
+      "valueType": "text",
+      "description": "召回查询文本。"
+    },
+    {
+      "key": "filters",
+      "name": "Filters",
+      "valueType": "json",
+      "description": "统一 retrieval 过滤条件，例如 source_kind、source_id、document_id、metadata_filter、session_id。"
+    },
+    {
+      "key": "embedding_model_ref",
+      "name": "Embedding Model Ref",
+      "valueType": "text",
+      "description": "可选 embedding model id；提供后启用统一 hybrid vector 召回。"
+    },
+    {
+      "key": "reranker_model_ref",
+      "name": "Reranker Model Ref",
+      "valueType": "text",
+      "description": "可选 reranker model ref；提供后对候选结果重排。"
+    },
+    {
+      "key": "limits",
+      "name": "Limits",
+      "valueType": "json",
+      "description": "召回数量和上下文字符预算。"
+    }
+  ],
+  "outputSchema": [
+    {
+      "key": "context_package",
+      "name": "Context Package",
+      "valueType": "json",
+      "description": "标准 context_package，可由下游 LLM 节点展开为上下文。"
+    },
+    {
+      "key": "ranked_chunks",
+      "name": "Ranked Chunks",
+      "valueType": "json",
+      "description": "按排名返回的 retrieval chunk 摘要。"
+    },
+    {
+      "key": "ranking_report",
+      "name": "Ranking Report",
+      "valueType": "json",
+      "description": "统一 retrieval 查询审计报告。"
+    }
+  ],
+  "localized": {
+    "zh-CN": {
+      "name": "检索查询上下文加载器",
+      "description": "从统一 retrieval_chunks 执行 FTS / vector / rerank 召回，并输出标准 context package、ranked chunks 和 ranking report。"
+    },
+    "en-US": {
+      "name": "Retrieval Query Context Loader",
+      "description": "Runs FTS, vector, and rerank retrieval from unified retrieval_chunks and returns a context package with ranking evidence."
+    }
+  }
+}

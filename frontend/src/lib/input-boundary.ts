@@ -1,12 +1,11 @@
 import type { GraphNode, InputBoundaryConfigType } from "../types/node-system.ts";
 
-export type InputBoundarySelection = "text" | "file" | "folder" | "knowledge_base";
+export type InputBoundarySelection = "text" | "file" | "folder";
 
 export function isInputBoundaryConfigType(value: unknown): value is InputBoundaryConfigType {
   return (
     value === "text" ||
     value === "file" ||
-    value === "knowledge_base" ||
     value === "image" ||
     value === "audio" ||
     value === "video"
@@ -18,9 +17,6 @@ export function normalizeInputBoundaryConfigType(value: unknown): InputBoundaryC
 }
 
 export function resolveInputBoundarySelection(type: InputBoundaryConfigType, value?: unknown): InputBoundarySelection {
-  if (type === "knowledge_base") {
-    return "knowledge_base";
-  }
   if (type === "file" && isLocalFolderBoundaryValue(value)) {
     return "folder";
   }

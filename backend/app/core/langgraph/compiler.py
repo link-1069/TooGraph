@@ -282,12 +282,6 @@ def compile_graph_to_langgraph_plan(graph: NodeSystemGraphPayload) -> LangGraphB
         if runtime_outgoing_counts.get(node_name, 0) == 0
     ]
 
-    knowledge_base_states = [
-        state_name
-        for state_name, definition in graph.state_schema.items()
-        if definition.type == NodeSystemStateType.KNOWLEDGE_BASE
-    ]
-
     for ambiguous_read in find_ambiguous_state_reads(graph):
         unsupported_reasons.append(
             f"state '{ambiguous_read.state_key}' reaches reader '{ambiguous_read.node_id}' from multiple unordered writers."
@@ -318,7 +312,6 @@ def compile_graph_to_langgraph_plan(graph: NodeSystemGraphPayload) -> LangGraphB
             runtime_terminal_nodes=runtime_terminal_nodes,
             action_keys=sorted(action_keys),
             tool_keys=sorted(tool_keys),
-            knowledge_base_states=knowledge_base_states,
             unsupported_reasons=list(dict.fromkeys(unsupported_reasons)),
         ),
     )

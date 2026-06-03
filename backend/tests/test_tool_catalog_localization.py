@@ -17,15 +17,15 @@ ZH_TEXT_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 class ToolCatalogLocalizationTests(unittest.TestCase):
     def test_official_tool_catalog_exposes_localized_manifest_text(self) -> None:
         catalog = {tool.tool_key: tool for tool in list_tool_catalog(include_disabled=True)}
-        definition = catalog["memory_search_context_loader"]
+        definition = catalog["retrieval_query_context_loader"]
 
-        self.assertEqual(definition.localized["zh-CN"].name, "记忆搜索上下文加载器")
-        self.assertIn("长期记忆", definition.localized["zh-CN"].description)
-        self.assertEqual(definition.localized["en-US"].name, "Memory Search Context Loader")
-        self.assertIn("long-term memories", definition.localized["en-US"].description)
+        self.assertRegex(definition.localized["zh-CN"].name, ZH_TEXT_PATTERN)
+        self.assertRegex(definition.localized["zh-CN"].description, ZH_TEXT_PATTERN)
+        self.assertEqual(definition.localized["en-US"].name, "Retrieval Query Context Loader")
+        self.assertIn("unified retrieval_chunks", definition.localized["en-US"].description)
 
         serialized = definition.model_dump(by_alias=True)
-        self.assertEqual(serialized["localized"]["zh-CN"]["name"], "记忆搜索上下文加载器")
+        self.assertRegex(serialized["localized"]["zh-CN"]["name"], ZH_TEXT_PATTERN)
 
     def test_official_tool_manifest_descriptions_default_to_chinese(self) -> None:
         for manifest_path in sorted(OFFICIAL_TOOL_ROOT.glob("*/tool.json")):

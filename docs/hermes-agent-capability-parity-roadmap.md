@@ -59,7 +59,7 @@
 | Agent loop 鲁棒性 | 进行中 | Buddy 主循环改为显式图循环：能力选择、动态能力执行、上下文压力检查、条件循环预算 | `backend/tests/test_template_layouts.py`、`scripts/official-asset-gate.mjs`、`backend/tests/test_graph_run_db_store.py`、`backend/tests/test_evaluator_store_routes.py` 中恢复路径 | 扩充更复杂组合恢复用例和 UI 聚合 |
 | Prompt / Context Assembly | 基本完成 | 所有主要上下文转为 `context_package` / `context_assembly_ref`，带 source refs、budget、warnings | `backend/tests/test_context_assembly_store.py`、`backend/tests/test_agent_state_prompt_semantics.py`、各 context loader 测试 | 更多官方模板统一接入，RunDetail 上下文面板增强 |
 | Session persistence 与搜索 | 基本完成 | 原子消息、会话摘要、run refs、FTS/trigram、Evidence 搜索 | `backend/tests/test_buddy_store.py`、`backend/tests/test_buddy_search_views.py`、`frontend/src/pages/EvidenceSearchPage.structure.test.ts` | 复杂 lineage、summary source refs 和 run output 召回联动 |
-| 长期记忆与 Embedding 召回 | 进行中 | 文件稳定上下文与 DB memory 双线；embedding jobs/vectors；hybrid recall；rerank | `backend/tests/test_memory_store.py`、`backend/tests/test_embedding_store.py`、`backend/tests/test_hybrid_recall_context_loader_tool.py`、`backend/tests/test_buddy_search_views.py` | 弱语义去重、人工复核候选、召回质量报告 |
+| 长期记忆与 Embedding 召回 | 进行中 | 文件稳定上下文与 DB memory 双线；retrieval documents/chunks；embedding jobs/vectors；统一 query context loader；rerank | `backend/tests/test_memory_store.py`、`backend/tests/test_embedding_store.py`、`backend/tests/test_retrieval_query_context_loader_tool.py`、`backend/tests/test_buddy_search_views.py` | 弱语义去重、人工复核候选、召回质量报告 |
 | Background Review | 进行中 | 可见回复后触发后台复盘图，记录 source/review run，写入 revision 和候选 | `backend/tests/test_buddy_background_review_routes.py`、`frontend/src/buddy/BuddyWidget.structure.test.ts` | 失败处理、预算隔离、周期化整理 |
 | Self improvement | In progress | autonomous review writes low-risk memory/user-context/identity/capability usage updates with revisions | `backend/tests/test_buddy_background_review_routes.py`, `backend/tests/test_template_layouts.py`, `frontend/src/pages/RunDetailPage.vue` | higher-risk evolution workflows for Action/Tool/Subgraph/template revisions |
 | Capability Selector 与能力路由 | 进行中 | capability profile、权限过滤、selection trace、usage events、失败 fallback 输入 | `backend/tests/test_toograph_capability_selector_action.py`、`scripts/capability-selector-loop.test.mjs`、`frontend/src/buddy/buddyOutputTrace.test.ts` | 跨能力组合 fallback 和长期 usage 学习 |
@@ -142,7 +142,7 @@
 
 - `memory_entries`、`memory_entry_sources`、`retrieval_documents`、`retrieval_chunks`、`embedding_models`、`embedding_vectors`、`embedding_jobs` 已在统一数据库。
 - `backend/app/core/storage/memory_store.py`、`embedding_store.py`、`retrieval_store.py` 是主要存储 API。
-- `tool/official/hybrid_recall_context_loader/`、`memory_search_context_loader/`、`embedding_job_processor/`、`embedding_model_registry/` 已存在。
+- `tool/official/retrieval_query_context_loader/`、`tool/official/retrieval_ingestion_writer/`、`embedding_job_processor/`、`embedding_model_registry/` 已存在。
 
 增强内容：
 
@@ -153,7 +153,7 @@
 验证方式：
 
 - `pytest backend/tests/test_memory_store.py backend/tests/test_embedding_store.py backend/tests/test_retrieval_store.py -q`
-- `pytest backend/tests/test_hybrid_recall_context_loader_tool.py backend/tests/test_memory_search_context_loader_tool.py -q`
+- `pytest backend/tests/test_retrieval_query_context_loader_tool.py backend/tests/test_retrieval_ingestion_writer_tool.py -q`
 - `pytest backend/tests/test_buddy_search_views.py -q`
 
 ### 4.5 Background review and autonomous writeback are auditable
@@ -601,12 +601,12 @@
 
 1. 在 `memory_store.py` 引入 embedding 相似度阈值和 source overlap 判断，产出去重候选。
 2. 新增 memory review candidate 状态：proposed_merge、approved_merge、rejected_merge。
-3. `hybrid_recall_context_loader` 输出更完整 ranking report：lexical/vector/rerank/source diversity。
+3. `retrieval_query_context_loader` 输出更完整 ranking report：lexical/vector/rerank/source diversity。
 4. Evidence 页面展示召回原因、相似候选和人工操作入口。
 
 建议验证：
 
-- 更新 `backend/tests/test_memory_store.py`、`backend/tests/test_hybrid_recall_context_loader_tool.py`、`backend/tests/test_buddy_search_views.py`。
+- 更新 `backend/tests/test_memory_store.py`、`backend/tests/test_retrieval_query_context_loader_tool.py`、`backend/tests/test_buddy_search_views.py`。
 - 更新 `frontend/src/pages/EvidenceSearchPage.structure.test.ts`。
 
 ### 阶段 E：官方能力包端到端覆盖
@@ -667,7 +667,7 @@
 ```bash
 python -m unittest backend.tests.test_template_layouts
 pytest backend/tests/test_context_assembly_store.py backend/tests/test_buddy_store.py backend/tests/test_buddy_search_views.py -q
-pytest backend/tests/test_memory_store.py backend/tests/test_embedding_store.py backend/tests/test_hybrid_recall_context_loader_tool.py -q
+pytest backend/tests/test_memory_store.py backend/tests/test_embedding_store.py backend/tests/test_retrieval_query_context_loader_tool.py -q
 pytest backend/tests/test_buddy_background_review_routes.py backend/tests/test_toograph_capability_selector_action.py -q
 pytest backend/tests/test_scheduler_store.py backend/tests/test_scheduler_routes.py backend/tests/test_scheduler_service.py -q
 pytest backend/tests/test_model_provider_client.py backend/tests/test_settings_model_providers.py -q

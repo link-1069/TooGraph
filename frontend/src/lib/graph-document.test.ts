@@ -2993,10 +2993,10 @@ test("updateNodeMetadataInDocument patches node name and description immutably",
   assert.equal(document.nodes.answer_helper.description, "Answer the question directly.");
 });
 
-test("connectStateBindingInDocument does not rewrite agent actions for knowledge-base states", () => {
+test("connectStateBindingInDocument does not rewrite agent actions for retrieval context states", () => {
   const document: GraphPayload = {
     graph_id: null,
-    name: "Knowledge Agent Graph",
+    name: "Retrieval Agent Graph",
     state_schema: {
       question: {
         name: "question",
@@ -3005,28 +3005,28 @@ test("connectStateBindingInDocument does not rewrite agent actions for knowledge
         value: "",
         color: "#d97706",
       },
-      kb: {
-        name: "kb",
-        description: "Workspace knowledge base",
-        type: "knowledge_base",
+      retrieval_context: {
+        name: "retrieval_context",
+        description: "Retrieved context package",
+        type: "json",
         value: "",
         color: "#2563eb",
       },
     },
     nodes: {
-      input_kb: {
+      input_retrieval_context: {
         kind: "input",
-        name: "input_kb",
+        name: "input_retrieval_context",
         description: "",
         ui: { position: { x: -160, y: 0 } },
         reads: [],
-        writes: [{ state: "kb", mode: "replace" }],
+        writes: [{ state: "retrieval_context", mode: "replace" }],
         config: { value: "" },
       },
       research_helper: {
         kind: "agent",
         name: "research_helper",
-        description: "Answer with workspace knowledge.",
+        description: "Answer with retrieved context.",
         ui: { position: { x: 0, y: 0 } },
         reads: [{ state: "question", required: true }],
         writes: [],
@@ -3047,8 +3047,8 @@ test("connectStateBindingInDocument does not rewrite agent actions for knowledge
 
   const nextDocument = graphDocument.connectStateBindingInDocument(
     document,
-    "input_kb",
-    "kb",
+    "input_retrieval_context",
+    "retrieval_context",
     "research_helper",
     CREATE_AGENT_INPUT_STATE_KEY,
   );

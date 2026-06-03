@@ -66,6 +66,10 @@
           <span>{{ t("graphLibrary.disabled") }}</span>
           <strong>{{ overview.disabled }}</strong>
         </article>
+        <article v-if="developerModeEnabled" class="graph-library-page__metric">
+          <span>{{ t("graphLibrary.development") }}</span>
+          <strong>{{ overview.development }}</strong>
+        </article>
       </section>
 
       <section class="graph-library-page__toolbar" :aria-label="t('graphLibrary.filterLabel')">
@@ -343,11 +347,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElDialog, ElInput, ElMessage, ElMessageBox, ElSwitch } from "element-plus";
 import { useI18n } from "vue-i18n";
 
+import { fetchSettings } from "@/api/settings";
 import {
   deleteGraph,
   deleteTemplate,
@@ -398,10 +403,12 @@ const graphRevisionLoading = ref(false);
 const graphRevisionError = ref<string | null>(null);
 const graphRevisions = ref<GraphRevisionRecord[]>([]);
 const restoreRevisionActionId = ref("");
+const developerModeEnabled = ref(false);
 const query = ref("");
 const statusFilter = ref<GraphLibraryStatusFilter>("all");
 const { t, locale } = useI18n();
 const router = useRouter();
+const UI_PREFERENCES_UPDATED_EVENT = "toograph:ui-preferences-updated";
 
 const items = computed(() => buildGraphLibraryItems(graphs.value, templates.value));
 const overview = computed(() => buildGraphLibraryOverview(items.value));
@@ -430,7 +437,12 @@ const revisionDialogTitle = computed(() =>
     : t("graphLibrary.history"),
 );
 const statusOptions = computed(() =>
-  (["all", "active", "disabled"] satisfies GraphLibraryStatusFilter[]).map((value) => ({
+  ([
+    "all",
+    "active",
+    "disabled",
+    ...(developerModeEnabled.value ? ["development" as const] : []),
+  ] satisfies GraphLibraryStatusFilter[]).map((value) => ({
     value,
     label: value === "all" ? t("graphLibrary.allStatus") : t(`graphLibrary.${value}`),
   })),
@@ -441,7 +453,7 @@ async function loadCatalog() {
   try {
     const [nextGraphs, nextTemplates] = await Promise.all([
       fetchGraphs({ includeDisabled: true }),
-      fetchTemplates({ includeDisabled: true }),
+      fetchTemplates({ includeDisabled: true, includeDevelopment: developerModeEnabled.value }),
     ]);
     graphs.value = nextGraphs;
     templates.value = nextTemplates;
@@ -452,6 +464,28 @@ async function loadCatalog() {
   } finally {
     loading.value = false;
   }
+}
+
+async function loadDeveloperModePreference() {
+  try {
+    const settings = await fetchSettings();
+    developerModeEnabled.value = Boolean(settings.ui_preferences?.developer_mode);
+  } catch {
+    developerModeEnabled.value = false;
+  }
+}
+
+function handleUiPreferencesUpdated(event: Event) {
+  const customEvent = event as CustomEvent<{ developer_mode?: boolean }>;
+  const nextDeveloperModeEnabled = Boolean(customEvent.detail?.developer_mode);
+  if (developerModeEnabled.value === nextDeveloperModeEnabled) {
+    return;
+  }
+  developerModeEnabled.value = nextDeveloperModeEnabled;
+  if (!nextDeveloperModeEnabled && statusFilter.value === "development") {
+    statusFilter.value = "all";
+  }
+  void loadCatalog();
 }
 
 function itemKey(item: GraphLibraryItem): string {
@@ -749,7 +783,15 @@ async function deleteItemFromCatalog(item: GraphLibraryItem) {
   }
 }
 
-onMounted(loadCatalog);
+onMounted(async () => {
+  window.addEventListener(UI_PREFERENCES_UPDATED_EVENT, handleUiPreferencesUpdated);
+  await loadDeveloperModePreference();
+  await loadCatalog();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(UI_PREFERENCES_UPDATED_EVENT, handleUiPreferencesUpdated);
+});
 </script>
 
 <style scoped>

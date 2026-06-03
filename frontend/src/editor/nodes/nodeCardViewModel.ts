@@ -113,7 +113,7 @@ export type NodeCardViewModel = {
     | {
         kind: "input";
         valueText: string;
-        editorMode: "text" | "knowledge_base" | "asset" | "folder" | "readonly";
+        editorMode: "text" | "asset" | "folder" | "readonly";
         assetType: UploadedAssetType | null;
         primaryOutput: NodePortViewModel | null;
       }
@@ -867,13 +867,6 @@ function resolveInputEditorModel(node: Extract<GraphNode, { kind: "input" }>, st
   const primaryOutputType =
     stateSchema[primaryOutputStateKey]?.type?.trim() || uploadedAssetType || normalizeInputBoundaryConfigType(node.config.boundaryType);
   const primaryOutputValue = resolveInputStateValue(node, stateSchema, primaryOutputStateKey);
-
-  if (primaryOutputType === "knowledge_base") {
-    return {
-      editorMode: "knowledge_base" as const,
-      assetType: null,
-    };
-  }
 
   if (primaryOutputType === "file" && isLocalFolderInputValue(primaryOutputValue)) {
     return {

@@ -33,7 +33,7 @@ BREAKPOINT_METADATA_KEYS = {
 }
 
 
-def list_template_records(include_disabled: bool = False) -> list[dict[str, Any]]:
+def list_template_records(include_disabled: bool = False, include_development: bool = False) -> list[dict[str, Any]]:
     official_records = [
         load_template_record_from_path(path, source=OFFICIAL_TEMPLATE_SOURCE)
         for path in _iter_template_paths(OFFICIAL_TEMPLATES_ROOT)
@@ -48,7 +48,8 @@ def list_template_records(include_disabled: bool = False) -> list[dict[str, Any]
         _with_template_status(record, settings_entries.get(record["template_id"]))
         for record in all_records
     ]
-    records = [record for record in records if not _is_hidden_template(record)]
+    if not include_development:
+        records = [record for record in records if record.get("status") != NodeSystemCatalogStatus.DEVELOPMENT.value]
     if include_disabled:
         return records
     return [record for record in records if record.get("status") != NodeSystemCatalogStatus.DISABLED.value]
@@ -108,7 +109,7 @@ def load_template_record_from_path(path: Path, *, source: str) -> dict[str, Any]
     payload = read_json_file(path, default={})
     template = NodeSystemTemplate.model_validate(payload)
     return _with_template_source(
-        template.model_dump(by_alias=True, mode="json", exclude={"status"}),
+        template.model_dump(by_alias=True, mode="json"),
         source,
     )
 
@@ -148,8 +149,8 @@ def set_template_capability_discoverable(template_id: str, capability_discoverab
     blocked_reason = _template_capability_blocked_reason(record)
     if capability_discoverable and blocked_reason == "breakpoint_metadata":
         raise ValueError("Templates with breakpoint metadata cannot be capability discoverable.")
-    if capability_discoverable and blocked_reason == "hidden_template":
-        raise ValueError("Hidden templates cannot be capability discoverable.")
+    if capability_discoverable and blocked_reason == "development_template":
+        raise ValueError("Development templates cannot be capability discoverable.")
     payload, _changed = _read_template_settings_payload()
     entry = payload["entries"].get(template_id)
     if not isinstance(entry, dict):
@@ -270,13 +271,13 @@ def _with_template_status(record: dict[str, Any], settings_entry: object) -> dic
     enabled = True
     capability_discoverable = True
     has_breakpoint_metadata = template_has_breakpoint_metadata(record)
-    hidden_template = _is_hidden_template(record)
+    base_status = _normalize_template_status(record.get("status"))
     if isinstance(settings_entry, dict):
         enabled = settings_entry.get("enabled", True) is not False
         capability_discoverable = enabled and settings_entry.get("capabilityDiscoverable", enabled) is not False
-    if has_breakpoint_metadata or hidden_template:
+    status = NodeSystemCatalogStatus.DISABLED if not enabled else base_status
+    if has_breakpoint_metadata or status == NodeSystemCatalogStatus.DEVELOPMENT:
         capability_discoverable = False
-    status = NodeSystemCatalogStatus.ACTIVE if enabled else NodeSystemCatalogStatus.DISABLED
     blocked_reason = _template_capability_blocked_reason(record)
     return {
         **record,
@@ -288,7 +289,7 @@ def _with_template_status(record: dict[str, Any], settings_entry: object) -> dic
 
 
 def _template_default_capability_discoverable(record: dict[str, Any]) -> bool:
-    if template_has_breakpoint_metadata(record) or _is_hidden_template(record):
+    if template_has_breakpoint_metadata(record) or _normalize_template_status(record.get("status")) == NodeSystemCatalogStatus.DEVELOPMENT:
         return False
     metadata = record.get("metadata")
     if isinstance(metadata, dict) and metadata.get("capabilityDiscoverableDefault") is False:
@@ -332,16 +333,18 @@ def _read_template_settings_payload() -> tuple[dict[str, object], bool]:
 
 
 def _template_capability_blocked_reason(record: dict[str, Any]) -> str:
-    if _is_hidden_template(record):
-        return "hidden_template"
+    if _normalize_template_status(record.get("status")) == NodeSystemCatalogStatus.DEVELOPMENT:
+        return "development_template"
     if template_has_breakpoint_metadata(record):
         return "breakpoint_metadata"
     return ""
 
 
-def _is_hidden_template(record: dict[str, Any]) -> bool:
-    metadata = record.get("metadata")
-    return isinstance(metadata, dict) and (metadata.get("internal") is True or metadata.get("visible") is False)
+def _normalize_template_status(value: object) -> NodeSystemCatalogStatus:
+    try:
+        return NodeSystemCatalogStatus(str(value or NodeSystemCatalogStatus.ACTIVE.value))
+    except ValueError:
+        return NodeSystemCatalogStatus.ACTIVE
 
 
 def _validate_template_id(template_id: str) -> None:
@@ -351,7 +354,7 @@ def _validate_template_id(template_id: str) -> None:
 
 def _resolve_unique_template_name(requested_name: str) -> str:
     existing_name_keys: set[str] = set()
-    for record in list_template_records(include_disabled=True):
+    for record in list_template_records(include_disabled=True, include_development=True):
         template_id = str(record.get("template_id") or "").strip()
         label = str(record.get("label") or "").strip()
         default_graph_name = str(record.get("default_graph_name") or "").strip()

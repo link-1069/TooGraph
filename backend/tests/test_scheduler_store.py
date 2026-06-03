@@ -530,6 +530,33 @@ class SchedulerStoreTests(unittest.TestCase):
                         }
                     )
 
+    def test_create_job_rejects_development_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+                patch(
+                    "app.scheduler.store.load_template_record",
+                    lambda _template_id: {
+                        "template_id": "draft_template",
+                        "label": "Draft Template",
+                        "status": "development",
+                    },
+                ),
+            ):
+                database.initialize_storage()
+
+                with self.assertRaisesRegex(ValueError, "in development"):
+                    store.create_scheduled_graph_job(
+                        {
+                            "name": "开发中模板任务",
+                            "template_id": "draft_template",
+                            "schedule_kind": "manual",
+                        }
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

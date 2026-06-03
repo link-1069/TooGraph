@@ -175,7 +175,7 @@ class SourceChunkerToolTests(unittest.TestCase):
                             "source_path": "docs/embedding.md",
                             "mime_type": "text/markdown",
                             "content": text,
-                            "metadata": {"knowledge_base_id": "kb_embedding"},
+                            "metadata": {"collection_id": "kb_embedding"},
                         }
                     ]
                 },
@@ -191,7 +191,7 @@ class SourceChunkerToolTests(unittest.TestCase):
         self.assertEqual(first["source_id"], "doc_embedding")
         self.assertEqual(first["title"], "Embedding 设计")
         self.assertEqual(first["source_locator"]["source_path"], "docs/embedding.md")
-        self.assertEqual(first["metadata"]["knowledge_base_id"], "kb_embedding")
+        self.assertEqual(first["metadata"]["collection_id"], "kb_embedding")
         self.assertLessEqual(len(first["content"]), 80)
         self.assertLess(second["source_locator"]["start_char"], second["source_locator"]["end_char"])
         self.assertTrue(first["content_hash"].startswith("sha256:"))

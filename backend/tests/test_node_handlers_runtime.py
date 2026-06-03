@@ -850,9 +850,9 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         self.assertEqual(recorded_events[0]["detail"]["phase"], "action_input_planning")
         self.assertEqual(recorded_events[0]["detail"]["files"], ["SOUL.md"])
 
-    def test_execute_agent_node_treats_knowledge_base_state_as_normal_action_input(self) -> None:
+    def test_execute_agent_node_treats_retrieval_context_state_as_normal_action_input(self) -> None:
         state_schema = {
-            "kb": NodeSystemStateDefinition.model_validate({"type": "knowledge_base"}),
+            "retrieval_context": NodeSystemStateDefinition.model_validate({"type": "json"}),
             "question": NodeSystemStateDefinition.model_validate({"type": "text"}),
             "answer": NodeSystemStateDefinition.model_validate({"type": "text"}),
         }
@@ -861,7 +861,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
                 "kind": "agent",
                 "name": "writer",
                 "ui": {"position": {"x": 0, "y": 0}},
-                "reads": [{"state": "kb"}, {"state": "question"}],
+                "reads": [{"state": "retrieval_context"}, {"state": "question"}],
                 "writes": [{"state": "answer"}],
                 "config": {"actionKey": "custom_retrieval"},
             }
@@ -870,7 +870,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
         result = execute_agent_node(
             state_schema,
             node,
-            {"kb": "docs", "question": "q"},
+            {"retrieval_context": {"ranked_chunks": []}, "question": "q"},
             {"state": {}},
             node_name="writer",
             state={"run_id": "run-1"},
@@ -890,7 +890,7 @@ class NodeHandlersRuntimeTests(unittest.TestCase):
             first_truthy_func=lambda values: next((value for value in values if value), None),
         )
 
-        self.assertEqual(result["action_outputs"][0]["inputs"], {"kb": "docs", "question": "q"})
+        self.assertEqual(result["action_outputs"][0]["inputs"], {"retrieval_context": {"ranked_chunks": []}, "question": "q"})
         self.assertEqual(result["outputs"], {"answer": "q"})
 
     def test_execute_agent_node_static_action_ignores_capability_state_inputs(self) -> None:

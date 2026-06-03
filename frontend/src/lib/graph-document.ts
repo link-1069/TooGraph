@@ -56,7 +56,6 @@ const STATE_FIELD_TYPE_VALUES = new Set([
   "audio",
   "video",
   "file",
-  "knowledge_base",
   "capability",
   "result_package",
 ]);

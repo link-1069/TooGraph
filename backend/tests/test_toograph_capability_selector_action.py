@@ -113,18 +113,18 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
             for item in catalog[section]:
                 self.assertTrue({"kind", "key", "description"}.issubset(set(item)))
 
-    def test_capability_catalog_does_not_offer_hidden_templates(self) -> None:
-        selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_hidden_test")
+    def test_capability_catalog_does_not_offer_development_templates(self) -> None:
+        selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_development_test")
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             template_dir = root / "graph_template" / "official"
             visible_dir = template_dir / "visible_loop"
-            hidden_dir = template_dir / "hidden_loop"
+            development_dir = template_dir / "development_loop"
             action_dir = root / "action"
             tool_dir = root / "tool"
             visible_dir.mkdir(parents=True)
-            hidden_dir.mkdir(parents=True)
+            development_dir.mkdir(parents=True)
             action_dir.mkdir()
             tool_dir.mkdir()
             (root / "graph_template" / "settings.json").write_text(
@@ -132,7 +132,7 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
                     {
                         "entries": {
                             "visible_loop": {"enabled": True, "capabilityDiscoverable": True},
-                            "hidden_loop": {"enabled": True, "capabilityDiscoverable": True},
+                            "development_loop": {"enabled": True, "capabilityDiscoverable": True},
                         }
                     }
                 ),
@@ -149,13 +149,14 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            (hidden_dir / "template.json").write_text(
+            (development_dir / "template.json").write_text(
                 json.dumps(
                     {
-                        "template_id": "hidden_loop",
-                        "label": "Hidden Loop",
-                        "description": "Hidden template.",
-                        "metadata": {"visible": False},
+                        "template_id": "development_loop",
+                        "label": "Development Loop",
+                        "description": "Development template.",
+                        "status": "development",
+                        "metadata": {},
                     }
                 ),
                 encoding="utf-8",
@@ -165,7 +166,7 @@ class TooGraphCapabilitySelectorActionTests(unittest.TestCase):
 
         subgraph_keys = [item["key"] for item in catalog["subgraphs"]]
         self.assertIn("visible_loop", subgraph_keys)
-        self.assertNotIn("hidden_loop", subgraph_keys)
+        self.assertNotIn("development_loop", subgraph_keys)
 
     def test_capability_catalog_exposes_generic_selection_metadata(self) -> None:
         selector = _load_selector_module(SELECTOR_BEFORE_LLM_PATH, "toograph_capability_selector_before_metadata_test")

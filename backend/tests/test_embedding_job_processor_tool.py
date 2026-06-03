@@ -53,7 +53,7 @@ class EmbeddingJobProcessorToolTests(unittest.TestCase):
 
         self.assertIsNotNone(definition)
         self.assertEqual(definition.name, "Embedding Job Processor")
-        self.assertIn("pending embedding jobs", definition.description)
+        self.assertIn("pending embedding jobs", definition.localized["en-US"].description)
         self.assertIn("embedding_job_processor", get_tool_registry(include_disabled=True).keys())
 
     def test_tool_processes_pending_local_embedding_jobs(self) -> None:
@@ -75,6 +75,7 @@ class EmbeddingJobProcessorToolTests(unittest.TestCase):
         self.assertEqual(result["completed_count"], 1)
         self.assertEqual(result["failed_count"], 0)
         self.assertEqual(result["processed_jobs"][0]["chunk_id"], "chunk_tool")
+        self.assertNotIn("query_vector", result["processed_jobs"][0])
 
 
 if __name__ == "__main__":

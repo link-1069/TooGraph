@@ -39,8 +39,8 @@ def _schema_errors_to_paths(exc: ValidationError) -> list[dict[str, str]]:
 
 
 @router.get("")
-def list_templates_endpoint(include_disabled: bool = False) -> list[dict[str, Any]]:
-    return list_templates(include_disabled=include_disabled)
+def list_templates_endpoint(include_disabled: bool = False, include_development: bool = False) -> list[dict[str, Any]]:
+    return list_templates(include_disabled=include_disabled, include_development=include_development)
 
 
 @router.post("/save")

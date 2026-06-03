@@ -1974,7 +1974,6 @@ function normalizeInputBoundaryType(value: unknown): InputNode["config"]["bounda
   if (
     normalized === "text" ||
     normalized === "file" ||
-    normalized === "knowledge_base" ||
     normalized === "image" ||
     normalized === "audio" ||
     normalized === "video"

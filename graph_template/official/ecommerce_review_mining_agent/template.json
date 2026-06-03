@@ -1083,7 +1083,6 @@
     "category": "business",
     "graphProtocol": "node_system",
     "templateVersion": "0.1.0",
-    "visible": false,
     "capabilityDiscoverableDefault": false,
     "gallery": {
       "headline": "把商品和竞品评论转成证据支持的卖点、风险和多平台文案。",
@@ -1150,7 +1149,7 @@
     "requiredPermissions": [
       "buddy_session_read"
     ],
-    "knowledgeRequirements": {
+    "retrievalRequirements": {
       "state": "raw_reviews",
       "sourceStates": [
         "product_context",
@@ -1312,5 +1311,6 @@
       "详情页、短视频和小红书素材投放前必须人工合规审核。"
     ],
     "toograph_state_key_counter": 1
-  }
+  },
+  "status": "development"
 }

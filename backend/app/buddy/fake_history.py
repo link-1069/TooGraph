@@ -52,7 +52,7 @@ _TOPICS: list[dict[str, Any]] = [
         ],
     },
     {
-        "key": "knowledge_base",
+        "key": "knowledge_document",
         "title": "知识库入库",
         "user_goals": [
             "如果我给一个文件夹，里面有很多 Markdown、PDF 和聊天导出，应该怎么入库？",

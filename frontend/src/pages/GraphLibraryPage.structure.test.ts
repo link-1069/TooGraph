@@ -73,6 +73,14 @@ test("GraphLibraryPage exposes a separate capability discovery switch for templa
   assert.match(componentSource, /setTemplateCapabilityDiscoverable\(item, Boolean\(\$event\)\)/);
 });
 
+test("GraphLibraryPage requests development templates only when developer mode is enabled", () => {
+  assert.match(componentSource, /import \{ fetchSettings \} from "@\/api\/settings";/);
+  assert.match(componentSource, /const developerModeEnabled = ref\(false\);/);
+  assert.match(componentSource, /fetchTemplates\(\{ includeDisabled: true, includeDevelopment: developerModeEnabled\.value \}\)/);
+  assert.match(componentSource, /toograph:ui-preferences-updated/);
+  assert.match(componentSource, /void loadCatalog\(\);/);
+});
+
 test("GraphLibraryPage exposes saved graph revision history and restore controls", () => {
   assert.match(componentSource, /import \{[\s\S]*ElDialog,[\s\S]*ElMessage,[\s\S]*ElMessageBox,[\s\S]*ElSwitch[\s\S]*\} from "element-plus";/);
   assert.match(componentSource, /fetchGraphRevisions/);
