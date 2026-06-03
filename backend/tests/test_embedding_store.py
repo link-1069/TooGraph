@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -72,7 +73,7 @@ class EmbeddingStoreTests(unittest.TestCase):
             content_hash=chunk["content_hash"],
         )
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             count = connection.execute("SELECT COUNT(*) FROM embedding_vectors").fetchone()[0]
 
         self.assertEqual(first["embedding_id"], second["embedding_id"])
@@ -254,7 +255,7 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertGreater(results[0]["retrieval"]["lexical_score"], 0)
         self.assertGreater(results[0]["retrieval"]["recency_boost"], 0)
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             query_row = connection.execute("SELECT query_id, query_text FROM retrieval_queries").fetchone()
             result_row = connection.execute(
                 "SELECT chunk_id, source_ref_json FROM retrieval_results WHERE query_id = ?",
@@ -311,7 +312,7 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertGreater(results[0]["retrieval"]["pre_rerank_score"], 0)
         self.assertEqual(results[0]["score"], 0.96)
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             query_row = connection.execute("SELECT query_id, reranker_model_ref FROM retrieval_queries").fetchone()
             result_rows = connection.execute(
                 "SELECT chunk_id, rerank_score, base_score, final_score FROM retrieval_results WHERE query_id = ? ORDER BY rank ASC",

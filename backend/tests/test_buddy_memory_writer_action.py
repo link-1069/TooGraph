@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -60,7 +62,7 @@ class BuddyMemoryWriterActionTests(unittest.TestCase):
             ["success", "result", "applied_commands", "skipped_commands", "memories", "revisions"],
         )
 
-    def test_writer_creates_structured_memory_entry_with_command_and_retrieval_projection(self) -> None:
+    def test_writer_creates_structured_memory_entry_without_retrieval_projection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir) / "data"
             buddy_home_dir = Path(temp_dir) / "buddy_home"
@@ -93,14 +95,13 @@ class BuddyMemoryWriterActionTests(unittest.TestCase):
                 data_dir=data_dir,
                 buddy_home_dir=buddy_home_dir,
             )
-
-            from app.core.storage.memory_store import recall_memories
-
-            with patch("app.core.storage.database.DATA_DIR", data_dir), patch(
-                "app.core.storage.database.DB_PATH",
-                data_dir / "toograph.db",
-            ):
-                recalled = recall_memories("重要结论", filters={"scope_kind": "buddy_session"}, limit=3)
+            with closing(sqlite3.connect(data_dir / "toograph.db")) as connection:
+                retrieval_document_count = connection.execute(
+                    "SELECT COUNT(*) FROM retrieval_documents WHERE source_kind = 'memory_entry'"
+                ).fetchone()[0]
+                retrieval_chunk_count = connection.execute(
+                    "SELECT COUNT(*) FROM retrieval_chunks WHERE source_kind = 'memory_entry'"
+                ).fetchone()[0]
 
         self.assertEqual(result["success"], True)
         self.assertEqual(len(result["applied_commands"]), 1)
@@ -113,7 +114,8 @@ class BuddyMemoryWriterActionTests(unittest.TestCase):
         self.assertEqual(result["memories"][0]["content"], "用户希望重要结论放在回复开头。")
         self.assertEqual(result["activity_events"][0]["kind"], "buddy_memory_write")
         self.assertIn("Applied 1 structured memory command", result["result"])
-        self.assertEqual(recalled[0]["memory_id"], result["memories"][0]["memory_id"])
+        self.assertEqual(retrieval_document_count, 0)
+        self.assertEqual(retrieval_chunk_count, 0)
 
     def test_writer_rejects_home_file_commands(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

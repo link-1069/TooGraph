@@ -678,6 +678,7 @@ export function updateToolNodeConfigInDocument<T extends GraphPayload | GraphDoc
   const isContextPressureTool = nextConfig.toolKey.trim() === "buddy_context_pressure_check";
   nextNode.config = {
     ...nextConfig,
+    staticInputs: filterToolStaticInputs(nextConfig.staticInputs, selectedToolDefinition),
     dynamicStateInputs: Boolean(selectedToolDefinition?.dynamicStateInputs),
   };
   if (isContextPressureTool) {
@@ -688,6 +689,17 @@ export function updateToolNodeConfigInDocument<T extends GraphPayload | GraphDoc
   reconcileToolStateInputBindings(nextDocument, nodeId, options.toolDefinitions ?? []);
   reconcileToolOutputBindings(nextDocument, nodeId, options.toolDefinitions ?? []);
   return nextDocument;
+}
+
+function filterToolStaticInputs(
+  staticInputs: Record<string, unknown> | undefined,
+  definition: ToolDefinition | undefined,
+): Record<string, unknown> {
+  if (!staticInputs || !definition?.inputSchema?.length || definition.dynamicStateInputs) {
+    return {};
+  }
+  const activeInputKeys = new Set(definition.inputSchema.map((field) => field.key));
+  return Object.fromEntries(Object.entries(staticInputs).filter(([fieldKey]) => activeInputKeys.has(fieldKey)));
 }
 
 export function updateBatchNodeSubgraphWorkerInDocument<T extends GraphPayload | GraphDocument>(
@@ -1106,6 +1118,7 @@ function reconcileToolStateInputBindings<T extends GraphPayload | GraphDocument>
   const toolKey = node.config.toolKey.trim();
   const definition = toolKey ? definitionMap.get(toolKey) : undefined;
   const activeInputKeys = new Set(definition?.inputSchema?.map((field) => field.key) ?? []);
+  const staticInputKeys = new Set(Object.keys(node.config.staticInputs ?? {}).filter((fieldKey) => activeInputKeys.has(fieldKey)));
 
   if (definition?.dynamicStateInputs) {
     node.reads = node.reads.filter((binding) => !isManagedToolInputReadBinding(binding));
@@ -1125,6 +1138,7 @@ function reconcileToolStateInputBindings<T extends GraphPayload | GraphDocument>
       binding.toolKey === toolKey &&
       binding.managed !== false &&
       activeInputKeys.has(binding.fieldKey) &&
+      !staticInputKeys.has(binding.fieldKey) &&
       document.state_schema[readBinding.state]
     ) {
       existingManagedReadByField.set(binding.fieldKey, readBinding);
@@ -1136,6 +1150,9 @@ function reconcileToolStateInputBindings<T extends GraphPayload | GraphDocument>
   const managedReads: ReadBinding[] = [];
 
   for (const field of definition.inputSchema) {
+    if (staticInputKeys.has(field.key)) {
+      continue;
+    }
     const existingRead = existingManagedReadByField.get(field.key);
     if (existingRead && document.state_schema[existingRead.state] && !boundStateKeys.has(existingRead.state)) {
       boundStateKeys.add(existingRead.state);

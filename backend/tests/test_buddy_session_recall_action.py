@@ -32,6 +32,43 @@ def _load_action_module():
     return module
 
 
+def _project_memory_for_test_recall(memory: dict[str, object]) -> dict[str, object]:
+    from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+    document = upsert_retrieval_document(
+        document_id=f"test_memory_doc_{memory['memory_id']}",
+        source_kind="memory_entry",
+        source_id=str(memory["memory_id"]),
+        source_revision_id=str(memory.get("latest_revision_id") or ""),
+        title=str(memory.get("title") or ""),
+        content=str(memory.get("content") or ""),
+        scope={
+            "scope_kind": memory.get("scope_kind"),
+            "scope_id": memory.get("scope_id"),
+            "layer": memory.get("layer"),
+        },
+        metadata={"memory_type": memory.get("memory_type"), "status": memory.get("status")},
+    )
+    [chunk] = upsert_retrieval_chunks(
+        document["document_id"],
+        [
+            {
+                "chunk_id": f"test_memory_chunk_{memory['memory_id']}",
+                "content": str(memory.get("content") or ""),
+                "source_locator": {"field": "content"},
+                "metadata": {
+                    "scope_kind": memory.get("scope_kind"),
+                    "scope_id": memory.get("scope_id"),
+                    "layer": memory.get("layer"),
+                    "memory_type": memory.get("memory_type"),
+                    "status": memory.get("status"),
+                },
+            }
+        ],
+    )
+    return chunk
+
+
 class BuddySessionRecallActionTests(unittest.TestCase):
     def setUp(self) -> None:
         self._temp_dir = tempfile.TemporaryDirectory()
@@ -188,6 +225,7 @@ class BuddySessionRecallActionTests(unittest.TestCase):
             content="用户偏好完整 embedding 方案服务记忆召回。",
             sources=[{"source_kind": "buddy_message", "source_id": message["message_id"]}],
         )
+        _project_memory_for_test_recall(memory)
         document = upsert_retrieval_document(
             source_kind="graph_output",
             source_id="output_1",
@@ -242,7 +280,6 @@ class BuddySessionRecallActionTests(unittest.TestCase):
         from app.core.storage.embedding_store import build_local_text_embedding, register_embedding_model, upsert_embedding_vector
         from app.core.storage.memory_store import create_memory_entry
         from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
-        from app.core.storage.database import get_connection
 
         recall = _load_action_module()
         model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
@@ -254,11 +291,7 @@ class BuddySessionRecallActionTests(unittest.TestCase):
             title="Hybrid 召回偏好",
             content="用户希望 hybrid embedding 记忆召回用于长期偏好。",
         )
-        with get_connection() as connection:
-            memory_chunk = connection.execute(
-                "SELECT chunk_id, content_hash FROM retrieval_chunks WHERE source_id = ?",
-                (memory["memory_id"],),
-            ).fetchone()
+        memory_chunk = _project_memory_for_test_recall(memory)
         upsert_embedding_vector(
             str(memory_chunk["chunk_id"]),
             model["embedding_model_id"],

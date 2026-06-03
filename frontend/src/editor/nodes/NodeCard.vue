@@ -365,6 +365,7 @@
         :node-id="nodeId"
         :body="view.body"
         :selected-tool-key="selectedToolKey"
+        :static-inputs="toolStaticInputs"
         :target-agent-node-id="toolTargetAgentNodeId"
         :target-agent-node-options="toolTargetAgentNodeOptions"
         :tool-definitions="toolDefinitions"
@@ -409,6 +410,7 @@
         @cancel-create="closePortPicker"
         @commit-create="commitPortStateCreate"
         @select-tool="selectTool"
+        @update-static-inputs="updateToolStaticInputs"
         @update-target-agent-node="updateToolTargetAgentNode"
       />
     </section>
@@ -1117,6 +1119,7 @@ const agentModelOptions = computed(() =>
 );
 const selectedActionKey = computed(() => props.node.kind === "agent" ? props.node.config.actionKey.trim() : "");
 const selectedToolKey = computed(() => props.node.kind === "tool" ? props.node.config.toolKey.trim() : "");
+const toolStaticInputs = computed(() => props.node.kind === "tool" ? props.node.config.staticInputs ?? {} : {});
 const availableActionDefinitions = computed(() =>
   props.node.kind === "agent" ? listSelectableActionDefinitions(props.actionDefinitions) : [],
 );
@@ -1553,6 +1556,10 @@ function selectTool(toolKey: string) {
 
 function updateToolTargetAgentNode(targetAgentNodeId: string) {
   emitToolConfigPatch({ targetAgentNodeId });
+}
+
+function updateToolStaticInputs(staticInputs: Record<string, unknown>) {
+  emitToolConfigPatch({ staticInputs });
 }
 
 function handleActionInstructionInput(payload: { actionKey: string; content: string }) {

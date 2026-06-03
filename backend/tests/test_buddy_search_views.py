@@ -18,6 +18,75 @@ from app.core.storage.run_store import save_run
 from app.main import app
 
 
+def _project_buddy_message_for_test_recall(message: dict[str, object]) -> dict[str, object]:
+    from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+    message_id = str(message["message_id"])
+    metadata = {
+        "session_id": str(message.get("session_id") or ""),
+        "role": str(message.get("role") or ""),
+        "run_id": str(message.get("run_id") or ""),
+    }
+    document = upsert_retrieval_document(
+        document_id=f"test_buddy_message_doc_{message_id}",
+        source_kind="buddy_message",
+        source_id=message_id,
+        title=f"{metadata['role']} message",
+        content=str(message.get("content") or ""),
+        scope={"session_id": metadata["session_id"], "role": metadata["role"]},
+        metadata=metadata,
+    )
+    [chunk] = upsert_retrieval_chunks(
+        document["document_id"],
+        [
+            {
+                "chunk_id": f"test_buddy_message_chunk_{message_id}",
+                "content": str(message.get("content") or ""),
+                "source_locator": {"field": "content"},
+                "metadata": metadata,
+            }
+        ],
+    )
+    return chunk
+
+
+def _project_memory_for_test_recall(memory: dict[str, object]) -> dict[str, object]:
+    from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+    document = upsert_retrieval_document(
+        document_id=f"test_memory_doc_{memory['memory_id']}",
+        source_kind="memory_entry",
+        source_id=str(memory["memory_id"]),
+        source_revision_id=str(memory.get("latest_revision_id") or ""),
+        title=str(memory.get("title") or ""),
+        content=str(memory.get("content") or ""),
+        scope={
+            "scope_kind": memory.get("scope_kind"),
+            "scope_id": memory.get("scope_id"),
+            "layer": memory.get("layer"),
+        },
+        metadata={"memory_type": memory.get("memory_type"), "status": memory.get("status")},
+    )
+    [chunk] = upsert_retrieval_chunks(
+        document["document_id"],
+        [
+            {
+                "chunk_id": f"test_memory_chunk_{memory['memory_id']}",
+                "content": str(memory.get("content") or ""),
+                "source_locator": {"field": "content"},
+                "metadata": {
+                    "scope_kind": memory.get("scope_kind"),
+                    "scope_id": memory.get("scope_id"),
+                    "layer": memory.get("layer"),
+                    "memory_type": memory.get("memory_type"),
+                    "status": memory.get("status"),
+                },
+            }
+        ],
+    )
+    return chunk
+
+
 class BuddySearchViewTests(unittest.TestCase):
     def test_search_sessions_returns_lineage_aware_message_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -73,7 +142,7 @@ class BuddySearchViewTests(unittest.TestCase):
                 patch.object(store, "BUDDY_HOME_DIR", Path(temp_dir) / "buddy_home"),
             ):
                 database.initialize_storage()
-                from app.core.storage.embedding_store import process_pending_embedding_jobs, register_embedding_model
+                from app.core.storage.embedding_store import process_pending_embedding_jobs, queue_embedding_job, register_embedding_model
 
                 model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
                 session = store.create_chat_session({"title": "Hybrid session"}, changed_by="user", change_reason="test")
@@ -83,6 +152,8 @@ class BuddySearchViewTests(unittest.TestCase):
                     changed_by="buddy",
                     change_reason="test",
                 )
+                _project_buddy_message_for_test_recall(message)
+                queue_embedding_job("buddy_message", message["message_id"], model["embedding_model_id"])
                 embedding_report = process_pending_embedding_jobs(model_ref=model["embedding_model_id"], limit=10)
 
                 result = store.search_chat_sessions(
@@ -345,7 +416,6 @@ class BuddySearchViewTests(unittest.TestCase):
                     upsert_embedding_vector,
                 )
                 from app.core.storage.memory_store import create_memory_entry
-                from app.core.storage.database import get_connection
 
                 model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
                 memory = create_memory_entry(
@@ -359,11 +429,7 @@ class BuddySearchViewTests(unittest.TestCase):
                     confidence=0.8,
                     salience=0.7,
                 )
-                with get_connection() as connection:
-                    chunk = connection.execute(
-                        "SELECT chunk_id, content_hash FROM retrieval_chunks WHERE source_id = ?",
-                        (memory["memory_id"],),
-                    ).fetchone()
+                chunk = _project_memory_for_test_recall(memory)
                 upsert_embedding_vector(
                     str(chunk["chunk_id"]),
                     model["embedding_model_id"],
@@ -413,6 +479,7 @@ class BuddySearchViewTests(unittest.TestCase):
                     title="API 记忆",
                     content="api-memory-evidence 应该通过只读 API 展开。",
                 )
+                _project_memory_for_test_recall(memory)
 
                 response = client.get(
                     "/api/buddy/search/memories",

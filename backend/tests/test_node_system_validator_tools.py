@@ -25,6 +25,23 @@ def _tool_definition(tool_key: str):
     )
 
 
+def _tool_definition_with_two_inputs(tool_key: str):
+    from app.core.schemas.tools import ToolDefinition, ToolIoField
+
+    return ToolDefinition(
+        toolKey=tool_key,
+        name=tool_key,
+        runtime={"type": "python", "entrypoint": "run.py"},
+        inputSchema=[
+            ToolIoField(key="source", name="Source", valueType="json"),
+            ToolIoField(key="strategy", name="Strategy", valueType="text"),
+        ],
+        outputSchema=[ToolIoField(key="result", name="Result", valueType="json")],
+        runtimeReady=True,
+        runtimeRegistered=True,
+    )
+
+
 def _tool_definition_dynamic(tool_key: str):
     from app.core.schemas.tools import ToolDefinition, ToolIoField
 
@@ -112,6 +129,80 @@ class NodeSystemValidatorToolTests(unittest.TestCase):
 
         self.assertEqual([], validation.issues)
         self.assertTrue(validation.valid)
+
+    def test_static_tool_inputs_satisfy_tool_input_schema_without_state_reads(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph-1",
+                "name": "Static Tool Inputs",
+                "state_schema": {
+                    "source": {"type": "json", "value": {"ok": True}},
+                    "result": {
+                        "type": "json",
+                        "binding": {
+                            "kind": "tool_output",
+                            "toolKey": "json_passthrough",
+                            "nodeId": "passthrough",
+                            "fieldKey": "result",
+                            "managed": True,
+                        },
+                    },
+                },
+                "nodes": {
+                    "input": {
+                        "kind": "input",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "writes": [{"state": "source"}],
+                    },
+                    "passthrough": {
+                        "kind": "tool",
+                        "ui": {"position": {"x": 200, "y": 0}},
+                        "reads": [
+                            {
+                                "state": "source",
+                                "required": True,
+                                "binding": {
+                                    "kind": "tool_input",
+                                    "toolKey": "json_passthrough",
+                                    "fieldKey": "source",
+                                    "managed": True,
+                                },
+                            }
+                        ],
+                        "writes": [{"state": "result"}],
+                        "config": {
+                            "toolKey": "json_passthrough",
+                            "staticInputs": {"strategy": "conversation_turn_window"},
+                        },
+                    },
+                },
+                "edges": [{"source": "input", "target": "passthrough"}],
+                "conditional_edges": [],
+            }
+        )
+        definition = _tool_definition_with_two_inputs("json_passthrough")
+
+        with (
+            patch("app.core.compiler.validator.get_tool_registry", return_value={"json_passthrough": object()}),
+            patch("app.core.compiler.validator.get_tool_catalog_registry", return_value={"json_passthrough": definition}),
+        ):
+            validation = validate_graph(graph)
+
+        self.assertEqual([], validation.issues)
+        self.assertTrue(validation.valid)
+
+    def test_static_tool_inputs_reject_unknown_fields(self) -> None:
+        graph = _tool_graph()
+        graph.nodes["passthrough"].config.static_inputs = {"unknown": True}
+        definition = _tool_definition("json_passthrough")
+
+        with (
+            patch("app.core.compiler.validator.get_tool_registry", return_value={"json_passthrough": object()}),
+            patch("app.core.compiler.validator.get_tool_catalog_registry", return_value={"json_passthrough": definition}),
+        ):
+            validation = validate_graph(graph)
+
+        self.assertIn("tool_static_input_field_unknown", [issue.code for issue in validation.issues])
 
     def test_tool_node_rejects_unknown_runtime_tool(self) -> None:
         graph = _tool_graph(tool_key="missing_tool")

@@ -4380,6 +4380,84 @@ test("updateToolNodeConfigInDocument syncs managed tool input and output state b
   }
 });
 
+test("updateToolNodeConfigInDocument keeps static tool inputs inside the card config", () => {
+  const document: GraphPayload = {
+    graph_id: null,
+    name: "Tool Static Input Graph",
+    state_schema: {},
+    nodes: {
+      tool_node: {
+        kind: "tool",
+        name: "Tool",
+        description: "",
+        ui: { position: { x: 0, y: 0 } },
+        reads: [],
+        writes: [],
+        config: { toolKey: "" },
+      },
+    },
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  const nextDocument = updateToolNodeConfigInDocument(
+    document,
+    "tool_node",
+    (current) => ({ ...current, toolKey: "json_passthrough", staticInputs: { value: { fixed: true } } }),
+    { toolDefinitions: [jsonPassthroughTool] },
+  );
+  const node = nextDocument.nodes.tool_node;
+
+  assert.equal(node.kind, "tool");
+  if (node.kind === "tool") {
+    assert.deepEqual(node.config.staticInputs, { value: { fixed: true } });
+    assert.deepEqual(node.reads, []);
+    assert.equal(node.writes.length, 1);
+  }
+});
+
+test("updateToolNodeConfigInDocument prunes stale static inputs when the selected tool changes", () => {
+  const document: GraphPayload = {
+    graph_id: null,
+    name: "Tool Static Input Change Graph",
+    state_schema: {},
+    nodes: {
+      tool_node: {
+        kind: "tool",
+        name: "Tool",
+        description: "",
+        ui: { position: { x: 0, y: 0 } },
+        reads: [],
+        writes: [],
+        config: {
+          toolKey: "source_chunker",
+          staticInputs: {
+            source_kind: "buddy_messages",
+            strategy: "conversation_turn_window",
+          },
+        },
+      },
+    },
+    edges: [],
+    conditional_edges: [],
+    metadata: {},
+  };
+
+  const nextDocument = updateToolNodeConfigInDocument(
+    document,
+    "tool_node",
+    (current) => ({ ...current, toolKey: "json_passthrough" }),
+    { toolDefinitions: [jsonPassthroughTool] },
+  );
+  const node = nextDocument.nodes.tool_node;
+
+  assert.equal(node.kind, "tool");
+  if (node.kind === "tool") {
+    assert.deepEqual(node.config.staticInputs, {});
+  }
+});
+
 test("updateToolNodeConfigInDocument keeps dynamic state input tools free of managed input slots", () => {
   const dynamicContextTool: ToolDefinition = {
     ...jsonPassthroughTool,

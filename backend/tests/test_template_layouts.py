@@ -111,10 +111,12 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
                 "buddy_context_compaction",
+                "buddy_message_chunking_demo",
                 "ecommerce_review_mining_agent",
                 "embedding_maintenance",
                 "game_creative_factory",
                 "job_application_interview_coach",
+                "knowledge_document_chunking_demo",
                 "multi_platform_content_repurposer",
                 "policy_navigator_agent",
                 "product_competitor_research_agent",
@@ -130,7 +132,9 @@ class TemplateLayoutTests(unittest.TestCase):
                 "buddy_autonomous_loop",
                 "buddy_autonomous_review",
                 "buddy_context_compaction",
+                "buddy_message_chunking_demo",
                 "embedding_maintenance",
+                "knowledge_document_chunking_demo",
                 "toograph_page_operation_workflow",
             ],
         )
@@ -324,6 +328,18 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "input_limit", "target": "process_embedding_jobs"}, embedding_template["edges"])
         self.assertIn({"source": "process_embedding_jobs", "target": "output_embedding_report"}, embedding_template["edges"])
 
+        buddy_message_chunk_template = templates["buddy_message_chunking_demo"]
+        self.assertEqual(buddy_message_chunk_template["source"], "official")
+        self.assertEqual(buddy_message_chunk_template["metadata"]["role"], "buddy_message_chunking_demo")
+        self.assertEqual(buddy_message_chunk_template["metadata"]["requiredTools"], ["source_chunker"])
+        self.assertIs(buddy_message_chunk_template["capabilityDiscoverable"], False)
+
+        knowledge_chunk_template = templates["knowledge_document_chunking_demo"]
+        self.assertEqual(knowledge_chunk_template["source"], "official")
+        self.assertEqual(knowledge_chunk_template["metadata"]["role"], "knowledge_document_chunking_demo")
+        self.assertEqual(knowledge_chunk_template["metadata"]["requiredTools"], ["source_chunker"])
+        self.assertIs(knowledge_chunk_template["capabilityDiscoverable"], False)
+
         page_operation_template = templates["toograph_page_operation_workflow"]
         self.assertEqual(page_operation_template["source"], "official")
         self.assertEqual(page_operation_template["label"], "操作 TooGraph 页面")
@@ -515,6 +531,103 @@ class TemplateLayoutTests(unittest.TestCase):
                     for right_id in node_ids[index + 1:]:
                         with self.subTest(graph=graph_path, left=left_id, right=right_id):
                             self.assertFalse(_rects_overlap(rects[left_id], rects[right_id]))
+
+    def test_source_chunker_demo_templates_show_tool_bindings(self) -> None:
+        expectations = {
+            "buddy_message_chunking_demo": {
+                "static_inputs": {
+                    "source_kind": "buddy_messages",
+                    "strategy": "conversation_turn_window",
+                    "limits": {"max_chars": 700, "max_turns_per_chunk": 2, "overlap_messages": 0},
+                },
+                "source_state": "message_source",
+                "source_input_node": "input_message_source",
+            },
+            "knowledge_document_chunking_demo": {
+                "static_inputs": {
+                    "source_kind": "normalized_documents",
+                    "strategy": "document_section_window",
+                    "limits": {"max_chars": 600, "overlap_chars": 80},
+                },
+                "source_state": "document_source",
+                "source_input_node": "input_document_source",
+            },
+        }
+        for template_id, expected in expectations.items():
+            with self.subTest(template_id=template_id):
+                template = load_template_record(template_id)
+                states = template["state_schema"]
+                nodes = template["nodes"]
+                tool_node = nodes["chunk_source_material"]
+
+                self.assertEqual(template["metadata"]["graphProtocol"], "node_system")
+                self.assertEqual(template["metadata"]["requiredTools"], ["source_chunker"])
+                self.assertNotIn("source_kind", states)
+                self.assertNotIn("strategy", states)
+                self.assertNotIn("limits", states)
+                self.assertNotIn("input_source_kind", nodes)
+                self.assertNotIn("input_strategy", nodes)
+                self.assertNotIn("input_limits", nodes)
+                self.assertEqual(
+                    sorted(node_id for node_id, node in nodes.items() if node["kind"] == "input"),
+                    [expected["source_input_node"]],
+                )
+                self.assertEqual(tool_node["kind"], "tool")
+                self.assertEqual(tool_node["config"]["toolKey"], "source_chunker")
+                self.assertEqual(tool_node["config"]["staticInputs"], expected["static_inputs"])
+                self.assertEqual(
+                    _read_contracts(tool_node["reads"]),
+                    [
+                        {
+                            "state": expected["source_state"],
+                            "required": True,
+                            "binding": {
+                                "kind": "tool_input",
+                                "actionKey": "",
+                                "toolKey": "source_chunker",
+                                "fieldKey": "source",
+                                "managed": True,
+                            },
+                        },
+                    ],
+                )
+                self.assertEqual(
+                    tool_node["writes"],
+                    [
+                        {"state": "chunker_status", "mode": "replace"},
+                        {"state": "chunk_count", "mode": "replace"},
+                        {"state": "chunks", "mode": "replace"},
+                        {"state": "chunk_report", "mode": "replace"},
+                        {"state": "chunk_error", "mode": "replace"},
+                    ],
+                )
+                self.assertEqual(states["chunks"]["binding"]["fieldKey"], "chunks")
+                self.assertEqual(states["chunk_report"]["binding"]["fieldKey"], "report")
+                self.assertEqual(
+                    template["edges"],
+                    [
+                        {"source": expected["source_input_node"], "target": "chunk_source_material"},
+                        {"source": "chunk_source_material", "target": "output_chunks"},
+                        {"source": "chunk_source_material", "target": "output_report"},
+                    ],
+                )
+                self.assertIn({"source": "chunk_source_material", "target": "output_chunks"}, template["edges"])
+                self.assertIn({"source": "chunk_source_material", "target": "output_report"}, template["edges"])
+
+                graph = NodeSystemGraphPayload.model_validate(
+                    {
+                        **{
+                            key: value
+                            for key, value in template.items()
+                            if key not in {"template_id", "label", "description", "default_graph_name", "source"}
+                        },
+                        "graph_id": f"test_{template_id}",
+                        "name": template["default_graph_name"],
+                    }
+                )
+                validation = validate_graph(graph)
+                self.assertEqual([issue.model_dump() for issue in validation.issues], [])
+                self.assertEqual(get_langgraph_runtime_unsupported_reasons(graph), [])
 
     def test_advanced_web_research_loop_contract(self) -> None:
         template = next(record for record in _official_template_records() if record["template_id"] == "advanced_web_research_loop")

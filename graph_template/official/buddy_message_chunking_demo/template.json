@@ -1,0 +1,349 @@
+{
+  "template_id": "buddy_message_chunking_demo",
+  "label": "历史消息切片示例",
+  "description": "演示如何把规范化 Buddy 历史消息包连接到 source_chunker，生成可检查的消息 chunk candidates；不写库、不排 embedding job。",
+  "default_graph_name": "历史消息切片示例",
+  "state_schema": {
+    "message_source": {
+      "name": "Message Source",
+      "description": "规范化历史消息包。后续可以由加载历史消息的 Tool 产出，这里用示例 JSON 说明输入形状。",
+      "type": "json",
+      "value": {
+        "session_id": "demo_history_session",
+        "messages": [
+          {
+            "message_id": "msg_1",
+            "role": "user",
+            "content": "chunk 是什么意思？",
+            "client_order": 1
+          },
+          {
+            "message_id": "msg_2",
+            "role": "assistant",
+            "content": "chunk 可以理解为一段可独立入库和召回的文本切片。",
+            "client_order": 2
+          },
+          {
+            "message_id": "msg_3",
+            "role": "user",
+            "content": "消息是多条合成一个块，还是每条消息一个块？",
+            "client_order": 3
+          },
+          {
+            "message_id": "msg_4",
+            "role": "assistant",
+            "content": "通常按一到多个完整 turn 合并，保留消息边界和顺序。",
+            "client_order": 4
+          },
+          {
+            "message_id": "msg_5",
+            "role": "user",
+            "content": "我想先看这个工具在图里怎么连线。",
+            "client_order": 5
+          }
+        ]
+      },
+      "color": "#0f766e",
+      "binding": null
+    },
+    "chunker_status": {
+      "name": "Chunker Status",
+      "description": "source_chunker 返回的执行状态。",
+      "type": "text",
+      "value": "",
+      "color": "#475569",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "source_chunker",
+        "nodeId": "chunk_source_material",
+        "fieldKey": "status",
+        "managed": true
+      }
+    },
+    "chunk_count": {
+      "name": "Chunk Count",
+      "description": "生成的 chunk candidates 数量。",
+      "type": "number",
+      "value": 0,
+      "color": "#16a34a",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "source_chunker",
+        "nodeId": "chunk_source_material",
+        "fieldKey": "chunk_count",
+        "managed": true
+      }
+    },
+    "chunks": {
+      "name": "Chunks",
+      "description": "历史消息切片候选；这里只展示结果，不写入检索库。",
+      "type": "json",
+      "value": [],
+      "color": "#9333ea",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "source_chunker",
+        "nodeId": "chunk_source_material",
+        "fieldKey": "chunks",
+        "managed": true
+      }
+    },
+    "chunk_report": {
+      "name": "Chunk Report",
+      "description": "切片审计报告，包含消息数、turn 数和限制参数。",
+      "type": "json",
+      "value": {},
+      "color": "#0369a1",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "source_chunker",
+        "nodeId": "chunk_source_material",
+        "fieldKey": "report",
+        "managed": true
+      }
+    },
+    "chunk_error": {
+      "name": "Chunk Error",
+      "description": "切片失败时的错误信息。",
+      "type": "text",
+      "value": "",
+      "color": "#dc2626",
+      "binding": {
+        "kind": "tool_output",
+        "actionKey": "",
+        "toolKey": "source_chunker",
+        "nodeId": "chunk_source_material",
+        "fieldKey": "error",
+        "managed": true
+      }
+    }
+  },
+  "nodes": {
+    "input_message_source": {
+      "kind": "input",
+      "name": "Message Source",
+      "description": "把 session_id 和 messages 作为 source_chunker 的 source 字段。",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 420
+        },
+        "collapsed": false,
+        "size": {
+          "width": 420,
+          "height": 260
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "message_source",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": {
+          "session_id": "demo_history_session",
+          "messages": [
+            {
+              "message_id": "msg_1",
+              "role": "user",
+              "content": "chunk 是什么意思？",
+              "client_order": 1
+            },
+            {
+              "message_id": "msg_2",
+              "role": "assistant",
+              "content": "chunk 可以理解为一段可独立入库和召回的文本切片。",
+              "client_order": 2
+            },
+            {
+              "message_id": "msg_3",
+              "role": "user",
+              "content": "消息是多条合成一个块，还是每条消息一个块？",
+              "client_order": 3
+            },
+            {
+              "message_id": "msg_4",
+              "role": "assistant",
+              "content": "通常按一到多个完整 turn 合并，保留消息边界和顺序。",
+              "client_order": 4
+            },
+            {
+              "message_id": "msg_5",
+              "role": "user",
+              "content": "我想先看这个工具在图里怎么连线。",
+              "client_order": 5
+            }
+          ]
+        },
+        "boundaryType": "json"
+      }
+    },
+    "chunk_source_material": {
+      "kind": "tool",
+      "name": "Run Source Chunker",
+      "description": "调用 source_chunker：source_kind、strategy 和 limits 存在 Tool 卡片内，图上只连接 source。",
+      "ui": {
+        "position": {
+          "x": 620,
+          "y": 360
+        },
+        "collapsed": false,
+        "size": {
+          "width": 500,
+          "height": 560
+        }
+      },
+      "reads": [
+        {
+          "state": "message_source",
+          "required": true,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "source_chunker",
+            "fieldKey": "source",
+            "managed": true
+          }
+        }
+      ],
+      "writes": [
+        {
+          "state": "chunker_status",
+          "mode": "replace"
+        },
+        {
+          "state": "chunk_count",
+          "mode": "replace"
+        },
+        {
+          "state": "chunks",
+          "mode": "replace"
+        },
+        {
+          "state": "chunk_report",
+          "mode": "replace"
+        },
+        {
+          "state": "chunk_error",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "toolKey": "source_chunker",
+        "staticInputs": {
+          "source_kind": "buddy_messages",
+          "strategy": "conversation_turn_window",
+          "limits": {
+            "max_chars": 700,
+            "max_turns_per_chunk": 2,
+            "overlap_messages": 0
+          }
+        }
+      }
+    },
+    "output_chunks": {
+      "kind": "output",
+      "name": "Chunks",
+      "description": "查看 source_chunker 生成的历史消息 chunk candidates。",
+      "ui": {
+        "position": {
+          "x": 1240,
+          "y": 240
+        },
+        "collapsed": false,
+        "size": {
+          "width": 460,
+          "height": 320
+        }
+      },
+      "reads": [
+        {
+          "state": "chunks",
+          "required": true,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    },
+    "output_report": {
+      "kind": "output",
+      "name": "Chunk Report",
+      "description": "查看切片数量、消息数量和切片限制。",
+      "ui": {
+        "position": {
+          "x": 1240,
+          "y": 640
+        },
+        "collapsed": false,
+        "size": {
+          "width": 460,
+          "height": 320
+        }
+      },
+      "reads": [
+        {
+          "state": "chunk_report",
+          "required": false,
+          "binding": null
+        }
+      ],
+      "writes": [],
+      "config": {
+        "displayMode": "json",
+        "persistEnabled": false,
+        "persistFormat": "auto",
+        "fileNameTemplate": ""
+      }
+    }
+  },
+  "edges": [
+    {
+      "source": "input_message_source",
+      "target": "chunk_source_material"
+    },
+    {
+      "source": "chunk_source_material",
+      "target": "output_chunks"
+    },
+    {
+      "source": "chunk_source_material",
+      "target": "output_report"
+    }
+  ],
+  "conditional_edges": [],
+  "metadata": {
+    "graphProtocol": "node_system",
+    "origin": "embedding",
+    "role": "buddy_message_chunking_demo",
+    "capabilityDiscoverableDefault": false,
+    "requiredTools": [
+      "source_chunker"
+    ],
+    "permissions": [],
+    "exampleOnly": true,
+    "outputContract": [
+      {
+        "state": "chunks",
+        "role": "chunk_candidates",
+        "label": "Buddy message chunk candidates"
+      },
+      {
+        "state": "chunk_report",
+        "role": "audit",
+        "label": "Chunking report"
+      }
+    ]
+  }
+}

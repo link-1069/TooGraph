@@ -122,6 +122,87 @@ class ToolNodeRuntimeTests(unittest.TestCase):
         self.assertEqual(result["tool_outputs"][0]["state_writes"], {"result": {"echo": {"ok": True}}})
         self.assertEqual(events[0]["kind"], "tool_invocation")
 
+    def test_execute_tool_node_merges_static_inputs_with_state_inputs(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph-1",
+                "name": "Tool Static Input Graph",
+                "state_schema": {
+                    "source": {"type": "json", "value": {"items": [1]}},
+                    "result": {
+                        "type": "json",
+                        "binding": {
+                            "kind": "tool_output",
+                            "toolKey": "json_passthrough",
+                            "nodeId": "passthrough",
+                            "fieldKey": "result",
+                            "managed": True,
+                        },
+                    },
+                },
+                "nodes": {
+                    "passthrough": {
+                        "kind": "tool",
+                        "name": "JSON Passthrough",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "reads": [
+                            {
+                                "state": "source",
+                                "required": True,
+                                "binding": {
+                                    "kind": "tool_input",
+                                    "toolKey": "json_passthrough",
+                                    "fieldKey": "value",
+                                    "managed": True,
+                                },
+                            }
+                        ],
+                        "writes": [{"state": "result"}],
+                        "config": {
+                            "toolKey": "json_passthrough",
+                            "staticInputs": {
+                                "source_kind": "buddy_messages",
+                                "limits": {"max_chars": 700},
+                            },
+                        },
+                    }
+                },
+                "edges": [],
+                "conditional_edges": [],
+            }
+        )
+        node = graph.nodes["passthrough"]
+        calls: list[dict[str, Any]] = []
+
+        def run_tool(_tool_func: object, tool_inputs: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+            calls.append(tool_inputs)
+            return {"status": "succeeded", "result": tool_inputs}
+
+        result = node_handlers.execute_tool_node(
+            graph.state_schema,
+            node,
+            {"source": {"items": [1]}},
+            {"state": {}},
+            node_name="passthrough",
+            state={"run_id": "run-1"},
+            get_tool_registry_func=lambda *, include_disabled: {"json_passthrough": object()},
+            get_tool_definition_registry_func=lambda *, include_disabled: {
+                "json_passthrough": _tool_definition("json_passthrough")
+            },
+            invoke_tool_func=run_tool,
+            record_activity_event_func=lambda state, **event: event,
+        )
+
+        self.assertEqual(
+            calls[0],
+            {
+                "source_kind": "buddy_messages",
+                "limits": {"max_chars": 700},
+                "value": {"items": [1]},
+            },
+        )
+        self.assertEqual(result["outputs"]["result"]["source_kind"], "buddy_messages")
+
     def test_execute_tool_node_uses_tool_runtime_failure_fixture(self) -> None:
         graph = _tool_graph()
         node = graph.nodes["passthrough"]

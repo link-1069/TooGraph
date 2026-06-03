@@ -5,12 +5,53 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.storage import database
+
+
+def _project_memory_for_test_recall(memory: dict[str, object]) -> dict[str, object]:
+    from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+    document = upsert_retrieval_document(
+        document_id=f"test_memory_doc_{memory['memory_id']}",
+        source_kind="memory_entry",
+        source_id=str(memory["memory_id"]),
+        source_revision_id=str(memory.get("latest_revision_id") or ""),
+        title=str(memory.get("title") or ""),
+        content=str(memory.get("content") or ""),
+        scope={
+            "scope_kind": memory.get("scope_kind"),
+            "scope_id": memory.get("scope_id"),
+            "layer": memory.get("layer"),
+        },
+        metadata={
+            "memory_type": memory.get("memory_type"),
+            "status": memory.get("status"),
+        },
+    )
+    [chunk] = upsert_retrieval_chunks(
+        document["document_id"],
+        [
+            {
+                "chunk_id": f"test_memory_chunk_{memory['memory_id']}",
+                "content": str(memory.get("content") or ""),
+                "source_locator": {"field": "content"},
+                "metadata": {
+                    "scope_kind": memory.get("scope_kind"),
+                    "scope_id": memory.get("scope_id"),
+                    "layer": memory.get("layer"),
+                    "memory_type": memory.get("memory_type"),
+                    "status": memory.get("status"),
+                },
+            }
+        ],
+    )
+    return chunk
 
 
 class MemoryStoreTests(unittest.TestCase):
@@ -30,7 +71,7 @@ class MemoryStoreTests(unittest.TestCase):
             patcher.stop()
         self._temp_dir.cleanup()
 
-    def test_create_memory_entry_creates_revision_event_and_retrieval_projection(self) -> None:
+    def test_create_memory_entry_creates_revision_event_without_retrieval_projection(self) -> None:
         from app.core.storage.memory_store import create_memory_entry
 
         memory = create_memory_entry(
@@ -53,43 +94,43 @@ class MemoryStoreTests(unittest.TestCase):
             metadata={"topic": "storage"},
         )
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             revision_count = connection.execute("SELECT COUNT(*) FROM memory_revisions").fetchone()[0]
             event_count = connection.execute("SELECT COUNT(*) FROM memory_events").fetchone()[0]
-            retrieval_doc = connection.execute(
+            retrieval_docs = connection.execute(
                 "SELECT source_kind, source_id FROM retrieval_documents WHERE source_id = ?",
                 (memory["memory_id"],),
-            ).fetchone()
-            retrieval_chunk = connection.execute(
+            ).fetchall()
+            retrieval_chunks = connection.execute(
                 "SELECT content FROM retrieval_chunks WHERE source_id = ?",
                 (memory["memory_id"],),
-            ).fetchone()
+            ).fetchall()
 
         self.assertEqual(memory["latest_revision_id"], memory["revisions"][0]["revision_id"])
         self.assertEqual(revision_count, 1)
         self.assertEqual(event_count, 1)
-        self.assertEqual(retrieval_doc, ("memory_entry", memory["memory_id"]))
-        self.assertIn("唯一事实源", retrieval_chunk[0])
+        self.assertEqual(retrieval_docs, [])
+        self.assertEqual(retrieval_chunks, [])
 
-    def test_memory_retrieval_projection_queues_enabled_embedding_models(self) -> None:
+    def test_memory_writes_do_not_queue_embedding_jobs_without_ingestion(self) -> None:
         from app.core.storage.embedding_store import register_embedding_model
         from app.core.storage.memory_store import create_memory_entry, update_memory_entry
 
-        model = register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
+        register_embedding_model(provider_key="local", model="hashing-v1", dimensions=16)
         memory = create_memory_entry(
             scope_kind="buddy_session",
             scope_id="session_1",
             layer="long_term",
             memory_type="preference",
             title="召回偏好",
-            content="用户希望新记忆自动进入 embedding dirty queue。",
+            content="用户希望新记忆等待显式 ingestion 再进入 embedding dirty queue。",
         )
         update_memory_entry(
             memory["memory_id"],
-            {"content": "用户希望更新后的记忆自动进入 embedding dirty queue。"},
+            {"content": "用户希望更新后的记忆等待显式 ingestion 再进入 embedding dirty queue。"},
         )
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             jobs = connection.execute(
                 """
                 SELECT source_kind, source_id, chunk_id, embedding_model_id, content_hash, status, last_error
@@ -104,15 +145,8 @@ class MemoryStoreTests(unittest.TestCase):
                 (memory["memory_id"],),
             ).fetchone()
 
-        self.assertEqual(len(jobs), 2)
-        self.assertEqual(jobs[0][5], "failed")
-        self.assertIn("superseded", jobs[0][6])
-        self.assertEqual(jobs[1][0], "memory_entry")
-        self.assertEqual(jobs[1][1], memory["memory_id"])
-        self.assertEqual(jobs[1][2], current_chunk[0])
-        self.assertEqual(jobs[1][3], model["embedding_model_id"])
-        self.assertEqual(jobs[1][4], current_chunk[1])
-        self.assertEqual(jobs[1][5], "pending")
+        self.assertEqual(jobs, [])
+        self.assertIsNone(current_chunk)
 
     def test_create_memory_entry_skips_duplicate_content_and_merges_sources(self) -> None:
         from app.core.storage.memory_store import create_memory_entry
@@ -136,7 +170,7 @@ class MemoryStoreTests(unittest.TestCase):
             sources=[{"source_kind": "buddy_message", "source_id": "msg_duplicate"}],
         )
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             memory_count = connection.execute("SELECT COUNT(*) FROM memory_entries").fetchone()[0]
             revision_operations = [
                 row[0]
@@ -188,7 +222,7 @@ class MemoryStoreTests(unittest.TestCase):
             sources=[{"source_kind": "buddy_message", "source_id": "msg_near_duplicate"}],
         )
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             memory_count = connection.execute("SELECT COUNT(*) FROM memory_entries").fetchone()[0]
             duplicate_event = connection.execute(
                 """
@@ -235,7 +269,7 @@ class MemoryStoreTests(unittest.TestCase):
             ["buddy_message", "graph_run", "graph_output", "retrieval_chunk"],
         )
 
-    def test_update_and_archive_preserve_revisions_and_update_retrieval_projection(self) -> None:
+    def test_update_and_archive_preserve_revisions_without_retrieval_projection(self) -> None:
         from app.core.storage.memory_store import archive_memory_entry, create_memory_entry, update_memory_entry
 
         memory = create_memory_entry(
@@ -254,7 +288,7 @@ class MemoryStoreTests(unittest.TestCase):
         )
         archived = archive_memory_entry(memory["memory_id"], changed_by="buddy", change_reason="测试归档")
 
-        with sqlite3.connect(database.DB_PATH) as connection:
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
             revision_count = connection.execute(
                 "SELECT COUNT(*) FROM memory_revisions WHERE memory_id = ?",
                 (memory["memory_id"],),
@@ -267,7 +301,7 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertEqual(updated["content"], "用户偏好先看结论，再看细节。")
         self.assertEqual(archived["status"], "archived")
         self.assertEqual(revision_count, 3)
-        self.assertIn("先看结论", retrieval_chunk[0])
+        self.assertIsNone(retrieval_chunk)
 
     def test_recall_memories_returns_source_refs(self) -> None:
         from app.core.storage.memory_store import create_memory_entry, recall_memories
@@ -280,6 +314,7 @@ class MemoryStoreTests(unittest.TestCase):
             title="数据库设计偏好",
             content="用户偏好完整 embedding 方案服务记忆召回。",
         )
+        _project_memory_for_test_recall(memory)
 
         results = recall_memories(
             "embedding 记忆召回",
@@ -312,6 +347,8 @@ class MemoryStoreTests(unittest.TestCase):
             title="重排靠前",
             content="rerank-memory-evidence exact current preference.",
         )
+        _project_memory_for_test_recall(first)
+        _project_memory_for_test_recall(second)
 
         def fake_rerank(**kwargs):
             self.assertEqual(kwargs["model_ref"], "local-rerank/bge-reranker-v2")

@@ -22,6 +22,42 @@ from app.core.storage.context_assembly_store import expand_context_package
 from app.core.storage.memory_store import create_memory_entry
 
 
+def _project_memory_for_test_recall(memory: dict[str, object]) -> None:
+    from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+    document = upsert_retrieval_document(
+        document_id=f"test_memory_doc_{memory['memory_id']}",
+        source_kind="memory_entry",
+        source_id=str(memory["memory_id"]),
+        source_revision_id=str(memory.get("latest_revision_id") or ""),
+        title=str(memory.get("title") or ""),
+        content=str(memory.get("content") or ""),
+        scope={
+            "scope_kind": memory.get("scope_kind"),
+            "scope_id": memory.get("scope_id"),
+            "layer": memory.get("layer"),
+        },
+        metadata={"memory_type": memory.get("memory_type"), "status": memory.get("status")},
+    )
+    upsert_retrieval_chunks(
+        document["document_id"],
+        [
+            {
+                "chunk_id": f"test_memory_chunk_{memory['memory_id']}",
+                "content": str(memory.get("content") or ""),
+                "source_locator": {"field": "content"},
+                "metadata": {
+                    "scope_kind": memory.get("scope_kind"),
+                    "scope_id": memory.get("scope_id"),
+                    "layer": memory.get("layer"),
+                    "memory_type": memory.get("memory_type"),
+                    "status": memory.get("status"),
+                },
+            }
+        ],
+    )
+
+
 def _load_tool_module():
     script_path = TOOL_DIR / "run.py"
     spec = importlib.util.spec_from_file_location("memory_search_context_loader_tool", script_path)
@@ -77,6 +113,7 @@ class MemorySearchContextLoaderToolTests(unittest.TestCase):
             confidence=0.92,
             salience=0.84,
         )
+        _project_memory_for_test_recall(memory)
 
         result = module.memory_search_context_loader(
             {
@@ -114,6 +151,7 @@ class MemorySearchContextLoaderToolTests(unittest.TestCase):
             title="可重建记忆",
             content="原始 memory rebuild evidence。",
         )
+        _project_memory_for_test_recall(memory)
 
         result = module.memory_search_context_loader({"query": "rebuild evidence", "limit": 5})
         package = result["memory_search_context"]

@@ -231,6 +231,7 @@ export type ToolNode = {
   config: {
     toolKey: string;
     dynamicStateInputs?: boolean;
+    staticInputs?: Record<string, unknown>;
     targetAgentNodeId?: string;
   };
 };

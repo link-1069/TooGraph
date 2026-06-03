@@ -277,7 +277,7 @@ class BuddyStoreTests(unittest.TestCase):
                 )
                 visible_after_delete = store.list_chat_sessions()
                 all_after_delete = store.list_chat_sessions(include_deleted=True)
-                with sqlite3.connect(database.DB_PATH) as connection:
+                with closing(sqlite3.connect(database.DB_PATH)) as connection:
                     revision_count = connection.execute(
                         "SELECT COUNT(*) FROM buddy_message_revisions WHERE message_id IN (?, ?)",
                         (user_message["message_id"], assistant_message["message_id"]),
@@ -286,6 +286,24 @@ class BuddyStoreTests(unittest.TestCase):
                         "SELECT run_id FROM buddy_message_run_refs WHERE message_id = ?",
                         (assistant_message["message_id"],),
                     ).fetchone()
+                    retrieval_document_count = connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM retrieval_documents
+                        WHERE source_kind = 'buddy_message'
+                          AND source_id IN (?, ?)
+                        """,
+                        (user_message["message_id"], assistant_message["message_id"]),
+                    ).fetchone()[0]
+                    retrieval_chunk_count = connection.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM retrieval_chunks
+                        WHERE source_kind = 'buddy_message'
+                          AND source_id IN (?, ?)
+                        """,
+                        (user_message["message_id"], assistant_message["message_id"]),
+                    ).fetchone()[0]
 
         self.assertEqual(user_message["role"], "user")
         self.assertEqual(assistant_message["run_id"], "run_1")
@@ -299,6 +317,8 @@ class BuddyStoreTests(unittest.TestCase):
         self.assertEqual(all_after_delete[0]["session_id"], session["session_id"])
         self.assertEqual(revision_count, 2)
         self.assertEqual(run_ref[0], "run_1")
+        self.assertEqual(retrieval_document_count, 0)
+        self.assertEqual(retrieval_chunk_count, 0)
 
     def test_chat_messages_order_by_client_order_when_replies_are_persisted_later(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1269,7 +1289,7 @@ class BuddyStoreTests(unittest.TestCase):
                 store.initialize_buddy_home()
                 with self.assertRaises(KeyError):
                     store.list_chat_messages("session_1")
-                with sqlite3.connect(database.DB_PATH) as connection:
+                with closing(sqlite3.connect(database.DB_PATH)) as connection:
                     count = connection.execute(
                         "SELECT COUNT(*) FROM buddy_sessions WHERE session_id = ?",
                         ("session_1",),

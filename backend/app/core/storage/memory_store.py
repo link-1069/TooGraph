@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.storage.database import get_connection
-from app.core.storage.retrieval_store import hybrid_search, search_retrieval_fts, upsert_retrieval_chunks, upsert_retrieval_document
+from app.core.storage.retrieval_store import hybrid_search, search_retrieval_fts
 
 
 SUPPORTED_MEMORY_SOURCE_KINDS = {
@@ -143,11 +143,9 @@ def create_memory_entry(
                 created_at=now,
             )
     if duplicate_memory_id:
-        _project_memory_to_retrieval(duplicate_memory_id)
         return_value = load_memory_entry(duplicate_memory_id)
         return_value["dedupe"] = duplicate_result or {}
         return return_value
-    _project_memory_to_retrieval(payload["memory_id"])
     return load_memory_entry(payload["memory_id"])
 
 
@@ -426,7 +424,6 @@ def update_memory_entry(
             detail={"revision_id": revision["revision_id"]},
             created_at=now,
         )
-    _project_memory_to_retrieval(previous["memory_id"])
     return load_memory_entry(previous["memory_id"])
 
 
@@ -539,61 +536,6 @@ def recall_memories(
     if normalized_query:
         return recalled
     return list_memory_entries({**resolved_filters, "status": resolved_filters.get("status") or "active"})[:normalized_limit]
-
-
-def _project_memory_to_retrieval(memory_id: str) -> None:
-    memory = load_memory_entry(memory_id)
-    revision_id = str(memory.get("latest_revision_id") or "")
-    document = upsert_retrieval_document(
-        document_id=f"memory_doc_{memory['memory_id']}",
-        source_kind="memory_entry",
-        source_id=memory["memory_id"],
-        source_revision_id=revision_id,
-        title=memory["title"],
-        content=memory["content"],
-        scope={
-            "scope_kind": memory["scope_kind"],
-            "scope_id": memory["scope_id"],
-            "layer": memory["layer"],
-        },
-        metadata=_memory_retrieval_metadata(memory),
-    )
-    upsert_retrieval_chunks(
-        document["document_id"],
-        [
-            {
-                "chunk_id": f"memory_chunk_{memory['memory_id']}",
-                "content": memory["content"],
-                "source_locator": {"field": "content"},
-                "metadata": _memory_retrieval_metadata(memory),
-            }
-        ],
-    )
-    _queue_memory_embedding_jobs(memory["memory_id"])
-
-
-def _queue_memory_embedding_jobs(memory_id: str) -> None:
-    try:
-        from app.core.storage.embedding_store import list_embedding_models, queue_embedding_job
-
-        models = list_embedding_models(enabled_only=True)
-        for model in models:
-            queue_embedding_job("memory_entry", memory_id, str(model["embedding_model_id"]))
-    except Exception:
-        return
-
-
-def _memory_retrieval_metadata(memory: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "scope_kind": memory["scope_kind"],
-        "scope_id": memory["scope_id"],
-        "layer": memory["layer"],
-        "memory_type": memory["memory_type"],
-        "status": memory["status"],
-        "confidence": memory["confidence"],
-        "salience": memory["salience"],
-        **_coerce_dict(memory.get("metadata")),
-    }
 
 
 def _replace_memory_sources(

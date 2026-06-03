@@ -1506,9 +1506,7 @@ def append_chat_message(
             (next_title, now, session_id),
         )
         connection.commit()
-    saved_message = _get_chat_message(str(message["message_id"]))
-    _project_chat_message_to_retrieval(saved_message)
-    return saved_message
+    return _get_chat_message(str(message["message_id"]))
 
 
 def _sanitize_chat_message_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -1519,54 +1517,6 @@ def _sanitize_chat_message_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     for key in ("outputTrace", "publicOutput", "output_trace", "public_output"):
         sanitized.pop(key, None)
     return sanitized
-
-
-def _project_chat_message_to_retrieval(message: dict[str, Any]) -> None:
-    if not bool(message.get("include_in_context", True)):
-        return
-    content = str(message.get("content") or "")
-    if not content.strip():
-        return
-    from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
-
-    message_id = str(message.get("message_id") or "")
-    metadata = {
-        "session_id": str(message.get("session_id") or ""),
-        "role": str(message.get("role") or ""),
-        "run_id": str(message.get("run_id") or ""),
-        **_coerce_dict(message.get("metadata")),
-    }
-    document = upsert_retrieval_document(
-        document_id=f"buddy_message_doc_{message_id}",
-        source_kind="buddy_message",
-        source_id=message_id,
-        title=f"{metadata['role']} message",
-        content=content,
-        scope={"session_id": metadata["session_id"], "role": metadata["role"]},
-        metadata=metadata,
-    )
-    upsert_retrieval_chunks(
-        document["document_id"],
-        [
-            {
-                "chunk_id": f"buddy_message_chunk_{message_id}",
-                "content": content,
-                "source_locator": {"field": "content"},
-                "metadata": metadata,
-            }
-        ],
-    )
-    _queue_chat_message_embedding_jobs(message_id)
-
-
-def _queue_chat_message_embedding_jobs(message_id: str) -> None:
-    try:
-        from app.core.storage.embedding_store import list_embedding_models, queue_embedding_job
-
-        for model in list_embedding_models(enabled_only=True):
-            queue_embedding_job("buddy_message", message_id, str(model["embedding_model_id"]))
-    except Exception:
-        return
 
 
 def _recall_chat_messages_browse(*, limit: int) -> dict[str, Any]:

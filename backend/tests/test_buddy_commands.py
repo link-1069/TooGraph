@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import sqlite3
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -153,7 +155,7 @@ class BuddyCommandRouteTests(unittest.TestCase):
         self.assertEqual(commands_response.json(), [])
         self.assertFalse((buddy_home / "policy.json").exists())
 
-    def test_memory_entry_create_command_records_command_memory_revision_and_retrieval_projection(self) -> None:
+    def test_memory_entry_create_command_records_command_memory_revision_without_retrieval_projection(self) -> None:
         with TestClient(app) as client:
             response = client.post(
                 "/api/buddy/commands",
@@ -175,18 +177,23 @@ class BuddyCommandRouteTests(unittest.TestCase):
                 },
             )
 
-        from app.core.storage.memory_store import recall_memories
-
         self.assertEqual(response.status_code, 200)
         body = response.json()
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
+            retrieval_document_count = connection.execute(
+                "SELECT COUNT(*) FROM retrieval_documents WHERE source_kind = 'memory_entry'"
+            ).fetchone()[0]
+            retrieval_chunk_count = connection.execute(
+                "SELECT COUNT(*) FROM retrieval_chunks WHERE source_kind = 'memory_entry'"
+            ).fetchone()[0]
         self.assertEqual(body["command"]["action"], "memory_entry.create")
         self.assertEqual(body["command"]["target_type"], "memory_entry")
         self.assertEqual(body["command"]["run_id"], "run_memory_entry_1")
         self.assertTrue(body["command"]["revision_id"].startswith("memrev_"))
         self.assertEqual(body["revision"]["revision_id"], body["command"]["revision_id"])
         self.assertEqual(body["result"]["content"], "用户希望长期文件稳定注入，结构化记忆服务召回。")
-        recalled = recall_memories("结构化记忆服务召回", filters={"scope_kind": "buddy_session"}, limit=3)
-        self.assertEqual(recalled[0]["memory_id"], body["result"]["memory_id"])
+        self.assertEqual(retrieval_document_count, 0)
+        self.assertEqual(retrieval_chunk_count, 0)
 
     def test_graph_patch_draft_is_rejected_in_favor_of_editor_command_flow(self) -> None:
         patch_payload = {

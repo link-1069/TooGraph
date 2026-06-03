@@ -582,7 +582,19 @@ def _validate_tool_node(
     dynamic_state_inputs = bool(getattr(definition, "dynamic_state_inputs", False))
     input_fields = {field.key for field in definition.input_schema}
     output_fields = {field.key for field in definition.output_schema}
-    bound_input_fields: set[str] = set()
+    static_input_fields = set(getattr(node.config, "static_inputs", {}).keys())
+    bound_input_fields: set[str] = set(static_input_fields)
+
+    for field_key in sorted(static_input_fields - input_fields):
+        issues.append(
+            ValidationIssue(
+                code="tool_static_input_field_unknown",
+                message=(
+                    f"Tool node '{node_name}' config sets unknown static Tool input field '{field_key}'."
+                ),
+                path=f"nodes.{node_name}.config.staticInputs.{field_key}",
+            )
+        )
 
     for read_index, read in enumerate(node.reads):
         binding = read.binding
@@ -626,6 +638,17 @@ def _validate_tool_node(
                     message=(
                         f"Tool node '{node_name}' input state '{read.state}' is bound to unknown "
                         f"Tool input field '{binding.field_key}'."
+                    ),
+                    path=f"nodes.{node_name}.reads.{read_index}.binding.fieldKey",
+                )
+            )
+        if binding.field_key in static_input_fields:
+            issues.append(
+                ValidationIssue(
+                    code="tool_static_input_duplicate_binding",
+                    message=(
+                        f"Tool node '{node_name}' input field '{binding.field_key}' is configured both as "
+                        "staticInputs and as a state read. Use one source for the field."
                     ),
                     path=f"nodes.{node_name}.reads.{read_index}.binding.fieldKey",
                 )

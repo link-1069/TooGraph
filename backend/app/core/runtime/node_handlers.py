@@ -1341,7 +1341,7 @@ def _collect_tool_inputs(
             ]
         }
 
-    tool_inputs: dict[str, Any] = {}
+    tool_inputs: dict[str, Any] = copy.deepcopy(getattr(node.config, "static_inputs", {}) or {})
     for read in node.reads:
         binding = read.binding
         if binding is None or binding.kind != NodeSystemReadBindingKind.TOOL_INPUT:

@@ -51,6 +51,68 @@
       </label>
     </div>
 
+    <div v-if="selectedToolInputFields.length > 0" class="tool-node-body__static-inputs">
+      <div class="tool-node-body__static-inputs-header">
+        <span class="tool-node-body__field-label">Card value</span>
+      </div>
+      <div
+        v-for="field in selectedToolInputFields"
+        :key="field.key"
+        class="tool-node-body__static-input-row"
+        :class="{ 'tool-node-body__static-input-row--enabled': isStaticInputEnabled(field.key) }"
+      >
+        <div class="tool-node-body__static-input-topline">
+          <div class="tool-node-body__static-input-meta">
+            <span class="tool-node-body__static-input-name">{{ field.name || field.key }}</span>
+            <span class="tool-node-body__static-input-key">{{ field.key }} · {{ field.valueType }}</span>
+          </div>
+          <ElSwitch
+            class="tool-node-body__static-mode-switch"
+            :model-value="isStaticInputEnabled(field.key)"
+            :width="72"
+            inline-prompt
+            active-text="Card"
+            inactive-text="Port"
+            @update:model-value="$event => updateStaticInputMode(field, Boolean($event))"
+          />
+        </div>
+        <div v-if="isStaticInputEnabled(field.key)" class="tool-node-body__static-editor">
+          <ElSwitch
+            v-if="isBooleanStaticField(field)"
+            class="tool-node-body__static-value-switch"
+            :model-value="Boolean(staticInputs[field.key])"
+            :width="76"
+            inline-prompt
+            active-text="True"
+            inactive-text="False"
+            @update:model-value="$event => updateStaticInputValue(field.key, Boolean($event))"
+          />
+          <ElInputNumber
+            v-else-if="isNumberStaticField(field)"
+            class="tool-node-body__static-number"
+            :model-value="staticInputNumberValue(field.key)"
+            controls-position="right"
+            @update:model-value="$event => updateStaticInputValue(field.key, Number($event ?? 0))"
+          />
+          <ElInput
+            v-else
+            class="tool-node-body__static-text"
+            :model-value="staticInputDraftText(field)"
+            :type="isJsonStaticField(field) ? 'textarea' : 'text'"
+            :autosize="{ minRows: 2, maxRows: 5 }"
+            @update:model-value="$event => updateStaticInputDraft(field.key, String($event ?? ''))"
+            @blur="commitStaticInputDraft(field)"
+            @keydown.ctrl.enter.prevent="commitStaticInputDraft(field)"
+            @keydown.meta.enter.prevent="commitStaticInputDraft(field)"
+          />
+          <div v-if="staticInputErrors[field.key]" class="tool-node-body__static-error">
+            {{ staticInputErrors[field.key] }}
+          </div>
+        </div>
+        <p v-if="field.description" class="tool-node-body__static-description">{{ field.description }}</p>
+      </div>
+    </div>
+
     <div class="node-card__port-grid">
       <div class="node-card__port-column">
         <StatePortList
@@ -164,14 +226,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, type CSSProperties } from "vue";
-import { ElOption } from "element-plus";
+import { computed, ref, watch, type CSSProperties } from "vue";
+import { ElInput, ElInputNumber, ElOption, ElSwitch } from "element-plus";
 
 import ToographSelect from "@/components/ToographSelect.vue";
 import StatePortList from "./StatePortList.vue";
 import type { StatePortExistingStateOption } from "./statePortCreateModel";
 import type { NodeCardViewModel, NodePortViewModel } from "./nodeCardViewModel";
-import type { ToolDefinition } from "@/types/tools";
+import type { ToolDefinition, ToolIoField } from "@/types/tools";
 import type { StateColorOption, StateFieldDraft, StateFieldType } from "@/editor/workspace/statePanelFields";
 
 type ToolBodyViewModel = Extract<NodeCardViewModel["body"], { kind: "tool" }>;
@@ -180,6 +242,7 @@ const props = defineProps<{
   nodeId: string;
   body: ToolBodyViewModel;
   selectedToolKey: string;
+  staticInputs: Record<string, unknown>;
   targetAgentNodeId: string;
   targetAgentNodeOptions: Array<{ value: string; label: string }>;
   toolDefinitions: ToolDefinition[];
@@ -209,6 +272,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: "select-tool", toolKey: string): void;
+  (event: "update-static-inputs", staticInputs: Record<string, unknown>): void;
   (event: "update-target-agent-node", nodeId: string): void;
   (event: "pointer-enter", anchorId: string): void;
   (event: "pointer-leave", anchorId: string): void;
@@ -233,6 +297,10 @@ const emit = defineEmits<{
 const availableToolDefinitions = computed(() =>
   props.toolDefinitions.filter((definition) => definition.status !== "disabled"),
 );
+const selectedToolDefinition = computed(() =>
+  availableToolDefinitions.value.find((definition) => definition.toolKey === props.selectedToolKey),
+);
+const selectedToolInputFields = computed(() => selectedToolDefinition.value?.inputSchema ?? []);
 const selectedToolMissing = computed(
   () => Boolean(props.selectedToolKey) && !availableToolDefinitions.value.some((definition) => definition.toolKey === props.selectedToolKey),
 );
@@ -247,6 +315,148 @@ const toolPlaceholder = computed(() => {
   return props.selectedToolKey ? "Select tool" : "No tool";
 });
 const showsTargetAgentSelect = computed(() => props.selectedToolKey === "buddy_context_pressure_check");
+const staticInputDrafts = ref<Record<string, string>>({});
+const staticInputErrors = ref<Record<string, string>>({});
+
+watch(
+  () => props.selectedToolKey,
+  () => {
+    staticInputDrafts.value = {};
+    staticInputErrors.value = {};
+  },
+);
+
+watch(
+  () => props.staticInputs,
+  () => {
+    const activeKeys = new Set(Object.keys(props.staticInputs));
+    staticInputDrafts.value = Object.fromEntries(Object.entries(staticInputDrafts.value).filter(([fieldKey]) => activeKeys.has(fieldKey)));
+    staticInputErrors.value = Object.fromEntries(Object.entries(staticInputErrors.value).filter(([fieldKey]) => activeKeys.has(fieldKey)));
+  },
+  { deep: true },
+);
+
+function isStaticInputEnabled(fieldKey: string) {
+  return Object.prototype.hasOwnProperty.call(props.staticInputs, fieldKey);
+}
+
+function updateStaticInputMode(field: ToolIoField, enabled: boolean) {
+  const nextStaticInputs = { ...props.staticInputs };
+  if (enabled) {
+    nextStaticInputs[field.key] = isStaticInputEnabled(field.key)
+      ? props.staticInputs[field.key]
+      : defaultStaticInputValue(field);
+  } else {
+    delete nextStaticInputs[field.key];
+    clearStaticInputDraft(field.key);
+  }
+  emit("update-static-inputs", nextStaticInputs);
+}
+
+function updateStaticInputValue(fieldKey: string, value: unknown) {
+  emit("update-static-inputs", { ...props.staticInputs, [fieldKey]: value });
+  clearStaticInputDraft(fieldKey);
+}
+
+function updateStaticInputDraft(fieldKey: string, value: string) {
+  staticInputDrafts.value = { ...staticInputDrafts.value, [fieldKey]: value };
+  if (staticInputErrors.value[fieldKey]) {
+    staticInputErrors.value = { ...staticInputErrors.value, [fieldKey]: "" };
+  }
+}
+
+function commitStaticInputDraft(field: ToolIoField) {
+  if (!isStaticInputEnabled(field.key)) {
+    return;
+  }
+  const parseResult = parseStaticInputValue(field, staticInputDraftText(field));
+  if (parseResult.kind === "error") {
+    staticInputErrors.value = { ...staticInputErrors.value, [field.key]: parseResult.message };
+    return;
+  }
+  updateStaticInputValue(field.key, parseResult.value);
+}
+
+function staticInputDraftText(field: ToolIoField) {
+  return staticInputDrafts.value[field.key] ?? formatStaticInputValue(props.staticInputs[field.key], field);
+}
+
+function staticInputNumberValue(fieldKey: string) {
+  const numericValue = Number(props.staticInputs[fieldKey]);
+  return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
+function isBooleanStaticField(field: ToolIoField) {
+  return normalizeStaticFieldValueType(field) === "boolean";
+}
+
+function isNumberStaticField(field: ToolIoField) {
+  const valueType = normalizeStaticFieldValueType(field);
+  return valueType === "number" || valueType === "integer";
+}
+
+function isJsonStaticField(field: ToolIoField) {
+  const valueType = normalizeStaticFieldValueType(field);
+  return valueType === "json" || valueType === "object" || valueType === "array";
+}
+
+function normalizeStaticFieldValueType(field: ToolIoField) {
+  return field.valueType.trim().toLowerCase();
+}
+
+function defaultStaticInputValue(field: ToolIoField): unknown {
+  if (isBooleanStaticField(field)) {
+    return false;
+  }
+  if (isNumberStaticField(field)) {
+    return 0;
+  }
+  if (isJsonStaticField(field)) {
+    return {};
+  }
+  return "";
+}
+
+function formatStaticInputValue(value: unknown, field: ToolIoField) {
+  if (isJsonStaticField(field)) {
+    return JSON.stringify(value ?? null, null, 2);
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return value == null ? "" : String(value);
+}
+
+function parseStaticInputValue(field: ToolIoField, value: string): { kind: "ok"; value: unknown } | { kind: "error"; message: string } {
+  if (isJsonStaticField(field)) {
+    const trimmedValue = value.trim();
+    if (!trimmedValue) {
+      return { kind: "ok", value: null };
+    }
+    try {
+      return { kind: "ok", value: JSON.parse(trimmedValue) };
+    } catch {
+      return { kind: "error", message: "Invalid JSON" };
+    }
+  }
+  if (isNumberStaticField(field)) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+      return { kind: "error", message: "Invalid number" };
+    }
+    return { kind: "ok", value: numericValue };
+  }
+  return { kind: "ok", value };
+}
+
+function clearStaticInputDraft(fieldKey: string) {
+  const { [fieldKey]: removedDraft, ...nextDrafts } = staticInputDrafts.value;
+  const { [fieldKey]: removedError, ...nextErrors } = staticInputErrors.value;
+  void removedDraft;
+  void removedError;
+  staticInputDrafts.value = nextDrafts;
+  staticInputErrors.value = nextErrors;
+}
 </script>
 
 <style scoped>
@@ -278,6 +488,102 @@ const showsTargetAgentSelect = computed(() => props.selectedToolKey === "buddy_c
   width: 100%;
   --el-color-primary: #2563eb;
   --el-border-radius-base: 16px;
+}
+
+.tool-node-body__static-inputs {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tool-node-body__static-inputs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.tool-node-body__static-input-row {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid rgba(59, 130, 246, 0.13);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.66);
+  padding: 9px 10px;
+}
+
+.tool-node-body__static-input-row--enabled {
+  border-color: rgba(37, 99, 235, 0.22);
+  background: rgba(239, 246, 255, 0.62);
+}
+
+.tool-node-body__static-input-topline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tool-node-body__static-input-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tool-node-body__static-input-name {
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-node-body__static-input-key {
+  overflow: hidden;
+  color: rgba(71, 85, 105, 0.72);
+  font-family: var(--toograph-font-mono);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-node-body__static-mode-switch,
+.tool-node-body__static-value-switch {
+  --el-switch-on-color: #2563eb;
+  --el-switch-off-color: rgba(100, 116, 139, 0.3);
+}
+
+.tool-node-body__static-editor {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-node-body__static-number {
+  width: 100%;
+}
+
+.tool-node-body__static-text :deep(.el-input__wrapper),
+.tool-node-body__static-text :deep(.el-textarea__inner),
+.tool-node-body__static-number :deep(.el-input__wrapper) {
+  background: rgba(255, 252, 246, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.tool-node-body__static-description {
+  margin: 0;
+  color: rgba(60, 41, 20, 0.58);
+  font-size: 11px;
+  line-height: 1.42;
+}
+
+.tool-node-body__static-error {
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .node-card__port-grid {
