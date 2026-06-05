@@ -257,6 +257,39 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertGreater(results[0]["score"], results[1]["score"])
         self.assertEqual(results[0]["retrieval"]["mode"], "vector")
 
+    def test_search_embedding_vectors_ignores_stale_vectors_after_chunk_content_changes(self) -> None:
+        from app.core.storage.embedding_store import (
+            register_embedding_model,
+            search_embedding_vectors,
+            upsert_embedding_vector,
+        )
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        model = register_embedding_model(provider_key="openai", model="text-embedding-3-small", dimensions=3)
+        document = upsert_retrieval_document(source_kind="memory_entry", source_id="mem_stale")
+        [original_chunk] = upsert_retrieval_chunks(
+            document["document_id"],
+            [{"chunk_id": "chunk_stale_memory", "content": "Original memory content."}],
+        )
+        upsert_embedding_vector(
+            original_chunk["chunk_id"],
+            model["embedding_model_id"],
+            [1.0, 0.0, 0.0],
+            original_chunk["content_hash"],
+        )
+        upsert_retrieval_chunks(
+            document["document_id"],
+            [{"chunk_id": "chunk_stale_memory", "content": "Updated memory content."}],
+        )
+
+        results = search_embedding_vectors(
+            [1.0, 0.0, 0.0],
+            {"embedding_model_ref": model["embedding_model_id"], "source_kind": "memory_entry"},
+            limit=5,
+        )
+
+        self.assertEqual(results, [])
+
     def test_hybrid_search_uses_provider_query_vector_and_records_audit(self) -> None:
         from app.core.storage.embedding_store import (
             register_embedding_model,

@@ -2,6 +2,12 @@ import type { RunDetail, RunSummary, RunTreeNode } from "@/types/run";
 
 import { apiGet, apiPost } from "./http.ts";
 
+export type CancelRunResponse = {
+  run_id: string;
+  status: string;
+  cancellation_requested?: boolean;
+};
+
 export async function fetchRuns(params?: {
   graphName?: string;
   status?: string;
@@ -48,6 +54,6 @@ export async function resumeRun(
   });
 }
 
-export async function cancelRun(runId: string, reason: string): Promise<{ run_id: string; status: string }> {
+export async function cancelRun(runId: string, reason: string): Promise<CancelRunResponse> {
   return apiPost(`/api/runs/${runId}/cancel`, { reason: reason.trim() });
 }

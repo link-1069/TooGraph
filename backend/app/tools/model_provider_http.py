@@ -7,6 +7,12 @@ from typing import Any, Callable
 
 import httpx
 
+from app.core.runtime.model_call_context import get_model_call_context
+from app.core.runtime.run_cancellation import (
+    RunCancellationRequested,
+    RunCancellationToken,
+    raise_if_run_cancellation_requested,
+)
 from app.core.storage.model_log_store import append_model_request_log
 
 
@@ -175,6 +181,11 @@ def parse_sse_payload(event_name: str, data_lines: list[str]) -> dict[str, Any] 
     return payload
 
 
+def _model_call_cancellation_token() -> RunCancellationToken | None:
+    token = get_model_call_context().get("cancellation_token")
+    return token if isinstance(token, RunCancellationToken) else None
+
+
 def read_streaming_response_text(
     response: Any,
     *,
@@ -195,18 +206,41 @@ def read_streaming_response_text(
         if payload is not None and on_event is not None:
             on_event(payload)
 
-    for raw_line in response.iter_lines():
-        line = coerce_stream_line(raw_line)
-        text_lines.append(line)
-        if not line:
-            flush_event()
-            continue
-        if line.startswith("event:"):
-            event_name = line[len("event:") :].strip()
-            continue
-        if line.startswith("data:"):
-            data_lines.append(line[len("data:") :].lstrip())
-    flush_event()
+    cancellation_token = _model_call_cancellation_token()
+    remove_cancel_callback: Callable[[], None] | None = None
+    response_close = getattr(response, "close", None)
+    if cancellation_token is not None and callable(response_close):
+        remove_cancel_callback = cancellation_token.add_cancel_callback(response_close)
+    try:
+        try:
+            line_iterator = iter(response.iter_lines())
+        except Exception:
+            raise_if_run_cancellation_requested(cancellation_token)
+            raise
+        while True:
+            raise_if_run_cancellation_requested(cancellation_token)
+            try:
+                raw_line = next(line_iterator)
+            except StopIteration:
+                break
+            except Exception:
+                raise_if_run_cancellation_requested(cancellation_token)
+                raise
+            raise_if_run_cancellation_requested(cancellation_token)
+            line = coerce_stream_line(raw_line)
+            text_lines.append(line)
+            if not line:
+                flush_event()
+                continue
+            if line.startswith("event:"):
+                event_name = line[len("event:") :].strip()
+                continue
+            if line.startswith("data:"):
+                data_lines.append(line[len("data:") :].lstrip())
+        flush_event()
+    finally:
+        if remove_cancel_callback is not None:
+            remove_cancel_callback()
     return "\n".join(text_lines)
 
 
@@ -251,6 +285,8 @@ def post_streaming_json_with_fallback(
                     read_streaming_response_text(response, on_event=handle_stream_event),
                     parse_stream,
                 )
+    except RunCancellationRequested:
+        raise
     except Exception as exc:
         stream_error = format_request_error(error_label, exc)
     else:

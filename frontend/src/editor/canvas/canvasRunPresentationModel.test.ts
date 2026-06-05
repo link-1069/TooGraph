@@ -119,4 +119,5 @@ test("canvas run presentation model shows timing only for active or completed no
   assert.equal(shouldShowRunNodeTiming({ timing: { status: "success", startedAtEpochMs: null, durationMs: 42 } }), true);
   assert.equal(shouldShowRunNodeTiming({ timing: { status: "failed", startedAtEpochMs: null, durationMs: 42 } }), true);
   assert.equal(shouldShowRunNodeTiming({ timing: { status: "paused", startedAtEpochMs: null, durationMs: null } }), true);
+  assert.equal(shouldShowRunNodeTiming({ timing: { status: "cancelled", startedAtEpochMs: null, durationMs: null } }), true);
 });

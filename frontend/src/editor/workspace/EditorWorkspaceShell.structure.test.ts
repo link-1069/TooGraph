@@ -590,8 +590,12 @@ test("EditorWorkspaceShell runs the latest document after async model refresh", 
   assert.match(componentSource, /async function runGraphWithPageOperationContext\(payload: GraphPayload \| GraphDocument\)/);
   assert.match(componentSource, /const pageOperationContext = buildPageOperationRuntimeContext\(\{[\s\S]*routePath: route\.fullPath,[\s\S]*root: typeof document === "undefined" \? null : document,[\s\S]*\}\);/);
   assert.match(componentSource, /return runGraph\(attachPageOperationRuntimeContext\(payload, pageOperationContext\)\);/);
-  assert.match(componentSource, /const \{ runActiveGraph, resumeHumanReviewRun \} = useWorkspaceRunController\(\{/);
-  assert.match(componentSource, /useWorkspaceRunController\(\{[\s\S]*runGraph: runGraphWithPageOperationContext,[\s\S]*resumeRun,/);
+  assert.match(componentSource, /const \{ runActiveGraph, resumeHumanReviewRun, terminateActiveRun \} = useWorkspaceRunController\(\{/);
+  assert.match(componentSource, /import \{ cancelRun, fetchRun, resumeRun \} from "@\/api\/runs";/);
+  assert.match(componentSource, /@terminate-active-run="terminateActiveRun"/);
+  assert.match(componentSource, /:active-run-status="activeRunStatusForActionCapsule"/);
+  assert.match(componentSource, /:is-terminating-active-run="isTerminatingActiveRun"/);
+  assert.match(componentSource, /useWorkspaceRunController\(\{[\s\S]*runGraph: runGraphWithPageOperationContext,[\s\S]*resumeRun,[\s\S]*cancelRun,[\s\S]*terminatingRunByTabId,[\s\S]*getFeedbackForTab: feedbackForTab,/);
   assert.match(runControllerSource, /await input\.refreshAgentModels\(\);/);
   assert.match(runControllerSource, /const latestDocument = input\.documentsByTabId\.value\[tab\.tabId\];/);
   assert.match(runControllerSource, /if \(!latestDocument\) \{[\s\S]*?return;[\s\S]*?\}/);

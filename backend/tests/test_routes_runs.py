@@ -11,7 +11,9 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.api import routes_runs
 from app.main import app
+from app.core.runtime.run_cancellation import get_run_cancellation_token
 from app.core.storage import database, run_store
 
 
@@ -147,6 +149,24 @@ def _paused_run(run_id: str = "run_paused", status: str = "awaiting_human") -> d
 
 
 class RunRouteTests(unittest.TestCase):
+    def test_resume_run_worker_registers_cancellation_token_during_execution(self) -> None:
+        resumed_run = {"run_id": "run_resume_cancel_token", "metadata": {}}
+        observed_tokens: list[bool] = []
+
+        def execute_graph(_graph, *, initial_state, persist_progress, resume_from_checkpoint, resume_command):
+            self.assertIs(initial_state, resumed_run)
+            self.assertTrue(persist_progress)
+            self.assertTrue(resume_from_checkpoint)
+            self.assertEqual(resume_command, {"answer": "ok"})
+            observed_tokens.append(get_run_cancellation_token(str(initial_state["run_id"])) is not None)
+            initial_state["status"] = "completed"
+
+        with patch("app.api.routes_runs.execute_node_system_graph_langgraph", side_effect=execute_graph):
+            routes_runs._resume_run_worker(object(), resumed_run, {"answer": "ok"})
+
+        self.assertEqual(observed_tokens, [True])
+        self.assertIsNone(get_run_cancellation_token(str(resumed_run["run_id"])))
+
     def test_run_list_keeps_buddy_background_audit_runs_visible_by_default(self) -> None:
         with _temporary_run_database():
             run_store.save_run(_run_summary("run_hidden", internal=True, role="buddy_background_review", started_at="2026-05-11T07:28:50Z"))
@@ -304,6 +324,56 @@ class RunRouteTests(unittest.TestCase):
         self.assertNotIn("pending_subgraph_breakpoint", saved_run["metadata"])
         self.assertNotIn("pending_subgraph_resume_payload", saved_run["metadata"])
         publish_run_event.assert_called_once_with("run_paused", "run.cancelled", {"status": "cancelled", "reason": "用户取消"})
+
+    def test_cancel_run_requests_active_run_cancellation(self) -> None:
+        run = _paused_run("run_active", status="running")
+        run["current_node_id"] = "agent_answer"
+        run["node_status_map"] = {"agent_answer": "running"}
+        run["metadata"] = {"origin": "editor"}
+        with (
+            patch("app.api.routes_runs.load_run", return_value=run),
+            patch("app.api.routes_runs.save_run") as save_run,
+            patch("app.api.routes_runs.publish_run_event") as publish_run_event,
+            patch("app.api.routes_runs.request_run_cancellation", return_value=True, create=True) as request_run_cancellation,
+        ):
+            with TestClient(app) as client:
+                response = client.post("/api/runs/run_active/cancel", json={"reason": "Stop requested."})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["run_id"], "run_active")
+        self.assertEqual(response.json()["status"], "running")
+        self.assertTrue(response.json()["cancellation_requested"])
+        saved_run = save_run.call_args.args[0]
+        self.assertEqual(saved_run["status"], "running")
+        self.assertIsNone(saved_run["completed_at"])
+        self.assertTrue(saved_run["metadata"]["cancellation_requested"])
+        self.assertEqual(saved_run["metadata"]["cancellation_reason"], "Stop requested.")
+        self.assertIn("cancellation_requested_at", saved_run["metadata"])
+        request_run_cancellation.assert_called_once_with("run_active", "Stop requested.")
+        publish_run_event.assert_called_once_with(
+            "run_active",
+            "run.cancellation_requested",
+            {"status": "running", "reason": "Stop requested."},
+        )
+
+    def test_cancel_run_does_not_overwrite_terminal_run_after_cancellation_request(self) -> None:
+        running_run = _paused_run("run_active", status="running")
+        completed_run = _paused_run("run_active", status="completed")
+        completed_run["completed_at"] = "2026-05-11T07:29:05Z"
+        with (
+            patch("app.api.routes_runs.load_run", side_effect=[running_run, completed_run]),
+            patch("app.api.routes_runs.save_run") as save_run,
+            patch("app.api.routes_runs.publish_run_event") as publish_run_event,
+            patch("app.api.routes_runs.request_run_cancellation", return_value=True, create=True) as request_run_cancellation,
+        ):
+            with TestClient(app) as client:
+                response = client.post("/api/runs/run_active/cancel", json={"reason": "Stop requested."})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"run_id": "run_active", "status": "completed", "cancellation_requested": False})
+        request_run_cancellation.assert_called_once_with("run_active", "Stop requested.")
+        save_run.assert_not_called()
+        publish_run_event.assert_not_called()
 
     def test_cancel_run_rejects_terminal_runs(self) -> None:
         with (

@@ -14,12 +14,16 @@ test("resolveNodeRunPresentation uses one running presentation for current and n
   });
 });
 
-test("resolveNodeRunPresentation marks paused nodes with review glow classes", () => {
+test("resolveNodeRunPresentation marks paused and cancelled nodes with review glow classes", () => {
   assert.deepEqual(resolveNodeRunPresentation("paused", false), {
     haloClass: "editor-canvas__node-halo--paused",
     shellClass: "editor-canvas__node--paused",
   });
   assert.deepEqual(resolveNodeRunPresentation("paused", true), {
+    haloClass: "editor-canvas__node-halo--paused",
+    shellClass: "editor-canvas__node--paused",
+  });
+  assert.deepEqual(resolveNodeRunPresentation("cancelled", false), {
     haloClass: "editor-canvas__node-halo--paused",
     shellClass: "editor-canvas__node--paused",
   });

@@ -55,6 +55,8 @@
             :is-state-panel-open="activeStatePanelOpen"
             :is-run-activity-panel-open="activeRunActivityPanelOpen"
             :has-run-activity-hint="activeRunActivityPanelHint"
+            :active-run-status="activeRunStatusForActionCapsule"
+            :is-terminating-active-run="isTerminatingActiveRun"
             :save-graph-label="activeTab?.kind === 'subgraph' ? t('editor.saveSubgraph') : t('editor.saveGraph')"
             :show-save-as-graph="activeTab?.kind === 'subgraph'"
             :save-as-graph-label="t('editor.saveAsGraph')"
@@ -68,6 +70,7 @@
             @validate-active-graph="validateActiveGraph"
             @export-active-graph="exportActiveGraph"
             @run-active-graph="runActiveGraph"
+            @terminate-active-run="terminateActiveRun"
           />
         </div>
       </div>
@@ -399,7 +402,7 @@ import { ElButton, ElDialog, ElInput, ElMessage, ElMessageBox } from "element-pl
 import { useI18n } from "vue-i18n";
 
 import { fetchPreset, fetchPresets, savePreset } from "@/api/presets";
-import { fetchRun, resumeRun } from "@/api/runs";
+import { cancelRun, fetchRun, resumeRun } from "@/api/runs";
 import { fetchSettings } from "@/api/settings";
 import { fetchActionDefinitions } from "@/api/actions";
 import { fetchToolCatalog } from "@/api/tools";
@@ -559,6 +562,7 @@ const latestRunDetailByTabId = ref<Record<string, RunDetail | null>>({});
 const restoredRunSnapshotIdByTabId = ref<Record<string, string | null>>({});
 const humanReviewBusyByTabId = ref<Record<string, boolean>>({});
 const humanReviewErrorByTabId = ref<Record<string, string | null>>({});
+const terminatingRunByTabId = ref<Record<string, boolean>>({});
 const runOutputPreviewByTabId = ref<Record<string, Record<string, { text: string; displayMode: string | null }>>>({});
 const runFailureMessageByTabId = ref<Record<string, Record<string, string>>>({});
 const activeRunEdgeIdsByTabId = ref<Record<string, string[]>>({});
@@ -939,6 +943,17 @@ const {
   activeRunEdgeIdsByTabId,
   subgraphRunStatusByTabId,
   feedbackByTabId,
+});
+const activeRunStatusForActionCapsule = computed(() => {
+  const tab = activeTab.value;
+  if (!tab) {
+    return null;
+  }
+  return latestRunDetailByTabId.value[tab.tabId]?.status ?? feedbackForTab(tab.tabId)?.activeRunStatus ?? null;
+});
+const isTerminatingActiveRun = computed(() => {
+  const tab = activeTab.value;
+  return Boolean(tab && terminatingRunByTabId.value[tab.tabId]);
 });
 const activeBuddyEditorSnapshot = computed(() => {
   const tab = activeTab.value;
@@ -1499,7 +1514,7 @@ const {
   saveTab,
   closeSaveFailedMessage: () => t("closeDialog.saveFailed"),
 });
-const { runActiveGraph, resumeHumanReviewRun } = useWorkspaceRunController({
+const { runActiveGraph, resumeHumanReviewRun, terminateActiveRun } = useWorkspaceRunController({
   activeTab,
   documentsByTabId,
   latestRunDetailByTabId,
@@ -1518,6 +1533,9 @@ const { runActiveGraph, resumeHumanReviewRun } = useWorkspaceRunController({
   consumeVirtualOperationRunAttribution: (targetId) => buddyMascotDebugStore.consumeVirtualOperationRunAttribution(targetId),
   recordVirtualOperationTriggeredRun: (record) => buddyMascotDebugStore.recordVirtualOperationTriggeredRun(record),
   resumeRun,
+  cancelRun,
+  terminatingRunByTabId,
+  getFeedbackForTab: feedbackForTab,
   cancelRunPolling,
   getRunGeneration,
   startRunEventStreamForTab,

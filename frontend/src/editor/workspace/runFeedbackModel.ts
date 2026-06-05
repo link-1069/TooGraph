@@ -26,7 +26,7 @@ export function summarizeRunNodeStates(nodeIds: string[], nodeStatusMap: Record<
       const status = nodeStatusMap[nodeId] ?? "idle";
       if (status === "running" || status === "resuming") {
         counts.running += 1;
-      } else if (status === "paused") {
+      } else if (status === "paused" || status === "cancelled") {
         counts.paused += 1;
       } else if (status === "success" || status === "completed") {
         counts.success += 1;
@@ -112,6 +112,15 @@ export function formatRunFeedback(
     return {
       tone: "danger",
       message: `${runErrors.length > 0 ? `${baseText} ${runErrors.join("; ")}` : baseText}${cycleSummaryText}`,
+      summary,
+      currentNodeLabel,
+    };
+  }
+
+  if (run.status === "cancelled") {
+    return {
+      tone: "warning",
+      message: translate("feedback.runCancelled", { ok: summary.success, pending: summary.idle, failed: summary.failed, cycle: cycleSummaryText }),
       summary,
       currentNodeLabel,
     };

@@ -42,8 +42,8 @@ test("i18n messages preserve product and technical proper nouns", () => {
 });
 
 test("i18n messages expose scheduler management labels", () => {
-  assert.equal(messages["zh-CN"].nav.scheduler, "定时任务");
-  assert.equal(messages["zh-CN"].scheduler.title, "图定时任务");
+  assert.equal(messages["zh-CN"].nav.scheduler, "自动任务");
+  assert.equal(messages["zh-CN"].scheduler.title, "图自动任务");
   assert.equal(messages["zh-CN"].scheduler.createJob, "新建任务");
   assert.equal(messages["zh-CN"].scheduler.runNow, "立即运行");
   assert.equal(messages["zh-CN"].scheduler.messageOutlet, "消息出口");
@@ -57,8 +57,8 @@ test("i18n messages expose scheduler management labels", () => {
   assert.equal(messages["zh-CN"].scheduler.outletFeishu, "飞书");
   assert.equal(messages["zh-CN"].scheduler.outletTelegram, "Telegram");
   assert.equal(messages["zh-CN"].scheduler.sessionModeExisting, "绑定现有会话");
-  assert.equal(messages["en-US"].nav.scheduler, "Scheduler");
-  assert.equal(messages["en-US"].scheduler.title, "Graph Scheduler");
+  assert.equal(messages["en-US"].nav.scheduler, "Automations");
+  assert.equal(messages["en-US"].scheduler.title, "Graph Automations");
   assert.equal(messages["en-US"].scheduler.createJob, "New job");
   assert.equal(messages["en-US"].scheduler.runNow, "Run now");
   assert.equal(messages["en-US"].scheduler.messageOutlet, "Message outlet");

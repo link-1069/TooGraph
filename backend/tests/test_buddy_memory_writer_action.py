@@ -62,7 +62,7 @@ class BuddyMemoryWriterActionTests(unittest.TestCase):
             ["success", "result", "applied_commands", "skipped_commands", "memories", "revisions"],
         )
 
-    def test_writer_creates_structured_memory_entry_without_retrieval_projection(self) -> None:
+    def test_writer_creates_structured_memory_entry_with_retrieval_projection(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             data_dir = Path(temp_dir) / "data"
             buddy_home_dir = Path(temp_dir) / "buddy_home"
@@ -112,10 +112,11 @@ class BuddyMemoryWriterActionTests(unittest.TestCase):
         self.assertTrue(applied["command"]["revision_id"].startswith("memrev_"))
         self.assertEqual(result["revisions"][0]["revision_id"], applied["command"]["revision_id"])
         self.assertEqual(result["memories"][0]["content"], "用户希望重要结论放在回复开头。")
+        self.assertEqual(result["memories"][0]["retrieval_projection"]["status"], "succeeded")
         self.assertEqual(result["activity_events"][0]["kind"], "buddy_memory_write")
         self.assertIn("Applied 1 structured memory command", result["result"])
-        self.assertEqual(retrieval_document_count, 0)
-        self.assertEqual(retrieval_chunk_count, 0)
+        self.assertEqual(retrieval_document_count, 1)
+        self.assertEqual(retrieval_chunk_count, 1)
 
     def test_writer_rejects_home_file_commands(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

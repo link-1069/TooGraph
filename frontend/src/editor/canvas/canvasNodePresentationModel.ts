@@ -50,7 +50,7 @@ export function resolveMinimapRunState(status: string | undefined): MinimapNodeR
   if (status === "running" || status === "resuming") {
     return "running";
   }
-  if (status === "paused" || status === "awaiting_human") {
+  if (status === "paused" || status === "awaiting_human" || status === "cancelled") {
     return "paused";
   }
   if (status === "success" || status === "completed") {

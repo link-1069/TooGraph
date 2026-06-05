@@ -470,6 +470,45 @@ test("BuddyWidget keeps the composer enabled and queues sends while a reply is r
   assert.doesNotMatch(runDisplayMessagesSource.match(/function shouldRenderMessage\(message: Message\) \{[\s\S]*?\n  \}/)?.[0] ?? "", /activityText/);
 });
 
+test("BuddyWidget exposes active buddy run termination without locking queued sends", () => {
+  assert.match(componentSource, /import \{ cancelRun,\s*fetchRun \} from "\.\.\/api\/runs\.ts";/);
+  assert.match(
+    componentSource,
+    /<BuddyComposer[\s\S]*:terminate-label="t\('buddy\.terminateRun'\)"[\s\S]*:terminating-label="t\('buddy\.terminatingRun'\)"[\s\S]*:is-run-active="isBuddyRunTerminable"[\s\S]*:is-terminating-run="isTerminatingBuddyRun"[\s\S]*@terminate="terminateActiveBuddyRun"/,
+  );
+  assert.match(componentSource, /const activeAssistantMessageId = ref<string \| null>\(null\);/);
+  assert.match(componentSource, /const terminatingBuddyRunId = ref<string \| null>\(null\);/);
+  assert.match(componentSource, /const isBuddyRunTerminable = computed\(\(\) => Boolean\(activeRunId\.value && !pausedBuddyRun\.value\)\);/);
+  assert.match(componentSource, /const isTerminatingBuddyRun = computed\(\(\) => Boolean\(activeRunId\.value && terminatingBuddyRunId\.value === activeRunId\.value\)\);/);
+  assert.match(componentSource, /async function terminateActiveBuddyRun\(\)/);
+  assert.match(componentSource, /await cancelRun\(runId,\s*t\("buddy\.terminateRunReason"\)\);/);
+  assert.match(componentSource, /setAssistantActivityText\(assistantMessageId,\s*t\("buddy\.activity\.terminating"\)\);/);
+  assert.match(componentSource, /runDetail\.status === "cancelled"[\s\S]*t\("buddy\.runCancelled"\)/);
+  assert.doesNotMatch(extractSourceBetween("async function terminateActiveBuddyRun()", "async function drainBuddyQueue"), /activeAbortController\?\.abort\(\)/);
+  assert.match(composerSource, /terminateLabel\?: string;/);
+  assert.match(composerSource, /isRunActive\?: boolean;/);
+  assert.match(composerSource, /terminate: \[\];/);
+  assert.match(composerSource, /type="button"[\s\S]*class="buddy-widget__terminate"[\s\S]*@click="emit\('terminate'\)"/);
+  assert.match(composerSource, /class="buddy-widget__send"[\s\S]*:disabled="!modelValue\.trim\(\)"/);
+  assert.match(composerSource, /@keydown\.enter\.exact\.prevent="emit\('submit'\)"/);
+});
+
+test("BuddyComposer makes termination pending state visually immediate", () => {
+  assert.match(composerSource, /import \{ CloseBold,\s*Loading,\s*Promotion \} from "@element-plus\/icons-vue";/);
+  assert.match(
+    composerSource,
+    /class="buddy-widget__terminate"[\s\S]*:class="\{ 'buddy-widget__terminate--terminating': isTerminatingRun \}"/,
+  );
+  assert.match(composerSource, /:aria-busy="isTerminatingRun \? 'true' : undefined"/);
+  assert.match(composerSource, /<Loading v-if="isTerminatingRun" \/>[\s\S]*<CloseBold v-else \/>/);
+  assert.match(composerSource, /\.buddy-widget__terminate--terminating\s*\{[\s\S]*animation:\s*buddy-widget-terminating-pulse/);
+  assert.match(composerSource, /\.buddy-widget__terminate--terminating \.el-icon\s*\{[\s\S]*animation:\s*buddy-widget-spin/);
+  assert.match(composerSource, /\.buddy-widget__send:disabled\s*\{[\s\S]*cursor:\s*not-allowed;[\s\S]*opacity:\s*0\.54;/);
+  assert.match(composerSource, /\.buddy-widget__terminate:disabled\s*\{[\s\S]*cursor:\s*wait;[\s\S]*opacity:\s*0\.72;/);
+  assert.match(composerSource, /@keyframes buddy-widget-terminating-pulse/);
+  assert.match(composerSource, /@keyframes buddy-widget-spin/);
+});
+
 test("BuddyWidget keeps runtime error replies out of model context and persisted history", () => {
   assert.match(componentSource, /const history = buildHistoryBeforeMessage\(userEntry\.id\);/);
   assert.match(componentSource, /const history = turn\.history;/);

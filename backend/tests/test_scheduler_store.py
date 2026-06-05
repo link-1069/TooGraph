@@ -212,6 +212,50 @@ class SchedulerStoreTests(unittest.TestCase):
         self.assertEqual(updated["input_bindings"], {"job_limit": 20})
         self.assertEqual(updated["schedule_expr"], "PT2H")
         self.assertTrue(updated["enabled"])
+        self.assertEqual(updated["metadata"]["user_schedule_modified"], True)
+
+    def test_official_job_disable_paths_record_user_disabled_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            db_path = data_dir / "toograph.db"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", db_path),
+            ):
+                database.initialize_storage()
+
+                job = store.create_scheduled_graph_job(
+                    {
+                        "job_id": "official_embedding_maintenance",
+                        "name": "Official embedding maintenance",
+                        "template_id": "embedding_maintenance",
+                        "schedule_kind": "interval",
+                        "schedule_expr": "PT1H",
+                        "enabled": True,
+                        "metadata": {"source": "official_seed", "required_default": True},
+                    },
+                    now="2026-05-27T00:00:00Z",
+                )
+
+                disabled = store.set_scheduled_graph_job_enabled(job["job_id"], False, now="2026-05-27T01:00:00Z")
+                reenabled = store.set_scheduled_graph_job_enabled(job["job_id"], True, now="2026-05-27T02:00:00Z")
+                saved_disabled = store.update_scheduled_graph_job(
+                    job["job_id"],
+                    {"enabled": False, "metadata": {"source": "user"}},
+                    now="2026-05-27T03:00:00Z",
+                )
+
+        self.assertFalse(disabled["enabled"])
+        self.assertEqual(disabled["metadata"]["source"], "official_seed")
+        self.assertEqual(disabled["metadata"]["required_default"], True)
+        self.assertEqual(disabled["metadata"]["user_disabled"], True)
+        self.assertEqual(disabled["next_run_at"], "")
+        self.assertTrue(reenabled["enabled"])
+        self.assertNotIn("user_disabled", reenabled["metadata"])
+        self.assertEqual(reenabled["next_run_at"], "2026-05-27T03:00:00Z")
+        self.assertFalse(saved_disabled["enabled"])
+        self.assertEqual(saved_disabled["metadata"]["source"], "official_seed")
+        self.assertEqual(saved_disabled["metadata"]["user_disabled"], True)
 
     def test_message_outlet_delivery_target_is_supported_delivery_result(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

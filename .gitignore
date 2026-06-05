@@ -107,9 +107,11 @@ backend/data/outputs/
 .toograph/
 .dev_*.log
 .dev_*.err
+.dev_*.out
 .dev_pids.json
 .toograph_*.log
 .toograph_*.err
+.toograph_*.out
 .toograph_pids.json
 .next/
 

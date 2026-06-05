@@ -268,7 +268,8 @@ function nodeStyle(node: SubgraphMiniMapPlacedNode) {
     0 10px 22px rgba(16, 185, 129, 0.16);
 }
 
-.subgraph-mini-map__node--paused {
+.subgraph-mini-map__node--paused,
+.subgraph-mini-map__node--cancelled {
   border-color: rgba(245, 158, 11, 0.58);
   box-shadow:
     0 0 0 3px rgba(245, 158, 11, 0.12),
@@ -294,7 +295,8 @@ function nodeStyle(node: SubgraphMiniMapPlacedNode) {
   background: #10b981;
 }
 
-.subgraph-mini-map__node--paused .subgraph-mini-map__node-status {
+.subgraph-mini-map__node--paused .subgraph-mini-map__node-status,
+.subgraph-mini-map__node--cancelled .subgraph-mini-map__node-status {
   background: #f59e0b;
 }
 

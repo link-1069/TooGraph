@@ -10,6 +10,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.langgraph.finalization import (
+    finalize_cancelled_langgraph_state,
     finalize_completed_langgraph_state,
     finalize_failed_langgraph_state,
 )
@@ -109,6 +110,65 @@ class LangGraphFinalizationTest(unittest.TestCase):
         self.assertEqual(state["errors"], ["existing", "boom"])
         self.assertEqual([call[0] for call in calls], ["status", "sync", "refresh", "snapshot", "save", "event"])
         self.assertEqual(calls[-1][1], ("run-1", "run.failed", {"status": "failed", "error": "boom"}))
+
+    def test_finalize_cancelled_state_records_reason_and_snapshot(self) -> None:
+        calls: list[tuple[str, object]] = []
+        state = {
+            "run_id": "run-1",
+            "errors": ["existing"],
+            "metadata": {},
+            "current_node_id": "agent",
+            "node_status_map": {"agent": "running"},
+            "node_executions": [
+                {
+                    "node_id": "agent",
+                    "status": "running",
+                    "started_at": "2026-04-18T00:00:00Z",
+                    "warnings": [],
+                }
+            ],
+        }
+        node_outputs = {"agent": {"partial": "value"}}
+        active_edge_ids = {"edge-1"}
+        checkpoint_saver = SimpleNamespace(name="saver")
+        checkpoint_lookup_config = {"configurable": {"thread_id": "run-1"}}
+
+        finalize_cancelled_langgraph_state(
+            state,
+            node_outputs,
+            active_edge_ids,
+            reason="Stopped by user.",
+            started_perf=4.0,
+            checkpoint_saver=checkpoint_saver,
+            checkpoint_lookup_config=checkpoint_lookup_config,
+            set_run_status_func=lambda current_state, status: (
+                current_state.__setitem__("status", status),
+                calls.append(("status", status)),
+            ),
+            sync_checkpoint_metadata_func=lambda current_state, saver, lookup: calls.append(
+                ("sync", (current_state, saver, lookup))
+            ),
+            refresh_run_artifacts_func=lambda current_state, outputs, edges, *, started_perf: calls.append(
+                ("refresh", (current_state, outputs, edges, started_perf))
+            ),
+            next_run_snapshot_id_func=lambda current_state, kind: f"{kind}-snapshot",
+            append_run_snapshot_func=lambda current_state, **kwargs: calls.append(("snapshot", kwargs)),
+            save_run_func=lambda current_state: calls.append(("save", current_state)),
+            publish_run_event_func=lambda run_id, event_type, payload: calls.append(
+                ("event", (run_id, event_type, payload))
+            ),
+        )
+
+        self.assertEqual(state["status"], "cancelled")
+        self.assertEqual(state["errors"], ["existing"])
+        self.assertEqual(state["node_status_map"]["agent"], "cancelled")
+        self.assertEqual(state["node_executions"][0]["status"], "cancelled")
+        self.assertEqual(state["node_executions"][0]["warnings"], ["Stopped by user."])
+        self.assertTrue(state["metadata"]["cancelled"])
+        self.assertEqual(state["metadata"]["cancellation_reason"], "Stopped by user.")
+        self.assertEqual([call[0] for call in calls], ["status", "sync", "refresh", "snapshot", "save", "event"])
+        self.assertEqual(calls[3][1], {"snapshot_id": "cancelled-snapshot", "kind": "cancelled", "label": "Cancelled"})
+        self.assertEqual(calls[-1][1], ("run-1", "run.cancelled", {"status": "cancelled", "reason": "Stopped by user."}))
 
     def test_finalize_completed_state_persists_completed_snapshot_to_database(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

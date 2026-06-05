@@ -145,8 +145,8 @@ def create_memory_entry(
     if duplicate_memory_id:
         return_value = load_memory_entry(duplicate_memory_id)
         return_value["dedupe"] = duplicate_result or {}
-        return return_value
-    return load_memory_entry(payload["memory_id"])
+        return _with_retrieval_projection(return_value)
+    return _with_retrieval_projection(load_memory_entry(payload["memory_id"]))
 
 
 def _find_duplicate_memory_entry(connection: Any, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -424,7 +424,7 @@ def update_memory_entry(
             detail={"revision_id": revision["revision_id"]},
             created_at=now,
         )
-    return load_memory_entry(previous["memory_id"])
+    return _with_retrieval_projection(load_memory_entry(previous["memory_id"]))
 
 
 def archive_memory_entry(
@@ -536,6 +536,115 @@ def recall_memories(
     if normalized_query:
         return recalled
     return list_memory_entries({**resolved_filters, "status": resolved_filters.get("status") or "active"})[:normalized_limit]
+
+
+def _with_retrieval_projection(memory: dict[str, Any]) -> dict[str, Any]:
+    next_memory = dict(memory)
+    next_memory["retrieval_projection"] = _project_memory_entry_to_retrieval(next_memory)
+    return next_memory
+
+
+def _project_memory_entry_to_retrieval(memory: dict[str, Any]) -> dict[str, Any]:
+    try:
+        from app.core.storage.embedding_store import queue_embedding_job
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        memory_id = str(memory.get("memory_id") or "").strip()
+        content = str(memory.get("content") or "").strip()
+        if not memory_id or not content:
+            return {
+                "status": "skipped",
+                "reason": "missing_memory_id_or_content",
+                "document_count": 0,
+                "chunk_count": 0,
+                "embedding_job_count": 0,
+            }
+        status = str(memory.get("status") or "active").strip() or "active"
+        metadata = {
+            "status": status,
+            "scope_kind": str(memory.get("scope_kind") or ""),
+            "scope_id": str(memory.get("scope_id") or ""),
+            "layer": str(memory.get("layer") or ""),
+            "memory_type": str(memory.get("memory_type") or ""),
+            "confidence": float(memory.get("confidence") or 0.0),
+            "salience": float(memory.get("salience") or 0.0),
+            "source_count": len(memory.get("sources") or []),
+            **_coerce_dict(memory.get("metadata")),
+        }
+        document = upsert_retrieval_document(
+            document_id=f"memory_entry:{memory_id}",
+            source_kind="memory_entry",
+            source_id=memory_id,
+            source_revision_id=str(memory.get("latest_revision_id") or ""),
+            title=str(memory.get("title") or "") or memory_id,
+            content=content,
+            scope={
+                "scope_kind": str(memory.get("scope_kind") or ""),
+                "scope_id": str(memory.get("scope_id") or ""),
+                "layer": str(memory.get("layer") or ""),
+            },
+            metadata=metadata,
+        )
+        chunks = upsert_retrieval_chunks(
+            document["document_id"],
+            [
+                {
+                    "chunk_id": f"memory_entry:{memory_id}:body",
+                    "content": content,
+                    "source_locator": {
+                        "memory_id": memory_id,
+                        "field": "content",
+                        "source_revision_id": str(memory.get("latest_revision_id") or ""),
+                        "sources": memory.get("sources") if isinstance(memory.get("sources"), list) else [],
+                    },
+                    "metadata": metadata,
+                }
+            ],
+        )
+        embedding_model_refs = _default_embedding_model_refs()
+        embedding_jobs: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        if status == "active":
+            for model_ref in embedding_model_refs:
+                try:
+                    embedding_jobs.extend(queue_embedding_job("memory_entry", memory_id, model_ref))
+                except Exception as exc:
+                    warnings.append(
+                        {
+                            "code": "embedding_job_queue_failed",
+                            "message": str(exc),
+                            "embedding_model_ref": model_ref,
+                        }
+                    )
+        return {
+            "status": "succeeded",
+            "document_id": str(document.get("document_id") or ""),
+            "chunk_ids": [str(chunk.get("chunk_id") or "") for chunk in chunks],
+            "document_count": 1,
+            "chunk_count": len(chunks),
+            "embedding_model_refs": embedding_model_refs if status == "active" else [],
+            "embedding_job_count": len(embedding_jobs),
+            "warnings": warnings,
+            "metadata": metadata,
+        }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "error": str(exc),
+            "document_count": 0,
+            "chunk_count": 0,
+            "embedding_job_count": 0,
+            "warnings": [{"code": "memory_retrieval_projection_failed", "message": str(exc)}],
+        }
+
+
+def _default_embedding_model_refs() -> list[str]:
+    try:
+        from app.core.storage.embedding_model_sync import get_default_embedding_model_refs_from_settings
+
+        return get_default_embedding_model_refs_from_settings()
+    except Exception:
+        return []
 
 
 def _replace_memory_sources(

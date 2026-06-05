@@ -13,6 +13,7 @@ from app.core.compiler.validator import validate_graph
 from app.core.langgraph import execute_node_system_graph_langgraph, get_langgraph_runtime_unsupported_reasons
 from app.core.runtime.run_events import publish_run_event
 from app.core.langgraph.codegen import generate_langgraph_python_source, import_graph_payload_from_python_source
+from app.core.runtime.run_cancellation import register_run_cancellation_token, unregister_run_cancellation_token
 from app.core.runtime.state import create_initial_run_state, set_run_status, touch_run_lifecycle
 from app.core.schemas.node_system import (
     GraphSaveResponse,
@@ -241,6 +242,11 @@ def _run_graph_worker(
     graph: NodeSystemGraphDocument,
     run_state: dict[str, Any],
 ) -> None:
+    run_id = str(run_state.get("run_id") or "")
+    cancellation_token = register_run_cancellation_token(run_id)
+    metadata = run_state.get("metadata") if isinstance(run_state.get("metadata"), dict) else {}
+    if metadata.get("cancellation_requested") is True:
+        cancellation_token.request(str(metadata.get("cancellation_reason") or "Run cancellation requested."))
     try:
         execute_node_system_graph_langgraph(graph, run_state, persist_progress=True)
         _sync_improvement_candidate_validation_run(run_state)
@@ -255,6 +261,8 @@ def _run_graph_worker(
             "run.failed",
             {"status": "failed", "error": str(exc)},
         )
+    finally:
+        unregister_run_cancellation_token(run_id)
 
 
 def _sync_improvement_candidate_validation_run(run_state: dict[str, Any]) -> None:

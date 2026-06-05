@@ -1600,7 +1600,7 @@ test("buildNodeCardViewModel projects subgraph runtime status onto thumbnail nod
       subgraphNodeStatusMap: {
         input_question: "success",
         search_sources: "success",
-        summarize: "running",
+        summarize: "cancelled",
       },
     },
   });
@@ -1610,11 +1610,11 @@ test("buildNodeCardViewModel projects subgraph runtime status onto thumbnail nod
     model.body.thumbnailNodes.map((item) => ({ id: item.id, label: item.label, status: item.status, active: item.active })),
     [
       { id: "search_sources", label: "Search Sources", status: "success", active: false },
-      { id: "summarize", label: "Summarize Evidence", status: "running", active: true },
+      { id: "summarize", label: "Summarize Evidence", status: "cancelled", active: true },
     ],
   );
   assert.deepEqual(model.body.runtimeSummary, {
-    tone: "running",
+    tone: "paused",
     completedCount: 1,
     activeCount: 1,
     failedCount: 0,

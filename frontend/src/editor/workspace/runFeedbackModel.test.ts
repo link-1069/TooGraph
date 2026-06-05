@@ -46,13 +46,13 @@ function createRunDetail(overrides: Partial<RunDetail> = {}): RunDetail {
   };
 }
 
-test("summarizeRunNodeStates counts idle, running, paused, success, and failed nodes", () => {
+test("summarizeRunNodeStates counts idle, running, paused, success, failed, and cancelled nodes", () => {
   assert.deepEqual(
     summarizeRunNodeStates(["input_question", "answer_helper", "route_result", "output_answer"], {
       input_question: "success",
       answer_helper: "running",
       route_result: "failed",
-      output_answer: "paused",
+      output_answer: "cancelled",
     }),
     {
       idle: 0,
@@ -171,6 +171,37 @@ test("formatRunFeedback formats failed runs with error detail", () => {
 
   assert.equal(feedback.tone, "danger");
   assert.equal(feedback.message, "Run failed at Output. Output serialization failed.");
+});
+
+test("formatRunFeedback formats cancelled runs without failure tone", () => {
+  const feedback = formatRunFeedback(
+    createRunDetail({
+      status: "cancelled",
+      current_node_id: "answer_helper",
+      node_status_map: {
+        input_question: "success",
+        answer_helper: "cancelled",
+        output_answer: "idle",
+      },
+    }),
+    {
+      nodeIds: ["input_question", "answer_helper", "output_answer"],
+      nodeLabelLookup: {
+        answer_helper: "Answer Helper",
+      },
+    },
+  );
+
+  assert.equal(feedback.tone, "warning");
+  assert.equal(feedback.currentNodeLabel, "Answer Helper");
+  assert.equal(feedback.message, "Run cancelled. OK 1 · Pending 1 · Failed 0.");
+  assert.deepEqual(feedback.summary, {
+    idle: 1,
+    running: 0,
+    paused: 1,
+    success: 1,
+    failed: 0,
+  });
 });
 
 test("formatRunFeedback formats completed runs with summary counts", () => {

@@ -14,6 +14,11 @@ from app.core.runtime.page_operation_activity import (
     record_page_operation_resume_activity,
 )
 from app.core.runtime.run_events import publish_run_event, subscribe_run_events
+from app.core.runtime.run_cancellation import (
+    register_run_cancellation_token,
+    request_run_cancellation,
+    unregister_run_cancellation_token,
+)
 from app.core.runtime.state import set_run_status, touch_run_lifecycle, utc_now_iso
 from app.core.schemas.node_system import NodeSystemGraphDocument
 from app.core.schemas.run import NodeExecutionDetail, RunDetail, RunSummary, RunTreeNode
@@ -31,6 +36,7 @@ router = APIRouter(prefix="/api/runs", tags=["runs"])
 logger = logging.getLogger(__name__)
 
 CANCELLABLE_RUN_STATUSES = {"paused", "awaiting_human"}
+ACTIVE_CANCELLABLE_RUN_STATUSES = {"queued", "running", "resuming"}
 PENDING_RESUME_METADATA_KEYS = (
     "pending_permission_approval",
     "pending_permission_approval_resume_payload",
@@ -167,20 +173,39 @@ def get_run_node_detail_endpoint(run_id: str, node_id: str) -> NodeExecutionDeta
 def cancel_run_endpoint(
     run_id: str,
     payload: dict[str, Any] | None = Body(default=None),
-) -> dict[str, str]:
+) -> dict[str, Any]:
     try:
         run = load_run(run_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     status = str(run.get("status") or "").strip()
+    reason = str((payload or {}).get("reason") or "").strip() or "Run cancelled by user."
+    if status in ACTIVE_CANCELLABLE_RUN_STATUSES:
+        request_run_cancellation(run_id, reason)
+        run = load_run(run_id)
+        status = str(run.get("status") or "").strip()
+        if status not in ACTIVE_CANCELLABLE_RUN_STATUSES:
+            if status not in CANCELLABLE_RUN_STATUSES:
+                return {"run_id": run_id, "status": status, "cancellation_requested": False}
+        else:
+            metadata = dict(run.get("metadata") or {})
+            metadata["cancellation_requested"] = True
+            metadata["cancellation_reason"] = reason
+            metadata["cancellation_requested_at"] = utc_now_iso()
+            run["metadata"] = metadata
+            touch_run_lifecycle(run)
+            save_run(run)
+            publish_run_event(run_id, "run.cancellation_requested", {"status": status, "reason": reason})
+            return {"run_id": run_id, "status": status, "cancellation_requested": True}
+
     if status not in CANCELLABLE_RUN_STATUSES:
         raise HTTPException(status_code=409, detail=f"Run '{run_id}' cannot be cancelled from status '{status}'.")
 
-    reason = str((payload or {}).get("reason") or "").strip() or "Run cancelled by user."
     metadata = dict(run.get("metadata") or {})
     for key in PENDING_RESUME_METADATA_KEYS:
         metadata.pop(key, None)
+    metadata["cancellation_requested"] = True
     metadata["cancelled"] = True
     metadata["cancellation_reason"] = reason
     metadata["cancelled_at"] = utc_now_iso()
@@ -298,6 +323,11 @@ def resume_run_endpoint(
 
 
 def _resume_run_worker(graph, resumed_run: dict, resume_payload: Any | None = None) -> None:
+    run_id = str(resumed_run.get("run_id") or "")
+    cancellation_token = register_run_cancellation_token(run_id)
+    metadata = resumed_run.get("metadata") if isinstance(resumed_run.get("metadata"), dict) else {}
+    if metadata.get("cancellation_requested") is True:
+        cancellation_token.request(str(metadata.get("cancellation_reason") or "Run cancellation requested."))
     try:
         execute_node_system_graph_langgraph(
             graph,
@@ -316,6 +346,8 @@ def _resume_run_worker(graph, resumed_run: dict, resume_payload: Any | None = No
             "run.failed",
             {"status": "failed", "error": str(exc)},
         )
+    finally:
+        unregister_run_cancellation_token(run_id)
 
 
 def _validate_page_operation_resume_payload(previous_run: dict[str, Any], payload: dict[str, Any] | None) -> None:

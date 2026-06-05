@@ -1,5 +1,9 @@
 <template>
-  <form class="buddy-widget__form" @submit.prevent="emit('submit')">
+  <form
+    class="buddy-widget__form"
+    :class="{ 'buddy-widget__form--with-terminate': isRunActive }"
+    @submit.prevent="emit('submit')"
+  >
     <textarea
       :value="modelValue"
       class="buddy-widget__input"
@@ -8,6 +12,22 @@
       @input="handleInput"
       @keydown.enter.exact.prevent="emit('submit')"
     />
+    <button
+      v-if="isRunActive"
+      type="button"
+      class="buddy-widget__terminate"
+      :class="{ 'buddy-widget__terminate--terminating': isTerminatingRun }"
+      :disabled="isTerminatingRun"
+      :title="isTerminatingRun ? terminatingLabel : terminateLabel"
+      :aria-label="isTerminatingRun ? terminatingLabel : terminateLabel"
+      :aria-busy="isTerminatingRun ? 'true' : undefined"
+      @click="emit('terminate')"
+    >
+      <ElIcon>
+        <Loading v-if="isTerminatingRun" />
+        <CloseBold v-else />
+      </ElIcon>
+    </button>
     <button
       type="submit"
       class="buddy-widget__send"
@@ -21,18 +41,28 @@
 </template>
 
 <script setup lang="ts">
-import { Promotion } from "@element-plus/icons-vue";
+import { CloseBold, Loading, Promotion } from "@element-plus/icons-vue";
 import { ElIcon } from "element-plus";
 
-defineProps<{
+withDefaults(defineProps<{
   modelValue: string;
   placeholder: string;
   sendLabel: string;
-}>();
+  terminateLabel?: string;
+  terminatingLabel?: string;
+  isRunActive?: boolean;
+  isTerminatingRun?: boolean;
+}>(), {
+  terminateLabel: "",
+  terminatingLabel: "",
+  isRunActive: false,
+  isTerminatingRun: false,
+});
 
 const emit = defineEmits<{
   "update:modelValue": [value: string];
   submit: [];
+  terminate: [];
 }>();
 
 function handleInput(event: Event) {
@@ -48,6 +78,10 @@ function handleInput(event: Event) {
   padding: 12px;
   border-top: 1px solid rgba(154, 52, 18, 0.1);
   background: rgba(255, 248, 240, 0.56);
+}
+
+.buddy-widget__form--with-terminate {
+  grid-template-columns: minmax(0, 1fr) 38px 38px;
 }
 
 .buddy-widget__input {
@@ -69,7 +103,8 @@ function handleInput(event: Event) {
   opacity: 0.72;
 }
 
-.buddy-widget__send {
+.buddy-widget__send,
+.buddy-widget__terminate {
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -88,10 +123,34 @@ function handleInput(event: Event) {
     transform 160ms ease;
 }
 
-.buddy-widget__send:hover {
+.buddy-widget__terminate {
+  border-color: rgba(185, 28, 28, 0.2);
+  background: rgba(254, 226, 226, 0.78);
+  color: #991b1b;
+}
+
+.buddy-widget__terminate--terminating {
+  border-color: rgba(220, 38, 38, 0.48);
+  background: rgba(220, 38, 38, 0.94);
+  color: rgba(255, 251, 247, 1);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18);
+  animation: buddy-widget-terminating-pulse 0.9s ease-in-out infinite;
+}
+
+.buddy-widget__terminate--terminating .el-icon {
+  animation: buddy-widget-spin 0.82s linear infinite;
+}
+
+.buddy-widget__send:hover,
+.buddy-widget__terminate:hover {
   border-color: rgba(154, 52, 18, 0.24);
   background: rgba(255, 248, 240, 0.92);
   transform: translateY(-1px);
+}
+
+.buddy-widget__terminate:hover {
+  border-color: rgba(185, 28, 28, 0.34);
+  background: rgba(254, 202, 202, 0.86);
 }
 
 .buddy-widget__send:disabled {
@@ -100,9 +159,44 @@ function handleInput(event: Event) {
   transform: none;
 }
 
+.buddy-widget__terminate:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  transform: none;
+}
+
+.buddy-widget__terminate--terminating:disabled {
+  opacity: 1;
+}
+
 .buddy-widget__send:focus-visible,
+.buddy-widget__terminate:focus-visible,
 .buddy-widget__input:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(210, 162, 117, 0.3);
+}
+
+@keyframes buddy-widget-terminating-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.16);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px rgba(248, 113, 113, 0.3);
+  }
+}
+
+@keyframes buddy-widget-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buddy-widget__terminate--terminating,
+  .buddy-widget__terminate--terminating .el-icon {
+    animation: none;
+  }
 }
 </style>

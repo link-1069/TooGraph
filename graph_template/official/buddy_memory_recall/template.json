@@ -232,7 +232,7 @@
         "actionBindings": [],
         "suspendedFreeWrites": [],
         "actionInstructionBlocks": {},
-        "taskInstruction": "根据 recall_goal 生成 recall_plan JSON 和 recall_request JSON。这个子图只做 Buddy 记忆召回，不检索知识库，不写记忆，不生成最终回复。recall_request 面向 buddy_session_recall：优先 mode=discover，query 使用用户问题中的项目名、旧决策、偏好、被压缩细节或来源引用关键词；关键词不足时 mode=browse。limit 最大 6，window 最大 2，bookend 最大 2，sort 默认 rank，role_filter 默认 [\"user\", \"assistant\"]。如果 recall_goal 或其 metadata 中存在 current_session_id，必须写入 recall_request.current_session_id 以排除当前会话谱系。recall_plan 必须包含 goal、strategy、queries、budget、current_session_id、risk_notes。",
+        "taskInstruction": "根据 recall_goal 生成 recall_plan JSON 和 recall_request JSON。这个子图只做 Buddy 记忆召回，不检索知识库，不写记忆，不生成最终回复。recall_request 面向 buddy_session_recall：优先 mode=discover，query 使用用户问题中的项目名、旧决策、偏好、被压缩细节或来源引用关键词；关键词不足时 mode=browse。limit 最大 6，window 最大 2，bookend 最大 2，sort 默认 rank，role_filter 默认 [\"user\", \"assistant\"]。如果 recall_goal 或其 metadata 中存在 current_session_id，必须写入 recall_request.current_session_id 以排除当前会话谱系。如果 recall_goal 或其 metadata 中存在 embedding_model_ref，必须写入 recall_request.embedding_model_ref；否则可以留空，由 buddy_session_recall 使用全局默认 embedding model。recall_plan 必须包含 goal、strategy、queries、budget、current_session_id、embedding_model_ref、risk_notes。",
         "modelSource": "global",
         "model": "",
         "thinkingMode": "medium",

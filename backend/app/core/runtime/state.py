@@ -6,7 +6,7 @@ from uuid import uuid4
 
 
 RunStatus = Literal["queued", "running", "paused", "awaiting_human", "resuming", "completed", "failed", "cancelled"]
-NodeStatus = Literal["idle", "running", "paused", "success", "failed"]
+NodeStatus = Literal["idle", "running", "paused", "success", "failed", "cancelled"]
 
 
 class RunCheckpointMetadata(TypedDict, total=False):

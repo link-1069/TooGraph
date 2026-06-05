@@ -9,7 +9,7 @@ const currentDirectory = dirname(currentFilePath);
 const componentSource = readFileSync(resolve(currentDirectory, "EditorActionCapsule.vue"), "utf8");
 
 test("EditorActionCapsule keeps graph tools compact while preserving Run as the only primary action", () => {
-  assert.match(componentSource, /import \{ CircleCheck, Clock, CollectionTag, Download, VideoPlay \} from "@element-plus\/icons-vue";/);
+  assert.match(componentSource, /import \{ CircleCheck, Clock, CloseBold, CollectionTag, Download, Loading, VideoPlay \} from "@element-plus\/icons-vue";/);
   assert.match(componentSource, /import \{ ElIcon, ElTooltip \} from "element-plus";/);
   assert.match(
     componentSource,
@@ -21,13 +21,38 @@ test("EditorActionCapsule keeps graph tools compact while preserving Run as the 
     /:class="\{[\s\S]*'editor-action-capsule__state-pill--active': isRunActivityPanelOpen,[\s\S]*'editor-action-capsule__state-pill--hint': hasRunActivityHint && !isRunActivityPanelOpen,[\s\S]*\}"/,
   );
   assert.match(componentSource, /<span class="editor-action-capsule__state-count">\{\{ activeStateCount \}\}<\/span>/);
-  assert.match(componentSource, /class="editor-action-capsule__run-icon"[\s\S]*<VideoPlay \/>/);
+  assert.match(
+    componentSource,
+    /class="editor-action-capsule__run-icon"[\s\S]*<Loading v-if="props\.isTerminatingActiveRun" \/>[\s\S]*<CloseBold v-else-if="isTerminateMode" \/>[\s\S]*<VideoPlay v-else \/>/,
+  );
   assert.match(componentSource, /@click="\$emit\('toggle-state-panel'\)"/);
   assert.match(componentSource, /@click="\$emit\('toggle-run-activity-panel'\)"/);
-  assert.match(componentSource, /@click="\$emit\('run-active-graph'\)"/);
+  assert.match(componentSource, /@click="handlePrimaryRunClick"/);
   assert.match(componentSource, /isRunActivityPanelOpen: boolean;/);
   assert.match(componentSource, /hasRunActivityHint: boolean;/);
+  assert.match(componentSource, /activeRunStatus\?: string \| null;/);
+  assert.match(componentSource, /isTerminatingActiveRun\?: boolean;/);
   assert.match(componentSource, /\(event: "toggle-run-activity-panel"\): void;/);
+  assert.match(componentSource, /\(event: "terminate-active-run"\): void;/);
+  assert.match(componentSource, /const TERMINABLE_RUN_STATUSES = new Set\(\["queued", "running", "resuming"\]\);/);
+  assert.match(componentSource, /if \(isTerminateMode\.value\) \{[\s\S]*emit\("terminate-active-run"\);[\s\S]*return;[\s\S]*\}[\s\S]*emit\("run-active-graph"\);/);
+});
+
+test("EditorActionCapsule gives active run termination immediate button feedback", () => {
+  assert.match(componentSource, /import \{[^}]*Loading[^}]*\} from "@element-plus\/icons-vue";/);
+  assert.match(
+    componentSource,
+    /:class="\{[\s\S]*'editor-action-capsule__run--terminate': isTerminateMode,[\s\S]*'editor-action-capsule__run--terminating': props\.isTerminatingActiveRun,[\s\S]*\}"/,
+  );
+  assert.match(componentSource, /:aria-busy="props\.isTerminatingActiveRun \? 'true' : undefined"/);
+  assert.match(
+    componentSource,
+    /class="editor-action-capsule__run-icon"[\s\S]*<Loading v-if="props\.isTerminatingActiveRun" \/>[\s\S]*<CloseBold v-else-if="isTerminateMode" \/>[\s\S]*<VideoPlay v-else \/>/,
+  );
+  assert.match(componentSource, /\.editor-action-capsule__run--terminating\s*\{[\s\S]*animation:\s*editor-action-capsule-terminating-pulse/);
+  assert.match(componentSource, /\.editor-action-capsule__run--terminating \.editor-action-capsule__run-icon\s*\{[\s\S]*animation:\s*editor-action-capsule-spin/);
+  assert.match(componentSource, /@keyframes editor-action-capsule-terminating-pulse/);
+  assert.match(componentSource, /@keyframes editor-action-capsule-spin/);
 });
 
 test("EditorActionCapsule exposes saved graph revision history as a compact icon action", () => {
@@ -77,7 +102,10 @@ test("EditorActionCapsule exposes official page-operation affordance ids", () =>
   assert.match(componentSource, /data-virtual-affordance-id="editor\.action\.validateActiveGraph"/);
   assert.match(componentSource, /data-virtual-affordance-id="editor\.action\.toggleRunActivity"/);
   assert.match(componentSource, /data-virtual-affordance-id="editor\.action\.toggleStatePanel"/);
-  assert.match(componentSource, /data-virtual-affordance-id="editor\.action\.runActiveGraph"/);
+  assert.match(
+    componentSource,
+    /:data-virtual-affordance-id="isTerminateMode \? 'editor\.action\.terminateActiveRun' : 'editor\.action\.runActiveGraph'"/,
+  );
 });
 
 test("EditorActionCapsule styles the state pill state and interactive controls", () => {

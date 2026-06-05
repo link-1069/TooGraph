@@ -116,6 +116,22 @@ test("buildRunNodeTimingByNodeIdFromRun uses node executions", () => {
   assert.equal(timings.agent.durationMs, 1200);
 });
 
+test("buildRunNodeTimingByNodeIdFromRun preserves cancelled node executions", () => {
+  const timings = buildRunNodeTimingByNodeIdFromRun({
+    node_executions: [
+      {
+        node_id: "agent",
+        status: "cancelled",
+        started_at: "2026-05-13T10:00:00.000Z",
+        duration_ms: 620,
+      },
+    ],
+  });
+
+  assert.equal(timings.agent.status, "cancelled");
+  assert.equal(timings.agent.durationMs, 620);
+});
+
 test("buildRunNodeTimingByNodeIdFromRun restores model token usage on the writer node only", () => {
   const timings = buildRunNodeTimingByNodeIdFromRun(
     {

@@ -44,6 +44,9 @@ type WorkspaceRunControllerInput = {
   consumeVirtualOperationRunAttribution?: (targetId: string) => VirtualOperationRunAttribution | null;
   recordVirtualOperationTriggeredRun?: (record: VirtualOperationTriggeredRunRecord) => void;
   resumeRun: (runId: string, payload: Record<string, unknown>, snapshotId: string | null) => Promise<GraphRunResponse>;
+  cancelRun: (runId: string, reason: string) => Promise<GraphRunResponse & { cancellation_requested?: boolean }>;
+  terminatingRunByTabId: Ref<Record<string, boolean>>;
+  getFeedbackForTab?: (tabId: string) => WorkspaceRunFeedback | null;
   cancelRunPolling: (tabId: string) => void;
   getRunGeneration: (tabId: string) => number;
   startRunEventStreamForTab: (tabId: string, runId: string) => void;
@@ -178,9 +181,61 @@ export function useWorkspaceRunController(input: WorkspaceRunControllerInput) {
     }
   }
 
+  async function terminateActiveRun() {
+    const tab = input.activeTab.value;
+    if (!tab) {
+      return;
+    }
+    const runId = resolveActiveRunIdForTab(tab.tabId);
+    if (!runId) {
+      return;
+    }
+
+    input.terminatingRunByTabId.value = setTabScopedRecordEntry(input.terminatingRunByTabId.value, tab.tabId, true);
+
+    try {
+      const response = await input.cancelRun(runId, input.translate("feedback.runTerminationReason"));
+      input.markRunActivityPanelHintForTab(tab.tabId);
+      const feedbackKey = response.cancellation_requested
+        ? "feedback.runTerminationRequested"
+        : response.status === "cancelled"
+          ? "feedback.runTerminated"
+          : "feedback.runTerminationSkipped";
+      input.setMessageFeedbackForTab(tab.tabId, {
+        tone: "warning",
+        message: input.translate(feedbackKey, {
+          runId: response.run_id,
+          status: response.status,
+        }),
+        activeRunId: response.run_id,
+        activeRunStatus: response.status,
+      });
+      input.startRunEventStreamForTab(tab.tabId, response.run_id);
+      input.pollRunForTab(tab.tabId, response.run_id, input.getRunGeneration(tab.tabId));
+    } catch (error) {
+      const message = input.translate("feedback.runTerminationFailed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      input.setMessageFeedbackForTab(tab.tabId, {
+        tone: "danger",
+        message,
+        activeRunId: runId,
+        activeRunStatus: input.getFeedbackForTab?.(tab.tabId)?.activeRunStatus ?? input.latestRunDetailByTabId.value[tab.tabId]?.status ?? null,
+      });
+      input.showRunErrorToast(message);
+    } finally {
+      input.terminatingRunByTabId.value = setTabScopedRecordEntry(input.terminatingRunByTabId.value, tab.tabId, false);
+    }
+  }
+
+  function resolveActiveRunIdForTab(tabId: string) {
+    return input.latestRunDetailByTabId.value[tabId]?.run_id ?? input.getFeedbackForTab?.(tabId)?.activeRunId ?? null;
+  }
+
   return {
     runActiveGraph,
     resumeHumanReviewRun,
+    terminateActiveRun,
   };
 }
 

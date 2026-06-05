@@ -10,7 +10,13 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.langgraph.runtime import execute_node_system_graph_langgraph
+from app.core.runtime.run_cancellation import (
+    register_run_cancellation_token,
+    request_run_cancellation,
+    unregister_run_cancellation_token,
+)
 from app.core.schemas.node_system import NodeSystemGraphDocument
+import app.core.langgraph.runtime as langgraph_runtime
 
 
 class LangGraphRuntimeProgressEventTests(unittest.TestCase):
@@ -96,6 +102,138 @@ class LangGraphRuntimeProgressEventTests(unittest.TestCase):
             datetime.fromisoformat(final_execution["finished_at"]),
             datetime.fromisoformat(final_execution["started_at"]),
         )
+
+    def test_langgraph_runtime_stops_before_next_node_when_cancellation_requested(self) -> None:
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph_cancel_after_input",
+                "name": "Cancellation Graph",
+                "state_schema": {
+                    "question": {"name": "Question", "type": "text", "value": "Abyss"},
+                    "answer": {"name": "Answer", "type": "text"},
+                },
+                "nodes": {
+                    "input_question": {
+                        "kind": "input",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "writes": [{"state": "question"}],
+                    },
+                    "agent_answer": {
+                        "kind": "agent",
+                        "ui": {"position": {"x": 240, "y": 0}},
+                        "reads": [{"state": "question"}],
+                        "writes": [{"state": "answer"}],
+                        "config": {"taskInstruction": "Say hello.", "actionKey": ""},
+                    },
+                    "output_answer": {
+                        "kind": "output",
+                        "ui": {"position": {"x": 480, "y": 0}},
+                        "reads": [{"state": "answer"}],
+                    },
+                },
+                "edges": [
+                    {"source": "input_question", "target": "agent_answer"},
+                    {"source": "agent_answer", "target": "output_answer"},
+                ],
+                "conditional_edges": [],
+            }
+        )
+        run_id = "run_cancel_after_agent"
+        register_run_cancellation_token(run_id)
+        executed_nodes: list[str] = []
+        original_execute_node = langgraph_runtime._execute_node
+
+        def execute_node_and_cancel_after_agent(*args, **kwargs):
+            node_name = str(args[1])
+            executed_nodes.append(node_name)
+            body = original_execute_node(*args, **kwargs)
+            if node_name == "agent_answer":
+                request_run_cancellation(run_id, "Stopped from test.")
+            return body
+
+        try:
+            with patch("app.core.langgraph.runtime._execute_node", side_effect=execute_node_and_cancel_after_agent), patch(
+                "app.core.runtime.node_system_executor.chat_with_model_ref_with_meta"
+            ) as chat, patch("app.core.runtime.node_system_executor._chat_with_local_model_with_meta") as local_chat, patch(
+                "app.core.langgraph.runtime.save_run"
+            ):
+                chat.return_value = ('{"answer":"Hello, Abyss!"}', {"warnings": [], "model": "test"})
+                local_chat.return_value = ('{"answer":"Hello, Abyss!"}', {"warnings": [], "model": "test"})
+                result = execute_node_system_graph_langgraph(
+                    graph,
+                    {"run_id": run_id, "status": "running", "metadata": {}},
+                    persist_progress=False,
+                )
+        finally:
+            unregister_run_cancellation_token(run_id)
+
+        self.assertEqual(result["status"], "cancelled")
+        self.assertEqual(executed_nodes, ["agent_answer"])
+        self.assertEqual(result["metadata"]["cancellation_reason"], "Stopped from test.")
+        self.assertEqual(result["run_snapshots"][-1]["kind"], "cancelled")
+
+    def test_langgraph_runtime_attaches_cancellation_token_to_model_call_context(self) -> None:
+        from app.core.runtime.model_call_context import get_model_call_context
+
+        graph = NodeSystemGraphDocument.model_validate(
+            {
+                "graph_id": "graph_cancel_context",
+                "name": "Cancellation Context Graph",
+                "state_schema": {
+                    "question": {"name": "Question", "type": "text", "value": "Abyss"},
+                    "answer": {"name": "Answer", "type": "text"},
+                },
+                "nodes": {
+                    "input_question": {
+                        "kind": "input",
+                        "ui": {"position": {"x": 0, "y": 0}},
+                        "writes": [{"state": "question"}],
+                    },
+                    "agent_answer": {
+                        "kind": "agent",
+                        "ui": {"position": {"x": 240, "y": 0}},
+                        "reads": [{"state": "question"}],
+                        "writes": [{"state": "answer"}],
+                        "config": {"taskInstruction": "Say hello.", "actionKey": ""},
+                    },
+                    "output_answer": {
+                        "kind": "output",
+                        "ui": {"position": {"x": 480, "y": 0}},
+                        "reads": [{"state": "answer"}],
+                    },
+                },
+                "edges": [
+                    {"source": "input_question", "target": "agent_answer"},
+                    {"source": "agent_answer", "target": "output_answer"},
+                ],
+                "conditional_edges": [],
+            }
+        )
+        run_id = "run_model_call_context_cancel_token"
+        token = register_run_cancellation_token(run_id)
+        captured_tokens: list[object] = []
+
+        def fake_chat_with_context(**_kwargs):
+            captured_tokens.append(get_model_call_context().get("cancellation_token"))
+            return '{"answer":"Hello, Abyss!"}', {"warnings": [], "model": "test"}
+
+        try:
+            with patch(
+                "app.core.runtime.node_system_executor.chat_with_model_ref_with_meta",
+                side_effect=fake_chat_with_context,
+            ), patch("app.core.runtime.node_system_executor._chat_with_local_model_with_meta") as local_chat, patch(
+                "app.core.langgraph.runtime.save_run"
+            ):
+                local_chat.side_effect = fake_chat_with_context
+                execute_node_system_graph_langgraph(
+                    graph,
+                    {"run_id": run_id, "status": "running", "metadata": {}},
+                    persist_progress=False,
+                )
+        finally:
+            unregister_run_cancellation_token(run_id)
+
+        self.assertEqual(captured_tokens, [token])
 
     def test_langgraph_runtime_publishes_node_and_state_activity_events(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(

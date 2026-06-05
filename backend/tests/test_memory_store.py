@@ -71,7 +71,7 @@ class MemoryStoreTests(unittest.TestCase):
             patcher.stop()
         self._temp_dir.cleanup()
 
-    def test_create_memory_entry_creates_revision_event_without_retrieval_projection(self) -> None:
+    def test_create_memory_entry_creates_revision_event_and_retrieval_projection(self) -> None:
         from app.core.storage.memory_store import create_memory_entry
 
         memory = create_memory_entry(
@@ -79,8 +79,8 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="session_1",
             layer="long_term",
             memory_type="preference",
-            title="事实源偏好",
-            content="用户倾向把图运行记录作为唯一事实源。",
+            title="Source of truth preference",
+            content="The user treats graph run records as the durable source of truth.",
             confidence=0.9,
             salience=0.8,
             sources=[
@@ -97,38 +97,74 @@ class MemoryStoreTests(unittest.TestCase):
         with closing(sqlite3.connect(database.DB_PATH)) as connection:
             revision_count = connection.execute("SELECT COUNT(*) FROM memory_revisions").fetchone()[0]
             event_count = connection.execute("SELECT COUNT(*) FROM memory_events").fetchone()[0]
-            retrieval_docs = connection.execute(
-                "SELECT source_kind, source_id FROM retrieval_documents WHERE source_id = ?",
+            retrieval_doc = connection.execute(
+                """
+                SELECT source_kind, source_id, source_revision_id, title, scope_json, metadata_json
+                FROM retrieval_documents
+                WHERE source_kind = 'memory_entry' AND source_id = ?
+                """,
                 (memory["memory_id"],),
-            ).fetchall()
-            retrieval_chunks = connection.execute(
-                "SELECT content FROM retrieval_chunks WHERE source_id = ?",
+            ).fetchone()
+            retrieval_chunk = connection.execute(
+                """
+                SELECT chunk_id, content, source_locator_json, metadata_json
+                FROM retrieval_chunks
+                WHERE source_kind = 'memory_entry' AND source_id = ?
+                """,
                 (memory["memory_id"],),
-            ).fetchall()
+            ).fetchone()
 
         self.assertEqual(memory["latest_revision_id"], memory["revisions"][0]["revision_id"])
         self.assertEqual(revision_count, 1)
         self.assertEqual(event_count, 1)
-        self.assertEqual(retrieval_docs, [])
-        self.assertEqual(retrieval_chunks, [])
+        self.assertEqual(retrieval_doc[0], "memory_entry")
+        self.assertEqual(retrieval_doc[1], memory["memory_id"])
+        self.assertEqual(retrieval_doc[2], memory["latest_revision_id"])
+        self.assertEqual(retrieval_doc[3], memory["title"])
+        self.assertEqual(json.loads(retrieval_doc[4])["scope_id"], "session_1")
+        self.assertEqual(json.loads(retrieval_doc[5])["status"], "active")
+        self.assertEqual(retrieval_chunk[0], f"memory_entry:{memory['memory_id']}:body")
+        self.assertEqual(retrieval_chunk[1], memory["content"])
+        self.assertEqual(json.loads(retrieval_chunk[2])["memory_id"], memory["memory_id"])
+        self.assertEqual(json.loads(retrieval_chunk[3])["memory_type"], "preference")
+        self.assertEqual(memory["retrieval_projection"]["status"], "succeeded")
+        self.assertEqual(memory["retrieval_projection"]["chunk_count"], 1)
 
-    def test_memory_writes_do_not_queue_embedding_jobs_without_ingestion(self) -> None:
-        from app.core.storage.embedding_store import register_embedding_model
+    def test_memory_writes_project_to_retrieval_and_queue_default_embedding_jobs(self) -> None:
         from app.core.storage.memory_store import create_memory_entry, update_memory_entry
 
-        register_embedding_model(provider_key="openai", model="text-embedding-3-small", dimensions=3)
-        memory = create_memory_entry(
-            scope_kind="buddy_session",
-            scope_id="session_1",
-            layer="long_term",
-            memory_type="preference",
-            title="召回偏好",
-            content="用户希望新记忆等待显式 ingestion 再进入 embedding dirty queue。",
-        )
-        update_memory_entry(
-            memory["memory_id"],
-            {"content": "用户希望更新后的记忆等待显式 ingestion 再进入 embedding dirty queue。"},
-        )
+        embedding_settings = {
+            "embedding_model_ref": "local/test-embedding",
+            "model_providers": {
+                "local": {
+                    "label": "Local",
+                    "transport": "openai-compatible",
+                    "base_url": "http://127.0.0.1:1234/v1",
+                    "enabled": True,
+                    "models": [
+                        {
+                            "model": "test-embedding",
+                            "label": "test-embedding",
+                            "capabilities": {"chat": False, "embedding": True},
+                            "embedding": {"dimensions": 3},
+                        }
+                    ],
+                }
+            },
+        }
+        with patch("app.core.storage.settings_store.load_app_settings", return_value=embedding_settings):
+            memory = create_memory_entry(
+                scope_kind="buddy_session",
+                scope_id="session_1",
+                layer="long_term",
+                memory_type="preference",
+                title="Recall preference",
+                content="The user wants fresh long-term memories to become searchable.",
+            )
+            updated = update_memory_entry(
+                memory["memory_id"],
+                {"content": "The user wants updated long-term memories to become searchable after review."},
+            )
 
         with closing(sqlite3.connect(database.DB_PATH)) as connection:
             jobs = connection.execute(
@@ -141,12 +177,22 @@ class MemoryStoreTests(unittest.TestCase):
                 (memory["memory_id"],),
             ).fetchall()
             current_chunk = connection.execute(
-                "SELECT chunk_id, content_hash FROM retrieval_chunks WHERE source_id = ?",
+                "SELECT chunk_id, content, content_hash, metadata_json FROM retrieval_chunks WHERE source_id = ?",
                 (memory["memory_id"],),
             ).fetchone()
 
-        self.assertEqual(jobs, [])
-        self.assertIsNone(current_chunk)
+        self.assertEqual(current_chunk[0], f"memory_entry:{memory['memory_id']}:body")
+        self.assertIn("updated long-term memories", current_chunk[1])
+        self.assertEqual(json.loads(current_chunk[3])["status"], "active")
+        self.assertEqual(len(jobs), 2)
+        self.assertEqual(jobs[0][0], "memory_entry")
+        self.assertEqual(jobs[0][1], memory["memory_id"])
+        self.assertEqual(jobs[0][2], current_chunk[0])
+        self.assertEqual(jobs[0][5], "failed")
+        self.assertIn("superseded", jobs[0][6])
+        self.assertEqual(jobs[1][5], "pending")
+        self.assertEqual(jobs[1][4], current_chunk[2])
+        self.assertEqual(updated["retrieval_projection"]["embedding_job_count"], 1)
 
     def test_create_memory_entry_skips_duplicate_content_and_merges_sources(self) -> None:
         from app.core.storage.memory_store import create_memory_entry
@@ -156,8 +202,8 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="回复偏好",
-            content="用户偏好先看结论，再看细节。",
+            title="Reply preference",
+            content="The user prefers conclusions first, then details.",
             sources=[{"source_kind": "buddy_message", "source_id": "msg_original"}],
         )
         duplicate = create_memory_entry(
@@ -165,8 +211,8 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="重复回复偏好",
-            content=" 用户偏好先看结论，再看细节。 ",
+            title="Duplicate reply preference",
+            content=" The user prefers conclusions first, then details. ",
             sources=[{"source_kind": "buddy_message", "source_id": "msg_duplicate"}],
         )
 
@@ -190,7 +236,7 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertEqual(duplicate["memory_id"], first["memory_id"])
         self.assertEqual(duplicate["dedupe"]["status"], "skipped_duplicate")
         self.assertEqual(duplicate["dedupe"]["reason"], "duplicate_canonical_content")
-        self.assertEqual(duplicate["dedupe"]["requested_title"], "重复回复偏好")
+        self.assertEqual(duplicate["dedupe"]["requested_title"], "Duplicate reply preference")
         self.assertTrue(duplicate["dedupe"]["content_fingerprint"].startswith("sha256:"))
         self.assertEqual(memory_count, 1)
         self.assertEqual(
@@ -208,8 +254,8 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="技术方案回复偏好",
-            content="用户希望技术方案先给结论，再展开依据和取舍。",
+            title="Planning style preference",
+            content="The user wants architecture decisions summarized before implementation details.",
             sources=[{"source_kind": "buddy_message", "source_id": "msg_near_original"}],
         )
         duplicate = create_memory_entry(
@@ -217,8 +263,8 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="近似技术方案偏好",
-            content="技术方案回复要先给结论，然后说明依据、取舍和验证。",
+            title="Implementation planning preference",
+            content="The user wants architecture decisions summarized first, before implementation details.",
             sources=[{"source_kind": "buddy_message", "source_id": "msg_near_duplicate"}],
         )
 
@@ -254,8 +300,8 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="session",
             memory_type="observation",
-            title="多来源记忆",
-            content="这条记忆来自消息、运行、输出和召回 chunk。",
+            title="Source support",
+            content="Memory entries can cite messages, runs, outputs, and retrieval chunks.",
             sources=[
                 {"source_kind": "buddy_message", "source_id": "msg_1", "source_revision_id": "rev_1"},
                 {"source_kind": "graph_run", "source_id": "run_1"},
@@ -269,7 +315,7 @@ class MemoryStoreTests(unittest.TestCase):
             ["buddy_message", "graph_run", "graph_output", "retrieval_chunk"],
         )
 
-    def test_update_and_archive_preserve_revisions_without_retrieval_projection(self) -> None:
+    def test_update_and_archive_preserve_revisions_and_projection_status(self) -> None:
         from app.core.storage.memory_store import archive_memory_entry, create_memory_entry, update_memory_entry
 
         memory = create_memory_entry(
@@ -277,16 +323,16 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="召回偏好",
-            content="用户偏好短摘要。",
+            title="Update preference",
+            content="The user prefers concise replies.",
         )
         updated = update_memory_entry(
             memory["memory_id"],
-            {"content": "用户偏好先看结论，再看细节。", "salience": 0.7},
+            {"content": "The user prefers concise replies with concrete next steps.", "salience": 0.7},
             changed_by="buddy",
-            change_reason="测试更新",
+            change_reason="test update",
         )
-        archived = archive_memory_entry(memory["memory_id"], changed_by="buddy", change_reason="测试归档")
+        archived = archive_memory_entry(memory["memory_id"], changed_by="buddy", change_reason="test archive")
 
         with closing(sqlite3.connect(database.DB_PATH)) as connection:
             revision_count = connection.execute(
@@ -294,14 +340,16 @@ class MemoryStoreTests(unittest.TestCase):
                 (memory["memory_id"],),
             ).fetchone()[0]
             retrieval_chunk = connection.execute(
-                "SELECT content FROM retrieval_chunks WHERE source_id = ?",
+                "SELECT content, metadata_json FROM retrieval_chunks WHERE source_id = ?",
                 (memory["memory_id"],),
             ).fetchone()
 
-        self.assertEqual(updated["content"], "用户偏好先看结论，再看细节。")
+        self.assertEqual(updated["content"], "The user prefers concise replies with concrete next steps.")
         self.assertEqual(archived["status"], "archived")
+        self.assertEqual(archived["retrieval_projection"]["metadata"]["status"], "archived")
         self.assertEqual(revision_count, 3)
-        self.assertIsNone(retrieval_chunk)
+        self.assertIn("concrete next steps", retrieval_chunk[0])
+        self.assertEqual(json.loads(retrieval_chunk[1])["status"], "archived")
 
     def test_recall_memories_returns_source_refs(self) -> None:
         from app.core.storage.memory_store import create_memory_entry, recall_memories
@@ -311,13 +359,11 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="session_1",
             layer="long_term",
             memory_type="preference",
-            title="数据库设计偏好",
-            content="用户偏好完整 embedding 方案服务记忆召回。",
+            title="Searchable memory",
+            content="The user wants embedding memory chunks to serve recall.",
         )
-        _project_memory_for_test_recall(memory)
-
         results = recall_memories(
-            "embedding 记忆召回",
+            "embedding memory chunks",
             filters={"scope_kind": "buddy_session", "scope_id": "session_1"},
             limit=3,
         )
@@ -335,7 +381,7 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="基础排序靠前",
+            title="Older evidence",
             content="rerank-memory-evidence older preference.",
         )
         second = create_memory_entry(
@@ -344,12 +390,9 @@ class MemoryStoreTests(unittest.TestCase):
             scope_id="default",
             layer="long_term",
             memory_type="preference",
-            title="重排靠前",
+            title="Exact evidence",
             content="rerank-memory-evidence exact current preference.",
         )
-        _project_memory_for_test_recall(first)
-        _project_memory_for_test_recall(second)
-
         def fake_rerank(**kwargs):
             self.assertEqual(kwargs["model_ref"], "local-rerank/bge-reranker-v2")
             self.assertEqual(len(kwargs["documents"]), 2)

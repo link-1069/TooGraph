@@ -6,7 +6,7 @@ export function resolveNodeRunPresentation(status: string | undefined, _isCurren
     };
   }
 
-  if (status === "paused") {
+  if (status === "paused" || status === "cancelled") {
     return {
       haloClass: "editor-canvas__node-halo--paused",
       shellClass: "editor-canvas__node--paused",

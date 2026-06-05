@@ -155,7 +155,7 @@ class BuddyCommandRouteTests(unittest.TestCase):
         self.assertEqual(commands_response.json(), [])
         self.assertFalse((buddy_home / "policy.json").exists())
 
-    def test_memory_entry_create_command_records_command_memory_revision_without_retrieval_projection(self) -> None:
+    def test_memory_entry_create_command_records_command_memory_revision_and_retrieval_projection(self) -> None:
         with TestClient(app) as client:
             response = client.post(
                 "/api/buddy/commands",
@@ -192,8 +192,9 @@ class BuddyCommandRouteTests(unittest.TestCase):
         self.assertTrue(body["command"]["revision_id"].startswith("memrev_"))
         self.assertEqual(body["revision"]["revision_id"], body["command"]["revision_id"])
         self.assertEqual(body["result"]["content"], "用户希望长期文件稳定注入，结构化记忆服务召回。")
-        self.assertEqual(retrieval_document_count, 0)
-        self.assertEqual(retrieval_chunk_count, 0)
+        self.assertEqual(body["result"]["retrieval_projection"]["status"], "succeeded")
+        self.assertEqual(retrieval_document_count, 1)
+        self.assertEqual(retrieval_chunk_count, 1)
 
     def test_graph_patch_draft_is_rejected_in_favor_of_editor_command_flow(self) -> None:
         patch_payload = {

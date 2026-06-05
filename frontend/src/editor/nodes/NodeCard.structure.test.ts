@@ -287,6 +287,8 @@ test("NodeCard renders a top-left run timing capsule", () => {
   assert.match(componentSource, /\.node-card__run-timing-capsule::before \{/);
   assert.match(componentSource, /node-card__run-timing-divider/);
   assert.match(componentSource, /node-card__run-token-text/);
+  assert.match(componentSource, /\.node-card__run-timing-capsule--paused \.node-card__run-token-text,[\s\S]*\.node-card__run-timing-capsule--cancelled \.node-card__run-token-text/);
+  assert.match(componentSource, /\.node-card__run-timing-capsule--paused,[\s\S]*\.node-card__run-timing-capsule--cancelled \{/);
   assert.match(runTimingIconStyle, /width:\s*18px;/);
   assert.match(runTimingIconStyle, /height:\s*18px;/);
   assert.match(runTimingIconStyle, /border:\s*0;/);
@@ -378,10 +380,11 @@ test("SubgraphMiniMap mirrors main canvas run highlight colors", () => {
   assert.match(miniMapSource, /\.subgraph-mini-map__node--output \.subgraph-mini-map__node-kind \{[\s\S]*background:\s*#4f46e5;/);
   assert.match(miniMapSource, /\.subgraph-mini-map__node--subgraph \{[\s\S]*border-color:\s*rgba\(13,\s*148,\s*136,\s*0\.28\);/);
   assert.match(miniMapSource, /\.subgraph-mini-map__node--queued,[\s\S]*\.subgraph-mini-map__node--running[\s\S]*border-color:\s*rgba\(16,\s*185,\s*129,\s*0\.58\);/);
-  assert.match(miniMapSource, /\.subgraph-mini-map__node--paused \{[\s\S]*border-color:\s*rgba\(245,\s*158,\s*11,\s*0\.58\);/);
+  assert.match(miniMapSource, /\.subgraph-mini-map__node--paused,[\s\S]*\.subgraph-mini-map__node--cancelled \{[\s\S]*border-color:\s*rgba\(245,\s*158,\s*11,\s*0\.58\);/);
   assert.match(miniMapSource, /\.subgraph-mini-map__node--success \{[\s\S]*border-color:\s*rgba\(16,\s*185,\s*129,\s*0\.62\);/);
   assert.match(miniMapSource, /\.subgraph-mini-map__node--success \.subgraph-mini-map__node-status \{[\s\S]*background:\s*#10b981;/);
   assert.match(miniMapSource, /\.subgraph-mini-map__node--failed \{[\s\S]*border-color:\s*rgba\(239,\s*68,\s*68,\s*0\.68\);/);
+  assert.match(miniMapSource, /\.subgraph-mini-map__node--paused \.subgraph-mini-map__node-status,[\s\S]*\.subgraph-mini-map__node--cancelled \.subgraph-mini-map__node-status \{[\s\S]*background:\s*#f59e0b;/);
 });
 
 test("SubgraphMiniMap keeps active runtime nodes flashing regardless of reduced-motion preference", () => {

@@ -115,37 +115,52 @@
     <button
       type="button"
       class="editor-action-capsule__run"
-      data-virtual-affordance-id="editor.action.runActiveGraph"
-      :data-virtual-affordance-label="t('editor.runGraph')"
+      :class="{
+        'editor-action-capsule__run--terminate': isTerminateMode,
+        'editor-action-capsule__run--terminating': props.isTerminatingActiveRun,
+      }"
+      :aria-label="primaryRunActionLabel"
+      :aria-busy="props.isTerminatingActiveRun ? 'true' : undefined"
+      :disabled="isTerminatingActiveRun"
+      :data-virtual-affordance-id="isTerminateMode ? 'editor.action.terminateActiveRun' : 'editor.action.runActiveGraph'"
+      :data-virtual-affordance-label="primaryRunActionLabel"
       data-virtual-affordance-role="button"
       data-virtual-affordance-zone="editor.actions"
       data-virtual-affordance-actions="click"
-      @click="$emit('run-active-graph')"
+      @click="handlePrimaryRunClick"
     >
-      <ElIcon class="editor-action-capsule__run-icon" aria-hidden="true"><VideoPlay /></ElIcon>
-      <span>{{ t("editor.runGraph") }}</span>
+      <ElIcon class="editor-action-capsule__run-icon" aria-hidden="true">
+        <Loading v-if="props.isTerminatingActiveRun" />
+        <CloseBold v-else-if="isTerminateMode" />
+        <VideoPlay v-else />
+      </ElIcon>
+      <span>{{ primaryRunActionLabel }}</span>
     </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { CircleCheck, Clock, CollectionTag, Download, VideoPlay } from "@element-plus/icons-vue";
+import { CircleCheck, Clock, CloseBold, CollectionTag, Download, Loading, VideoPlay } from "@element-plus/icons-vue";
 import { ElIcon, ElTooltip } from "element-plus";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+
+const TERMINABLE_RUN_STATUSES = new Set(["queued", "running", "resuming"]);
 
 const props = defineProps<{
   activeStateCount: number;
   isStatePanelOpen: boolean;
   isRunActivityPanelOpen: boolean;
   hasRunActivityHint: boolean;
+  activeRunStatus?: string | null;
+  isTerminatingActiveRun?: boolean;
   saveGraphLabel?: string;
   showSaveAsGraph?: boolean;
   saveAsGraphLabel?: string;
   showRevisionHistory?: boolean;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
   (event: "toggle-state-panel"): void;
   (event: "toggle-run-activity-panel"): void;
   (event: "save-active-graph"): void;
@@ -155,11 +170,27 @@ defineEmits<{
   (event: "validate-active-graph"): void;
   (event: "export-active-graph"): void;
   (event: "run-active-graph"): void;
+  (event: "terminate-active-run"): void;
 }>();
 
 const { t } = useI18n();
 const resolvedSaveGraphLabel = computed(() => props.saveGraphLabel ?? t("editor.saveGraph"));
 const resolvedSaveAsGraphLabel = computed(() => props.saveAsGraphLabel ?? t("editor.saveAsGraph"));
+const isTerminateMode = computed(() => TERMINABLE_RUN_STATUSES.has(String(props.activeRunStatus ?? "")));
+const primaryRunActionLabel = computed(() => {
+  if (props.isTerminatingActiveRun) {
+    return t("editor.terminatingRun");
+  }
+  return isTerminateMode.value ? t("editor.terminateRun") : t("editor.runGraph");
+});
+
+function handlePrimaryRunClick() {
+  if (isTerminateMode.value) {
+    emit("terminate-active-run");
+    return;
+  }
+  emit("run-active-graph");
+}
 </script>
 
 <style scoped>
@@ -300,6 +331,35 @@ const resolvedSaveAsGraphLabel = computed(() => props.saveAsGraphLabel ?? t("edi
   transform: translateY(-1px);
 }
 
+.editor-action-capsule__run--terminate {
+  border-color: rgba(185, 28, 28, 0.86);
+  background: rgba(185, 28, 28, 0.92);
+  color: rgba(255, 251, 247, 0.98);
+}
+
+.editor-action-capsule__run--terminate:hover {
+  border-color: rgba(153, 27, 27, 0.96);
+  background: rgba(153, 27, 27, 0.96);
+}
+
+.editor-action-capsule__run--terminating {
+  border-color: rgba(220, 38, 38, 0.94);
+  background: rgba(220, 38, 38, 0.96);
+  color: rgba(255, 251, 247, 1);
+  box-shadow: 0 0 0 4px rgba(248, 113, 113, 0.2), 0 10px 22px rgba(127, 29, 29, 0.2);
+  animation: editor-action-capsule-terminating-pulse 0.9s ease-in-out infinite;
+}
+
+.editor-action-capsule__run--terminating .editor-action-capsule__run-icon {
+  animation: editor-action-capsule-spin 0.82s linear infinite;
+}
+
+.editor-action-capsule__run:disabled {
+  cursor: wait;
+  opacity: 1;
+  transform: none;
+}
+
 .editor-action-capsule__icon-button:focus-visible,
 .editor-action-capsule__state-pill:focus-visible,
 .editor-action-capsule__run:focus-visible {
@@ -318,10 +378,32 @@ const resolvedSaveAsGraphLabel = computed(() => props.saveAsGraphLabel ?? t("edi
   }
 }
 
+@keyframes editor-action-capsule-terminating-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.16), 0 10px 22px rgba(127, 29, 29, 0.18);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px rgba(248, 113, 113, 0.28), 0 12px 26px rgba(127, 29, 29, 0.24);
+  }
+}
+
+@keyframes editor-action-capsule-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .editor-action-capsule__state-pill--hint {
     animation: none;
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.14);
+  }
+
+  .editor-action-capsule__run--terminating,
+  .editor-action-capsule__run--terminating .editor-action-capsule__run-icon {
+    animation: none;
   }
 }
 </style>

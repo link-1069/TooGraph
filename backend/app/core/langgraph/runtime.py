@@ -30,6 +30,7 @@ from app.core.langgraph.cycle_tracker import (
     serialize_cycle_records as _serialize_cycle_records,
 )
 from app.core.langgraph.finalization import (
+    finalize_cancelled_langgraph_state as _finalize_cancelled_langgraph_state,
     finalize_completed_langgraph_state as _finalize_completed_langgraph_state,
     finalize_failed_langgraph_state as _finalize_failed_langgraph_state,
 )
@@ -62,6 +63,12 @@ from app.core.runtime.run_artifacts import refresh_run_artifacts as _refresh_run
 from app.core.runtime.run_tree import create_child_run_state
 from app.core.runtime.model_call_context import use_model_call_context
 from app.core.runtime.node_execution_records import finish_node_execution, start_node_execution
+from app.core.runtime.run_cancellation import (
+    RunCancellationRequested,
+    RunCancellationToken,
+    get_run_cancellation_token,
+    raise_if_run_cancellation_requested,
+)
 from app.core.runtime.runtime_summaries import summarize_first_value as _summarize_values
 from app.core.runtime.state_io import apply_state_writes, collect_node_inputs
 from app.core.runtime.activity_events import record_activity_event as _record_activity_event
@@ -83,6 +90,10 @@ from app.templates.loader import load_template_record
 
 class _SubgraphAwaitingHuman(Exception):
     pass
+
+
+def _raise_if_run_cancelled(token: RunCancellationToken | None) -> None:
+    raise_if_run_cancellation_requested(token)
 
 
 INHERITED_SUBGRAPH_METADATA_KEYS = {
@@ -125,6 +136,7 @@ def execute_node_system_graph_langgraph(
     active_edge_ids: set[str] = set()
     node_outputs: dict[str, dict[str, Any]] = {}
     run_lock = threading.Lock()
+    cancellation_token = get_run_cancellation_token(str(state.get("run_id") or ""))
 
     if persist_progress:
         _persist_langgraph_progress(
@@ -134,6 +146,20 @@ def execute_node_system_graph_langgraph(
             started_perf=started_perf,
             checkpoint_saver=checkpoint_saver,
             checkpoint_lookup_config=checkpoint_lookup_config,
+        )
+
+    if cancellation_token is not None and cancellation_token.is_requested():
+        return _finalize_cancelled_langgraph_state(
+            state,
+            node_outputs,
+            active_edge_ids,
+            reason=cancellation_token.reason(),
+            started_perf=started_perf,
+            checkpoint_saver=checkpoint_saver,
+            checkpoint_lookup_config=checkpoint_lookup_config,
+            save_run_func=save_run if save_final_run else _noop_save_run,
+            publish_run_event_func=publish_run_event if emit_lifecycle_events else _noop_publish_run_event,
+            append_run_snapshot_func=_append_run_snapshot if save_final_run else _noop_append_run_snapshot,
         )
 
     if not build_plan.runtime_nodes and not build_plan.runtime_condition_routes:
@@ -168,6 +194,7 @@ def execute_node_system_graph_langgraph(
                 run_lock=run_lock,
                 checkpoint_saver=checkpoint_saver,
                 checkpoint_lookup_config=checkpoint_lookup_config,
+                cancellation_token=cancellation_token,
             ),
         )
 
@@ -206,6 +233,7 @@ def execute_node_system_graph_langgraph(
                 run_lock=run_lock,
                 checkpoint_saver=checkpoint_saver,
                 checkpoint_lookup_config=checkpoint_lookup_config,
+                cancellation_token=cancellation_token,
             ),
             path_map={branch: _runtime_graph_endpoint(target) for branch, target in route.branches.items()},
         )
@@ -220,6 +248,7 @@ def execute_node_system_graph_langgraph(
     )
 
     try:
+        _raise_if_run_cancelled(cancellation_token)
         if resume_from_checkpoint:
             if checkpoint_saver.get_tuple(checkpoint_lookup_config) is None:
                 raise ValueError("No LangGraph checkpoint is available for this run.")
@@ -233,6 +262,7 @@ def execute_node_system_graph_langgraph(
                 result_state = compiled.invoke(None, config=resume_runtime_config)
         else:
             result_state = compiled.invoke(dict(state.get("state_values", {})), config=runtime_config)
+        _raise_if_run_cancelled(cancellation_token)
         state["state_values"] = dict(result_state)
         snapshot = compiled.get_state(checkpoint_lookup_config)
         if _is_waiting_for_human(snapshot):
@@ -261,6 +291,19 @@ def execute_node_system_graph_langgraph(
             append_snapshot=save_final_run,
             save_run_func=save_run if save_final_run else _noop_save_run,
             publish_run_event_func=publish_run_event if emit_lifecycle_events else _noop_publish_run_event,
+        )
+    except RunCancellationRequested as exc:
+        return _finalize_cancelled_langgraph_state(
+            state,
+            node_outputs,
+            active_edge_ids,
+            reason=exc.reason,
+            started_perf=started_perf,
+            checkpoint_saver=checkpoint_saver,
+            checkpoint_lookup_config=checkpoint_lookup_config,
+            save_run_func=save_run if save_final_run else _noop_save_run,
+            publish_run_event_func=publish_run_event if emit_lifecycle_events else _noop_publish_run_event,
+            append_run_snapshot_func=_append_run_snapshot if save_final_run else _noop_append_run_snapshot,
         )
     except _SubgraphAwaitingHuman:
         if save_final_run:
@@ -382,6 +425,7 @@ def _model_call_context_for_node(
     node_name: str,
     node: Any,
     node_execution: dict[str, Any],
+    cancellation_token: RunCancellationToken | None = None,
 ) -> dict[str, Any]:
     subgraph_context = _subgraph_context(state)
     return {
@@ -397,6 +441,7 @@ def _model_call_context_for_node(
         "node_name": getattr(node, "name", "") or node_name,
         "execution_id": str(node_execution.get("execution_id") or "").strip(),
         "subgraph_path": subgraph_context["path"] if subgraph_context else [],
+        "cancellation_token": cancellation_token,
     }
 
 
@@ -461,11 +506,13 @@ def _build_langgraph_node_callable(
     run_lock: threading.Lock,
     checkpoint_saver: JsonCheckpointSaver,
     checkpoint_lookup_config: dict[str, Any],
+    cancellation_token: RunCancellationToken | None,
 ):
     node = graph.nodes[node_name]
 
     def _call(current_values: dict[str, Any]) -> dict[str, Any]:
         with run_lock:
+            _raise_if_run_cancelled(cancellation_token)
             node_started_perf = time.perf_counter()
             node_started_at = utc_now_iso()
             iteration = _current_cycle_iteration(cycle_tracker)
@@ -507,7 +554,16 @@ def _build_langgraph_node_callable(
 
             try:
                 input_values, state_reads = collect_node_inputs(node, state)
-                with use_model_call_context(**_model_call_context_for_node(state, graph, node_name, node, node_execution)):
+                with use_model_call_context(
+                    **_model_call_context_for_node(
+                        state,
+                        graph,
+                        node_name,
+                        node,
+                        node_execution,
+                        cancellation_token=cancellation_token,
+                    )
+                ):
                     if isinstance(node, NodeSystemSubgraphNode):
                         pending_subgraph = _pending_subgraph_breakpoint_for_node(state, node_name)
                         if pending_subgraph:
@@ -546,6 +602,7 @@ def _build_langgraph_node_callable(
                                 **kwargs,
                             ),
                         )
+                _raise_if_run_cancelled(cancellation_token)
                 if body.get("awaiting_human"):
                     duration_ms = int((time.perf_counter() - node_started_perf) * 1000)
                     if body.get("pending_permission_approval"):
@@ -689,6 +746,8 @@ def _build_langgraph_node_callable(
                     )
                 return graph_updates
             except _SubgraphAwaitingHuman:
+                raise
+            except RunCancellationRequested:
                 raise
             except Exception as exc:  # pragma: no cover - defensive runtime path
                 duration_ms = int((time.perf_counter() - node_started_perf) * 1000)
@@ -1793,6 +1852,7 @@ def _build_langgraph_route_callable(
     run_lock: threading.Lock,
     checkpoint_saver: JsonCheckpointSaver,
     checkpoint_lookup_config: dict[str, Any],
+    cancellation_token: RunCancellationToken | None,
 ):
     conditional_edges_by_source = {
         conditional_edge.source: conditional_edge
@@ -1825,6 +1885,7 @@ def _build_langgraph_route_callable(
             condition_name = str(route.condition)
 
             while True:
+                _raise_if_run_cancelled(cancellation_token)
                 if condition_name in visited_conditions:
                     raise ValueError(f"Condition route contains a condition-only cycle at '{condition_name}'.")
                 visited_conditions.add(condition_name)
@@ -1855,6 +1916,7 @@ def _build_langgraph_route_callable(
                 try:
                     input_values, _state_reads = collect_node_inputs(condition_node, state)
                     body = _execute_node(graph, condition_name, condition_node, input_values, state)
+                    _raise_if_run_cancelled(cancellation_token)
 
                     selected_branch = str(body.get("selected_branch") or "").strip()
                     if not selected_branch:
@@ -1934,6 +1996,8 @@ def _build_langgraph_route_callable(
                             **_subgraph_event_context(state),
                         },
                     )
+                except RunCancellationRequested:
+                    raise
                 except Exception as exc:
                     state["node_status_map"][condition_name] = "failed"
                     _record_subgraph_node_status(state, condition_name, "failed")

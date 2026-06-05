@@ -412,6 +412,7 @@ def search_embedding_vectors(
                 d.title
             FROM embedding_vectors AS ev
             JOIN retrieval_chunks AS c ON c.chunk_id = ev.chunk_id
+                AND c.content_hash = ev.content_hash
             JOIN retrieval_documents AS d ON d.document_id = c.document_id
             {where_sql}
             """,

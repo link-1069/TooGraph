@@ -897,6 +897,7 @@ class TemplateLayoutTests(unittest.TestCase):
             "recall_request",
             "session_recall_context",
             "recalled_sessions",
+            "recall_context_package",
             "recall_iteration_review",
             "evidence_package",
             "key_quotes",
@@ -913,6 +914,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(plan_node["kind"], "agent")
         self.assertIn("buddy_session_recall", plan_node["config"]["taskInstruction"])
         self.assertIn("current_session_id", plan_node["config"]["taskInstruction"])
+        self.assertIn("embedding_model_ref", plan_node["config"]["taskInstruction"])
         self.assertEqual(
             {binding["state"]: binding["mode"] for binding in plan_node["writes"]},
             {"recall_plan": "replace", "recall_request": "replace"},

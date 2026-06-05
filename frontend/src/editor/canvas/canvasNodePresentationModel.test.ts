@@ -84,6 +84,7 @@ test("resolveMinimapRunState maps runtime statuses to minimap states", () => {
   assert.equal(resolveMinimapRunState("completed"), "success");
   assert.equal(resolveMinimapRunState("paused"), "paused");
   assert.equal(resolveMinimapRunState("awaiting_human"), "paused");
+  assert.equal(resolveMinimapRunState("cancelled"), "paused");
   assert.equal(resolveMinimapRunState("failed"), "failed");
   assert.equal(resolveMinimapRunState("queued"), null);
   assert.equal(resolveMinimapRunState(undefined), null);

@@ -41,6 +41,7 @@ function createRunHarness(
   options: {
     refreshAgentModels?: () => Promise<void>;
     runGraph?: (document: GraphPayload | GraphDocument) => Promise<GraphRunResponse>;
+    cancelRun?: (runId: string, reason: string) => Promise<GraphRunResponse & { cancellation_requested?: boolean }>;
     consumeVirtualOperationRunAttribution?: () => { operationRequestId: string; targetId: string; commands: string[] } | null;
     recordVirtualOperationTriggeredRun?: (record: {
       operationRequestId: string;
@@ -100,8 +101,10 @@ function createRunHarness(
     },
   });
   const feedbackByTabId = ref<Record<string, WorkspaceRunFeedback | null>>({});
+  const terminatingRunByTabId = ref<Record<string, boolean>>({});
   const runGraphDocuments: GraphPayload[] = [];
   const resumedRuns: Array<{ runId: string; payload: Record<string, unknown>; snapshotId: string | null }> = [];
+  const cancelledRuns: Array<{ runId: string; reason: string }> = [];
   const cancelledPolling: string[] = [];
   const streams: Array<{ tabId: string; runId: string }> = [];
   const polls: Array<{ tabId: string; runId: string; generation: number }> = [];
@@ -141,6 +144,15 @@ function createRunHarness(
       resumedRuns.push({ runId, payload, snapshotId });
       return { run_id: "run_resumed", status: "queued" } satisfies GraphRunResponse;
     },
+    cancelRun: async (runId, reason) => {
+      cancelledRuns.push({ runId, reason });
+      if (options.cancelRun) {
+        return options.cancelRun(runId, reason);
+      }
+      return { run_id: runId, status: "running", cancellation_requested: true };
+    },
+    terminatingRunByTabId,
+    getFeedbackForTab: (tabId) => feedbackByTabId.value[tabId] ?? null,
     cancelRunPolling: (tabId) => {
       cancelledPolling.push(tabId);
       generation += 1;
@@ -175,6 +187,9 @@ function createRunHarness(
       runErrorToasts.push(message);
     },
     translate: (key, params) => {
+      if (key === "feedback.runTerminationReason") {
+        return "User requested termination.";
+      }
       if (key === "feedback.runRequestFailed") {
         return `运行图失败：${params?.error ?? ""}`;
       }
@@ -215,8 +230,10 @@ function createRunHarness(
     activeRunEdgeIdsByTabId,
     runActivityByTabId,
     feedbackByTabId,
+    terminatingRunByTabId,
     runGraphDocuments,
     resumedRuns,
+    cancelledRuns,
     cancelledPolling,
     streams,
     polls,
@@ -314,6 +331,83 @@ test("useWorkspaceRunController resumes Human Review runs with the restored snap
   assert.deepEqual(harness.runActivityHints, ["tab_a"]);
   assert.deepEqual(harness.streams, [{ tabId: "tab_a", runId: "run_resumed" }]);
   assert.deepEqual(harness.polls, [{ tabId: "tab_a", runId: "run_resumed", generation: 8 }]);
+});
+
+test("useWorkspaceRunController requests active run termination and keeps watching it", async () => {
+  const harness = createRunHarness();
+  harness.feedbackByTabId.value = {
+    tab_a: {
+      tone: "warning",
+      message: "",
+      activeRunId: "run_active",
+      activeRunStatus: "running",
+      summary: { idle: 0, running: 1, paused: 0, success: 0, failed: 0 },
+      currentNodeLabel: "agent",
+    },
+  };
+
+  await harness.controller.terminateActiveRun();
+
+  assert.deepEqual(harness.cancelledRuns, [{ runId: "run_active", reason: "User requested termination." }]);
+  assert.equal(harness.terminatingRunByTabId.value.tab_a, false);
+  assert.equal(harness.feedbackByTabId.value.tab_a?.tone, "warning");
+  assert.equal(harness.feedbackByTabId.value.tab_a?.message, "feedback.runTerminationRequested:run_active");
+  assert.equal(harness.feedbackByTabId.value.tab_a?.activeRunId, "run_active");
+  assert.equal(harness.feedbackByTabId.value.tab_a?.activeRunStatus, "running");
+  assert.deepEqual(harness.runActivityHints, ["tab_a"]);
+  assert.deepEqual(harness.streams, [{ tabId: "tab_a", runId: "run_active" }]);
+  assert.deepEqual(harness.polls, [{ tabId: "tab_a", runId: "run_active", generation: 7 }]);
+});
+
+test("useWorkspaceRunController marks active run termination pending before the API returns", async () => {
+  let resolveCancelRun: ((response: GraphRunResponse & { cancellation_requested?: boolean }) => void) | null = null;
+  const harness = createRunHarness({
+    cancelRun: (runId) =>
+      new Promise((resolve) => {
+        resolveCancelRun = resolve;
+        return { run_id: runId, status: "running", cancellation_requested: true };
+      }),
+  });
+  harness.feedbackByTabId.value = {
+    tab_a: {
+      tone: "warning",
+      message: "",
+      activeRunId: "run_active",
+      activeRunStatus: "running",
+      summary: { idle: 0, running: 1, paused: 0, success: 0, failed: 0 },
+      currentNodeLabel: "agent",
+    },
+  };
+
+  const terminationPromise = harness.controller.terminateActiveRun();
+  await Promise.resolve();
+
+  assert.equal(harness.terminatingRunByTabId.value.tab_a, true);
+  assert.deepEqual(harness.cancelledRuns, [{ runId: "run_active", reason: "User requested termination." }]);
+
+  assert.ok(resolveCancelRun);
+  resolveCancelRun({ run_id: "run_active", status: "running", cancellation_requested: true });
+  await terminationPromise;
+
+  assert.equal(harness.terminatingRunByTabId.value.tab_a, false);
+});
+
+test("useWorkspaceRunController reports when a run finished before termination was applied", async () => {
+  const harness = createRunHarness({
+    cancelRun: async (runId) => ({ run_id: runId, status: "completed", cancellation_requested: false }),
+  });
+  harness.latestRunDetailByTabId.value = {
+    tab_a: {
+      run_id: "run_active",
+      status: "running",
+    } as RunDetail,
+  };
+
+  await harness.controller.terminateActiveRun();
+
+  assert.equal(harness.feedbackByTabId.value.tab_a?.message, "feedback.runTerminationSkipped:run_active");
+  assert.equal(harness.feedbackByTabId.value.tab_a?.activeRunStatus, "completed");
+  assert.deepEqual(harness.polls, [{ tabId: "tab_a", runId: "run_active", generation: 7 }]);
 });
 
 test("useWorkspaceRunController surfaces run request failures in feedback and a visible toast", async () => {

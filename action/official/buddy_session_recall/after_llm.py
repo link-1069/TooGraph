@@ -21,6 +21,9 @@ def buddy_session_recall(**action_inputs: Any) -> dict[str, Any]:
 
     request = _dict(action_inputs.get("recall_request"))
     merged = {**request, **{key: value for key, value in action_inputs.items() if key != "recall_request"}}
+    embedding_model_ref = _as_text(merged.get("embedding_model_ref")) or _default_embedding_model_ref()
+    if embedding_model_ref:
+        merged["embedding_model_ref"] = embedding_model_ref
     try:
         context = buddy_store.recall_chat_messages(
             mode=_as_text(merged.get("mode")) or "browse",
@@ -77,8 +80,13 @@ def buddy_session_recall(**action_inputs: Any) -> dict[str, Any]:
                 "detail": {
                     "mode": context.get("mode"),
                     "query": context.get("query"),
+                    "embedding_model_ref": embedding_model_ref,
                     "session_count": len(sessions),
                     "hit_count": context.get("hit_count", 0),
+                    "memory_count": len(enrichment["memories"]),
+                    "run_output_count": len(enrichment["run_outputs"]),
+                    "context_source_count": len(enrichment["context_sources"]),
+                    "retrieval_query_ids": enrichment["retrieval_query_ids"],
                 },
             }
         ],
@@ -98,6 +106,7 @@ def _recall_related_sources(context: dict[str, Any], merged: dict[str, Any]) -> 
             *_run_output_context_sources(run_outputs),
         ]
     )
+    retrieval_query_ids = _retrieval_query_ids([*memories, *run_outputs])
     rendered_text = _render_recall_context_text(context=context, memories=memories, run_outputs=run_outputs)
     context_assembly_ref = _create_context_assembly_ref(context_sources, rendered_text=rendered_text)
     context_package = _create_context_package(
@@ -111,7 +120,17 @@ def _recall_related_sources(context: dict[str, Any], merged: dict[str, Any]) -> 
         "context_sources": context_sources,
         "context_assembly_ref": context_assembly_ref,
         "context_package": context_package,
+        "retrieval_query_ids": retrieval_query_ids,
     }
+
+
+def _default_embedding_model_ref() -> str:
+    try:
+        from app.core.storage.embedding_model_sync import get_default_embedding_model_ref_from_settings
+
+        return get_default_embedding_model_ref_from_settings()
+    except Exception:
+        return ""
 
 
 def _recall_memories(query: str, *, limit: int, embedding_model_ref: str = "") -> list[dict[str, Any]]:
@@ -138,6 +157,16 @@ def _recall_run_outputs(query: str, *, limit: int, embedding_model_ref: str = ""
         return search_retrieval_fts(query, filters=filters, limit=limit)
     except Exception:
         return []
+
+
+def _retrieval_query_ids(items: list[dict[str, Any]]) -> list[str]:
+    return _dedupe(
+        [
+            _as_text(_dict(item.get("retrieval")).get("query_id"))
+            for item in items
+            if isinstance(item, dict)
+        ]
+    )
 
 
 def _session_context_sources(context: dict[str, Any]) -> list[dict[str, Any]]:
@@ -315,6 +344,18 @@ def _dedupe_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
         deduped.append(source)
         seen.add(key)
     return deduped
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _as_text(value)
+        if not text or text in seen:
+            continue
+        result.append(text)
+        seen.add(text)
+    return result
 
 
 def _empty_context() -> dict[str, Any]:

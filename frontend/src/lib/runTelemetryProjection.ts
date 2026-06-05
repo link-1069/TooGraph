@@ -2,7 +2,7 @@ import type { GraphDocument, GraphNode, GraphPayload } from "../types/node-syste
 import type { NodeExecutionDetail, StateEvent, StateStreamEvent } from "../types/run.ts";
 import { routeStreamingJsonStateText } from "./streamingJsonStateRouter.ts";
 
-export type RunNodeTimingStatus = "running" | "success" | "failed" | "paused";
+export type RunNodeTimingStatus = "running" | "success" | "failed" | "paused" | "cancelled";
 
 export type RunNodeTiming = {
   status: RunNodeTimingStatus;
@@ -158,7 +158,7 @@ function startNodeAndConnectedOutputTiming(
 function completeNodeAndConnectedOutputTiming(
   current: RunNodeTimingByNodeId,
   nodeId: string,
-  status: Extract<RunNodeTimingStatus, "failed" | "paused">,
+  status: Extract<RunNodeTimingStatus, "failed" | "paused" | "cancelled">,
   rawDurationMs: unknown,
   nowEpochMs: number,
   document?: TimingGraphDocument | null,
@@ -474,6 +474,9 @@ function normalizeExecutionStatus(value: unknown): RunNodeTimingStatus {
   }
   if (value === "paused" || value === "awaiting_human") {
     return "paused";
+  }
+  if (value === "cancelled") {
+    return "cancelled";
   }
   if (value === "running") {
     return "running";

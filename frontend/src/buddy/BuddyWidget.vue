@@ -257,7 +257,12 @@
           v-model="draft"
           :placeholder="t('buddy.placeholder')"
           :send-label="t('buddy.send')"
+          :terminate-label="t('buddy.terminateRun')"
+          :terminating-label="t('buddy.terminatingRun')"
+          :is-run-active="isBuddyRunTerminable"
+          :is-terminating-run="isTerminatingBuddyRun"
           @submit="sendMessage"
+          @terminate="terminateActiveBuddyRun"
         />
       </section>
 
@@ -320,7 +325,7 @@ import {
   appendBuddyChatMessage,
   fetchBuddyIdentity,
 } from "../api/buddy.ts";
-import { fetchRun } from "../api/runs.ts";
+import { cancelRun, fetchRun } from "../api/runs.ts";
 import SandboxedHtmlFrame from "../components/SandboxedHtmlFrame.vue";
 import { useBuddyContextStore } from "../stores/buddyContext.ts";
 import {
@@ -421,6 +426,8 @@ const errorMessage = ref("");
 const mood = ref<BuddyMood>("idle");
 const tapNonce = ref(0);
 const activeRunId = ref<string | null>(null);
+const activeAssistantMessageId = ref<string | null>(null);
+const terminatingBuddyRunId = ref<string | null>(null);
 const pausedBuddyRun = ref<RunDetail | null>(null);
 const pausedBuddyAssistantMessageId = ref<string | null>(null);
 const pausedBuddyResumeBusy = ref(false);
@@ -441,6 +448,8 @@ let buddyDisplayNameRequestId = 0;
 let activeSessionRefreshIntervalRef: number | null = null;
 
 const isDragging = computed(() => Boolean(pointerDrag.value?.moved));
+const isBuddyRunTerminable = computed(() => Boolean(activeRunId.value && !pausedBuddyRun.value));
+const isTerminatingBuddyRun = computed(() => Boolean(activeRunId.value && terminatingBuddyRunId.value === activeRunId.value));
 const {
   activeVirtualOperationToken,
   beginBackgroundVirtualOperation: beginBackgroundVirtualOperationLifecycle,
@@ -903,6 +912,33 @@ async function sendMessage() {
   await scrollMessagesToBottom();
 }
 
+async function terminateActiveBuddyRun() {
+  const runId = activeRunId.value;
+  if (!runId || pausedBuddyRun.value || terminatingBuddyRunId.value === runId) {
+    return;
+  }
+
+  terminatingBuddyRunId.value = runId;
+  errorMessage.value = "";
+  const assistantMessageId = activeAssistantMessageId.value;
+  if (assistantMessageId) {
+    setAssistantActivityText(assistantMessageId, t("buddy.activity.terminating"));
+  }
+
+  try {
+    await cancelRun(runId, t("buddy.terminateRunReason"));
+  } catch (error) {
+    if (terminatingBuddyRunId.value === runId) {
+      terminatingBuddyRunId.value = null;
+    }
+    const message = t("buddy.terminateRunFailed", { error: formatErrorMessage(error) });
+    errorMessage.value = message;
+    if (assistantMessageId) {
+      setAssistantActivityText(assistantMessageId, message);
+    }
+  }
+}
+
 async function drainBuddyQueue() {
   if (isDrainingBuddyQueue) {
     return;
@@ -932,18 +968,21 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
   clearSpeakingIdleTimer();
   const history = turn.history;
   const assistantMessage = ensureAssistantMessageForTurn(turn);
+  let currentRunId: string | null = null;
   mood.value = "thinking";
   setAssistantActivityText(assistantMessage.id, t("buddy.activity.preparing"));
   await scrollMessagesToBottom();
 
   try {
     activeAbortController = new AbortController();
+    activeAssistantMessageId.value = assistantMessage.id;
     const boundRun = await startBuddyBoundRunTemplate({
       userMessage: turn.userMessage,
       userMessageId: turn.userMessageId,
       history,
       sessionId: turn.sessionId,
     });
+    currentRunId = boundRun.runId;
     showBuddyGraphPendingTrace(assistantMessage.id, boundRun.graph, boundRun.publicOutputBindings);
     setAssistantActivityText(assistantMessage.id, t("buddy.activity.starting"));
     activeRunId.value = boundRun.runId;
@@ -969,6 +1008,12 @@ async function processQueuedTurn(turn: BuddyQueuedTurn) {
   } finally {
     closeEventSource();
     activeRunId.value = null;
+    if (activeAssistantMessageId.value === assistantMessage.id) {
+      activeAssistantMessageId.value = null;
+    }
+    if (terminatingBuddyRunId.value === currentRunId) {
+      terminatingBuddyRunId.value = null;
+    }
     activeAbortController = null;
     scheduleBuddySpeakingIdleIfNeeded();
     await scrollMessagesToBottom();
@@ -986,6 +1031,8 @@ async function finishAutoResumedPageOperationRun({
   setAssistantActivityText(assistantMessageId, t("buddy.activity.resuming"));
   const controller = new AbortController();
   activeAbortController = controller;
+  activeRunId.value = runId;
+  activeAssistantMessageId.value = assistantMessageId;
 
   try {
     const resumedRunDetail = await pollRunUntilFinished(runId, controller.signal);
@@ -1015,6 +1062,12 @@ async function finishAutoResumedPageOperationRun({
     closeEventSource();
     if (!pausedBuddyRun.value) {
       activeRunId.value = null;
+    }
+    if (activeAssistantMessageId.value === assistantMessageId) {
+      activeAssistantMessageId.value = null;
+    }
+    if (terminatingBuddyRunId.value === runId) {
+      terminatingBuddyRunId.value = null;
     }
     if (activeAbortController === controller) {
       activeAbortController = null;
@@ -1087,7 +1140,17 @@ function finishBuddyVisibleRun(
     assistantMessage.activityText = "";
     assistantMessage.includeInContext = includeReplyInContext;
   }
-  if (publicOutputMessages.length === 0) {
+  if (runDetail.status === "cancelled" && publicOutputMessages.length === 0) {
+    updateAssistantMessage(assistantMessageId, t("buddy.runCancelled"), {
+      includeInContext: false,
+      runId,
+      transcriptOnly: false,
+    });
+    void persistBuddyMessage(sessionId, messages.value.find((message) => message.id === assistantMessageId), {
+      runId,
+      includeInContext: false,
+    });
+  } else if (publicOutputMessages.length === 0) {
     updateAssistantMessage(assistantMessageId, t("buddy.emptyReply"), {
       includeInContext: false,
       runId,

@@ -332,6 +332,12 @@ class BuddySessionRecallActionTests(unittest.TestCase):
         self.assertGreater(result["memories"][0]["retrieval"]["vector_score"], 0)
         self.assertEqual(result["run_outputs"][0]["retrieval"]["mode"], "hybrid")
         self.assertGreater(result["run_outputs"][0]["retrieval"]["vector_score"], 0)
+        detail = result["activity_events"][0]["detail"]
+        self.assertEqual(detail["embedding_model_ref"], model["embedding_model_id"])
+        self.assertEqual(detail["memory_count"], 1)
+        self.assertEqual(detail["run_output_count"], 1)
+        self.assertEqual(detail["context_source_count"], 2)
+        self.assertEqual(len(detail["retrieval_query_ids"]), 2)
 
 
 if __name__ == "__main__":

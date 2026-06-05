@@ -2613,7 +2613,8 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
   color: rgba(185, 28, 28, 0.68);
 }
 
-.node-card__run-timing-capsule--paused .node-card__run-token-text {
+.node-card__run-timing-capsule--paused .node-card__run-token-text,
+.node-card__run-timing-capsule--cancelled .node-card__run-token-text {
   color: rgba(180, 83, 9, 0.7);
 }
 
@@ -2632,7 +2633,8 @@ function handleConditionRuleValueEnter(event: KeyboardEvent) {
   color: #b91c1c;
 }
 
-.node-card__run-timing-capsule--paused {
+.node-card__run-timing-capsule--paused,
+.node-card__run-timing-capsule--cancelled {
   border-color: rgba(245, 158, 11, 0.34);
   color: #b45309;
 }

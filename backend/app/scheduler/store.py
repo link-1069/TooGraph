@@ -82,10 +82,15 @@ def update_scheduled_graph_job(job_id: str, payload: dict[str, Any], *, now: str
     if _is_official_scheduled_graph_job(existing):
         next_payload["template_id"] = existing["template_id"]
         schedule_change_payload.pop("template_id", None)
-        next_payload["metadata"] = {
-            **(next_payload.get("metadata") if isinstance(next_payload.get("metadata"), dict) else {}),
-            "source": str(existing.get("metadata", {}).get("source") or "official_seed"),
-        }
+        official_metadata = _official_metadata_for_enabled_change(
+            existing,
+            incoming_payload.get("enabled") if "enabled" in incoming_payload else None,
+            incoming_metadata=incoming_payload.get("metadata"),
+        )
+        if _official_schedule_fields_changed(existing, incoming_payload):
+            official_metadata["user_schedule_modified"] = True
+            official_metadata["user_schedule_modified_at"] = normalized_now
+        next_payload["metadata"] = official_metadata
     normalized = _normalize_job_payload(next_payload, now=normalized_now)
     normalized["job_id"] = existing["job_id"]
     normalized["created_at"] = existing["created_at"]
@@ -147,6 +152,37 @@ def update_scheduled_graph_job(job_id: str, payload: dict[str, Any], *, now: str
 def _is_official_scheduled_graph_job(job: dict[str, Any]) -> bool:
     metadata = job.get("metadata") if isinstance(job.get("metadata"), dict) else {}
     return metadata.get("source") in {"official_seed", "official"}
+
+
+def _official_metadata_for_enabled_change(
+    existing: dict[str, Any],
+    enabled: Any,
+    *,
+    incoming_metadata: Any = None,
+) -> dict[str, Any]:
+    metadata = dict(existing.get("metadata") or {})
+    if isinstance(incoming_metadata, dict):
+        metadata.update(incoming_metadata)
+    metadata["source"] = str(dict(existing.get("metadata") or {}).get("source") or "official_seed")
+    if enabled is False:
+        metadata["user_disabled"] = True
+    elif enabled is True:
+        metadata.pop("user_disabled", None)
+    return metadata
+
+
+def _official_schedule_fields_changed(existing: dict[str, Any], incoming_payload: dict[str, Any]) -> bool:
+    for key in ("schedule_kind", "schedule_expr", "timezone"):
+        if key not in incoming_payload:
+            continue
+        incoming = _compact_text(incoming_payload.get(key))
+        current = _compact_text(existing.get(key))
+        if key == "schedule_kind":
+            incoming = incoming.lower()
+            current = current.lower()
+        if incoming != current:
+            return True
+    return False
 
 
 def delete_scheduled_graph_job(job_id: str) -> bool:
@@ -245,20 +281,112 @@ def set_scheduled_graph_job_enabled(job_id: str, enabled: bool, *, now: str | No
     next_run_at = str(job.get("next_run_at") or "")
     if enabled and job["schedule_kind"] == "interval" and not next_run_at:
         next_run_at = _next_run_at_for_job(job, normalized_now)
+    if not enabled:
+        next_run_at = ""
+    metadata = _official_metadata_for_enabled_change(job, enabled) if _is_official_scheduled_graph_job(job) else dict(job.get("metadata") or {})
     with get_connection() as connection:
         cursor = connection.execute(
             """
             UPDATE scheduled_graph_jobs
             SET enabled = ?,
                 next_run_at = ?,
+                metadata_json = ?,
                 updated_at = ?
             WHERE job_id = ?
             """,
-            (1 if enabled else 0, next_run_at, normalized_now, job["job_id"]),
+            (1 if enabled else 0, next_run_at, _json_dumps(metadata), normalized_now, job["job_id"]),
         )
     if cursor.rowcount == 0:
         raise KeyError(job["job_id"])
     return load_scheduled_graph_job(job["job_id"])
+
+
+def sync_official_scheduled_graph_job_seed(job_id: str, seed_payload: dict[str, Any], *, now: str | None = None) -> dict[str, Any]:
+    existing = load_scheduled_graph_job(job_id)
+    if not _is_official_scheduled_graph_job(existing):
+        return existing
+    normalized_now = _normalize_timestamp(now)
+    seed_metadata = seed_payload.get("metadata") if isinstance(seed_payload.get("metadata"), dict) else {}
+    metadata = {
+        **dict(existing.get("metadata") or {}),
+        **dict(seed_metadata),
+        "source": str(dict(existing.get("metadata") or {}).get("source") or seed_metadata.get("source") or "official_seed"),
+    }
+    required_default = metadata.get("required_default") is True
+    existing_metadata = dict(existing.get("metadata") or {})
+    user_disabled = existing_metadata.get("user_disabled") is True
+    user_schedule_modified = existing_metadata.get("user_schedule_modified") is True
+    enabled = bool(existing.get("enabled"))
+    schedule_kind = str(existing.get("schedule_kind") or "")
+    schedule_expr = str(existing.get("schedule_expr") or "")
+    timezone_value = str(existing.get("timezone") or "UTC")
+    seed_schedule_kind = _compact_text(seed_payload.get("schedule_kind")).lower()
+    seed_schedule_expr = _compact_text(seed_payload.get("schedule_expr"))
+    seed_timezone = _compact_text(seed_payload.get("timezone")) or timezone_value
+    schedule_changed = False
+    if (
+        required_default
+        and not user_schedule_modified
+        and schedule_kind == "interval"
+        and schedule_expr == "PT1H"
+        and seed_schedule_kind == "interval"
+        and seed_schedule_expr == "PT20M"
+    ):
+        schedule_expr = seed_schedule_expr
+        timezone_value = seed_timezone
+        schedule_changed = True
+        metadata["seed_schedule_migrated"] = True
+        metadata["seed_schedule_migrated_at"] = normalized_now
+    if required_default and seed_payload.get("enabled") is not False and not enabled and not user_disabled:
+        enabled = True
+        metadata["seed_auto_enabled"] = True
+        metadata["seed_auto_enabled_at"] = normalized_now
+    next_run_at = str(existing.get("next_run_at") or "")
+    effective_job = {
+        **existing,
+        "schedule_kind": schedule_kind,
+        "schedule_expr": schedule_expr,
+        "timezone": timezone_value,
+    }
+    if enabled and schedule_kind == "interval" and (schedule_changed or not next_run_at):
+        next_run_at = _next_run_at_for_job(effective_job, normalized_now)
+    if not enabled:
+        next_run_at = ""
+    name = _compact_text(seed_payload.get("name")) or str(existing.get("name") or "")
+    retry_policy = dict(existing.get("retry_policy") or {})
+    if not retry_policy:
+        retry_policy = _normalize_retry_policy(seed_payload.get("retry_policy"))
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE scheduled_graph_jobs
+            SET name = ?,
+                schedule_kind = ?,
+                schedule_expr = ?,
+                timezone = ?,
+                enabled = ?,
+                next_run_at = ?,
+                retry_policy_json = ?,
+                metadata_json = ?,
+                updated_at = ?
+            WHERE job_id = ?
+            """,
+            (
+                name,
+                schedule_kind,
+                schedule_expr,
+                timezone_value,
+                1 if enabled else 0,
+                next_run_at,
+                _json_dumps(retry_policy),
+                _json_dumps(metadata),
+                normalized_now,
+                existing["job_id"],
+            ),
+        )
+    if cursor.rowcount == 0:
+        raise KeyError(existing["job_id"])
+    return load_scheduled_graph_job(existing["job_id"])
 
 
 def record_scheduled_graph_job_run(

@@ -48,7 +48,7 @@ export type NodeConditionRouteOutputViewModel = {
   tone: "success" | "danger" | "warning" | "neutral";
 };
 
-export type SubgraphThumbnailStatus = "idle" | "queued" | "running" | "paused" | "success" | "failed";
+export type SubgraphThumbnailStatus = "idle" | "queued" | "running" | "paused" | "success" | "failed" | "cancelled";
 
 export type SubgraphThumbnailNodeViewModel = {
   id: string;
@@ -563,6 +563,9 @@ function normalizeSubgraphThumbnailStatus(status: string | null | undefined): Su
   if (status === "paused" || status === "awaiting_human") {
     return "paused";
   }
+  if (status === "cancelled") {
+    return "cancelled";
+  }
   if (status === "success" || status === "completed") {
     return "success";
   }
@@ -573,7 +576,7 @@ function normalizeSubgraphThumbnailStatus(status: string | null | undefined): Su
 }
 
 function isActiveSubgraphThumbnailStatus(status: SubgraphThumbnailStatus) {
-  return status === "queued" || status === "running" || status === "paused";
+  return status === "queued" || status === "running" || status === "paused" || status === "cancelled";
 }
 
 function summarizeSubgraphRuntime(nodes: SubgraphThumbnailNodeViewModel[]): SubgraphRuntimeSummaryViewModel | null {
@@ -589,7 +592,7 @@ function summarizeSubgraphRuntime(nodes: SubgraphThumbnailNodeViewModel[]): Subg
   const tone =
     failedCount > 0
       ? "failed"
-      : activeNodes.some((item) => item.status === "paused")
+      : activeNodes.some((item) => item.status === "paused" || item.status === "cancelled")
         ? "paused"
         : activeNodes.length > 0
           ? "running"
