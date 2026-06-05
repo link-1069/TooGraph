@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/assets/readme-show.gif" alt="TooGraph editor demo" width="760" />
+</p>
+
+<p align="center">
   <a href="https://github.com/OoABYSSoO/TooGraph/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-c89136"></a>
   <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white">
