@@ -24,6 +24,7 @@ from app.core.model_provider_templates import (
     TRANSPORT_GEMINI_GENERATE_CONTENT,
     TRANSPORT_OPENAI_COMPATIBLE,
     get_provider_template,
+    normalize_provider_base_url,
     normalize_transport,
 )
 from app.core.storage.settings_store import load_app_settings, save_app_settings
@@ -135,7 +136,7 @@ def discover_provider_models(
     return model_provider_discovery.discover_provider_models(
         provider_id=provider_id,
         transport=transport,
-        base_url=base_url,
+        base_url=normalize_provider_base_url(provider_id, base_url),
         api_key=api_key,
         auth_header=auth_header,
         auth_scheme=auth_scheme,
@@ -158,7 +159,7 @@ def discover_provider_model_items(
     return model_provider_discovery.discover_provider_model_items(
         provider_id=provider_id,
         transport=transport,
-        base_url=base_url,
+        base_url=normalize_provider_base_url(provider_id, base_url),
         api_key=api_key,
         auth_header=auth_header,
         auth_scheme=auth_scheme,
@@ -382,7 +383,7 @@ def embed_text_with_model_provider(
     request_timeout_seconds: float | None = None,
 ) -> tuple[list[float], dict[str, Any]]:
     normalized_transport = normalize_transport(transport)
-    normalized_base_url = _normalize_base_url(base_url)
+    normalized_base_url = _normalize_base_url(normalize_provider_base_url(provider_id, base_url))
     if normalized_transport != TRANSPORT_OPENAI_COMPATIBLE:
         raise RuntimeError(f"Embedding transport '{normalized_transport}' is not supported for provider '{provider_id}'.")
 
@@ -417,7 +418,7 @@ def rerank_documents_with_model_provider(
     request_timeout_seconds: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     normalized_transport = normalize_transport(transport)
-    normalized_base_url = _normalize_base_url(base_url)
+    normalized_base_url = _normalize_base_url(normalize_provider_base_url(provider_id, base_url))
     normalized_documents = [str(document or "") for document in documents]
     if not normalized_documents:
         return [], {
@@ -562,7 +563,7 @@ def chat_with_model_provider(
     request_timeout_seconds: float | None = None,
 ) -> tuple[str, dict[str, Any]]:
     normalized_transport = normalize_transport(transport)
-    normalized_base_url = _normalize_base_url(base_url)
+    normalized_base_url = _normalize_base_url(normalize_provider_base_url(provider_id, base_url))
     normalized_timeout_seconds = normalize_request_timeout_seconds(request_timeout_seconds)
     warnings: list[str] = []
     resolved_structured_output_mode = normalize_structured_output_mode(structured_output_mode)
@@ -839,7 +840,9 @@ def _provider_config_from_saved(
     saved_provider = saved_providers.get(provider_id) if isinstance(saved_providers, dict) else {}
     saved_provider = saved_provider if isinstance(saved_provider, dict) else {}
     template = get_provider_template(provider_id)
-    return template, {**template, **saved_provider}
+    provider_config = {**template, **saved_provider}
+    provider_config["base_url"] = normalize_provider_base_url(provider_id, provider_config.get("base_url"))
+    return template, provider_config
 
 
 def _provider_auth_scheme(provider_config: dict[str, Any], template: dict[str, Any]) -> str:

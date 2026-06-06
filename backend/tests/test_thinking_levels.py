@@ -147,6 +147,50 @@ class ThinkingLevelTests(unittest.TestCase):
             {"reasoning_effort": "xhigh"},
         )
 
+    def test_deepseek_maps_thinking_levels_to_provider_specific_fields(self) -> None:
+        from app.core.thinking_levels import build_native_thinking_payload
+
+        self.assertEqual(
+            build_native_thinking_payload(
+                provider_id="deepseek",
+                transport="openai-compatible",
+                model="deepseek-v4-pro",
+                thinking_level="off",
+            ),
+            {"thinking": {"type": "disabled"}},
+        )
+        self.assertEqual(
+            build_native_thinking_payload(
+                provider_id="deepseek",
+                transport="openai-compatible",
+                model="deepseek-v4-pro",
+                thinking_level="medium",
+            ),
+            {"thinking": {"type": "enabled"}, "reasoning_effort": "high"},
+        )
+        self.assertEqual(
+            build_native_thinking_payload(
+                provider_id="deepseek",
+                transport="openai-compatible",
+                model="deepseek-v4-pro",
+                thinking_level="xhigh",
+            ),
+            {"thinking": {"type": "enabled"}, "reasoning_effort": "max"},
+        )
+
+    def test_deepseek_thinking_mapping_does_not_affect_other_compatible_providers(self) -> None:
+        from app.core.thinking_levels import build_native_thinking_payload
+
+        self.assertEqual(
+            build_native_thinking_payload(
+                provider_id="custom-gateway",
+                transport="openai-compatible",
+                model="deepseek-v4-pro",
+                thinking_level="xhigh",
+            ),
+            {},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

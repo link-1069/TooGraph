@@ -388,6 +388,29 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertEqual(requested["json"]["stream"], True)
         self.assertEqual(requested["json"]["messages"][0], {"role": "system", "content": "sys"})
 
+    def test_deepseek_chat_normalizes_legacy_v1_base_url(self) -> None:
+        from app.tools.model_provider_client import chat_with_model_provider
+
+        fake_client, client_patch = self._patched_client(
+            FakeResponse({"id": "chatcmpl_deepseek", "model": "deepseek-v4-pro", "choices": [{"message": {"content": "hello"}}]})
+        )
+        with client_patch, patch("app.tools.model_provider_client.append_model_request_log"):
+            content, meta = chat_with_model_provider(
+                provider_id="deepseek",
+                transport="openai-compatible",
+                base_url="https://api.deepseek.com/v1",
+                api_key="sk-deepseek",
+                model="deepseek-v4-pro",
+                system_prompt="sys",
+                user_prompt="user",
+                temperature=0.2,
+            )
+
+        requested = fake_client.post_calls[0]
+        self.assertEqual(content, "hello")
+        self.assertEqual(requested["url"], "https://api.deepseek.com/chat/completions")
+        self.assertEqual(meta["base_url"], "https://api.deepseek.com")
+
     def test_lmstudio_thinking_off_sends_reasoning_effort_none(self) -> None:
         from app.tools.model_provider_client import chat_with_model_provider
 

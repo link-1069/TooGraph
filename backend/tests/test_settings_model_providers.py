@@ -104,6 +104,102 @@ class SettingsModelProviderTests(unittest.TestCase):
             timeout_sec=8.0,
         )
 
+    def test_discovery_endpoint_uses_saved_api_key_when_request_omits_secret(self) -> None:
+        saved_settings = {
+            "model_providers": {
+                "deepseek": {
+                    "label": "DeepSeek",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.deepseek.com/v1",
+                    "api_key": "sk-saved-deepseek",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "deepseek-v4-pro", "label": "DeepSeek V4 Pro"}],
+                }
+            }
+        }
+        with patch("app.api.routes_settings.load_app_settings", return_value=saved_settings):
+            with patch(
+                "app.api.routes_settings.discover_provider_model_items",
+                return_value=[{"model": "deepseek-v4-flash", "label": "DeepSeek V4 Flash", "modalities": ["text"]}],
+            ) as discover:
+                with TestClient(app) as client:
+                    response = client.post(
+                        "/api/settings/model-providers/discover",
+                        json={
+                            "provider_id": "deepseek",
+                            "transport": "openai-compatible",
+                            "base_url": "https://api.deepseek.com/v1",
+                            "api_key": "",
+                            "auth_header": "Authorization",
+                            "auth_scheme": "Bearer",
+                        },
+                    )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["models"], ["deepseek-v4-flash"])
+        discover.assert_called_once_with(
+            provider_id="deepseek",
+            transport="openai-compatible",
+            base_url="https://api.deepseek.com",
+            api_key="sk-saved-deepseek",
+            auth_header="Authorization",
+            auth_scheme="Bearer",
+            timeout_sec=8.0,
+        )
+
+    def test_update_settings_normalizes_legacy_deepseek_base_url_only(self) -> None:
+        saved_payload: dict = {}
+
+        def capture_save(payload: dict) -> dict:
+            saved_payload.update(payload)
+            return payload
+
+        with patch("app.api.routes_settings.load_app_settings", return_value={"model_providers": {}}):
+            with patch("app.api.routes_settings.save_app_settings", side_effect=capture_save):
+                with patch("app.api.routes_settings._build_settings_payload", return_value={"ok": True}):
+                    with TestClient(app) as client:
+                        response = client.post(
+                            "/api/settings",
+                            json={
+                                "model": {
+                                    "text_model_ref": "deepseek/deepseek-v4-pro",
+                                    "video_model_ref": "deepseek/deepseek-v4-pro",
+                                },
+                                "agent_runtime_defaults": {
+                                    "model": "deepseek/deepseek-v4-pro",
+                                    "thinking_enabled": False,
+                                    "thinking_level": "off",
+                                    "temperature": 0.2,
+                                },
+                                "model_providers": {
+                                    "deepseek": {
+                                        "label": "DeepSeek",
+                                        "transport": "openai-compatible",
+                                        "base_url": "https://api.deepseek.com/v1",
+                                        "enabled": True,
+                                        "auth_header": "Authorization",
+                                        "auth_scheme": "Bearer",
+                                        "models": [{"model": "deepseek-v4-pro"}],
+                                    },
+                                    "openai": {
+                                        "label": "OpenAI",
+                                        "transport": "openai-compatible",
+                                        "base_url": "https://api.openai.com/v1",
+                                        "enabled": True,
+                                        "auth_header": "Authorization",
+                                        "auth_scheme": "Bearer",
+                                        "models": [{"model": "gpt-4.1"}],
+                                    },
+                                },
+                            },
+                        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(saved_payload["model_providers"]["deepseek"]["base_url"], "https://api.deepseek.com")
+        self.assertEqual(saved_payload["model_providers"]["openai"]["base_url"], "https://api.openai.com/v1")
+
     def test_update_settings_preserves_existing_api_key_when_blank(self) -> None:
         existing_settings = {
             "model_providers": {
@@ -532,6 +628,42 @@ class SettingsModelProviderTests(unittest.TestCase):
         )
         self.assertEqual(local_provider["label"], "LM Studio")
         self.assertEqual(local_provider["base_url"], "http://127.0.0.1:1234/v1")
+
+    def test_model_catalog_normalizes_legacy_deepseek_base_url_only(self) -> None:
+        from app.core import model_catalog
+
+        saved_settings = {
+            "model_providers": {
+                "deepseek": {
+                    "label": "DeepSeek",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.deepseek.com/v1",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "deepseek-v4-pro"}],
+                },
+                "openrouter": {
+                    "label": "OpenRouter",
+                    "transport": "openai-compatible",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "openai/gpt-4.1"}],
+                },
+            }
+        }
+
+        with patch.object(model_catalog, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_catalog, "get_local_gateway_runtime_config", return_value=None):
+                with patch.object(model_catalog, "get_local_route_model_names", return_value=[]):
+                    catalog = model_catalog.build_model_catalog(force_refresh=False)
+
+        deepseek_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "deepseek")
+        openrouter_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "openrouter")
+        self.assertEqual(deepseek_provider["base_url"], "https://api.deepseek.com")
+        self.assertEqual(openrouter_provider["base_url"], "https://openrouter.ai/api/v1")
 
     def test_update_model_provider_persists_structured_output_mode(self) -> None:
         saved_payload: dict = {}
@@ -1274,6 +1406,44 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual([model["model"] for model in local_provider["discovered_models"]], ["lm-local"])
         self.assertEqual(catalog["default_text_model_ref"], "openai-codex/gpt-5.5")
 
+    def test_catalog_hides_codex_saved_models_when_signed_out(self) -> None:
+        saved_settings = {
+            "text_model_ref": "openai-codex/gpt-5.5",
+            "video_model_ref": "openai-codex/gpt-5.5",
+            "model_providers": {
+                "openai-codex": {
+                    "label": "OpenAI Codex / ChatGPT Login",
+                    "transport": "codex-responses",
+                    "base_url": "https://chatgpt.com/backend-api/codex",
+                    "enabled": True,
+                    "auth_mode": "chatgpt",
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "gpt-5.5", "label": "gpt-5.5"}],
+                },
+            },
+        }
+
+        from app.core import model_catalog
+
+        with patch.object(model_catalog, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_catalog, "get_local_gateway_runtime_config", return_value=None):
+                with patch.object(model_catalog, "get_local_route_model_names", return_value=[]):
+                    with patch.object(
+                        model_catalog,
+                        "get_codex_auth_status",
+                        return_value={"configured": False, "authenticated": False, "auth_mode": "chatgpt"},
+                    ):
+                        catalog = model_catalog.build_model_catalog(force_refresh=False)
+
+        codex_provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "openai-codex")
+        self.assertEqual(codex_provider["configured"], False)
+        self.assertEqual(codex_provider["saved"], True)
+        self.assertEqual(codex_provider["models"], [])
+        self.assertEqual(codex_provider["discovered_models"], [])
+        self.assertEqual(codex_provider["auth_status"]["authenticated"], False)
+        self.assertEqual(catalog["default_text_model_ref"], "")
+
     def test_catalog_exposes_model_capabilities_and_permissions(self) -> None:
         saved_settings = {
             "text_model_ref": "local/rerank-test",
@@ -1407,6 +1577,38 @@ class SettingsModelProviderTests(unittest.TestCase):
                 },
             ],
         )
+
+    def test_catalog_exposes_api_key_preview_without_secret(self) -> None:
+        saved_settings = {
+            "text_model_ref": "deepseek/deepseek-v4-pro",
+            "video_model_ref": "deepseek/deepseek-v4-pro",
+            "model_providers": {
+                "deepseek": {
+                    "label": "DeepSeek",
+                    "transport": "openai-compatible",
+                    "base_url": "https://api.deepseek.com/v1",
+                    "api_key": "sk-deepseek-example-abcdef123456",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [{"model": "deepseek-v4-pro", "label": "DeepSeek V4 Pro"}],
+                }
+            },
+        }
+
+        from app.core import model_catalog
+
+        with patch.object(model_catalog, "load_app_settings", return_value=saved_settings):
+            with patch.object(model_catalog, "get_local_gateway_runtime_config", return_value=None):
+                with patch.object(model_catalog, "get_local_route_model_names", return_value=[]):
+                    catalog = model_catalog.build_model_catalog(force_refresh=False)
+
+        provider = next(provider for provider in catalog["providers"] if provider["provider_id"] == "deepseek")
+        self.assertTrue(provider["api_key_configured"])
+        self.assertEqual(provider["api_key_preview"], "sk-deeps********************3456")
+        provider_json = json.dumps(provider)
+        self.assertNotIn("sk-deepseek-example-abcdef123456", provider_json)
+        self.assertNotIn("abcdef123456", provider_json)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,11 @@ SUPPORTED_TRANSPORTS = {
     TRANSPORT_CODEX_RESPONSES,
 }
 
-DIRECT_PROVIDER_IDS = ("openai", "openai-codex", "openrouter", "anthropic", "gemini", "local")
+DEEPSEEK_PROVIDER_ID = "deepseek"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEEPSEEK_LEGACY_OPENAI_BASE_URLS = {"https://api.deepseek.com/v1"}
+
+DIRECT_PROVIDER_IDS = ("openai", "openai-codex", DEEPSEEK_PROVIDER_ID, "local", "openrouter", "anthropic", "gemini")
 
 CODEX_DEFAULT_MODEL_CAPABILITIES: dict[str, bool] = {
     "chat": True,
@@ -41,13 +45,23 @@ def build_codex_default_model_item(model: str) -> dict[str, Any]:
     }
 
 
+def normalize_provider_base_url(provider_id: str, base_url: Any) -> str:
+    normalized = str(base_url or "").strip().rstrip("/")
+    if (
+        str(provider_id or "").strip().lower() == DEEPSEEK_PROVIDER_ID
+        and normalized.lower() in DEEPSEEK_LEGACY_OPENAI_BASE_URLS
+    ):
+        return DEEPSEEK_BASE_URL
+    return normalized
+
+
 def _openai_template(provider_id: str, label: str, base_url: str, *, group: str = "compatible") -> dict[str, Any]:
     return {
         "provider_id": provider_id,
         "label": label,
         "description": f"{label} provider template.",
         "transport": TRANSPORT_OPENAI_COMPATIBLE,
-        "base_url": base_url.rstrip("/"),
+        "base_url": normalize_provider_base_url(provider_id, base_url),
         "auth_header": "Authorization",
         "auth_scheme": "Bearer",
         "enabled": provider_id == "local",
@@ -58,10 +72,6 @@ def _openai_template(provider_id: str, label: str, base_url: str, *, group: str 
 
 
 PROVIDER_TEMPLATES: dict[str, dict[str, Any]] = {
-    "local": {
-        **_openai_template("local", "LM Studio", "http://127.0.0.1:1234/v1", group="direct"),
-        "description": "LM Studio OpenAI-compatible endpoint.",
-    },
     "openai": {
         **_openai_template("openai", "OpenAI", "https://api.openai.com/v1", group="direct"),
         "enabled": False,
@@ -81,6 +91,14 @@ PROVIDER_TEMPLATES: dict[str, dict[str, Any]] = {
         "template_group": "direct",
         "models": [build_codex_default_model_item("gpt-5.5")],
         "example_model_refs": ["openai-codex/gpt-5.5", "openai-codex/gpt-5.4-mini"],
+    },
+    "deepseek": {
+        **_openai_template(DEEPSEEK_PROVIDER_ID, "DeepSeek", DEEPSEEK_BASE_URL, group="direct"),
+        "example_model_refs": ["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"],
+    },
+    "local": {
+        **_openai_template("local", "LM Studio", "http://127.0.0.1:1234/v1", group="direct"),
+        "description": "LM Studio OpenAI-compatible endpoint.",
     },
     "openrouter": {
         **_openai_template("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", group="direct"),
@@ -112,7 +130,6 @@ PROVIDER_TEMPLATES: dict[str, dict[str, Any]] = {
         "models": [],
         "example_model_refs": ["gemini/gemini-2.0-flash", "gemini/gemini-1.5-pro"],
     },
-    "deepseek": _openai_template("deepseek", "DeepSeek", "https://api.deepseek.com/v1"),
     "xai": _openai_template("xai", "xAI", "https://api.x.ai/v1"),
     "groq": _openai_template("groq", "Groq", "https://api.groq.com/openai/v1"),
     "mistral": _openai_template("mistral", "Mistral", "https://api.mistral.ai/v1"),

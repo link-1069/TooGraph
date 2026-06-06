@@ -18,10 +18,16 @@ class ModelProviderTemplateTests(unittest.TestCase):
     def test_direct_templates_include_first_phase_providers(self) -> None:
         self.assertIn("openai", DIRECT_PROVIDER_IDS)
         self.assertIn("openai-codex", DIRECT_PROVIDER_IDS)
+        self.assertIn("deepseek", DIRECT_PROVIDER_IDS)
         self.assertIn("openrouter", DIRECT_PROVIDER_IDS)
         self.assertIn("anthropic", DIRECT_PROVIDER_IDS)
         self.assertIn("gemini", DIRECT_PROVIDER_IDS)
         self.assertIn("local", DIRECT_PROVIDER_IDS)
+
+    def test_default_template_order_places_deepseek_between_codex_and_lm_studio(self) -> None:
+        provider_ids = [template["provider_id"] for template in list_provider_templates()]
+        self.assertLess(provider_ids.index("openai-codex"), provider_ids.index("deepseek"))
+        self.assertLess(provider_ids.index("deepseek"), provider_ids.index("local"))
 
     def test_openai_codex_template_uses_codex_responses_transport(self) -> None:
         template = get_provider_template("openai-codex")
@@ -48,6 +54,13 @@ class ModelProviderTemplateTests(unittest.TestCase):
         template = get_provider_template("openrouter")
         self.assertEqual(template["transport"], "openai-compatible")
         self.assertEqual(template["base_url"], "https://openrouter.ai/api/v1")
+        self.assertEqual(template["auth_header"], "Authorization")
+        self.assertEqual(template["auth_scheme"], "Bearer")
+
+    def test_deepseek_template_matches_official_openai_compatible_endpoint(self) -> None:
+        template = get_provider_template("deepseek")
+        self.assertEqual(template["transport"], "openai-compatible")
+        self.assertEqual(template["base_url"], "https://api.deepseek.com")
         self.assertEqual(template["auth_header"], "Authorization")
         self.assertEqual(template["auth_scheme"], "Bearer")
 

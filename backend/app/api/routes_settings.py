@@ -16,8 +16,9 @@ from app.core.model_provider_costs import normalize_provider_model_pricing
 from app.core.model_provider_credentials import (
     normalize_provider_credential_pool,
     preserve_provider_credential_pool_secrets,
+    select_provider_credential,
 )
-from app.core.model_provider_templates import get_provider_template, normalize_transport
+from app.core.model_provider_templates import get_provider_template, normalize_provider_base_url, normalize_transport
 from app.core.storage.model_log_store import (
     get_model_log_retention_settings,
     normalize_model_log_retention_root_runs,
@@ -312,7 +313,7 @@ def _merge_model_providers(
         provider_config = {
             "label": provider_payload.label or existing_provider.get("label") or template.get("label") or provider_key,
             "transport": transport,
-            "base_url": str(provider_payload.base_url).strip().rstrip("/"),
+            "base_url": normalize_provider_base_url(provider_key, provider_payload.base_url),
             "enabled": bool(provider_payload.enabled),
             "auth_mode": provider_payload.auth_mode or existing_provider.get("auth_mode") or template.get("auth_mode") or "api_key",
             "auth_header": provider_payload.auth_header
@@ -502,11 +503,18 @@ def update_model_log_settings_endpoint(payload: ModelLogSettingsPayload) -> dict
 def discover_model_provider_models_endpoint(payload: ModelDiscoveryPayload) -> dict:
     try:
         template = get_provider_template(payload.provider_id)
+        api_key = payload.api_key
+        if not api_key:
+            saved_settings = load_app_settings()
+            saved_providers = saved_settings.get("model_providers") if isinstance(saved_settings, dict) else {}
+            saved_provider = saved_providers.get(payload.provider_id) if isinstance(saved_providers, dict) else None
+            if isinstance(saved_provider, dict):
+                api_key, _credential = select_provider_credential(saved_provider)
         model_items = discover_provider_model_items(
             provider_id=payload.provider_id,
             transport=payload.transport,
-            base_url=payload.base_url,
-            api_key=payload.api_key,
+            base_url=normalize_provider_base_url(payload.provider_id, payload.base_url),
+            api_key=api_key,
             auth_header=payload.auth_header or template.get("auth_header") or "Authorization",
             auth_scheme=payload.auth_scheme if payload.auth_scheme is not None else str(template.get("auth_scheme") or "Bearer"),
             timeout_sec=normalize_request_timeout_seconds(payload.request_timeout_seconds, default=8.0),

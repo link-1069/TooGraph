@@ -20,6 +20,19 @@ PROVIDER_CREDENTIAL_STATUSES = {
 }
 
 
+def build_api_key_preview(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= 4:
+        return "*" * len(text)
+    if len(text) <= 8:
+        return f"{text[:2]}{'*' * (len(text) - 4)}{text[-2:]}"
+    if len(text) <= 12:
+        return f"{text[:3]}{'*' * (len(text) - 6)}{text[-3:]}"
+    return f"{text[:8]}{'*' * (len(text) - 12)}{text[-4:]}"
+
+
 def normalize_provider_credential_pool(value: Any, *, include_secrets: bool = False) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []

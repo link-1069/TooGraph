@@ -3,10 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.model_provider_credentials import (
+    build_api_key_preview,
     has_configured_provider_credential,
     normalize_provider_credential_pool,
+    select_provider_credential,
 )
-from app.core.model_provider_templates import get_provider_template, list_provider_templates, normalize_transport
+from app.core.model_provider_templates import (
+    get_provider_template,
+    list_provider_templates,
+    normalize_provider_base_url,
+    normalize_transport,
+)
 from app.core.runtime.structured_output import normalize_structured_output_mode
 from app.core.storage.settings_store import load_app_settings
 from app.tools.local_llm import (
@@ -211,7 +218,7 @@ def _normalize_provider_config(
         cloud_config = _dict_or_empty(runtime_config.get("cloud"))
         default_base_url = str(cloud_config.get("api_base") or default_base_url)
 
-    base_url = str(saved_provider.get("base_url") or default_base_url).strip().rstrip("/")
+    base_url = normalize_provider_base_url(provider_id, saved_provider.get("base_url") or default_base_url)
     existing_saved_provider = bool(saved_provider)
     enabled = saved_provider.get("enabled")
     if not isinstance(enabled, bool):
@@ -295,6 +302,15 @@ def _is_provider_configured(provider: dict[str, Any]) -> bool:
     if _provider_requires_api_key(provider) and not has_configured_provider_credential(provider):
         return False
     return True
+
+
+def _is_signed_out_login_provider(provider: dict[str, Any]) -> bool:
+    if not (provider.get("requires_login") or provider.get("auth_mode") == "chatgpt"):
+        return False
+    if provider["provider_id"] != "openai-codex":
+        return False
+    auth_status = get_codex_auth_status()
+    return not auth_status.get("authenticated") and not auth_status.get("configured")
 
 
 def _build_catalog_model(
@@ -474,6 +490,7 @@ def _build_provider_entry(
     if provider["provider_id"] == "openai-codex":
         auth_status = get_codex_auth_status()
         api_key_configured = bool(auth_status.get("configured"))
+    selected_api_key, _selected_credential = select_provider_credential(provider)
 
     entry = {
         "provider_id": provider["provider_id"],
@@ -492,6 +509,7 @@ def _build_provider_entry(
         "requires_login": bool(provider.get("requires_login")),
         "saved": bool(provider.get("saved")),
         "api_key_configured": api_key_configured,
+        "api_key_preview": build_api_key_preview(selected_api_key),
         "models": models,
         "discovered_models": discovered_models if discovered_models is not None else models,
         "example_model_refs": provider.get("example_model_refs") or [],
@@ -613,6 +631,9 @@ def build_model_catalog(*, force_refresh: bool = False) -> dict[str, Any]:
                 runtime_config=runtime_config,
                 force_refresh=force_refresh,
             )
+        elif _is_signed_out_login_provider(provider):
+            catalog_models = []
+            discovered_catalog_models = []
         else:
             selected_model_items = list(provider.get("models") or [])
             discovered_model_items = _discover_provider_model_items(provider, force_refresh=force_refresh)

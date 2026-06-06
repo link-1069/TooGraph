@@ -9,6 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 class ModelProviderCredentialTests(unittest.TestCase):
+    def test_build_api_key_preview_shows_edges_without_short_secret(self) -> None:
+        from app.core.model_provider_credentials import build_api_key_preview
+
+        self.assertEqual(build_api_key_preview("sk-deepseek-example-abcdef123456"), "sk-deeps********************3456")
+        self.assertEqual(build_api_key_preview("abcd"), "****")
+        self.assertEqual(build_api_key_preview("sk-short"), "sk****rt")
+
     def test_update_provider_credential_pool_after_failure_sets_cooldown_and_preserves_secret(self) -> None:
         from app.core.model_provider_credentials import update_provider_credential_pool_after_call
 

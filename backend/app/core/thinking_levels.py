@@ -105,6 +105,23 @@ def _map_lmstudio_reasoning_effort(level: str) -> str | None:
     return normalized
 
 
+def _map_deepseek_reasoning_effort(level: str) -> str | None:
+    normalized = normalize_thinking_level(level, fallback=THINKING_LEVEL_OFF)
+    if normalized == THINKING_LEVEL_OFF:
+        return None
+    if normalized == THINKING_LEVEL_XHIGH:
+        return "max"
+    return THINKING_LEVEL_HIGH
+
+
+def _build_deepseek_thinking_payload(level: str) -> dict[str, Any]:
+    normalized = normalize_thinking_level(level, fallback=THINKING_LEVEL_OFF)
+    if normalized == THINKING_LEVEL_OFF:
+        return {"thinking": {"type": "disabled"}}
+    effort = _map_deepseek_reasoning_effort(normalized)
+    return {"thinking": {"type": "enabled"}, "reasoning_effort": effort} if effort else {}
+
+
 def build_native_thinking_payload(
     *,
     provider_id: str,
@@ -115,6 +132,9 @@ def build_native_thinking_payload(
     level = normalize_thinking_level(thinking_level, fallback=THINKING_LEVEL_OFF)
     provider = str(provider_id or "").strip().lower()
     normalized_transport = str(transport or "").strip()
+    if normalized_transport == TRANSPORT_OPENAI_COMPATIBLE and provider == "deepseek":
+        return _build_deepseek_thinking_payload(level)
+
     if level == THINKING_LEVEL_OFF:
         if normalized_transport == TRANSPORT_OPENAI_COMPATIBLE and provider == "lmstudio":
             return {"reasoning_effort": "none"}
