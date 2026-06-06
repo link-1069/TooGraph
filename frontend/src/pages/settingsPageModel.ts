@@ -56,10 +56,62 @@ export type ProviderDraft = {
   credential_pool: SettingsProviderCredential[];
   api_key: string;
   api_key_configured: boolean;
+  api_key_preview?: string;
   discovered_models: string[];
   selected_models: string[];
   model_settings: Record<string, ProviderModelDraft>;
 };
+
+const DEFAULT_PROVIDER_CARD_IDS = new Set(["deepseek", "local"]);
+const PROVIDER_CARD_ORDER: Record<string, number> = {
+  "openai-codex": 0,
+  deepseek: 1,
+  local: 2,
+};
+
+function normalizeProviderId(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+export function isDefaultProviderCardVisible(provider: { provider_id?: unknown }) {
+  return DEFAULT_PROVIDER_CARD_IDS.has(normalizeProviderId(provider.provider_id));
+}
+
+export function isProviderApiKeyOptional(
+  provider: Pick<ProviderDraft, "provider_id" | "base_url"> & Partial<Pick<ProviderDraft, "auth_mode" | "requires_login">>,
+) {
+  if (normalizeProviderId(provider.provider_id) === "local") {
+    return true;
+  }
+  if (provider.requires_login || String(provider.auth_mode || "").trim().toLowerCase() === "chatgpt") {
+    return true;
+  }
+  const baseUrl = String(provider.base_url || "").trim().toLowerCase();
+  return baseUrl.includes("localhost") || baseUrl.includes("127.0.0.1") || baseUrl.startsWith("http://0.0.0.0");
+}
+
+export function isSignedOutLoginProvider(
+  provider: Partial<Pick<SettingsProvider, "auth_mode" | "requires_login" | "auth_status">>,
+) {
+  const loginProvider = Boolean(provider.requires_login) || String(provider.auth_mode || "").trim().toLowerCase() === "chatgpt";
+  if (!loginProvider) {
+    return false;
+  }
+  return !provider.auth_status?.authenticated && !provider.auth_status?.configured;
+}
+
+export function compareProviderDraftCards(left: ProviderDraft, right: ProviderDraft) {
+  const leftRank = PROVIDER_CARD_ORDER[normalizeProviderId(left.provider_id)] ?? 100;
+  const rightRank = PROVIDER_CARD_ORDER[normalizeProviderId(right.provider_id)] ?? 100;
+  if (leftRank !== rightRank) {
+    return leftRank - rightRank;
+  }
+  const labelCompare = left.label.localeCompare(right.label);
+  if (labelCompare !== 0) {
+    return labelCompare;
+  }
+  return left.provider_id.localeCompare(right.provider_id);
+}
 
 export function dedupeStrings(values: string[]) {
   const items: string[] = [];
@@ -77,6 +129,31 @@ export function dedupeStrings(values: string[]) {
     items.push(value);
   }
   return items;
+}
+
+export function clearProviderModelSelection(
+  provider: Pick<ProviderDraft, "discovered_models" | "selected_models" | "model_settings">,
+) {
+  provider.discovered_models = [];
+  provider.selected_models = [];
+  provider.model_settings = {};
+}
+
+export function buildApiKeyPreview(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  if (text.length <= 4) {
+    return "*".repeat(text.length);
+  }
+  if (text.length <= 8) {
+    return `${text.slice(0, 2)}${"*".repeat(text.length - 4)}${text.slice(-2)}`;
+  }
+  if (text.length <= 12) {
+    return `${text.slice(0, 3)}${"*".repeat(text.length - 6)}${text.slice(-3)}`;
+  }
+  return `${text.slice(0, 8)}${"*".repeat(text.length - 12)}${text.slice(-4)}`;
 }
 
 export function clampSettingsTemperature(value: number) {
@@ -424,15 +501,19 @@ export function buildProviderDraftsFromSettings(payload: SettingsPayload): Recor
   const providers = payload.model_catalog?.providers ?? [];
   return Object.fromEntries(
     providers
-      .filter((provider) => provider.configured || provider.saved || provider.provider_id === "local")
+      .filter((provider) => provider.configured || provider.saved || isDefaultProviderCardVisible(provider))
       .map((provider) => {
-        const enabledModels = dedupeStrings(provider.models.map((model) => model.model));
-        const discoveredModels = dedupeStrings(
-          (provider.discovered_models && provider.discovered_models.length > 0 ? provider.discovered_models : provider.models).map(
-            (model) => model.model,
-          ),
-        );
-        const modelSettings = buildProviderModelSettings(provider, enabledModels);
+        const signedOutLoginProvider = isSignedOutLoginProvider(provider);
+        const enabledModels = signedOutLoginProvider ? [] : dedupeStrings(provider.models.map((model) => model.model));
+        const discoveredModels = signedOutLoginProvider
+          ? []
+          : dedupeStrings(
+              (provider.discovered_models && provider.discovered_models.length > 0
+                ? provider.discovered_models
+                : provider.models
+              ).map((model) => model.model),
+            );
+        const modelSettings = signedOutLoginProvider ? {} : buildProviderModelSettings(provider, enabledModels);
         return [
           provider.provider_id,
           {
@@ -452,6 +533,7 @@ export function buildProviderDraftsFromSettings(payload: SettingsPayload): Recor
             credential_pool: normalizeProviderCredentialPool(provider.credential_pool),
             api_key: "",
             api_key_configured: Boolean(provider.api_key_configured),
+            api_key_preview: String(provider.api_key_preview || "").trim(),
             discovered_models: discoveredModels,
             selected_models: enabledModels,
             model_settings: modelSettings,

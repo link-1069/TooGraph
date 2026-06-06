@@ -508,14 +508,29 @@
                         </label>
                         <label class="model-providers-page__provider-form-field">
                           <span class="model-providers-page__provider-field-label">{{ t("settings.providerApiKey") }}</span>
-                          <input
-                            v-model.trim="provider.api_key"
-                            class="model-providers-page__provider-text-input"
-                            type="password"
-                            autocomplete="off"
-                            :placeholder="provider.api_key_configured ? t('settings.keepExistingApiKey') : t('settings.optionalApiKey')"
-                            @change="handleProviderDraftChange"
-                          />
+                          <div class="model-providers-page__api-key-field">
+                            <button
+                              v-if="shouldShowApiKeyPreview(provider, apiKeyFieldKey('card', provider))"
+                              type="button"
+                              class="model-providers-page__api-key-preview-button"
+                              :title="providerApiKeyDisplayValue(provider)"
+                              @click="beginApiKeyEditing('card', provider)"
+                            >
+                              <span class="model-providers-page__api-key-preview-text">{{ providerApiKeyDisplayValue(provider) }}</span>
+                            </button>
+                            <input
+                              v-else
+                              :ref="(element) => setApiKeyInputRef(apiKeyFieldKey('card', provider), element)"
+                              v-model.trim="provider.api_key"
+                              class="model-providers-page__provider-text-input model-providers-page__api-key-input"
+                              type="password"
+                              autocomplete="off"
+                              :placeholder="providerApiKeyInputPlaceholder(provider)"
+                              @focus="handleApiKeyInputFocus('card', provider)"
+                              @blur="handleApiKeyInputBlur('card', provider)"
+                              @change="handleProviderDraftChange"
+                            />
+                          </div>
                         </label>
                       </div>
                       <details class="model-providers-page__advanced-provider">
@@ -626,14 +641,6 @@
                         </span>
                         <span v-else></span>
                         <div class="model-providers-page__provider-editor-footer-actions">
-                          <button
-                            v-if="provider.provider_id !== 'local'"
-                            type="button"
-                            class="model-providers-page__button model-providers-page__button--danger"
-                            @click="handleRemoveProvider(provider.provider_id)"
-                          >
-                            {{ t("settings.removeProvider") }}
-                          </button>
                           <button type="button" class="model-providers-page__button" @click="closeProviderEditorPanel">
                             {{ t("common.close") }}
                           </button>
@@ -641,14 +648,6 @@
                       </div>
                     </div>
                   </ElPopover>
-                  <button
-                    v-if="provider.provider_id !== 'local'"
-                    type="button"
-                    class="model-providers-page__button"
-                    @click="handleRemoveProvider(provider.provider_id)"
-                  >
-                    {{ t("settings.removeProvider") }}
-                  </button>
                 </div>
                 <span v-if="providerMessages[provider.provider_id]" class="model-providers-page__provider-message">
                   {{ providerMessages[provider.provider_id] }}
@@ -813,13 +812,29 @@
                   </label>
                   <label v-if="!isLoginProvider(providerEditorDraft)">
                     <span>{{ t("settings.providerApiKey") }}</span>
-                    <input
-                      v-model.trim="providerEditorDraft.api_key"
-                      type="password"
-                      autocomplete="off"
-                      :placeholder="providerEditorDraft.api_key_configured ? t('settings.keepExistingApiKey') : t('settings.optionalApiKey')"
-                      @change="handleProviderDraftChange"
-                    />
+                    <div class="model-providers-page__api-key-field">
+                      <button
+                        v-if="shouldShowApiKeyPreview(providerEditorDraft, apiKeyFieldKey('editor', providerEditorDraft))"
+                        type="button"
+                        class="model-providers-page__api-key-preview-button"
+                        :title="providerApiKeyDisplayValue(providerEditorDraft)"
+                        @click="beginApiKeyEditing('editor', providerEditorDraft)"
+                      >
+                        <span class="model-providers-page__api-key-preview-text">{{ providerApiKeyDisplayValue(providerEditorDraft) }}</span>
+                      </button>
+                      <input
+                        v-else
+                        :ref="(element) => setProviderApiKeyInputRef('editor', providerEditorDraft, element)"
+                        v-model.trim="providerEditorDraft.api_key"
+                        class="model-providers-page__api-key-input"
+                        type="password"
+                        autocomplete="off"
+                        :placeholder="providerApiKeyInputPlaceholder(providerEditorDraft)"
+                        @focus="handleApiKeyInputFocus('editor', providerEditorDraft)"
+                        @blur="handleApiKeyInputBlur('editor', providerEditorDraft)"
+                        @change="handleProviderDraftChange"
+                      />
+                    </div>
                   </label>
                   <div v-if="isLoginProvider(providerEditorDraft)" class="model-providers-page__login-panel">
                     <div class="model-providers-page__login-status">
@@ -827,7 +842,7 @@
                       <strong>{{ providerAuthStatusLabel(providerEditorDraft) }}</strong>
                     </div>
                   </div>
-                  <label>
+                  <div class="model-providers-page__provider-form-field model-providers-page__provider-model-select-field">
                     <span>{{ t("settings.enabledModels") }}</span>
                     <ElSelect
                       v-model="providerEditorDraft.selected_models"
@@ -837,8 +852,12 @@
                       default-first-option
                       :reserve-keyword="false"
                       :teleported="false"
+                      :loading="isEditorModelSelectLoading"
+                      :loading-text="t('settings.discoveringModels')"
+                      :no-data-text="t('settings.noModelsDiscovered')"
                       popper-class="toograph-select-popper"
                       @change="handleProviderDraftChange"
+                      @visible-change="handleEditorModelSelectVisibleChange"
                     >
                       <ElOption
                         v-for="modelName in editorProviderModelOptions"
@@ -847,7 +866,7 @@
                         :value="modelName"
                       />
                     </ElSelect>
-                  </label>
+                  </div>
                 </div>
 
                 <details class="model-providers-page__advanced-provider">
@@ -957,7 +976,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { ElIcon, ElMessage, ElOption, ElPopover, ElSelect, ElSwitch } from "element-plus";
 import { Check, CircleCheck, Close, CopyDocument, Plus } from "@element-plus/icons-vue";
 import { useI18n } from "vue-i18n";
@@ -982,13 +1001,18 @@ import type { AgentThinkingLevel, SettingsModelProvider, SettingsPayload, Settin
 import {
   applyModelPurpose,
   applyDiscoveredModelItemsToDraft,
+  buildApiKeyPreview,
   buildProviderDraftsFromSettings,
   buildProviderSavePayload,
   clampModelCompressionThreshold,
   clampSettingsTemperature,
+  clearProviderModelSelection,
+  compareProviderDraftCards,
   ensureProviderModelDraft,
   inferModelCapabilities,
   isModelPurposeKey,
+  isProviderApiKeyOptional,
+  isSignedOutLoginProvider,
   listAddableProviderTemplates,
   modelHasCapability,
   normalizeContextWindowKTokens,
@@ -1026,6 +1050,7 @@ const refreshingModelPickerProviderId = ref<string | null>(null);
 const activeProviderConfigProviderId = ref<string | null>(null);
 const activeModelConfigKey = ref<string | null>(null);
 const activeLogoutConfirmProviderId = ref<string | null>(null);
+const activeApiKeyFieldKey = ref<string | null>(null);
 const logoutConfirmTimeoutRef = ref<number | null>(null);
 const codexBrowserLoginSession = ref<OpenAICodexBrowserAuthStartResponse | null>(null);
 const codexDeviceLoginSession = ref<OpenAICodexAuthStartResponse | null>(null);
@@ -1033,6 +1058,7 @@ const codexAuthBusy = ref(false);
 let codexBrowserPollTimer: number | null = null;
 let codexDevicePollTimer: number | null = null;
 let saveMessageTimer: number | null = null;
+const apiKeyInputRefs = new Map<string, HTMLInputElement>();
 const { t } = useI18n();
 const manualPopoverTrigger = [] as [];
 const modelPickerPopoverStyle = {
@@ -1127,7 +1153,8 @@ function getConcreteModelName(model: {
 }
 
 function buildProviderDraftFromTemplate(provider: SettingsModelProvider): ProviderDraft {
-  const modelNames = dedupeStrings(provider.models.map((model) => model.model));
+  const signedOutLoginProvider = isSignedOutLoginProvider(provider);
+  const modelNames = signedOutLoginProvider ? [] : dedupeStrings(provider.models.map((model) => model.model));
   const draft: ProviderDraft = {
     provider_id: provider.provider_id,
     label: provider.label,
@@ -1145,10 +1172,14 @@ function buildProviderDraftFromTemplate(provider: SettingsModelProvider): Provid
     credential_pool: provider.credential_pool ?? [],
     api_key: "",
     api_key_configured: Boolean(provider.api_key_configured),
+    api_key_preview: provider.api_key_preview?.trim() ?? "",
     discovered_models: modelNames,
     selected_models: modelNames,
     model_settings: {},
   };
+  if (signedOutLoginProvider) {
+    return draft;
+  }
   for (const model of provider.models) {
     const modelName = model.model.trim();
     if (!modelName) {
@@ -1199,13 +1230,7 @@ function buildModelDisplayLookup(
 }
 
 const providerDraftList = computed(() =>
-  Object.values(providerDrafts.value).sort((left, right) => {
-    if (left.provider_id === "openai-codex") return -1;
-    if (right.provider_id === "openai-codex") return 1;
-    if (left.provider_id === "local") return -1;
-    if (right.provider_id === "local") return 1;
-    return left.label.localeCompare(right.label);
-  }),
+  Object.values(providerDrafts.value).sort(compareProviderDraftCards),
 );
 const providerCardList = computed(() => {
   if (!codexProvider.value) {
@@ -1231,6 +1256,10 @@ const editorProviderModelOptions = computed(() => {
     return [];
   }
   return dedupeStrings(provider.discovered_models);
+});
+const isEditorModelSelectLoading = computed(() => {
+  const provider = providerEditorDraft.value;
+  return Boolean(provider && discoveringProviderId.value === provider.provider_id);
 });
 const codexTemplate = computed(() => {
   const providers = settings.value?.model_catalog?.providers ?? [];
@@ -1334,6 +1363,75 @@ function providerHasReasoningChatModel(provider: ProviderDraft) {
     const modelSettings = readProviderModelDraft(provider, modelName);
     return modelSettings.reasoning === true && modelSettings.capabilities.chat;
   });
+}
+
+function providerApiKeyPlaceholder(provider: ProviderDraft) {
+  const preview = provider.api_key_preview?.trim();
+  if (provider.api_key_configured && preview) {
+    return t("settings.keepExistingApiKeyWithPreview", { preview });
+  }
+  if (provider.api_key_configured) {
+    return t("settings.keepExistingApiKey");
+  }
+  return isProviderApiKeyOptional(provider) ? t("settings.optionalApiKey") : t("settings.requiredApiKey");
+}
+
+function providerApiKeyDisplayValue(provider: ProviderDraft) {
+  return buildApiKeyPreview(provider.api_key) || provider.api_key_preview?.trim() || "";
+}
+
+function providerApiKeyInputPlaceholder(provider: ProviderDraft) {
+  return provider.api_key.trim() ? "" : providerApiKeyPlaceholder(provider);
+}
+
+function apiKeyFieldKey(scope: string, provider: ProviderDraft) {
+  return `${scope}:${provider.provider_id}`;
+}
+
+function shouldShowApiKeyPreview(provider: ProviderDraft, fieldKey: string) {
+  return activeApiKeyFieldKey.value !== fieldKey && Boolean(providerApiKeyDisplayValue(provider));
+}
+
+function setApiKeyInputRef(fieldKey: string, element: unknown) {
+  if (typeof HTMLInputElement !== "undefined" && element instanceof HTMLInputElement) {
+    apiKeyInputRefs.set(fieldKey, element);
+    return;
+  }
+  apiKeyInputRefs.delete(fieldKey);
+}
+
+function setProviderApiKeyInputRef(scope: string, provider: ProviderDraft | null, element: unknown) {
+  if (!provider) {
+    return;
+  }
+  setApiKeyInputRef(apiKeyFieldKey(scope, provider), element);
+}
+
+function focusApiKeyInput(fieldKey: string) {
+  const input = apiKeyInputRefs.get(fieldKey);
+  if (!input) {
+    return;
+  }
+  input.focus();
+  const valueLength = input.value.length;
+  input.setSelectionRange(valueLength, valueLength);
+}
+
+function beginApiKeyEditing(scope: string, provider: ProviderDraft) {
+  const fieldKey = apiKeyFieldKey(scope, provider);
+  activeApiKeyFieldKey.value = fieldKey;
+  void nextTick(() => focusApiKeyInput(fieldKey));
+}
+
+function handleApiKeyInputFocus(scope: string, provider: ProviderDraft) {
+  activeApiKeyFieldKey.value = apiKeyFieldKey(scope, provider);
+}
+
+function handleApiKeyInputBlur(scope: string, provider: ProviderDraft) {
+  const fieldKey = apiKeyFieldKey(scope, provider);
+  if (activeApiKeyFieldKey.value === fieldKey) {
+    activeApiKeyFieldKey.value = null;
+  }
 }
 
 function shouldShowLmStudioStructuredOutputWarning(provider: ProviderDraft) {
@@ -1548,6 +1646,17 @@ async function handleAddProviderModel(provider: ProviderDraft) {
   }
 }
 
+async function handleEditorModelSelectVisibleChange(visible: boolean) {
+  if (!visible) {
+    return;
+  }
+  const provider = providerEditorDraft.value;
+  if (!provider || discoveringProviderId.value === provider.provider_id) {
+    return;
+  }
+  await handleDiscoverModels(provider.provider_id, { selectDiscovered: false });
+}
+
 function handleProviderConfigVisibleChange(provider: ProviderDraft, visible: boolean) {
   if (visible) {
     openProviderEditor(provider.provider_id);
@@ -1616,6 +1725,23 @@ function alignDefaultModelsToProviderSelection() {
   const embeddingFallbackRef = configuredEmbeddingModelOptions.value[0].value;
   if (!embeddingAvailableRefs.has(draft.value.embedding_model_ref)) {
     draft.value.embedding_model_ref = embeddingFallbackRef;
+  }
+}
+
+function clearProviderDefaultModelRefs(providerId: string) {
+  if (!draft.value) {
+    return;
+  }
+  const normalizedProviderId = providerId.trim();
+  const isProviderRef = (value: string) => value.trim() === normalizedProviderId || value.trim().startsWith(`${normalizedProviderId}/`);
+  if (isProviderRef(draft.value.text_model_ref)) {
+    draft.value.text_model_ref = "";
+  }
+  if (isProviderRef(draft.value.video_model_ref)) {
+    draft.value.video_model_ref = "";
+  }
+  if (isProviderRef(draft.value.embedding_model_ref)) {
+    draft.value.embedding_model_ref = "";
   }
 }
 
@@ -1821,21 +1947,11 @@ async function commitPendingProvider() {
   editingProviderId.value = provider.provider_id;
   activeProviderConfigProviderId.value = provider.provider_id;
   alignDefaultModelsToProviderSelection();
-  const refreshed = await handleDiscoverModels(provider.provider_id);
-  if (!refreshed) {
+  const shouldSelectDiscovered = provider.selected_models.length === 0;
+  const refreshed = await handleDiscoverModels(provider.provider_id, { selectDiscovered: shouldSelectDiscovered });
+  if (!refreshed || !shouldSelectDiscovered) {
     await persistSettings();
   }
-}
-
-async function handleRemoveProvider(providerId: string) {
-  const nextDrafts = { ...providerDrafts.value };
-  delete nextDrafts[providerId];
-  providerDrafts.value = nextDrafts;
-  if (editingProviderId.value === providerId || pendingProviderDraft.value?.provider_id === providerId) {
-    closeProviderEditorPanel();
-  }
-  alignDefaultModelsToProviderSelection();
-  await persistSettings();
 }
 
 function showBaseUrlInPrimaryFields(provider: ProviderDraft | null) {
@@ -2214,6 +2330,12 @@ async function handleLogoutCodex() {
     codexDeviceLoginSession.value = null;
     const status = await logoutOpenAICodexAuth();
     applyCodexAuthStatus(status);
+    const provider = providerDrafts.value["openai-codex"];
+    if (provider) {
+      clearProviderModelSelection(provider);
+    }
+    clearProviderDefaultModelRefs("openai-codex");
+    alignDefaultModelsToProviderSelection();
     setProviderMessage("openai-codex", t("settings.codexLoggedOut"));
     await persistSettings();
   } catch (authError) {
@@ -2413,6 +2535,14 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 8px;
   margin-top: 12px;
+  color: rgba(60, 41, 20, 0.72);
+}
+
+.model-providers-page__provider-form-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  min-width: 0;
   color: rgba(60, 41, 20, 0.72);
 }
 
@@ -2915,6 +3045,50 @@ onBeforeUnmount(() => {
 .model-providers-page__provider-text-input:disabled {
   color: rgba(60, 41, 20, 0.58);
   background: rgba(255, 248, 240, 0.68);
+}
+
+.model-providers-page__api-key-field {
+  display: block;
+  min-width: 0;
+}
+
+.model-providers-page__api-key-input {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.model-providers-page__api-key-preview-button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(154, 52, 18, 0.16);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--toograph-text-strong);
+  cursor: text;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92rem;
+  line-height: 1.35;
+  text-align: left;
+  box-sizing: border-box;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.model-providers-page__api-key-preview-button:focus-visible {
+  border-color: rgba(154, 52, 18, 0.34);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 0 0 3px rgba(154, 52, 18, 0.1);
+}
+
+.model-providers-page__api-key-preview-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-providers-page__warning {

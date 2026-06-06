@@ -3,15 +3,43 @@ import test from "node:test";
 
 import {
   applyModelPurpose,
+  buildApiKeyPreview,
   buildProviderDraftsFromSettings,
   buildProviderSavePayload,
   clampSettingsTemperature,
+  clearProviderModelSelection,
+  compareProviderDraftCards,
   inferModelCapabilities,
+  isDefaultProviderCardVisible,
+  isProviderApiKeyOptional,
   listAddableProviderTemplates,
   listProviderModelBadges,
   modelHasCapability,
   resolveModelPurpose,
 } from "./settingsPageModel.ts";
+
+test("buildApiKeyPreview exposes only API key edges", () => {
+  assert.equal(buildApiKeyPreview("sk-deepseek-example-abcdef123456"), "sk-deeps********************3456");
+  assert.equal(buildApiKeyPreview("abcd"), "****");
+  assert.equal(buildApiKeyPreview("sk-short"), "sk****rt");
+});
+
+test("isProviderApiKeyOptional only treats local gateways and login providers as optional", () => {
+  assert.equal(isProviderApiKeyOptional({ provider_id: "local", base_url: "http://127.0.0.1:1234/v1" }), true);
+  assert.equal(isProviderApiKeyOptional({ provider_id: "lmstudio", base_url: "http://127.0.0.1:1234/v1" }), true);
+  assert.equal(isProviderApiKeyOptional({ provider_id: "ollama", base_url: "http://localhost:11434/v1" }), true);
+  assert.equal(isProviderApiKeyOptional({ provider_id: "deepseek", base_url: "https://api.deepseek.com" }), false);
+  assert.equal(isProviderApiKeyOptional({ provider_id: "openai", base_url: "https://api.openai.com/v1" }), false);
+  assert.equal(
+    isProviderApiKeyOptional({
+      provider_id: "openai-codex",
+      base_url: "https://chatgpt.com/backend-api/codex",
+      auth_mode: "chatgpt",
+      requires_login: true,
+    }),
+    true,
+  );
+});
 
 test("clampSettingsTemperature keeps values inside the legacy 0-2 range", () => {
   assert.equal(clampSettingsTemperature(0.7), 0.7);
@@ -67,6 +95,7 @@ test("buildProviderDraftsFromSettings keeps stored API keys hidden", () => {
           auth_header: "Authorization",
           auth_scheme: "Bearer",
           api_key_configured: true,
+          api_key_preview: "sk-deeps********************3456",
           models: [{ model_ref: "openai/gpt-4.1", model: "gpt-4.1", label: "GPT 4.1" }],
           example_model_refs: [],
         },
@@ -78,6 +107,7 @@ test("buildProviderDraftsFromSettings keeps stored API keys hidden", () => {
 
   assert.equal(drafts.openai.api_key, "");
   assert.equal(drafts.openai.api_key_configured, true);
+  assert.equal(drafts.openai.api_key_preview, "sk-deeps********************3456");
 });
 
 test("provider drafts default structured output mode and preserve model reasoning metadata", () => {
@@ -118,6 +148,86 @@ test("provider drafts default structured output mode and preserve model reasonin
 
   assert.equal(drafts.local.structured_output_mode, "validate_then_repair");
   assert.equal(drafts.local.model_settings["qwen3-reasoning"]?.reasoning, true);
+});
+
+test("buildProviderDraftsFromSettings exposes DeepSeek as a default provider card", () => {
+  const drafts = buildProviderDraftsFromSettings({
+    model: {
+      text_model: "",
+      text_model_ref: "",
+      video_model: "",
+      video_model_ref: "",
+    },
+    model_catalog: {
+      provider_templates: [],
+      providers: [
+        {
+          provider_id: "deepseek",
+          label: "DeepSeek",
+          description: "DeepSeek provider template.",
+          transport: "openai-compatible",
+          configured: false,
+          enabled: false,
+          saved: false,
+          base_url: "https://api.deepseek.com",
+          models: [],
+          example_model_refs: [],
+        },
+        {
+          provider_id: "openai",
+          label: "OpenAI",
+          description: "OpenAI",
+          transport: "openai-compatible",
+          configured: false,
+          enabled: false,
+          saved: false,
+          base_url: "https://api.openai.com/v1",
+          models: [],
+          example_model_refs: [],
+        },
+      ],
+    },
+    revision: { max_revision_round: 1 },
+    tools: [],
+  });
+
+  assert.equal(isDefaultProviderCardVisible({ provider_id: "deepseek" }), true);
+  assert.equal(isDefaultProviderCardVisible({ provider_id: "openai" }), false);
+  assert.equal(drafts.deepseek?.base_url, "https://api.deepseek.com");
+  assert.equal(drafts.openai, undefined);
+});
+
+test("compareProviderDraftCards places DeepSeek between Codex and LM Studio", () => {
+  const makeProvider = (provider_id: string, label: string) => ({
+    provider_id,
+    label,
+    transport: "openai-compatible" as const,
+    structured_output_mode: "validate_then_repair" as const,
+    base_url: "",
+    enabled: false,
+    auth_header: "Authorization",
+    auth_scheme: "Bearer",
+    request_timeout_seconds: 180,
+    credential_pool: [],
+    api_key: "",
+    api_key_configured: false,
+    discovered_models: [],
+    selected_models: [],
+    model_settings: {},
+  });
+  const sorted = [
+    makeProvider("local", "LM Studio"),
+    makeProvider("openrouter", "OpenRouter"),
+    makeProvider("deepseek", "DeepSeek"),
+    makeProvider("openai-codex", "OpenAI Codex / ChatGPT Login"),
+  ].sort(compareProviderDraftCards);
+
+  assert.deepEqual(sorted.map((provider) => provider.provider_id), [
+    "openai-codex",
+    "deepseek",
+    "local",
+    "openrouter",
+  ]);
 });
 
 test("buildProviderSavePayload includes enabled providers and omits blank api keys", () => {
@@ -616,6 +726,83 @@ test("buildProviderDraftsFromSettings keeps saved Codex login providers visible 
   assert.equal(drafts["openai-codex"].requires_login, true);
   assert.equal(drafts["openai-codex"].auth_mode, "chatgpt");
   assert.equal(drafts["openai-codex"].auth_status?.authenticated, false);
+});
+
+test("buildProviderDraftsFromSettings clears saved Codex models after logout", () => {
+  const drafts = buildProviderDraftsFromSettings({
+    model: {
+      text_model: "gpt-5.5",
+      text_model_ref: "openai-codex/gpt-5.5",
+      video_model: "gpt-5.5",
+      video_model_ref: "openai-codex/gpt-5.5",
+    },
+    model_catalog: {
+      provider_templates: [],
+      providers: [
+        {
+          provider_id: "openai-codex",
+          label: "OpenAI Codex / ChatGPT Login",
+          description: "ChatGPT sign-in",
+          transport: "codex-responses",
+          configured: false,
+          enabled: true,
+          saved: true,
+          requires_login: true,
+          auth_mode: "chatgpt",
+          base_url: "https://chatgpt.com/backend-api/codex",
+          api_key_configured: false,
+          auth_status: { configured: false, authenticated: false, auth_mode: "chatgpt" },
+          models: [
+            {
+              model_ref: "openai-codex/gpt-5.5",
+              model: "gpt-5.5",
+              label: "gpt-5.5",
+              capabilities: { chat: true },
+            },
+          ],
+          discovered_models: [
+            {
+              model_ref: "openai-codex/gpt-5.5",
+              model: "gpt-5.5",
+              label: "gpt-5.5",
+              capabilities: { chat: true },
+            },
+          ],
+          example_model_refs: ["openai-codex/gpt-5.5"],
+        },
+      ],
+    },
+    revision: { max_revision_round: 1 },
+    tools: [],
+  });
+
+  assert.equal(drafts["openai-codex"].requires_login, true);
+  assert.deepEqual(drafts["openai-codex"].selected_models, []);
+  assert.deepEqual(drafts["openai-codex"].discovered_models, []);
+  assert.deepEqual(Object.keys(drafts["openai-codex"].model_settings), []);
+});
+
+test("clearProviderModelSelection removes model rows and draft metadata", () => {
+  const provider = {
+    selected_models: ["gpt-5.5"],
+    discovered_models: ["gpt-5.5", "gpt-5.5-mini"],
+    model_settings: {
+      "gpt-5.5": {
+        model: "gpt-5.5",
+        reasoning: null,
+        context_window_ktokens: 128,
+        compression_threshold: 0.9,
+        capabilities: inferModelCapabilities("gpt-5.5"),
+        embedding: { dimensions: null },
+      },
+    },
+  };
+
+  clearProviderModelSelection(provider);
+
+  assert.deepEqual(provider.selected_models, []);
+  assert.deepEqual(provider.discovered_models, []);
+  assert.deepEqual(provider.model_settings, {});
 });
 
 test("buildProviderSavePayload omits api key fields for Codex login providers", () => {

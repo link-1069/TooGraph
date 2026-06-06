@@ -45,6 +45,8 @@ test("ModelProvidersPage presents providers as cards before editing", () => {
   assert.match(pageSource, /settings\.configuredProviders/);
   assert.match(pageSource, /settings\.configureProvider/);
   assert.match(pageSource, /@click="openAddProviderPanel"/);
+  assert.match(pageSource, /compareProviderDraftCards/);
+  assert.match(pageSource, /\.sort\(compareProviderDraftCards\)/);
   assert.match(pageSource, /providerCardList = computed\(\(\) =>[\s\S]*codexProvider\.value[\s\S]*provider\.provider_id !== "openai-codex"/);
   assert.doesNotMatch(pageSource, /<section v-for="provider in providerDraftList"[\s\S]*class="model-providers-page__provider-editor"/);
 });
@@ -67,7 +69,8 @@ test("ModelProvidersPage applies provider changes immediately without a manual s
   assert.match(pageSource, /@change="handleProviderEnabledChange\(provider\)"/);
   assert.match(pageSource, /@change="handleProviderDraftChange"/);
   assert.match(pageSource, /@click="commitPendingProvider"/);
-  assert.match(pageSource, /@click="handleRemoveProvider\(provider\.provider_id\)"/);
+  assert.doesNotMatch(pageSource, /settings\.removeProvider/);
+  assert.doesNotMatch(pageSource, /handleRemoveProvider/);
 });
 
 test("ModelProvidersPage keeps the page usable when no models are available", () => {
@@ -312,6 +315,48 @@ test("ModelProvidersPage surfaces credential pool metadata in advanced settings"
   assert.match(pageSource, /function providerCredentialPoolSummary\(provider: ProviderDraft\)/);
 });
 
+test("ModelProvidersPage previews saved API key fragments in placeholders", () => {
+  assert.match(pageSource, /providerApiKeyInputPlaceholder\(provider\)/);
+  assert.match(pageSource, /providerApiKeyInputPlaceholder\(providerEditorDraft\)/);
+  assert.match(pageSource, /function providerApiKeyPlaceholder\(provider: ProviderDraft\)/);
+  assert.match(pageSource, /function providerApiKeyInputPlaceholder\(provider: ProviderDraft\)/);
+  assert.match(pageSource, /settings\.keepExistingApiKeyWithPreview/);
+  assert.match(pageSource, /settings\.requiredApiKey/);
+  assert.match(pageSource, /isProviderApiKeyOptional\(provider\)/);
+  assert.match(pageSource, /api_key_preview: provider\.api_key_preview\?\.trim\(\) \?\? ""/);
+});
+
+test("ModelProvidersPage displays API key previews outside native password editing", () => {
+  assert.match(pageSource, /class="model-providers-page__api-key-field"/);
+  assert.match(pageSource, /class="model-providers-page__api-key-preview-button"/);
+  assert.match(pageSource, /class="model-providers-page__api-key-preview-text"/);
+  assert.match(pageSource, /providerApiKeyDisplayValue\(provider\)/);
+  assert.match(pageSource, /providerApiKeyDisplayValue\(providerEditorDraft\)/);
+  assert.match(pageSource, /function providerApiKeyDisplayValue\(provider: ProviderDraft\)/);
+  assert.match(pageSource, /function shouldShowApiKeyPreview\(provider: ProviderDraft, fieldKey: string\)/);
+  assert.match(pageSource, /function beginApiKeyEditing\(scope: string, provider: ProviderDraft\)/);
+  assert.match(pageSource, /function handleApiKeyInputFocus\(scope: string, provider: ProviderDraft\)/);
+  assert.match(pageSource, /function handleApiKeyInputBlur\(scope: string, provider: ProviderDraft\)/);
+  assert.match(pageSource, /type="password"[\s\S]*@focus="handleApiKeyInputFocus/);
+  assert.match(pageSource, /type="button"[\s\S]*@click="beginApiKeyEditing/);
+  assert.doesNotMatch(pageSource, /model-providers-page__api-key-input--covered/);
+  assert.doesNotMatch(pageSource, /class="model-providers-page__api-key-preview"/);
+});
+
+test("ModelProvidersPage discovers add-provider models when enabled-model select opens", () => {
+  const addPanel = pageSource.match(/<section v-if="providerEditorDraft && providerEditorMode === 'add'" class="model-providers-page__provider-editor-panel">[\s\S]*?<\/section>/);
+  assert.ok(addPanel, "expected add-provider editor panel");
+  assert.match(addPanel[0], /class="model-providers-page__provider-form-field model-providers-page__provider-model-select-field"/);
+  assert.doesNotMatch(addPanel[0], /<label>\s*<span>\{\{ t\("settings\.enabledModels"\) \}\}<\/span>\s*<ElSelect/);
+  assert.match(addPanel[0], /@visible-change="handleEditorModelSelectVisibleChange"/);
+  assert.match(addPanel[0], /:loading="isEditorModelSelectLoading"/);
+  assert.match(addPanel[0], /:loading-text="t\('settings\.discoveringModels'\)"/);
+  assert.match(pageSource, /const isEditorModelSelectLoading = computed/);
+  const handler = pageSource.match(/async function handleEditorModelSelectVisibleChange\(visible: boolean\) \{[\s\S]*?\n\}/);
+  assert.ok(handler, "expected enabled-model select visible-change handler");
+  assert.match(handler[0], /await handleDiscoverModels\(provider\.provider_id, \{ selectDiscovered: false \}\);/);
+});
+
 test("ModelProvidersPage makes browser OAuth the normal ChatGPT login flow", () => {
   assert.match(pageSource, /handleStartCodexBrowserLogin/);
   assert.match(pageSource, /startOpenAICodexBrowserAuth/);
@@ -370,6 +415,15 @@ test("ModelProvidersPage confirms ChatGPT logout with the same popover pattern a
   assert.match(pageSource, /if \(activeLogoutConfirmProviderId\.value === providerId\) \{[\s\S]*void handleLogoutCodex\(\);/);
   assert.match(pageSource, /function startLogoutConfirmWindow\(providerId: string\)/);
   assert.match(pageSource, /window\.setTimeout\(\(\) => \{[\s\S]*activeLogoutConfirmProviderId\.value = null;[\s\S]*\}, 2000\);/);
+});
+
+test("ModelProvidersPage clears saved ChatGPT Codex models before persisting logout", () => {
+  assert.match(pageSource, /clearProviderModelSelection/);
+  assert.match(pageSource, /function clearProviderDefaultModelRefs\(providerId: string\)/);
+  assert.match(
+    pageSource,
+    /async function handleLogoutCodex\(\) \{[\s\S]*const provider = providerDrafts\.value\["openai-codex"\];[\s\S]*clearProviderModelSelection\(provider\);[\s\S]*clearProviderDefaultModelRefs\("openai-codex"\);[\s\S]*alignDefaultModelsToProviderSelection\(\);[\s\S]*await persistSettings\(\);/,
+  );
 });
 
 test("ModelProvidersPage keeps ChatGPT authorization usable in embedded browsers", () => {

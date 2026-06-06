@@ -88,6 +88,7 @@ export type SettingsModelProvider = {
   requires_login?: boolean;
   auth_status?: OpenAICodexAuthStatus;
   api_key_configured?: boolean;
+  api_key_preview?: string;
   models: SettingsProviderModel[];
   discovered_models?: SettingsProviderModel[];
   example_model_refs: string[];
