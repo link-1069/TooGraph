@@ -970,6 +970,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(writer_node["config"]["toolKey"], "retrieval_ingestion_writer")
         self.assertEqual(writer_node["config"]["staticInputs"]["source_kind"], "knowledge_document")
         self.assertEqual(writer_node["config"]["staticInputs"]["embedding_model_refs"], "")
+        self.assertEqual(writer_node["config"]["staticInputs"]["sync_mode"], "sync_scope")
         self.assertEqual(writer_node["config"]["staticInputs"]["scope"], {"collection": "knowledge_action_policy"})
         self.assertEqual(
             _read_contracts(writer_node["reads"]),

@@ -106,6 +106,47 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertEqual(completed["status"], "completed")
         self.assertTrue(completed["completed_at"])
 
+    def test_queue_embedding_job_skips_chunks_that_already_have_vectors(self) -> None:
+        from app.core.storage.embedding_store import (
+            queue_embedding_job,
+            register_embedding_model,
+            update_embedding_job_status,
+            upsert_embedding_vector,
+        )
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        model = register_embedding_model(provider_key="openai", model="text-embedding-3-small", dimensions=3)
+        document = upsert_retrieval_document(source_kind="knowledge_document", source_id="doc_policy")
+        [chunk] = upsert_retrieval_chunks(
+            document["document_id"],
+            [{"chunk_id": "chunk_policy", "content": "Policy content that already has an embedding."}],
+        )
+        [job] = queue_embedding_job("knowledge_document", "doc_policy", model["embedding_model_id"])
+        upsert_embedding_vector(
+            chunk_id=chunk["chunk_id"],
+            model_ref=model["embedding_model_id"],
+            vector=[1.0, 0.0, 0.0],
+            content_hash=chunk["content_hash"],
+        )
+        update_embedding_job_status(job["job_id"], "completed")
+
+        repeated_jobs = queue_embedding_job("knowledge_document", "doc_policy", model["embedding_model_id"])
+
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
+            job_row = connection.execute(
+                "SELECT status, completed_at FROM embedding_jobs WHERE job_id = ?",
+                (job["job_id"],),
+            ).fetchone()
+            vector_count = connection.execute(
+                "SELECT COUNT(*) FROM embedding_vectors WHERE chunk_id = ?",
+                (chunk["chunk_id"],),
+            ).fetchone()[0]
+
+        self.assertEqual(repeated_jobs, [])
+        self.assertEqual(job_row[0], "completed")
+        self.assertTrue(job_row[1])
+        self.assertEqual(vector_count, 1)
+
     def test_process_pending_embedding_jobs_uses_provider_vectors_and_completes_jobs(self) -> None:
         from app.core.storage.embedding_store import (
             process_pending_embedding_jobs,

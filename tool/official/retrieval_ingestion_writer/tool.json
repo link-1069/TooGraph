@@ -50,6 +50,21 @@
       "control": "text",
       "default": ""
     },
+    "sync_mode": {
+      "mode": "static",
+      "control": "select",
+      "default": "upsert",
+      "options": [
+        {
+          "label": "仅追加/更新",
+          "value": "upsert"
+        },
+        {
+          "label": "同步当前作用域",
+          "value": "sync_scope"
+        }
+      ]
+    },
     "scope": {
       "mode": "static",
       "control": "object",
@@ -85,6 +100,12 @@
       "name": "Embedding Model Refs",
       "valueType": "json",
       "description": "需要为本次入库排队的 embedding model id 列表；也可以用逗号分隔字符串。"
+    },
+    {
+      "key": "sync_mode",
+      "name": "Sync Mode",
+      "valueType": "text",
+      "description": "upsert 表示只追加/更新；sync_scope 会清理同一 source_kind 与 scope 中本轮未出现的旧文档和旧切片。"
     },
     {
       "key": "scope",

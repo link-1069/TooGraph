@@ -119,6 +119,83 @@ class RetrievalIngestionWriterToolTests(unittest.TestCase):
         self.assertIn("semantic memory", chunk_row[2])
         self.assertEqual(job_count, 1)
 
+    def test_sync_scope_prunes_documents_chunks_indexes_jobs_and_vectors_missing_from_current_run(self) -> None:
+        from app.core.storage.embedding_store import register_embedding_model, upsert_embedding_vector
+
+        module = _load_tool_module()
+        model = register_embedding_model(provider_key="openai", model="text-embedding-3-small", dimensions=3)
+
+        first = module.retrieval_ingestion_writer(
+            {
+                "source_kind": "knowledge_document",
+                "source": {
+                    "documents": [
+                        {"document_id": "doc_policy_a", "title": "Policy A", "content": "Policy A body."},
+                        {"document_id": "doc_policy_b", "title": "Policy B", "content": "Policy B body."},
+                    ]
+                },
+                "chunks": [
+                    {"chunk_id": "chunk_policy_a", "source_id": "doc_policy_a", "content": "Policy A searchable text."},
+                    {"chunk_id": "chunk_policy_b", "source_id": "doc_policy_b", "content": "Policy B should disappear."},
+                ],
+                "embedding_model_refs": [model["embedding_model_id"]],
+                "scope": {"collection": "policy_library"},
+                "sync_mode": "sync_scope",
+            }
+        )
+        stale_chunk = next(chunk for chunk in first["indexed_chunks"] if chunk["chunk_id"] == "chunk_policy_b")
+        upsert_embedding_vector(
+            chunk_id="chunk_policy_b",
+            model_ref=model["embedding_model_id"],
+            vector=[0.0, 1.0, 0.0],
+            content_hash=stale_chunk["content_hash"],
+        )
+
+        second = module.retrieval_ingestion_writer(
+            {
+                "source_kind": "knowledge_document",
+                "source": {
+                    "documents": [
+                        {"document_id": "doc_policy_a", "title": "Policy A", "content": "Policy A body."},
+                    ]
+                },
+                "chunks": [
+                    {"chunk_id": "chunk_policy_a", "source_id": "doc_policy_a", "content": "Policy A searchable text."},
+                ],
+                "embedding_model_refs": [model["embedding_model_id"]],
+                "scope": {"collection": "policy_library"},
+                "sync_mode": "sync_scope",
+            }
+        )
+
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
+            documents = connection.execute(
+                "SELECT source_id FROM retrieval_documents WHERE source_kind = 'knowledge_document' ORDER BY source_id"
+            ).fetchall()
+            chunks = connection.execute("SELECT chunk_id FROM retrieval_chunks ORDER BY chunk_id").fetchall()
+            stale_fts_count = connection.execute(
+                "SELECT COUNT(*) FROM retrieval_chunks_fts WHERE chunk_id = 'chunk_policy_b'"
+            ).fetchone()[0]
+            stale_trigram_count = connection.execute(
+                "SELECT COUNT(*) FROM retrieval_chunks_fts_trigram WHERE chunk_id = 'chunk_policy_b'"
+            ).fetchone()[0]
+            stale_job_count = connection.execute(
+                "SELECT COUNT(*) FROM embedding_jobs WHERE chunk_id = 'chunk_policy_b'"
+            ).fetchone()[0]
+            stale_vector_count = connection.execute(
+                "SELECT COUNT(*) FROM embedding_vectors WHERE chunk_id = 'chunk_policy_b'"
+            ).fetchone()[0]
+
+        self.assertEqual(second["status"], "succeeded")
+        self.assertEqual(second["ingestion_report"]["pruned_document_count"], 1)
+        self.assertEqual(second["ingestion_report"]["pruned_chunk_count"], 1)
+        self.assertEqual([row[0] for row in documents], ["doc_policy_a"])
+        self.assertEqual([row[0] for row in chunks], ["chunk_policy_a"])
+        self.assertEqual(stale_fts_count, 0)
+        self.assertEqual(stale_trigram_count, 0)
+        self.assertEqual(stale_job_count, 0)
+        self.assertEqual(stale_vector_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

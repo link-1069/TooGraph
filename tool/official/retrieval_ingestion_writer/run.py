@@ -12,7 +12,11 @@ def retrieval_ingestion_writer(payload: dict[str, Any] | None) -> dict[str, Any]
     try:
         _ensure_backend_path()
         from app.core.storage.embedding_store import queue_embedding_job
-        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+        from app.core.storage.retrieval_store import (
+            prune_retrieval_scope,
+            upsert_retrieval_chunks,
+            upsert_retrieval_document,
+        )
 
         source_kind = _as_text(inputs.get("source_kind")) or "buddy_message"
         source = _coerce_dict(inputs.get("source"))
@@ -25,6 +29,7 @@ def retrieval_ingestion_writer(payload: dict[str, Any] | None) -> dict[str, Any]
         base_metadata = _coerce_dict(inputs.get("metadata"))
         explicit_embedding_model_refs = _normalize_model_refs(inputs.get("embedding_model_refs"))
         embedding_model_refs = explicit_embedding_model_refs or _default_embedding_model_refs()
+        sync_mode = _normalize_sync_mode(inputs.get("sync_mode"))
 
         chunks_by_source: dict[str, list[dict[str, Any]]] = {}
         for chunk in chunks:
@@ -85,14 +90,30 @@ def retrieval_ingestion_writer(payload: dict[str, Any] | None) -> dict[str, Any]
                         }
                     )
 
+        prune_report = {
+            "pruned_document_count": 0,
+            "pruned_chunk_count": 0,
+            "pruned_embedding_job_count": 0,
+            "pruned_embedding_vector_count": 0,
+        }
+        if sync_mode == "sync_scope":
+            prune_report = prune_retrieval_scope(
+                source_kind=source_kind,
+                scope=scope,
+                keep_source_ids=list(chunks_by_source.keys()),
+                keep_chunk_ids=[_as_text(chunk.get("chunk_id")) for chunk in indexed_chunks],
+            )
+
         return {
             "status": "succeeded",
             "ingestion_report": {
                 "source_kind": source_kind,
+                "sync_mode": sync_mode,
                 "document_count": len(documents),
                 "chunk_count": len(indexed_chunks),
                 "embedding_model_refs": embedding_model_refs,
                 "embedding_job_count": len(embedding_jobs),
+                **prune_report,
                 "warnings": warnings,
             },
             "documents": documents,
@@ -154,6 +175,13 @@ def _normalize_model_refs(value: Any) -> list[str]:
         if text and text not in refs:
             refs.append(text)
     return refs
+
+
+def _normalize_sync_mode(value: Any) -> str:
+    normalized = _as_text(value) or "upsert"
+    if normalized not in {"upsert", "sync_scope"}:
+        raise ValueError(f"Unsupported sync_mode: {normalized}")
+    return normalized
 
 
 def _default_embedding_model_refs() -> list[str]:

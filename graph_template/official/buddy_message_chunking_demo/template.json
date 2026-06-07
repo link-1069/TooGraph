@@ -304,6 +304,7 @@
         "staticInputs": {
           "source_kind": "buddy_message",
           "embedding_model_refs": "",
+          "sync_mode": "upsert",
           "scope": {
             "collection": "buddy_history_demo"
           },

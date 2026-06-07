@@ -255,6 +255,7 @@
         "staticInputs": {
           "source_kind": "knowledge_document",
           "embedding_model_refs": "",
+          "sync_mode": "upsert",
           "scope": {
             "collection": "knowledge_document_demo"
           },

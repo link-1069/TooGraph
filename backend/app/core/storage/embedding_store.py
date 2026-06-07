@@ -165,6 +165,42 @@ def queue_embedding_job(source_kind: str, source_id: str, model_ref: str) -> lis
                     str(row["content_hash"]),
                 ),
             )
+            existing_vector = connection.execute(
+                """
+                SELECT embedding_id
+                FROM embedding_vectors
+                WHERE chunk_id = ?
+                  AND embedding_model_id = ?
+                  AND content_hash = ?
+                """,
+                (
+                    str(row["chunk_id"]),
+                    model["embedding_model_id"],
+                    str(row["content_hash"]),
+                ),
+            ).fetchone()
+            if existing_vector is not None:
+                connection.execute(
+                    """
+                    UPDATE embedding_jobs
+                    SET status = 'completed',
+                        last_error = '',
+                        updated_at = ?,
+                        completed_at = CASE WHEN completed_at = '' THEN ? ELSE completed_at END
+                    WHERE chunk_id = ?
+                      AND embedding_model_id = ?
+                      AND content_hash = ?
+                      AND status != 'completed'
+                    """,
+                    (
+                        now,
+                        now,
+                        str(row["chunk_id"]),
+                        model["embedding_model_id"],
+                        str(row["content_hash"]),
+                    ),
+                )
+                continue
             connection.execute(
                 """
                 INSERT INTO embedding_jobs (

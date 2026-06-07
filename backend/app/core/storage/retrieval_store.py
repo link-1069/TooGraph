@@ -172,6 +172,117 @@ def upsert_retrieval_chunks(document_id: str, chunks: list[dict[str, Any]]) -> l
     return upserted
 
 
+def prune_retrieval_scope(
+    *,
+    source_kind: str,
+    scope: dict[str, Any],
+    keep_source_ids: list[str],
+    keep_chunk_ids: list[str],
+) -> dict[str, int]:
+    normalized_source_kind = _normalize_source_kind(source_kind)
+    scope_filter = _coerce_dict(scope)
+    if not scope_filter:
+        raise ValueError("scope is required when pruning retrieval rows.")
+    kept_sources = {str(source_id or "").strip() for source_id in keep_source_ids if str(source_id or "").strip()}
+    kept_chunks = {str(chunk_id or "").strip() for chunk_id in keep_chunk_ids if str(chunk_id or "").strip()}
+    with get_connection() as connection:
+        document_rows = connection.execute(
+            """
+            SELECT document_id, source_id, scope_json
+            FROM retrieval_documents
+            WHERE source_kind = ?
+            """,
+            (normalized_source_kind,),
+        ).fetchall()
+        matching_documents = [
+            row
+            for row in document_rows
+            if _scope_contains(_json_loads(row["scope_json"], {}), scope_filter)
+        ]
+        delete_document_ids = [
+            str(row["document_id"])
+            for row in matching_documents
+            if str(row["source_id"] or "") not in kept_sources
+        ]
+        kept_document_ids = [
+            str(row["document_id"])
+            for row in matching_documents
+            if str(row["source_id"] or "") in kept_sources
+        ]
+
+        delete_chunk_ids: list[str] = []
+        if delete_document_ids:
+            delete_chunk_ids.extend(
+                str(row["chunk_id"])
+                for row in _select_rows_by_ids(
+                    connection,
+                    "SELECT chunk_id FROM retrieval_chunks WHERE document_id IN ({placeholders})",
+                    delete_document_ids,
+                )
+            )
+        if kept_document_ids:
+            existing_kept_chunks = _select_rows_by_ids(
+                connection,
+                "SELECT chunk_id FROM retrieval_chunks WHERE document_id IN ({placeholders})",
+                kept_document_ids,
+            )
+            delete_chunk_ids.extend(
+                str(row["chunk_id"])
+                for row in existing_kept_chunks
+                if str(row["chunk_id"] or "") not in kept_chunks
+            )
+
+        delete_chunk_ids = sorted(set(delete_chunk_ids))
+        vector_count = _count_rows_by_ids(
+            connection,
+            "SELECT COUNT(*) FROM embedding_vectors WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+        job_count = _count_rows_by_ids(
+            connection,
+            "SELECT COUNT(*) FROM embedding_jobs WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+
+        _delete_rows_by_ids(
+            connection,
+            "DELETE FROM retrieval_chunks_fts WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+        _delete_rows_by_ids(
+            connection,
+            "DELETE FROM retrieval_chunks_fts_trigram WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+        _delete_rows_by_ids(
+            connection,
+            "DELETE FROM embedding_vectors WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+        _delete_rows_by_ids(
+            connection,
+            "DELETE FROM embedding_jobs WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+        _delete_rows_by_ids(
+            connection,
+            "DELETE FROM retrieval_chunks WHERE chunk_id IN ({placeholders})",
+            delete_chunk_ids,
+        )
+        _delete_rows_by_ids(
+            connection,
+            "DELETE FROM retrieval_documents WHERE document_id IN ({placeholders})",
+            delete_document_ids,
+        )
+
+    return {
+        "pruned_document_count": len(delete_document_ids),
+        "pruned_chunk_count": len(delete_chunk_ids),
+        "pruned_embedding_job_count": job_count,
+        "pruned_embedding_vector_count": vector_count,
+    }
+
+
 def search_retrieval_fts(
     query: str,
     filters: dict[str, Any] | None = None,
@@ -764,11 +875,40 @@ def _metadata_matches(metadata: dict[str, Any], filters: dict[str, Any]) -> bool
     return True
 
 
+def _scope_contains(scope: dict[str, Any], expected: dict[str, Any]) -> bool:
+    for key, value in expected.items():
+        if scope.get(key) != value:
+            return False
+    return True
+
+
 def _normalize_source_kind(source_kind: str) -> str:
     normalized = str(source_kind or "").strip()
     if normalized not in SUPPORTED_RETRIEVAL_SOURCE_KINDS:
         raise ValueError(f"Unsupported retrieval source_kind: {normalized}")
     return normalized
+
+
+def _select_rows_by_ids(connection: sqlite3.Connection, sql_template: str, ids: list[str]) -> list[Any]:
+    if not ids:
+        return []
+    placeholders = ", ".join("?" for _ in ids)
+    return connection.execute(sql_template.format(placeholders=placeholders), ids).fetchall()
+
+
+def _count_rows_by_ids(connection: sqlite3.Connection, sql_template: str, ids: list[str]) -> int:
+    if not ids:
+        return 0
+    placeholders = ", ".join("?" for _ in ids)
+    row = connection.execute(sql_template.format(placeholders=placeholders), ids).fetchone()
+    return int(row[0] or 0) if row else 0
+
+
+def _delete_rows_by_ids(connection: sqlite3.Connection, sql_template: str, ids: list[str]) -> None:
+    if not ids:
+        return
+    placeholders = ", ".join("?" for _ in ids)
+    connection.execute(sql_template.format(placeholders=placeholders), ids)
 
 
 def _document_id(source_kind: str, source_id: str, source_revision_id: str) -> str:
