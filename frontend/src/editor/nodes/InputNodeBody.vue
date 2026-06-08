@@ -19,7 +19,59 @@
       </ElSegmented>
       <slot name="primary-output" />
     </div>
-    <div v-if="showLocalFolderInput" class="node-card__surface node-card__local-folder">
+    <div
+      v-if="showKnowledgeBaseInput"
+      class="node-card__surface node-card__knowledge-base"
+      @pointerdown.stop
+      @click.stop
+    >
+      <label class="node-card__control-row">
+        <span class="node-card__control-label">{{ t("nodeCard.knowledgeBase") }}</span>
+        <ToographSelect
+          class="node-card__knowledge-base-select"
+          :model-value="knowledgeBaseSelectValue"
+          :placeholder="t('nodeCard.selectKnowledgeBase')"
+          popper-class="toograph-select-popper"
+          remount-on-select
+          @visible-change="(visible) => visible && emit('knowledge-bases-refresh')"
+          @update:model-value="(value) => emit('update-input-value', value)"
+        >
+          <ElOption
+            v-if="!knowledgeBasesLoading && knowledgeBases.length === 0"
+            :label="t('nodeCard.noKnowledgeBases')"
+            value=""
+            disabled
+          />
+          <ElOption
+            v-for="base in knowledgeBases"
+            :key="base.collection_id"
+            :label="knowledgeBaseOptionLabel(base)"
+            :value="base.collection_id"
+          >
+            <div class="node-card__knowledge-base-option">
+              <strong>{{ base.name || base.collection_id }}</strong>
+              <small>{{ knowledgeBaseOptionMeta(base) }}</small>
+            </div>
+          </ElOption>
+        </ToographSelect>
+      </label>
+      <div class="node-card__knowledge-base-toolbar">
+        <span class="node-card__input-meta">{{ knowledgeBaseSummary }}</span>
+        <button
+          type="button"
+          class="node-card__local-folder-link"
+          :disabled="knowledgeBasesLoading"
+          @pointerdown.stop
+          @click.stop="emit('knowledge-bases-refresh')"
+        >
+          {{ knowledgeBasesLoading ? t("nodeCard.localFolderLoading") : t("nodeCard.localFolderRefresh") }}
+        </button>
+      </div>
+      <div v-if="knowledgeBasesError" class="node-card__local-folder-error">
+        {{ knowledgeBasesError }}
+      </div>
+    </div>
+    <div v-else-if="showLocalFolderInput" class="node-card__surface node-card__local-folder">
       <label class="node-card__control-row">
         <span class="node-card__control-label">{{ t("nodeCard.localFolder") }}</span>
         <div class="node-card__local-folder-path-row">
@@ -343,6 +395,7 @@ import { ElInput, ElInputNumber, ElOption, ElSegmented, ElSwitch } from "element
 import { useI18n } from "vue-i18n";
 
 import ToographSelect from "@/components/ToographSelect.vue";
+import type { KnowledgeBase } from "@/api/knowledge";
 import type { LocalFolderTreeEntry } from "@/api/localInputSources";
 import type { NodeCardViewModel } from "./nodeCardViewModel";
 import type { UploadedAssetEnvelope } from "./uploadedAssetModel";
@@ -376,6 +429,10 @@ const props = defineProps<{
   localFolderHiddenEntryCount: number;
   localFolderLoading: boolean;
   localFolderError: string;
+  knowledgeBases: KnowledgeBase[];
+  knowledgeBasesLoading: boolean;
+  knowledgeBasesError: string;
+  showKnowledgeBaseInput: boolean;
   showLocalFolderInput: boolean;
   showAssetUploadInput: boolean;
   showLegacyUploadedAssetHint: boolean;
@@ -393,6 +450,7 @@ const emit = defineEmits<{
   (event: "local-folder-selection-toggle", path: string, selected: boolean): void;
   (event: "local-folder-select-all"): void;
   (event: "local-folder-clear"): void;
+  (event: "knowledge-bases-refresh"): void;
   (event: "asset-file-change", inputEvent: Event): void;
   (event: "asset-drop", dragEvent: DragEvent): void;
   (event: "clear-asset"): void;
@@ -422,6 +480,24 @@ const inputPresentationSelectValue = computed(() => {
   const value = props.inputRawValue;
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean" ? value : "";
 });
+const knowledgeBaseSelectValue = computed(() => {
+  return typeof props.inputRawValue === "string" ? props.inputRawValue : "";
+});
+const selectedKnowledgeBase = computed(() =>
+  props.knowledgeBases.find((base) => base.collection_id === knowledgeBaseSelectValue.value) ?? null,
+);
+const knowledgeBaseSummary = computed(() => {
+  if (props.knowledgeBasesLoading) {
+    return t("nodeCard.localFolderLoading");
+  }
+  if (selectedKnowledgeBase.value) {
+    return knowledgeBaseOptionMeta(selectedKnowledgeBase.value);
+  }
+  if (props.knowledgeBases.length === 0) {
+    return t("nodeCard.importKnowledgeHint");
+  }
+  return t("nodeCard.pickKnowledgeHint");
+});
 const inputPresentationNumberValue = computed(() => {
   const numericValue = Number(props.inputRawValue);
   return Number.isFinite(numericValue) ? numericValue : 0;
@@ -448,6 +524,16 @@ function isPresentationObjectPropertyVisible(property: InputValuePresentationPro
     return true;
   }
   return String(inputPresentationObjectValue.value[condition.field] ?? "") === String(condition.equals ?? "");
+}
+
+function knowledgeBaseOptionLabel(base: KnowledgeBase) {
+  return base.name ? `${base.name} (${base.collection_id})` : base.collection_id;
+}
+
+function knowledgeBaseOptionMeta(base: KnowledgeBase) {
+  const documentCount = Number.isFinite(base.document_count) ? base.document_count : 0;
+  const chunkCount = Number.isFinite(base.chunk_count) ? base.chunk_count : 0;
+  return `${base.collection_id} · ${documentCount} documents · ${chunkCount} chunks`;
 }
 
 function inputPresentationObjectPropertyValue(property: InputValuePresentationProperty) {
@@ -575,6 +661,47 @@ function openInputAssetPicker() {
 .node-card__input-upload {
   display: grid;
   gap: 10px;
+}
+
+.node-card__knowledge-base {
+  display: grid;
+  gap: 12px;
+  min-height: 160px;
+}
+
+.node-card__knowledge-base-select {
+  width: 100%;
+}
+
+.node-card__knowledge-base-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.node-card__knowledge-base-option {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  line-height: 1.3;
+}
+
+.node-card__knowledge-base-option strong,
+.node-card__knowledge-base-option small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-card__knowledge-base-option strong {
+  color: #1f2937;
+  font-size: 0.86rem;
+}
+
+.node-card__knowledge-base-option small {
+  color: rgba(60, 41, 20, 0.62);
+  font-size: 0.72rem;
 }
 
 .node-card__local-folder {

@@ -113,7 +113,7 @@ export type InputValuePresentationProperty = {
 };
 
 export type InputValuePresentation = {
-  control?: "text" | "textarea" | "json" | "object" | "number" | "boolean" | "select" | null;
+  control?: "text" | "textarea" | "json" | "object" | "number" | "boolean" | "select" | "knowledge_base_select" | null;
   default?: unknown;
   options?: InputValuePresentationOption[];
   properties?: InputValuePresentationProperty[];

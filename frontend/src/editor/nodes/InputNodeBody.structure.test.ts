@@ -10,18 +10,22 @@ const currentDirectory = dirname(currentFilePath);
 test("InputNodeBody owns input presentation and forwards parent side effects", () => {
   const componentSource = readFileSync(resolve(currentDirectory, "InputNodeBody.vue"), "utf8").replace(/\r\n/g, "\n");
 
-  assert.match(componentSource, /defineProps<\{[\s\S]*nodeId: string;[\s\S]*body: InputBodyViewModel;[\s\S]*inputBoundarySelection: "text" \| "file" \| "folder";[\s\S]*inputTypeOptions: InputTypeOption\[\];[\s\S]*inputAssetEnvelope: UploadedAssetEnvelope \| null;[\s\S]*localFolderRoot: string;[\s\S]*localFolderEntries: LocalFolderTreeEntry\[\];[\s\S]*inputValueText: string;[\s\S]*\}>/);
-  assert.match(componentSource, /defineEmits<\{[\s\S]*\(event: "update:boundary-selection", value: string \| number \| boolean\): void;[\s\S]*\(event: "local-folder-root-input", value: string\): void;[\s\S]*\(event: "local-folder-refresh"\): void;[\s\S]*\(event: "local-folder-selection-toggle", path: string, selected: boolean\): void;[\s\S]*\(event: "local-folder-select-all"\): void;[\s\S]*\(event: "local-folder-clear"\): void;[\s\S]*\(event: "asset-file-change", inputEvent: Event\): void;[\s\S]*\(event: "asset-drop", dragEvent: DragEvent\): void;[\s\S]*\(event: "clear-asset"\): void;[\s\S]*\(event: "input-value", inputEvent: Event\): void;[\s\S]*\}>/);
+  assert.match(componentSource, /defineProps<\{[\s\S]*nodeId: string;[\s\S]*body: InputBodyViewModel;[\s\S]*inputBoundarySelection: "text" \| "file" \| "folder";[\s\S]*inputTypeOptions: InputTypeOption\[\];[\s\S]*inputAssetEnvelope: UploadedAssetEnvelope \| null;[\s\S]*localFolderRoot: string;[\s\S]*localFolderEntries: LocalFolderTreeEntry\[\];[\s\S]*knowledgeBases: KnowledgeBase\[\];[\s\S]*showKnowledgeBaseInput: boolean;[\s\S]*inputValueText: string;[\s\S]*\}>/);
+  assert.match(componentSource, /defineEmits<\{[\s\S]*\(event: "update:boundary-selection", value: string \| number \| boolean\): void;[\s\S]*\(event: "local-folder-root-input", value: string\): void;[\s\S]*\(event: "local-folder-refresh"\): void;[\s\S]*\(event: "local-folder-selection-toggle", path: string, selected: boolean\): void;[\s\S]*\(event: "local-folder-select-all"\): void;[\s\S]*\(event: "local-folder-clear"\): void;[\s\S]*\(event: "knowledge-bases-refresh"\): void;[\s\S]*\(event: "asset-file-change", inputEvent: Event\): void;[\s\S]*\(event: "asset-drop", dragEvent: DragEvent\): void;[\s\S]*\(event: "clear-asset"\): void;[\s\S]*\(event: "input-value", inputEvent: Event\): void;[\s\S]*\}>/);
   assert.match(componentSource, /<div class="node-card__input-body">/);
   assert.match(componentSource, /<div class="node-card__port-row node-card__port-row--single node-card__port-row--input-boundary">/);
   assert.match(componentSource, /<ElSegmented[\s\S]*class="node-card__input-boundary-toggle"[\s\S]*:model-value="inputBoundarySelection"[\s\S]*:options="inputTypeOptions"[\s\S]*@update:model-value="emit\('update:boundary-selection', \$event\)"/);
   assert.doesNotMatch(componentSource, /:disabled="Boolean\(inputAssetEnvelope\)"/);
   assert.match(componentSource, /<slot name="primary-output" \/>/);
   assert.match(componentSource, /import ToographSelect from "@\/components\/ToographSelect\.vue";/);
-  assert.doesNotMatch(componentSource, /showKnowledgeBaseInput/);
+  assert.match(componentSource, /import type \{ KnowledgeBase \} from "@\/api\/knowledge";/);
+  assert.match(componentSource, /v-if="showKnowledgeBaseInput"[\s\S]*class="node-card__surface node-card__knowledge-base"/);
+  assert.match(componentSource, /<ToographSelect[\s\S]*class="node-card__knowledge-base-select"[\s\S]*:model-value="knowledgeBaseSelectValue"[\s\S]*@visible-change="\(?visible\)? => visible && emit\('knowledge-bases-refresh'\)"[\s\S]*@update:model-value="\(?value\)? => emit\('update-input-value', value\)"/);
+  assert.match(componentSource, /v-for="base in knowledgeBases"[\s\S]*:key="base\.collection_id"[\s\S]*:label="knowledgeBaseOptionLabel\(base\)"[\s\S]*:value="base\.collection_id"/);
+  assert.match(componentSource, /@click\.stop="emit\('knowledge-bases-refresh'\)"/);
   assert.doesNotMatch(componentSource, /update:knowledge-base/);
   assert.doesNotMatch(componentSource, /<ElSelect/);
-  assert.match(componentSource, /v-if="showLocalFolderInput"[\s\S]*class="node-card__surface node-card__local-folder"/);
+  assert.match(componentSource, /v-else-if="showLocalFolderInput"[\s\S]*class="node-card__surface node-card__local-folder"/);
   assert.match(componentSource, /:value="localFolderRoot"[\s\S]*@input="emit\('local-folder-root-input',/);
   assert.match(componentSource, /@click\.stop="emit\('local-folder-refresh'\)"/);
   assert.match(componentSource, /v-for="entry in localFolderEntries"[\s\S]*@change="emit\('local-folder-selection-toggle', entry\.path,/);

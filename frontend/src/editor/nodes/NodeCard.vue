@@ -190,6 +190,10 @@
         :local-folder-hidden-entry-count="localFolderHiddenEntryCount"
         :local-folder-loading="localFolderLoading"
         :local-folder-error="localFolderError"
+        :knowledge-bases="knowledgeBases"
+        :knowledge-bases-loading="knowledgeBasesLoading"
+        :knowledge-bases-error="knowledgeBasesError"
+        :show-knowledge-base-input="showKnowledgeBaseInput"
         :show-local-folder-input="showLocalFolderInput"
         :show-asset-upload-input="showAssetUploadInput"
         :show-legacy-uploaded-asset-hint="showLegacyUploadedAssetHint"
@@ -204,6 +208,7 @@
         @local-folder-selection-toggle="handleLocalFolderSelectionToggle"
         @local-folder-select-all="selectAllLocalFolderFiles"
         @local-folder-clear="clearLocalFolderSelection"
+        @knowledge-bases-refresh="refreshKnowledgeBases"
         @asset-file-change="handleInputAssetFileChange"
         @asset-drop="handleInputAssetDrop"
         @clear-asset="clearInputAsset"
@@ -630,6 +635,7 @@ import type { ActionDefinition } from "@/types/actions";
 import type { ToolDefinition } from "@/types/tools";
 import type { RunNodeTiming } from "../workspace/runNodeTimingModel.ts";
 import { fetchLocalFolderTree, type LocalFolderTreeEntry } from "@/api/localInputSources";
+import { fetchKnowledgeBases, type KnowledgeBase } from "@/api/knowledge";
 import { buildCapabilityArtifactFileUrl, uploadCapabilityArtifactFile } from "@/api/capabilityArtifacts";
 import { isAgentOutputManagedByDynamicCapability } from "@/lib/agent-capability-management";
 import { formatRunDuration, formatRunTokenUsageKTokens } from "@/lib/run-display-name";
@@ -1013,6 +1019,9 @@ const {
   },
 });
 const stateColorOptions = computed(() => resolveStateColorOptions(stateEditorDraft.value?.definition.color ?? ""));
+const showKnowledgeBaseInput = computed(() =>
+  view.value.body.kind === "input" && inputValuePresentation.value?.control === "knowledge_base_select",
+);
 const showLocalFolderInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "folder");
 const showAssetUploadInput = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "asset");
 const isInputValueEditable = computed(() => view.value.body.kind === "input" && view.value.body.editorMode === "text");
@@ -1051,6 +1060,10 @@ const localFolderEntries = ref<LocalFolderTreeEntry[]>([]);
 const localFolderLoading = ref(false);
 const localFolderError = ref("");
 const loadedLocalFolderRoot = ref("");
+const knowledgeBases = ref<KnowledgeBase[]>([]);
+const knowledgeBasesLoading = ref(false);
+const knowledgeBasesError = ref("");
+const knowledgeBasesLoaded = ref(false);
 const localFolderSummary = computed(() =>
   formatLocalFolderSelectionSummary({
     selectionMode: localFolderValue.value.selection_mode,
@@ -1096,6 +1109,16 @@ watch(
       return;
     }
     void refreshLocalFolderTree(root);
+  },
+  { immediate: true },
+);
+watch(
+  () => showKnowledgeBaseInput.value,
+  (visible) => {
+    if (!visible || knowledgeBasesLoaded.value || knowledgeBasesLoading.value) {
+      return;
+    }
+    void refreshKnowledgeBases();
   },
   { immediate: true },
 );
@@ -2325,6 +2348,22 @@ async function refreshLocalFolderTree(root: string) {
     localFolderError.value = error instanceof Error ? error.message : String(error);
   } finally {
     localFolderLoading.value = false;
+  }
+}
+
+async function refreshKnowledgeBases() {
+  knowledgeBasesLoading.value = true;
+  knowledgeBasesError.value = "";
+  try {
+    const response = await fetchKnowledgeBases();
+    knowledgeBases.value = response.bases;
+    knowledgeBasesLoaded.value = true;
+  } catch (error) {
+    knowledgeBases.value = [];
+    knowledgeBasesLoaded.value = false;
+    knowledgeBasesError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    knowledgeBasesLoading.value = false;
   }
 }
 
