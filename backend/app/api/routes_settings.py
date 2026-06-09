@@ -27,7 +27,7 @@ from app.core.storage.model_log_store import (
 from app.core.storage.provider_prompt_cache_store import (
     normalize_provider_prompt_cache_resource_retention_days,
 )
-from app.core.storage.embedding_model_sync import sync_default_embedding_model_from_settings
+from app.core.storage.embedding_model_sync import probe_embedding_model_dimensions, sync_default_embedding_model_from_settings
 from app.core.storage.settings_store import load_app_settings, save_app_settings
 from app.core.runtime.structured_output import normalize_structured_output_mode
 from app.tools.local_llm import (
@@ -184,6 +184,12 @@ class ModelDiscoveryPayload(BaseModel):
     auth_header: str | None = Field(default=None, alias="auth_header")
     auth_scheme: str | None = Field(default=None, alias="auth_scheme")
     request_timeout_seconds: float | None = Field(default=None, alias="request_timeout_seconds", ge=1, le=3600)
+
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
+
+
+class EmbeddingModelProbePayload(BaseModel):
+    model_ref: str | None = Field(default=None, alias="model_ref")
 
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
@@ -527,6 +533,14 @@ def discover_model_provider_models_endpoint(payload: ModelDiscoveryPayload) -> d
         if isinstance(item, dict) and str(item.get("model") or "").strip()
     ]
     return {"models": models, "model_items": model_items}
+
+
+@router.post("/embedding-model/probe")
+def probe_embedding_model_dimensions_endpoint(payload: EmbeddingModelProbePayload) -> dict:
+    return probe_embedding_model_dimensions(
+        settings=load_app_settings(),
+        model_ref=str(payload.model_ref or "").strip(),
+    )
 
 
 @router.get("/model-providers/openai-codex/auth/status")

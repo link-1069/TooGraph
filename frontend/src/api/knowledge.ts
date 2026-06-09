@@ -92,6 +92,10 @@ export async function recordKnowledgeBaseRun(collectionId: string, payload: Know
   return apiPost<KnowledgeBase>(`/api/knowledge/bases/${encodePathSegment(collectionId)}/runs`, payload);
 }
 
+export async function retryKnowledgeBase(collectionId: string): Promise<KnowledgeOperationActionResponse> {
+  return apiPost<KnowledgeOperationActionResponse>(`/api/knowledge/bases/${encodePathSegment(collectionId)}/retry`, {});
+}
+
 export async function retryKnowledgeOperation(collectionId: string, operationId: string): Promise<KnowledgeOperationActionResponse> {
   return apiPost<KnowledgeOperationActionResponse>(
     `/api/knowledge/bases/${encodePathSegment(collectionId)}/operations/${encodePathSegment(operationId)}/retry`,

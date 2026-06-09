@@ -411,7 +411,7 @@
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
 import { ArrowUp, Document, FolderOpened, Refresh } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import AppShell from "@/layouts/AppShell.vue";
@@ -421,6 +421,7 @@ import {
   importKnowledgeFolder,
   pauseKnowledgeOperation,
   recordKnowledgeBaseRun,
+  retryKnowledgeBase,
   resumeKnowledgeOperation,
   retryKnowledgeOperation,
   type KnowledgeBase,
@@ -434,6 +435,7 @@ import {
 import type { GraphNode, GraphPayload, InputNode, TemplateRecord, ToolNode } from "@/types/node-system";
 
 const DEFAULT_INGESTION_TEMPLATE_ID = "knowledge_folder_retrieval_ingestion";
+const KNOWLEDGE_WORKSPACE_REFRESH_INTERVAL_MS = 4000;
 
 const { t } = useI18n();
 const bases = ref<KnowledgeBase[]>([]);
@@ -450,6 +452,8 @@ const folderPickerListing = ref<LocalDirectoryEntries | null>(null);
 const folderPickerLoading = ref(false);
 const folderPickerError = ref("");
 const selectedFolderInputNodeId = ref("");
+let knowledgeRefreshTimer: number | null = null;
+let knowledgeProgressRefreshInFlight = false;
 
 const importDraft = ref({
   name: "",
@@ -542,14 +546,12 @@ async function loadKnowledgeWorkspace() {
   error.value = "";
   try {
     const response = await fetchKnowledgeBases();
-    bases.value = response.bases;
-    if (!selectedCollectionId.value && response.bases[0]) {
-      selectedCollectionId.value = response.bases[0].collection_id;
-    }
+    mergeKnowledgeWorkspaceResponse(response);
   } catch (err) {
     error.value = formatError(err);
   } finally {
     loading.value = false;
+    updateKnowledgeProgressPolling();
   }
 }
 
@@ -598,7 +600,7 @@ async function importFolderAndRunIngestion() {
     selectedCollectionId.value = updatedBase.collection_id;
     ElMessage.success(t("knowledge.graphRunQueued", { runId: shortId(run.run_id) }));
     resetImportDraft();
-    void loadKnowledgeWorkspace();
+    await refreshKnowledgeProgressAfterAction();
   } catch (err) {
     actionError.value = formatError(err);
     ElMessage.error(t("knowledge.actionFailed", { error: actionError.value }));
@@ -608,6 +610,16 @@ async function importFolderAndRunIngestion() {
 }
 
 async function retrySelectedOperation() {
+  const base = selectedBase.value;
+  const operation = base?.current_operation;
+  if (!base) {
+    actionError.value = t("knowledge.operationRecovery");
+    return;
+  }
+  if (!operation) {
+    await runCollectionRetryAction(base);
+    return;
+  }
   await runSelectedOperationAction("retry", retryKnowledgeOperation, "knowledge.retryRequested");
 }
 
@@ -644,12 +656,112 @@ async function runSelectedOperationAction(
     mergeKnowledgeBase(updated);
     selectedCollectionId.value = updated.collection_id;
     ElMessage.success(t(successKey));
+    await refreshKnowledgeProgressAfterAction();
   } catch (err) {
     actionError.value = formatError(err);
     ElMessage.error(t("knowledge.actionFailed", { error: actionError.value }));
   } finally {
     operationActionLoading.value = "";
   }
+}
+
+async function runCollectionRetryAction(base: KnowledgeBase) {
+  if (operationActionLoading.value) {
+    return;
+  }
+  if (!canRetryKnowledgeOperation(base)) {
+    actionError.value = t("knowledge.operationRecovery");
+    return;
+  }
+  actionError.value = "";
+  operationActionLoading.value = "retry";
+  try {
+    const updated = await retryKnowledgeBase(base.collection_id);
+    mergeKnowledgeBase(updated);
+    selectedCollectionId.value = updated.collection_id;
+    ElMessage.success(t("knowledge.retryRequested"));
+    await refreshKnowledgeProgressAfterAction();
+  } catch (err) {
+    actionError.value = formatError(err);
+    ElMessage.error(t("knowledge.actionFailed", { error: actionError.value }));
+  } finally {
+    operationActionLoading.value = "";
+  }
+}
+
+async function refreshKnowledgeProgressAfterAction() {
+  if (hasLiveKnowledgeIndexingWork()) {
+    startKnowledgeProgressPolling();
+    await refreshKnowledgeProgress();
+  }
+}
+
+async function refreshKnowledgeProgress() {
+  if (knowledgeProgressRefreshInFlight) {
+    return;
+  }
+  knowledgeProgressRefreshInFlight = true;
+  try {
+    const response = await fetchKnowledgeBases();
+    mergeKnowledgeWorkspaceResponse(response);
+    error.value = "";
+  } catch (err) {
+    error.value = formatError(err);
+  } finally {
+    knowledgeProgressRefreshInFlight = false;
+    updateKnowledgeProgressPolling();
+  }
+}
+
+function mergeKnowledgeWorkspaceResponse(response: Awaited<ReturnType<typeof fetchKnowledgeBases>>) {
+  bases.value = response.bases;
+  if (!response.bases.some((base) => base.collection_id === selectedCollectionId.value)) {
+    selectedCollectionId.value = response.bases[0]?.collection_id ?? "";
+  }
+}
+
+function startKnowledgeProgressPolling() {
+  if (knowledgeRefreshTimer !== null) {
+    return;
+  }
+  knowledgeRefreshTimer = window.setInterval(() => {
+    if (hasLiveKnowledgeIndexingWork()) {
+      void refreshKnowledgeProgress();
+      return;
+    }
+    stopKnowledgeProgressPolling();
+  }, KNOWLEDGE_WORKSPACE_REFRESH_INTERVAL_MS);
+}
+
+function stopKnowledgeProgressPolling() {
+  if (knowledgeRefreshTimer === null) {
+    return;
+  }
+  window.clearInterval(knowledgeRefreshTimer);
+  knowledgeRefreshTimer = null;
+}
+
+function updateKnowledgeProgressPolling() {
+  if (hasLiveKnowledgeIndexingWork()) {
+    startKnowledgeProgressPolling();
+    return;
+  }
+  stopKnowledgeProgressPolling();
+}
+
+function hasLiveKnowledgeIndexingWork() {
+  return Boolean(importing.value || operationActionLoading.value)
+    || bases.value.some((base) => {
+      if (isOperationPaused(base)) {
+        return false;
+      }
+      return isOperationInFlight(base)
+        || base.indexing_status === "ingesting"
+        || base.indexing_status === "indexing"
+        || Number(base.pending_embedding_job_count || 0) > 0
+        || Number(base.running_embedding_job_count || 0) > 0
+        || Number(base.retry_wait_embedding_job_count || 0) > 0;
+    });
 }
 
 async function importKnowledgeSource() {
@@ -982,16 +1094,17 @@ function activeEmbeddingJobCount(base: KnowledgeBase) {
 }
 
 function canRetryKnowledgeOperation(base: KnowledgeBase) {
-  if (!base.current_operation) {
-    return false;
-  }
+  return hasRecoverableKnowledgeJobs(base);
+}
+
+function hasRecoverableKnowledgeJobs(base: KnowledgeBase) {
   return base.indexing_status === "needs_attention"
     || base.indexing_status === "failed"
     || base.indexing_status === "paused_retrying"
     || Number(base.failed_embedding_job_count || 0) > 0
     || Number(base.blocked_embedding_job_count || 0) > 0
     || Number(base.retry_wait_embedding_job_count || 0) > 0
-    || Boolean(base.current_operation.last_error || base.last_error);
+    || Boolean(base.current_operation?.last_error || base.last_error);
 }
 
 function canPauseKnowledgeOperation(base: KnowledgeBase) {
@@ -1048,6 +1161,10 @@ function formatError(err: unknown) {
 onMounted(() => {
   void loadKnowledgeWorkspace();
   void loadIngestionTemplates();
+});
+
+onUnmounted(() => {
+  stopKnowledgeProgressPolling();
 });
 </script>
 

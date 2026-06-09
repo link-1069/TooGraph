@@ -17,6 +17,7 @@ def embedding_job_processor(payload: dict[str, Any] | None) -> dict[str, Any]:
             model_ref=_text(inputs.get("model_ref")),
             limit=_int(inputs.get("limit"), default=50),
             retry_failed=_bool(inputs.get("retry_failed")),
+            batch_size=_int(inputs.get("batch_size"), default=1),
             collection_id=_text(inputs.get("collection_id")),
             operation_id=_text(inputs.get("operation_id")),
             source_kind=_text(inputs.get("source_kind")),

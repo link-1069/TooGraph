@@ -72,7 +72,7 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertEqual(model["distance_metric"], "cosine")
         self.assertEqual(model["metadata"]["normalized"], True)
 
-    def test_sync_default_embedding_model_records_dimensions_source_metadata(self) -> None:
+    def test_sync_default_embedding_model_uses_auto_probe_dimension_source_metadata(self) -> None:
         from app.core.storage.embedding_model_sync import sync_default_embedding_model_from_settings
 
         configured_model = sync_default_embedding_model_from_settings(
@@ -112,8 +112,8 @@ class EmbeddingStoreTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(configured_model["dimensions"], 4096)
-        self.assertEqual(configured_model["metadata"]["dimensions_source"], "configured")
+        self.assertEqual(configured_model["dimensions"], 384)
+        self.assertEqual(configured_model["metadata"]["dimensions_source"], "default")
         self.assertEqual(configured_model["metadata"]["source"], "model_providers.default_embedding_model_ref")
         self.assertEqual(configured_model["metadata"]["model_ref"], "local/configured-embedding")
         self.assertEqual(configured_model["metadata"]["provider_label"], "Local Provider")
@@ -308,6 +308,59 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertEqual(report["processed_jobs"][0]["chunk_id"], chunk["chunk_id"])
         self.assertNotIn("query_vector", report["processed_jobs"][0])
         self.assertEqual(results[0]["chunk_id"], chunk["chunk_id"])
+
+    def test_process_pending_embedding_jobs_batches_provider_requests(self) -> None:
+        from app.core.storage.embedding_store import (
+            process_pending_embedding_jobs,
+            queue_embedding_job,
+            register_embedding_model,
+            search_embedding_vectors,
+        )
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        model = register_embedding_model(provider_key="local", model="batch-embedding", dimensions=3)
+        document = upsert_retrieval_document(source_kind="knowledge_document", source_id="doc_batch")
+        chunks = upsert_retrieval_chunks(
+            document["document_id"],
+            [
+                {"chunk_id": "chunk_batch_1", "content": "Batch embedding content one."},
+                {"chunk_id": "chunk_batch_2", "content": "Batch embedding content two."},
+            ],
+        )
+        jobs = queue_embedding_job("knowledge_document", "doc_batch", model["embedding_model_id"])
+
+        with patch(
+            "app.core.storage.embedding_store.embed_texts_with_model_ref",
+            return_value=(
+                [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                {"provider_id": "local", "model": "batch-embedding", "batch_size": 2},
+            ),
+            create=True,
+        ) as embed:
+            report = process_pending_embedding_jobs(model_ref=model["embedding_model_id"], limit=10, batch_size=2)
+
+        embed.assert_called_once_with(
+            model_ref="local/batch-embedding",
+            texts=["Batch embedding content one.", "Batch embedding content two."],
+            dimensions=3,
+        )
+        first_results = search_embedding_vectors(
+            [1.0, 0.0, 0.0],
+            {"embedding_model_ref": model["embedding_model_id"], "source_kind": "knowledge_document"},
+            limit=1,
+        )
+        second_results = search_embedding_vectors(
+            [0.0, 1.0, 0.0],
+            {"embedding_model_ref": model["embedding_model_id"], "source_kind": "knowledge_document"},
+            limit=1,
+        )
+
+        self.assertEqual(report["completed_count"], 2)
+        self.assertEqual(report["failed_count"], 0)
+        self.assertEqual(report["batch_size"], 2)
+        self.assertEqual({job["job_id"] for job in report["processed_jobs"]}, {job["job_id"] for job in jobs})
+        self.assertEqual(first_results[0]["chunk_id"], chunks[0]["chunk_id"])
+        self.assertEqual(second_results[0]["chunk_id"], chunks[1]["chunk_id"])
 
     def test_embedding_processor_updates_default_model_dimensions_from_provider_vector_and_repairs_blocked_jobs(self) -> None:
         from app.core.storage.embedding_store import (
@@ -906,6 +959,40 @@ class EmbeddingStoreTests(unittest.TestCase):
         self.assertEqual(row[0], "pending")
         self.assertEqual(row[1], "")
         self.assertEqual(row[2], 1)
+
+    def test_reset_stale_running_embedding_jobs_requeues_running_jobs_with_missing_leases(self) -> None:
+        from app.core.storage.embedding_store import (
+            queue_embedding_job,
+            register_embedding_model,
+            reset_stale_running_embedding_jobs,
+            update_embedding_job_status,
+        )
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        model = register_embedding_model(provider_key="local", model="test-embedding", dimensions=3)
+        document = upsert_retrieval_document(source_kind="knowledge_document", source_id="doc_missing_lease")
+        upsert_retrieval_chunks(
+            document["document_id"],
+            [{"chunk_id": "chunk_missing_lease", "content": "Missing lease content."}],
+        )
+        [job] = queue_embedding_job("knowledge_document", "doc_missing_lease", model["embedding_model_id"])
+        update_embedding_job_status(job["job_id"], "running")
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
+            connection.execute(
+                "UPDATE embedding_jobs SET lease_expires_at = '' WHERE job_id = ?",
+                (job["job_id"],),
+            )
+            connection.commit()
+
+        reset_count = reset_stale_running_embedding_jobs(now="2026-06-08T00:00:00Z")
+
+        with closing(sqlite3.connect(database.DB_PATH)) as connection:
+            row = connection.execute(
+                "SELECT status, lease_expires_at FROM embedding_jobs WHERE job_id = ?",
+                (job["job_id"],),
+            ).fetchone()
+        self.assertEqual(reset_count, 1)
+        self.assertEqual(row, ("pending", ""))
 
     def test_process_pending_embedding_jobs_processes_due_retry_wait_but_not_future_retry_wait(self) -> None:
         from app.core.storage.embedding_store import (

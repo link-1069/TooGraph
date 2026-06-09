@@ -26,9 +26,7 @@ export type ModelCapabilityKey =
 export type ProviderModelCapabilities = Record<ModelCapabilityKey, boolean>;
 export type ModelPurpose = "chat" | "embedding" | "rerank";
 
-export type ProviderModelEmbeddingDraft = {
-  dimensions: number | null;
-};
+export type ProviderModelEmbeddingDraft = Record<string, never>;
 
 export type ProviderModelDraft = {
   model: string;
@@ -295,21 +293,11 @@ export function inferModelCapabilities(modelName: string, explicit?: unknown): P
 }
 
 function defaultEmbeddingDraft(): ProviderModelEmbeddingDraft {
-  return {
-    dimensions: null,
-  };
+  return {};
 }
 
 function normalizeEmbeddingDraft(value: unknown): ProviderModelEmbeddingDraft {
-  const fallback = defaultEmbeddingDraft();
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return fallback;
-  }
-  const record = value as Partial<ProviderModelEmbeddingDraft>;
-  const dimensions = Number(record.dimensions);
-  return {
-    dimensions: Number.isFinite(dimensions) && dimensions > 0 ? Math.trunc(dimensions) : null,
-  };
+  return defaultEmbeddingDraft();
 }
 
 function normalizeProviderCredentialPool(value: unknown): SettingsProviderCredential[] {
@@ -478,12 +466,7 @@ export function applyDiscoveredModelItemsToDraft(
       typeof item.compression_threshold === "number" ? item.compression_threshold : modelSettings.compression_threshold,
     );
     modelSettings.capabilities = inferModelCapabilities(modelName, item.capabilities);
-    if (item.embedding) {
-      const dimensions = Number(item.embedding.dimensions);
-      modelSettings.embedding = {
-        dimensions: Number.isFinite(dimensions) && dimensions > 0 ? Math.trunc(dimensions) : null,
-      };
-    }
+    modelSettings.embedding = normalizeEmbeddingDraft(item.embedding);
   }
 }
 
@@ -572,7 +555,7 @@ export function buildProviderSavePayload(drafts: Record<string, ProviderDraft>):
             compression_threshold: modelSettings.capabilities.chat
               ? clampModelCompressionThreshold(modelSettings.compression_threshold)
               : null,
-            embedding: modelSettings.capabilities.embedding ? { dimensions: modelSettings.embedding.dimensions } : undefined,
+            embedding: modelSettings.capabilities.embedding ? normalizeEmbeddingDraft(modelSettings.embedding) : undefined,
           };
         }),
       },

@@ -28,6 +28,14 @@
       "color": "#dc2626",
       "binding": null
     },
+    "batch_size": {
+      "name": "Batch Size",
+      "description": "每次 provider embedding 请求中合并处理的 job 数量；1 表示单条请求。",
+      "type": "number",
+      "value": 32,
+      "color": "#0891b2",
+      "binding": null
+    },
     "processor_status": {
       "name": "Processor Status",
       "description": "embedding_job_processor 返回的处理状态。",
@@ -186,6 +194,33 @@
         "boundaryType": "text"
       }
     },
+    "input_batch_size": {
+      "kind": "input",
+      "name": "Batch Size",
+      "description": "每次 embedding provider 请求合并处理的 job 数量。",
+      "ui": {
+        "position": {
+          "x": 80,
+          "y": 980
+        },
+        "collapsed": false,
+        "size": {
+          "width": 360,
+          "height": 180
+        }
+      },
+      "reads": [],
+      "writes": [
+        {
+          "state": "batch_size",
+          "mode": "replace"
+        }
+      ],
+      "config": {
+        "value": 32,
+        "boundaryType": "text"
+      }
+    },
     "process_embedding_jobs": {
       "kind": "tool",
       "name": "处理 Embedding 队列",
@@ -232,6 +267,17 @@
             "actionKey": "",
             "toolKey": "embedding_job_processor",
             "fieldKey": "retry_failed",
+            "managed": true
+          }
+        },
+        {
+          "state": "batch_size",
+          "required": false,
+          "binding": {
+            "kind": "tool_input",
+            "actionKey": "",
+            "toolKey": "embedding_job_processor",
+            "fieldKey": "batch_size",
             "managed": true
           }
         }
@@ -342,6 +388,10 @@
     },
     {
       "source": "input_retry_failed",
+      "target": "process_embedding_jobs"
+    },
+    {
+      "source": "input_batch_size",
       "target": "process_embedding_jobs"
     },
     {

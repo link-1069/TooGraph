@@ -173,7 +173,7 @@ test("i18n messages expose knowledge operation progress and recovery labels", ()
   assert.equal(zh.retryWaitJobs, "等待重试");
   assert.equal(zh.blockedJobs, "已阻塞");
   assert.equal(zh.failedJobs, "失败");
-  assert.equal(zh.operationRecovery, "选择一个有当前操作的知识库后再执行恢复操作。");
+  assert.equal(zh.operationRecovery, "选择一个有需要恢复的知识库后再执行恢复操作。");
   assert.equal(zh.retryRequested, "已请求重试索引。");
   assert.equal(zh.pauseRequested, "已请求暂停索引。");
   assert.equal(zh.resumeRequested, "已请求继续索引。");
@@ -204,7 +204,7 @@ test("i18n messages expose knowledge operation progress and recovery labels", ()
   assert.equal(en.retryWaitJobs, "Retry wait");
   assert.equal(en.blockedJobs, "Blocked");
   assert.equal(en.failedJobs, "Failed");
-  assert.equal(en.operationRecovery, "Select a knowledge base with a current operation before running recovery.");
+  assert.equal(en.operationRecovery, "Select a knowledge base with recoverable indexing jobs before running recovery.");
   assert.equal(en.retryRequested, "Index retry requested.");
   assert.equal(en.pauseRequested, "Index pause requested.");
   assert.equal(en.resumeRequested, "Index resume requested.");

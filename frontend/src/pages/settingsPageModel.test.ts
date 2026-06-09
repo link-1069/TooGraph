@@ -286,9 +286,7 @@ test("provider save payload includes structured output mode and model reasoning 
             tool_call: false,
             structured_output: true,
           },
-          embedding: {
-            dimensions: null,
-          },
+          embedding: {},
         },
       },
     },
@@ -329,15 +327,13 @@ test("embedding model save payload only carries embedding model parameters", () 
             tool_call: false,
             structured_output: false,
           },
-          embedding: {
-            dimensions: 4096,
-          },
+          embedding: {},
         },
       },
     },
   });
 
-  assert.deepEqual(payload.local.models[0]?.embedding, { dimensions: 4096 });
+  assert.deepEqual(payload.local.models[0]?.embedding, {});
 });
 
 test("inferModelCapabilities marks Qwen embedding names as embedding-only", () => {
@@ -619,9 +615,7 @@ test("provider drafts default model compression threshold and save context windo
       tool_call: false,
       structured_output: false,
     },
-    embedding: {
-      dimensions: null,
-    },
+    embedding: {},
   };
   const payload = buildProviderSavePayload(drafts);
 
@@ -793,7 +787,7 @@ test("clearProviderModelSelection removes model rows and draft metadata", () => 
         context_window_ktokens: 128,
         compression_threshold: 0.9,
         capabilities: inferModelCapabilities("gpt-5.5"),
-        embedding: { dimensions: null },
+        embedding: {},
       },
     },
   };

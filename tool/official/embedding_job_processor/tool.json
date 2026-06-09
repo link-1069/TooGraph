@@ -31,6 +31,12 @@
       "description": "Reset failed embedding jobs to pending before processing."
     },
     {
+      "key": "batch_size",
+      "name": "Batch Size",
+      "valueType": "number",
+      "description": "Number of embedding jobs to send in one provider embedding request. Use 1 for single-request compatibility."
+    },
+    {
       "key": "collection_id",
       "name": "Collection",
       "valueType": "text",

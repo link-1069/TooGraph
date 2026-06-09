@@ -8,6 +8,26 @@ const currentDirectory = dirname(fileURLToPath(import.meta.url));
 const pageSource = readFileSync(resolve(currentDirectory, "ModelProvidersPage.vue"), "utf8");
 const settingsSource = readFileSync(resolve(currentDirectory, "SettingsPage.vue"), "utf8");
 
+function extractFunctionSource(source: string, signature: string) {
+  const start = source.indexOf(signature);
+  assert.notEqual(start, -1, `expected function signature ${signature}`);
+  const bodyStart = source.indexOf("{", start);
+  assert.notEqual(bodyStart, -1, `expected function body for ${signature}`);
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(start, index + 1);
+      }
+    }
+  }
+  throw new Error(`Could not extract function source for ${signature}`);
+}
+
 test("ModelProvidersPage makes ChatGPT Codex sign-in the first provider card", () => {
   assert.match(pageSource, /settings\.codexLogin/);
   assert.match(pageSource, /settings\.codexLoginStatus/);
@@ -93,6 +113,7 @@ test("ModelProvidersPage adds a right-side embedding model selector", () => {
   assert.match(pageSource, /settings\.defaultEmbeddingRuntime/);
   assert.match(pageSource, /settings\.defaultEmbeddingModel/);
   assert.match(pageSource, /v-model="draft\.embedding_model_ref"/);
+  assert.match(pageSource, /@change="handleEmbeddingModelDraftChange"/);
   assert.match(pageSource, /const configuredEmbeddingModels = computed/);
   assert.match(pageSource, /const configuredEmbeddingModelOptions = computed/);
   assert.match(pageSource, /modelHasCapability\(provider, modelName, "embedding"\)/);
@@ -101,6 +122,27 @@ test("ModelProvidersPage adds a right-side embedding model selector", () => {
   assert.match(pageSource, /embedding_model_ref: payload\.model\.embedding_model_ref \?\? ""/);
   assert.match(pageSource, /embedding_model_ref: draft\.value\.embedding_model_ref/);
   assert.match(pageSource, /settings\.noConfiguredEmbeddingModels/);
+});
+
+test("ModelProvidersPage probes embedding dimensions when the default embedding model changes", () => {
+  assert.match(pageSource, /probeEmbeddingModelDimensions/);
+  assert.match(pageSource, /const embeddingProbeStatus = ref/);
+  assert.match(pageSource, /const embeddingProbeDimensions = ref/);
+  assert.match(pageSource, /settings\.embeddingProbeProbing/);
+  assert.match(pageSource, /settings\.embeddingProbeSucceeded/);
+  assert.match(pageSource, /settings\.embeddingProbeFailed/);
+  assert.match(pageSource, /settings\.embeddingProbeRetry/);
+  assert.match(pageSource, /async function probeSelectedEmbeddingModelDimensions/);
+  assert.match(pageSource, /async function handleEmbeddingModelDraftChange/);
+  assert.match(pageSource, /const saved = await persistSettings\(\);[\s\S]*if \(saved\) \{[\s\S]*await probeSelectedEmbeddingModelDimensions/);
+});
+
+test("ModelProvidersPage probes the saved embedding model after settings load", () => {
+  const loadSettingsSource = extractFunctionSource(pageSource, "async function loadSettings()");
+  assert.match(
+    loadSettingsSource,
+    /await refreshCodexAuthStatus\(\);[\s\S]*ensureCodexProviderDraft\(\);[\s\S]*await probeSelectedEmbeddingModelDimensions\(\);/,
+  );
 });
 
 test("ModelProvidersPage discovers model options through add model instead of separate refresh controls", () => {
@@ -203,7 +245,8 @@ test("ModelProvidersPage exposes per-model capability controls inside the config
   assert.match(pageSource, /settings\.modelCapabilityChat/);
   assert.match(pageSource, /settings\.modelCapabilityEmbedding/);
   assert.match(pageSource, /settings\.modelCapabilityRerankFuture/);
-  assert.match(pageSource, /settings\.modelEmbeddingDimensions/);
+  assert.match(pageSource, /settings\.modelEmbeddingAutoDimensions/);
+  assert.match(pageSource, /settings\.modelEmbeddingAutoDimensionsHint/);
   assert.match(pageSource, /class="model-providers-page__model-purpose-segments"/);
   assert.match(pageSource, /role="tablist"/);
   assert.match(pageSource, /v-for="option in modelPurposeOptions"/);
@@ -215,7 +258,10 @@ test("ModelProvidersPage exposes per-model capability controls inside the config
   assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]vision['"]\)/);
   assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]tool_call['"]\)/);
   assert.match(pageSource, /toggleModelCapability\(provider, modelName, ['"]structured_output['"]\)/);
-  assert.match(pageSource, /handleModelEmbeddingDimensionsChange\(provider, modelName, \$event\)/);
+  assert.doesNotMatch(pageSource, /settings\.modelEmbeddingDimensions/);
+  assert.doesNotMatch(pageSource, /settings\.modelEmbeddingDefaultDimensions/);
+  assert.doesNotMatch(pageSource, /modelEmbeddingDimensions/);
+  assert.doesNotMatch(pageSource, /handleModelEmbeddingDimensionsChange/);
   assert.doesNotMatch(pageSource, /settings\.modelEmbeddingUseForMemory/);
   assert.doesNotMatch(pageSource, /settings\.modelEmbeddingUseForKnowledge/);
   assert.doesNotMatch(pageSource, /modelEmbeddingScopeEnabled/);

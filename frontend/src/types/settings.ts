@@ -44,9 +44,7 @@ export type ModelCapabilityKey =
 
 export type SettingsProviderModelCapabilities = Partial<Record<ModelCapabilityKey, boolean>> & Record<string, boolean>;
 
-export type SettingsProviderModelEmbedding = {
-  dimensions?: number | null;
-};
+export type SettingsProviderModelEmbedding = Record<string, never>;
 
 export type SettingsProviderModel = {
   model_ref: string;

@@ -73,6 +73,7 @@ class EmbeddingJobProcessorToolTests(unittest.TestCase):
                 "source_id",
                 "time_budget_seconds",
                 "include_retry_wait",
+                "batch_size",
             }.issubset(input_keys)
         )
         self.assertTrue({"retry_wait_count", "blocked_count"}.issubset(output_keys))
@@ -199,6 +200,7 @@ class EmbeddingJobProcessorToolTests(unittest.TestCase):
                     "operation_id": "kop_policy",
                     "source_kind": "knowledge_document",
                     "source_id": "doc_policy",
+                    "batch_size": 32,
                 }
             )
 
@@ -207,6 +209,27 @@ class EmbeddingJobProcessorToolTests(unittest.TestCase):
         self.assertEqual(result["blocked_count"], 0)
         self.assertEqual(result["scope"]["collection_id"], "policy_qa")
         self.assertEqual(result["scope"]["source_kind"], "knowledge_document")
+
+    def test_tool_passes_batch_size_to_processor(self) -> None:
+        module = _load_tool_module()
+
+        with patch("app.core.storage.embedding_store.process_pending_embedding_jobs") as process_jobs:
+            process_jobs.return_value = {
+                "status": "succeeded",
+                "processed_count": 0,
+                "completed_count": 0,
+                "failed_count": 0,
+                "retry_wait_count": 0,
+                "blocked_count": 0,
+                "retried_failed_count": 0,
+                "reset_blocked_dimension_mismatch_count": 0,
+                "remaining_count": 0,
+                "scope": {},
+                "processed_jobs": [],
+            }
+            module.embedding_job_processor({"model_ref": "local/embed", "limit": 250, "batch_size": 64})
+
+        self.assertEqual(process_jobs.call_args.kwargs["batch_size"], 64)
 
 
 if __name__ == "__main__":

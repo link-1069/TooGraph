@@ -56,6 +56,7 @@ OFFICIAL_SCHEDULED_GRAPH_JOBS: tuple[dict[str, Any], ...] = (
         "input_bindings": {
             "model_ref": "",
             "job_limit": 50,
+            "batch_size": 32,
         },
         "schedule_kind": "interval",
         "schedule_expr": "PT20M",
@@ -81,6 +82,7 @@ OFFICIAL_SCHEDULED_GRAPH_JOBS: tuple[dict[str, Any], ...] = (
             "operation_id": "{{event.operation_id}}",
             "model_ref": "",
             "job_limit": 250,
+            "batch_size": 32,
             "time_budget_seconds": 300,
         },
         "schedule_kind": "event",

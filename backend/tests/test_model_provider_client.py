@@ -898,6 +898,42 @@ class ModelProviderClientTests(unittest.TestCase):
         self.assertEqual(requested["headers"]["Authorization"], "Bearer sk-openai")
         self.assertEqual(requested["json"], {"model": "text-embedding-3-small", "input": "memory recall"})
 
+    def test_embed_texts_with_model_provider_posts_openai_compatible_embedding_batches(self) -> None:
+        from app.tools.model_provider_client import embed_texts_with_model_provider
+
+        fake_client, client_patch = self._patched_client(
+            FakeResponse(
+                {
+                    "id": "emb_batch_1",
+                    "model": "text-embedding-3-small",
+                    "data": [
+                        {"index": 1, "embedding": [0.0, 1.0, 0.0]},
+                        {"index": 0, "embedding": [1.0, 0.0, 0.0]},
+                    ],
+                    "usage": {"prompt_tokens": 8, "total_tokens": 8},
+                }
+            )
+        )
+        with client_patch, patch("app.tools.model_provider_client.append_model_request_log"):
+            vectors, meta = embed_texts_with_model_provider(
+                provider_id="openai",
+                transport="openai-compatible",
+                base_url="https://api.openai.com/v1",
+                api_key="sk-openai",
+                model="text-embedding-3-small",
+                texts=["first memory", "second memory"],
+                dimensions=3,
+            )
+
+        requested = fake_client.post_calls[0]
+        self.assertEqual(vectors, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        self.assertEqual(meta["model"], "text-embedding-3-small")
+        self.assertEqual(meta["batch_size"], 2)
+        self.assertEqual(meta["usage"], {"prompt_tokens": 8, "total_tokens": 8})
+        self.assertEqual(requested["url"], "https://api.openai.com/v1/embeddings")
+        self.assertEqual(requested["headers"]["Authorization"], "Bearer sk-openai")
+        self.assertEqual(requested["json"], {"model": "text-embedding-3-small", "input": ["first memory", "second memory"]})
+
     def test_rerank_documents_with_model_provider_posts_openai_compatible_rerank(self) -> None:
         from app.tools.model_provider_client import rerank_documents_with_model_provider
 

@@ -176,6 +176,119 @@ class KnowledgeRoutesTests(unittest.TestCase):
                 )
                 self.assertEqual(run_event_jobs.call_args.kwargs["requested_by"], "knowledge_operation_resume")
 
+    def test_knowledge_base_retry_route_recovers_collection_jobs_without_existing_operation(self) -> None:
+        from app.core.storage.embedding_store import queue_embedding_job, register_embedding_model, update_embedding_job_status
+        from app.core.storage.retrieval_store import upsert_retrieval_chunks, upsert_retrieval_document
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repo_root = Path(temp_dir) / "repo"
+            repo_root.mkdir()
+            data_dir = Path(temp_dir) / "data"
+            source_root = repo_root / "raw_policy"
+            source_root.mkdir()
+            (source_root / "guide.md").write_text("Policy guide", encoding="utf-8")
+            knowledge_root = repo_root / "knowledge"
+            with (
+                patch("app.core.storage.database.DATA_DIR", data_dir),
+                patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"),
+                patch("app.core.storage.local_input_sources.REPO_ROOT", repo_root),
+                patch("app.core.storage.knowledge_store.REPO_ROOT", repo_root),
+                patch("app.core.storage.knowledge_store.KNOWLEDGE_ROOT", knowledge_root),
+                TestClient(app) as client,
+            ):
+                database.initialize_storage()
+                import_response = client.post(
+                    "/api/knowledge/imports/folder",
+                    json={
+                        "name": "Xi'an action policy",
+                        "source_path": "raw_policy",
+                        "collection_id": "xian_policy",
+                        "template_id": "knowledge_folder_retrieval_ingestion",
+                    },
+                )
+                self.assertEqual(import_response.status_code, 200, import_response.text)
+                with closing(sqlite3.connect(database.DB_PATH)) as connection:
+                    connection.execute("DELETE FROM knowledge_indexing_operations")
+                    connection.commit()
+                model = register_embedding_model(provider_key="local", model="test-embedding", dimensions=3)
+                document = upsert_retrieval_document(
+                    source_kind="knowledge_document",
+                    source_id="xian_policy:guide",
+                    scope={"collection": "xian_policy"},
+                )
+                upsert_retrieval_chunks(
+                    document["document_id"],
+                    [
+                        {"chunk_id": "chunk_xian_blocked", "content": "Blocked content."},
+                        {"chunk_id": "chunk_xian_failed", "content": "Failed content."},
+                        {"chunk_id": "chunk_xian_retry_wait", "content": "Retry wait content."},
+                        {"chunk_id": "chunk_xian_running", "content": "Running content."},
+                    ],
+                )
+                jobs = queue_embedding_job("knowledge_document", "xian_policy:guide", model["embedding_model_id"])
+                jobs_by_chunk = {job["chunk_id"]: job for job in jobs}
+                update_embedding_job_status(
+                    jobs_by_chunk["chunk_xian_blocked"]["job_id"],
+                    "blocked",
+                    error="dimension mismatch",
+                    error_type="embedding_dimension_mismatch",
+                )
+                update_embedding_job_status(
+                    jobs_by_chunk["chunk_xian_failed"]["job_id"],
+                    "failed",
+                    error="provider failed",
+                    error_type="embedding_job_failed",
+                )
+                update_embedding_job_status(
+                    jobs_by_chunk["chunk_xian_retry_wait"]["job_id"],
+                    "retry_wait",
+                    error="provider timeout",
+                    error_type="provider_timeout",
+                    next_retry_at="2999-01-01T00:00:00Z",
+                )
+                update_embedding_job_status(jobs_by_chunk["chunk_xian_running"]["job_id"], "running")
+                with closing(sqlite3.connect(database.DB_PATH)) as connection:
+                    connection.execute(
+                        "UPDATE embedding_jobs SET lease_expires_at = '' WHERE job_id = ?",
+                        (jobs_by_chunk["chunk_xian_running"]["job_id"],),
+                    )
+                    connection.commit()
+
+                with patch("app.api.routes_knowledge.runner.run_event_scheduled_graph_jobs") as run_event_jobs:
+                    retry_response = client.post("/api/knowledge/bases/xian_policy/retry")
+
+                self.assertEqual(retry_response.status_code, 200, retry_response.text)
+                retry_payload = retry_response.json()
+                operation = retry_payload["current_operation"]
+                self.assertEqual(operation["status"], "embedding")
+                self.assertEqual(operation["stage"], "retry_requested")
+                self.assertEqual(retry_payload["pending_embedding_job_count"], 4)
+                self.assertEqual(retry_payload["blocked_embedding_job_count"], 0)
+                self.assertEqual(retry_payload["failed_embedding_job_count"], 0)
+                self.assertEqual(retry_payload["retry_wait_embedding_job_count"], 0)
+                self.assertEqual(retry_payload["running_embedding_job_count"], 0)
+                run_event_jobs.assert_called_once()
+                self.assertEqual(
+                    run_event_jobs.call_args.kwargs["event"],
+                    {"collection_id": "xian_policy", "operation_id": operation["operation_id"]},
+                )
+                self.assertEqual(run_event_jobs.call_args.kwargs["requested_by"], "knowledge_collection_retry")
+                with closing(sqlite3.connect(database.DB_PATH)) as connection:
+                    rows = connection.execute(
+                        """
+                        SELECT status, last_error, last_error_type, next_retry_at, lease_expires_at, operation_id
+                        FROM embedding_jobs
+                        ORDER BY chunk_id ASC
+                        """
+                    ).fetchall()
+                for row in rows:
+                    self.assertEqual(row[0], "pending")
+                    self.assertEqual(row[1], "")
+                    self.assertEqual(row[2], "")
+                    self.assertEqual(row[3], "")
+                    self.assertEqual(row[4], "")
+                    self.assertEqual(row[5], operation["operation_id"])
+
     def test_knowledge_operation_routes_return_the_target_operation_when_another_operation_is_latest(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repo_root = Path(temp_dir) / "repo"

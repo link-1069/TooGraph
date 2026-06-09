@@ -255,7 +255,7 @@ class SchedulerRunnerTests(unittest.TestCase):
         self.assertIn(session["session_id"], str(window_chunks[0][1]))
         self.assertIn("新的 Buddy 消息检索入库链路", str(window_chunks[0][2]))
         self.assertIsNotNone(model_row)
-        self.assertEqual(model_row[1:], ("local", "text-embedding-qwen3-embedding-8b", 4096, 1))
+        self.assertEqual(model_row[1:], ("local", "text-embedding-qwen3-embedding-8b", 384, 1))
         self.assertEqual(len(embedding_jobs), len(window_chunks))
         self.assertEqual(embedding_jobs[0][0], "buddy_message")
         self.assertEqual(embedding_jobs[0][3], model_row[0])

@@ -68,6 +68,20 @@ export async function updateSettings(payload: SettingsUpdatePayload): Promise<Se
   return apiPost<SettingsPayload>("/api/settings", payload);
 }
 
+export type EmbeddingModelProbeResponse = {
+  status: "succeeded" | "failed" | "unconfigured" | string;
+  model_ref: string;
+  embedding_model_id?: string;
+  dimensions?: number | null;
+  dimensions_source?: string;
+  error?: string;
+  embedding_meta?: Record<string, unknown>;
+};
+
+export async function probeEmbeddingModelDimensions(payload: { model_ref?: string }): Promise<EmbeddingModelProbeResponse> {
+  return apiPost<EmbeddingModelProbeResponse>("/api/settings/embedding-model/probe", payload);
+}
+
 export async function fetchBuddyRuntimeSettings(): Promise<BuddyRuntimeSettings> {
   return apiGet<BuddyRuntimeSettings>("/api/settings/buddy-runtime");
 }

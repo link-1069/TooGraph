@@ -67,7 +67,7 @@
                 :teleported="false"
                 popper-class="toograph-select-popper"
                 :disabled="configuredEmbeddingModelOptions.length === 0"
-                @change="handleRuntimeDraftChange"
+                @change="handleEmbeddingModelDraftChange"
               >
                 <ElOption v-for="option in configuredEmbeddingModelOptions" :key="option.value" :label="option.label" :value="option.value" />
               </ElSelect>
@@ -77,6 +77,25 @@
             </div>
             <div v-else class="model-providers-page__hint">
               {{ t("settings.defaultEmbeddingModelHint") }}
+            </div>
+            <div
+              v-if="draft.embedding_model_ref"
+              class="model-providers-page__embedding-probe"
+              :class="`model-providers-page__embedding-probe--${embeddingProbeStatus}`"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="model-providers-page__embedding-probe-dot" aria-hidden="true"></span>
+              <span>{{ embeddingProbeMessage }}</span>
+              <button
+                v-if="embeddingProbeStatus === 'failed'"
+                type="button"
+                class="model-providers-page__embedding-probe-retry"
+                :disabled="embeddingProbeBusy"
+                @click="probeSelectedEmbeddingModelDimensions"
+              >
+                {{ t("settings.embeddingProbeRetry") }}
+              </button>
             </div>
           </article>
 
@@ -282,19 +301,10 @@
                             <div v-if="modelHasCapability(provider, modelName, 'embedding')" class="model-providers-page__model-config-section">
                               <span class="model-providers-page__provider-field-label">{{ t("settings.modelEmbeddingSettings") }}</span>
                               <div class="model-providers-page__model-config-fields">
-                                <label class="model-providers-page__model-budget-field">
-                                  <span>{{ t("settings.modelEmbeddingDimensions") }}</span>
-                                  <input
-                                    class="model-providers-page__model-budget-input"
-                                    :value="modelEmbeddingDimensions(provider, modelName) ?? ''"
-                                    type="number"
-                                    min="1"
-                                    step="1"
-                                    inputmode="numeric"
-                                    :placeholder="t('settings.modelEmbeddingDefaultDimensions')"
-                                    @change="handleModelEmbeddingDimensionsChange(provider, modelName, $event)"
-                                  />
-                                </label>
+                                <div class="model-providers-page__model-auto-field">
+                                  <span>{{ t("settings.modelEmbeddingAutoDimensions") }}</span>
+                                  <small>{{ t("settings.modelEmbeddingAutoDimensionsHint") }}</small>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -989,6 +999,7 @@ import {
   logoutOpenAICodexAuth,
   pollOpenAICodexAuth,
   pollOpenAICodexBrowserAuth,
+  probeEmbeddingModelDimensions,
   startOpenAICodexBrowserAuth,
   startOpenAICodexAuth,
   type OpenAICodexBrowserAuthStartResponse,
@@ -1055,6 +1066,10 @@ const logoutConfirmTimeoutRef = ref<number | null>(null);
 const codexBrowserLoginSession = ref<OpenAICodexBrowserAuthStartResponse | null>(null);
 const codexDeviceLoginSession = ref<OpenAICodexAuthStartResponse | null>(null);
 const codexAuthBusy = ref(false);
+const embeddingProbeStatus = ref<"idle" | "probing" | "succeeded" | "failed" | "unconfigured">("idle");
+const embeddingProbeDimensions = ref<number | null>(null);
+const embeddingProbeError = ref("");
+const embeddingProbeModelRef = ref("");
 let codexBrowserPollTimer: number | null = null;
 let codexDevicePollTimer: number | null = null;
 let saveMessageTimer: number | null = null;
@@ -1193,9 +1208,7 @@ function buildProviderDraftFromTemplate(provider: SettingsModelProvider): Provid
         : null,
       compression_threshold: clampModelCompressionThreshold(model.compression_threshold),
       capabilities: inferModelCapabilities(modelName, model.capabilities),
-      embedding: {
-        dimensions: typeof model.embedding?.dimensions === "number" ? model.embedding.dimensions : null,
-      },
+      embedding: {},
     };
   }
   for (const modelName of modelNames) {
@@ -1353,6 +1366,22 @@ const thinkingMode = computed({
     draft.value.thinking_level = normalizeThinkingLevel(value);
     draft.value.thinking_enabled = draft.value.thinking_level !== "off";
   },
+});
+const embeddingProbeBusy = computed(() => embeddingProbeStatus.value === "probing");
+const embeddingProbeMessage = computed(() => {
+  if (embeddingProbeStatus.value === "probing") {
+    return t("settings.embeddingProbeProbing");
+  }
+  if (embeddingProbeStatus.value === "succeeded" && embeddingProbeDimensions.value !== null) {
+    return t("settings.embeddingProbeSucceeded", { dimensions: embeddingProbeDimensions.value });
+  }
+  if (embeddingProbeStatus.value === "failed") {
+    return t("settings.embeddingProbeFailed", { error: embeddingProbeError.value || t("settings.embeddingProbeUnknownError") });
+  }
+  if (embeddingProbeStatus.value === "unconfigured") {
+    return t("settings.embeddingProbeUnconfigured");
+  }
+  return t("settings.embeddingProbePending");
 });
 function isLoginProvider(provider: ProviderDraft) {
   return provider.requires_login || provider.auth_mode === "chatgpt";
@@ -1566,25 +1595,6 @@ function toggleModelCapability(provider: ProviderDraft, modelName: string, capab
   void persistSettings();
 }
 
-function modelEmbeddingDimensions(provider: ProviderDraft, modelName: string) {
-  return readProviderModelDraft(provider, modelName).embedding.dimensions;
-}
-
-function handleModelEmbeddingDimensionsChange(provider: ProviderDraft, modelName: string, event: Event) {
-  const target = event.target;
-  if (!(target instanceof HTMLInputElement)) {
-    return;
-  }
-  const parsed = Number(target.value);
-  const modelSettings = ensureProviderModelDraft(provider, modelName);
-  modelSettings.embedding.dimensions = Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : null;
-  providerDrafts.value = {
-    ...providerDrafts.value,
-    [provider.provider_id]: provider,
-  };
-  void persistSettings();
-}
-
 function handleModelContextWindowChange(provider: ProviderDraft, modelName: string, event: Event) {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) {
@@ -1754,6 +1764,7 @@ async function loadSettings() {
     error.value = null;
     await refreshCodexAuthStatus();
     ensureCodexProviderDraft();
+    await probeSelectedEmbeddingModelDimensions();
   } catch (fetchError) {
     error.value = fetchError instanceof Error ? fetchError.message : t("common.loadingSettings");
   }
@@ -1825,7 +1836,7 @@ function setSaveMessage(message: string | null, options?: { autoDismiss?: boolea
 
 async function persistSettings() {
   if (!draft.value) {
-    return;
+    return false;
   }
   const editingId = activeProviderConfigProviderId.value || editingProviderId.value;
   const previousProviderDrafts = providerDrafts.value;
@@ -1866,9 +1877,11 @@ async function persistSettings() {
     }
     setSaveMessage(t("settings.saved"), { autoDismiss: true });
     error.value = null;
+    return true;
   } catch (saveError) {
     error.value = saveError instanceof Error ? saveError.message : t("common.failedToSave", { error: "" });
     setSaveMessage(null);
+    return false;
   } finally {
     isSaving.value = false;
   }
@@ -1876,6 +1889,45 @@ async function persistSettings() {
 
 function handleRuntimeDraftChange() {
   void persistSettings();
+}
+
+async function probeSelectedEmbeddingModelDimensions() {
+  const modelRef = draft.value?.embedding_model_ref.trim() ?? "";
+  embeddingProbeModelRef.value = modelRef;
+  embeddingProbeDimensions.value = null;
+  embeddingProbeError.value = "";
+  if (!modelRef) {
+    embeddingProbeStatus.value = "unconfigured";
+    return;
+  }
+  embeddingProbeStatus.value = "probing";
+  try {
+    const result = await probeEmbeddingModelDimensions({ model_ref: modelRef });
+    if (embeddingProbeModelRef.value !== modelRef) {
+      return;
+    }
+    if (result.status === "succeeded") {
+      embeddingProbeStatus.value = "succeeded";
+      embeddingProbeDimensions.value = typeof result.dimensions === "number" ? result.dimensions : null;
+      embeddingProbeError.value = "";
+      return;
+    }
+    embeddingProbeStatus.value = result.status === "unconfigured" ? "unconfigured" : "failed";
+    embeddingProbeError.value = result.error || "";
+  } catch (probeError) {
+    if (embeddingProbeModelRef.value !== modelRef) {
+      return;
+    }
+    embeddingProbeStatus.value = "failed";
+    embeddingProbeError.value = probeError instanceof Error ? probeError.message : "";
+  }
+}
+
+async function handleEmbeddingModelDraftChange() {
+  const saved = await persistSettings();
+  if (saved) {
+    await probeSelectedEmbeddingModelDimensions();
+  }
 }
 
 function handleProviderEnabledChange(provider: ProviderDraft) {
@@ -2452,6 +2504,68 @@ onBeforeUnmount(() => {
   animation: model-provider-spin 900ms linear infinite;
 }
 
+.model-providers-page__embedding-probe {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  border: 1px solid rgba(37, 99, 235, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 8px 10px;
+  color: rgba(30, 41, 59, 0.72);
+  font-size: 0.8rem;
+  font-weight: 720;
+}
+
+.model-providers-page__embedding-probe--succeeded {
+  border-color: rgba(22, 163, 74, 0.22);
+  background: rgba(240, 253, 244, 0.78);
+  color: rgb(22, 101, 52);
+}
+
+.model-providers-page__embedding-probe--failed {
+  border-color: rgba(220, 38, 38, 0.2);
+  background: rgba(254, 242, 242, 0.76);
+  color: rgb(153, 27, 27);
+}
+
+.model-providers-page__embedding-probe-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.model-providers-page__embedding-probe--probing .model-providers-page__embedding-probe-dot {
+  border: 2px solid rgba(37, 99, 235, 0.2);
+  border-top-color: rgb(37, 99, 235);
+  background: transparent;
+  box-shadow: none;
+  animation: model-provider-spin 900ms linear infinite;
+}
+
+.model-providers-page__embedding-probe-retry {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 1px solid rgba(153, 27, 27, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 4px 9px;
+}
+
+.model-providers-page__embedding-probe-retry:disabled {
+  cursor: progress;
+  opacity: 0.72;
+}
+
 .model-providers-page__save-toast-motion-enter-active,
 .model-providers-page__save-toast-motion-leave-active {
   transition:
@@ -2957,6 +3071,26 @@ onBeforeUnmount(() => {
 .model-providers-page__model-budget-field input:focus {
   border-color: rgba(37, 99, 235, 0.48);
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.model-providers-page__model-auto-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 8px 10px;
+  color: rgba(30, 41, 59, 0.78);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.model-providers-page__model-auto-field small {
+  color: rgba(60, 41, 20, 0.58);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .model-providers-page__provider-editor-panel,

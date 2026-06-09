@@ -11,6 +11,7 @@ from app.core.storage.knowledge_store import (
     list_knowledge_bases,
     pause_knowledge_indexing_operation,
     record_knowledge_base_run,
+    retry_knowledge_base_indexing,
     resume_knowledge_indexing_operation,
     retry_knowledge_indexing_operation,
 )
@@ -85,6 +86,30 @@ def retry_knowledge_operation_endpoint(
             },
             background_tasks=background_tasks,
             requested_by="knowledge_operation_retry",
+        )
+        return base
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/bases/{collection_id}/retry")
+def retry_knowledge_base_endpoint(
+    collection_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict[str, Any]:
+    try:
+        base = retry_knowledge_base_indexing(collection_id)
+        operation = base.get("current_operation") if isinstance(base.get("current_operation"), dict) else {}
+        runner.run_event_scheduled_graph_jobs(
+            "knowledge.ingestion.completed",
+            event={
+                "collection_id": base["collection_id"],
+                "operation_id": str(operation.get("operation_id") or ""),
+            },
+            background_tasks=background_tasks,
+            requested_by="knowledge_collection_retry",
         )
         return base
     except FileNotFoundError as exc:

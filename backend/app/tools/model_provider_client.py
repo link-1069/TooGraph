@@ -341,6 +341,30 @@ def _embed_openai_compatible(
     )
 
 
+def _embed_openai_compatible_batch(
+    *,
+    provider_id: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    texts: list[str],
+    auth_header: str,
+    auth_scheme: str,
+    request_timeout_seconds: float | None = None,
+) -> tuple[list[list[float]], dict[str, Any]]:
+    return model_provider_embedding.embed_openai_compatible_batch(
+        provider_id=provider_id,
+        base_url=base_url,
+        api_key=api_key,
+        model=model,
+        texts=texts,
+        auth_header=auth_header,
+        auth_scheme=auth_scheme,
+        append_request_log=_append_model_request_log_safely,
+        request_timeout_seconds=normalize_request_timeout_seconds(request_timeout_seconds),
+    )
+
+
 def _rerank_openai_compatible(
     *,
     provider_id: str,
@@ -401,6 +425,56 @@ def embed_text_with_model_provider(
         raise RuntimeError(f"Expected {int(dimensions)} embedding dimensions from '{provider_id}/{model}', got {len(vector)}.")
     meta["base_url"] = normalized_base_url
     return vector, meta
+
+
+def embed_texts_with_model_provider(
+    *,
+    provider_id: str,
+    transport: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    texts: list[str],
+    dimensions: int | None = None,
+    auth_header: str = "Authorization",
+    auth_scheme: str = "Bearer",
+    request_timeout_seconds: float | None = None,
+) -> tuple[list[list[float]], dict[str, Any]]:
+    normalized_transport = normalize_transport(transport)
+    normalized_base_url = _normalize_base_url(normalize_provider_base_url(provider_id, base_url))
+    normalized_texts = [str(text or "") for text in texts]
+    if not normalized_texts:
+        return [], {
+            "provider_id": provider_id,
+            "transport": normalized_transport,
+            "model": model,
+            "batch_size": 0,
+            "base_url": normalized_base_url,
+        }
+    if normalized_transport != TRANSPORT_OPENAI_COMPATIBLE:
+        raise RuntimeError(f"Embedding transport '{normalized_transport}' is not supported for provider '{provider_id}'.")
+
+    vectors, meta = _embed_openai_compatible_batch(
+        provider_id=provider_id,
+        base_url=normalized_base_url,
+        api_key=api_key,
+        model=model,
+        texts=normalized_texts,
+        auth_header=auth_header,
+        auth_scheme=auth_scheme,
+        request_timeout_seconds=request_timeout_seconds,
+    )
+    if len(vectors) != len(normalized_texts):
+        raise RuntimeError(f"Expected {len(normalized_texts)} embedding vector(s) from '{provider_id}/{model}', got {len(vectors)}.")
+    if dimensions is not None and int(dimensions) > 0:
+        for index, vector in enumerate(vectors):
+            if len(vector) != int(dimensions):
+                raise RuntimeError(
+                    f"Expected {int(dimensions)} embedding dimensions from '{provider_id}/{model}' item {index}, got {len(vector)}."
+                )
+    meta["base_url"] = normalized_base_url
+    meta["batch_size"] = len(vectors)
+    return vectors, meta
 
 
 def rerank_documents_with_model_provider(
@@ -517,6 +591,27 @@ def embed_text_with_model_ref(
     )
 
 
+def embed_texts_with_model_ref(
+    *,
+    model_ref: str,
+    texts: list[str],
+    dimensions: int | None = None,
+) -> tuple[list[list[float]], dict[str, Any]]:
+    saved_settings = load_app_settings()
+    saved_providers = saved_settings.get("model_providers")
+    saved_providers = saved_providers if isinstance(saved_providers, dict) else {}
+    provider_id, model_name = _split_model_ref(model_ref)
+    requested_model_ref = f"{provider_id}/{model_name}".strip("/")
+    _LAST_MODEL_REQUEST_LOG.set({})
+
+    return _embed_texts_with_model_ref_once(
+        model_ref=requested_model_ref,
+        saved_providers=saved_providers,
+        texts=texts,
+        dimensions=dimensions,
+    )
+
+
 def _embed_text_with_model_ref_once(
     *,
     model_ref: str,
@@ -533,6 +628,29 @@ def _embed_text_with_model_ref_once(
         api_key=str(provider_config.get("api_key") or ""),
         model=model_name,
         text=text,
+        dimensions=dimensions,
+        auth_header=str(provider_config.get("auth_header") or template.get("auth_header") or "Authorization"),
+        auth_scheme=_provider_auth_scheme(provider_config, template),
+        request_timeout_seconds=_provider_request_timeout_seconds(provider_config, template),
+    )
+
+
+def _embed_texts_with_model_ref_once(
+    *,
+    model_ref: str,
+    saved_providers: dict[str, Any],
+    texts: list[str],
+    dimensions: int | None,
+) -> tuple[list[list[float]], dict[str, Any]]:
+    provider_id, model_name = _split_model_ref(model_ref)
+    template, provider_config = _provider_config_from_saved(provider_id, saved_providers)
+    return embed_texts_with_model_provider(
+        provider_id=provider_id,
+        transport=str(provider_config.get("transport") or template["transport"]),
+        base_url=str(provider_config.get("base_url") or template["base_url"]),
+        api_key=str(provider_config.get("api_key") or ""),
+        model=model_name,
+        texts=texts,
         dimensions=dimensions,
         auth_header=str(provider_config.get("auth_header") or template.get("auth_header") or "Authorization"),
         auth_scheme=_provider_auth_scheme(provider_config, template),

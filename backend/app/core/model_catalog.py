@@ -138,18 +138,7 @@ def _normalize_model_capabilities(value: Any) -> dict[str, bool]:
 
 
 def normalize_model_embedding_settings(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        return {}
-    dimensions_value = value.get("dimensions")
-    try:
-        dimensions = int(dimensions_value)
-    except (TypeError, ValueError):
-        dimensions = None
-    if dimensions is not None and dimensions < 1:
-        dimensions = None
-    return {
-        "dimensions": dimensions,
-    }
+    return {}
 
 
 def _normalize_model_permissions(value: Any) -> list[str]:

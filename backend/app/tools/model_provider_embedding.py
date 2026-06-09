@@ -8,17 +8,36 @@ from app.tools.model_provider_http import DEFAULT_REQUEST_TIMEOUT_SEC, build_aut
 
 
 def extract_openai_embedding_vector(response_payload: dict[str, Any]) -> list[float]:
+    vectors = extract_openai_embedding_vectors(response_payload, expected_count=1)
+    if vectors:
+        return vectors[0]
+    raise RuntimeError("OpenAI-compatible embedding response did not include an embedding vector.")
+
+
+def extract_openai_embedding_vectors(response_payload: dict[str, Any], *, expected_count: int | None = None) -> list[list[float]]:
     data = response_payload.get("data")
     if not isinstance(data, list):
         raise RuntimeError("OpenAI-compatible embedding response did not include data.")
+    indexed_vectors: list[tuple[int, list[float]]] = []
+    fallback_index = 0
     for item in data:
         if not isinstance(item, dict):
             continue
         embedding = item.get("embedding")
         if not isinstance(embedding, list) or not embedding:
             continue
-        return [float(value) for value in embedding]
-    raise RuntimeError("OpenAI-compatible embedding response did not include an embedding vector.")
+        raw_index = item.get("index")
+        index = int(raw_index) if isinstance(raw_index, (int, float)) else fallback_index
+        indexed_vectors.append((index, [float(value) for value in embedding]))
+        fallback_index += 1
+    vectors = [vector for _index, vector in sorted(indexed_vectors, key=lambda pair: pair[0])]
+    if expected_count is not None and len(vectors) != int(expected_count):
+        raise RuntimeError(
+            f"OpenAI-compatible embedding response returned {len(vectors)} vector(s), expected {int(expected_count)}."
+        )
+    if not vectors:
+        raise RuntimeError("OpenAI-compatible embedding response did not include an embedding vector.")
+    return vectors
 
 
 def embed_openai_compatible(
@@ -78,5 +97,76 @@ def embed_openai_compatible(
         "response_id": response_payload.get("id"),
         "usage": response_payload.get("usage"),
         "dimensions": len(vector),
+        "request_timeout_seconds": timeout_sec,
+    }
+
+
+def embed_openai_compatible_batch(
+    *,
+    provider_id: str,
+    base_url: str,
+    api_key: str,
+    model: str,
+    texts: list[str],
+    auth_header: str,
+    auth_scheme: str,
+    append_request_log: Callable[..., None],
+    request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SEC,
+) -> tuple[list[list[float]], dict[str, Any]]:
+    normalized_texts = [str(text or "") for text in texts]
+    if not normalized_texts:
+        return [], {
+            "provider_id": provider_id,
+            "transport": TRANSPORT_OPENAI_COMPATIBLE,
+            "model": model,
+            "batch_size": 0,
+            "request_timeout_seconds": normalize_request_timeout_seconds(request_timeout_seconds),
+        }
+    timeout_sec = normalize_request_timeout_seconds(request_timeout_seconds)
+    path = "/embeddings"
+    request_payload = {"model": model, "input": normalized_texts}
+    started_at = time.monotonic()
+    try:
+        response_payload = request_json(
+            method="POST",
+            url=f"{base_url}{path}",
+            timeout_sec=timeout_sec,
+            headers=build_auth_headers(api_key=api_key, auth_header=auth_header, auth_scheme=auth_scheme),
+            json_payload=request_payload,
+            error_label=f"{provider_id} embedding request failed",
+        )
+    except Exception as exc:
+        append_request_log(
+            provider_id=provider_id,
+            transport=TRANSPORT_OPENAI_COMPATIBLE,
+            model=model,
+            path=path,
+            request_raw=request_payload,
+            response_raw={"error": str(exc)},
+            started_at=started_at,
+            status_code=None,
+            error=str(exc),
+        )
+        raise
+
+    append_request_log(
+        provider_id=provider_id,
+        transport=TRANSPORT_OPENAI_COMPATIBLE,
+        model=model,
+        path=path,
+        request_raw=request_payload,
+        response_raw=response_payload,
+        started_at=started_at,
+        status_code=200,
+    )
+    vectors = extract_openai_embedding_vectors(response_payload, expected_count=len(normalized_texts))
+    return vectors, {
+        "provider_id": provider_id,
+        "transport": TRANSPORT_OPENAI_COMPATIBLE,
+        "model": response_payload.get("model") or model,
+        "response_id": response_payload.get("id"),
+        "usage": response_payload.get("usage"),
+        "dimensions": len(vectors[0]) if vectors else 0,
+        "batch_size": len(vectors),
         "request_timeout_seconds": timeout_sec,
     }

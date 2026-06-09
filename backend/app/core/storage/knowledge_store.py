@@ -9,7 +9,11 @@ from typing import Any, Iterable
 from uuid import uuid4
 
 from app.core.storage.database import get_connection
-from app.core.storage.embedding_store import reset_embedding_jobs_for_operation
+from app.core.storage.embedding_store import (
+    reset_embedding_jobs_for_collection,
+    reset_embedding_jobs_for_operation,
+    reset_stale_running_embedding_jobs,
+)
 from app.core.storage.json_file_utils import read_json_file, utc_now_iso, write_json_file
 from app.core.storage.local_input_sources import (
     REPO_ROOT as LOCAL_INPUT_REPO_ROOT,
@@ -157,6 +161,7 @@ def mark_knowledge_ingestion_run_completed(
 
 def retry_knowledge_indexing_operation(collection_id: str, operation_id: str) -> dict[str, Any]:
     manifest, operation = _load_manifest_and_operation(collection_id, operation_id)
+    reset_stale_running_embedding_jobs(operation_id=operation["operation_id"])
     reset_embedding_jobs_for_operation(operation["operation_id"])
     updated_operation = update_knowledge_indexing_operation(
         operation["operation_id"],
@@ -166,6 +171,37 @@ def retry_knowledge_indexing_operation(collection_id: str, operation_id: str) ->
         last_error_type="",
         next_retry_at="",
     )
+    return _with_retrieval_counts({**manifest, "current_operation": updated_operation})
+
+
+def retry_knowledge_base_indexing(collection_id: str) -> dict[str, Any]:
+    normalized_collection_id = _normalize_existing_collection_id(collection_id)
+    manifest_path = _collection_root(normalized_collection_id) / MANIFEST_FILE_NAME
+    manifest = read_json_file(manifest_path, default=None)
+    if not isinstance(manifest, dict):
+        raise FileNotFoundError(f"Knowledge base '{normalized_collection_id}' does not exist.")
+    operation = latest_knowledge_indexing_operation(normalized_collection_id)
+    if operation is None:
+        operation = create_knowledge_indexing_operation(
+            collection_id=normalized_collection_id,
+            source_root=str(manifest.get("source_root") or ""),
+            template_id=str(manifest.get("template_id") or DEFAULT_TEMPLATE_ID),
+            metadata={"recovery": "collection_retry"},
+        )
+    reset_embedding_jobs_for_collection(
+        normalized_collection_id,
+        operation_id=operation["operation_id"],
+    )
+    updated_operation = update_knowledge_indexing_operation(
+        operation["operation_id"],
+        status="embedding",
+        stage="retry_requested",
+        last_error="",
+        last_error_type="",
+        next_retry_at="",
+    )
+    manifest["updated_at"] = utc_now_iso()
+    write_json_file(manifest_path, manifest)
     return _with_retrieval_counts({**manifest, "current_operation": updated_operation})
 
 

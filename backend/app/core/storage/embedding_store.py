@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.storage.database import get_connection
-from app.tools.model_provider_client import embed_text_with_model_ref
+from app.tools.model_provider_client import embed_text_with_model_ref, embed_texts_with_model_ref
 
 
 SUPPORTED_EMBEDDING_JOB_STATUSES = {"pending", "running", "retry_wait", "completed", "failed", "blocked"}
@@ -373,6 +373,88 @@ def reset_embedding_jobs_for_operation(operation_id: str, *, statuses: set[str] 
     return int(result.rowcount or 0)
 
 
+def reset_embedding_jobs_for_collection(
+    collection_id: str,
+    *,
+    operation_id: str = "",
+    statuses: set[str] | None = None,
+    now: str | None = None,
+) -> int:
+    normalized_collection_id = str(collection_id or "").strip()
+    if not normalized_collection_id:
+        raise ValueError("collection_id is required.")
+    normalized_operation_id = str(operation_id or "").strip()
+    reset_statuses = statuses if statuses is not None else {"retry_wait", "blocked", "failed"}
+    normalized_statuses = {
+        str(status or "").strip().lower()
+        for status in reset_statuses
+        if str(status or "").strip()
+    }
+    normalized_statuses.discard("completed")
+    normalized_statuses.discard("running")
+    if not normalized_statuses:
+        normalized_statuses = set()
+    unsupported = normalized_statuses - SUPPORTED_EMBEDDING_JOB_STATUSES
+    if unsupported:
+        raise ValueError(f"Unsupported embedding job status: {sorted(unsupported)[0]}")
+    normalized_now = str(now or "").strip() or _utc_now_sql()
+    status_placeholders = ",".join("?" for _ in normalized_statuses)
+    status_conditions: list[str] = []
+    params: list[Any] = []
+    if normalized_statuses:
+        status_conditions.append(f"j.status IN ({status_placeholders})")
+        params.extend(sorted(normalized_statuses))
+    status_conditions.append("(j.status = 'running' AND (j.lease_expires_at = '' OR j.lease_expires_at <= ?))")
+    params.append(normalized_now)
+    where = (
+        f"WHERE ({' OR '.join(status_conditions)}) "
+        "AND j.last_error_type != 'superseded_content_hash' "
+        "AND d.scope_json LIKE ? ESCAPE '\\' "
+        f"AND {_not_paused_operation_sql('j')}"
+    )
+    params.append(_collection_scope_like_pattern(normalized_collection_id))
+    with get_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT j.job_id, d.scope_json
+            FROM embedding_jobs AS j
+            JOIN retrieval_chunks AS c ON c.chunk_id = j.chunk_id
+                AND c.content_hash = j.content_hash
+            JOIN retrieval_documents AS d ON d.document_id = c.document_id
+            {where}
+            """,
+            params,
+        ).fetchall()
+        job_ids = [
+            str(row["job_id"] or "").strip()
+            for row in _filter_embedding_job_rows_by_collection(rows, normalized_collection_id)
+            if str(row["job_id"] or "").strip()
+        ]
+        if not job_ids:
+            return 0
+        placeholders = ",".join("?" for _ in job_ids)
+        operation_assignment = ", operation_id = ?" if normalized_operation_id else ""
+        update_params: list[Any] = [normalized_now]
+        if normalized_operation_id:
+            update_params.append(normalized_operation_id)
+        result = connection.execute(
+            f"""
+            UPDATE embedding_jobs
+            SET status = 'pending',
+                last_error = '',
+                last_error_type = '',
+                next_retry_at = '',
+                lease_expires_at = '',
+                completed_at = '',
+                updated_at = ?
+                {operation_assignment}
+            WHERE job_id IN ({placeholders})
+            """,
+            [*update_params, *job_ids],
+        )
+    return int(result.rowcount or 0)
+
+
 def reset_blocked_embedding_jobs_for_model(model_ref: str) -> int:
     return int(_reset_blocked_embedding_jobs_for_model(model_ref)["count"])
 
@@ -495,6 +577,7 @@ def process_pending_embedding_jobs(
     limit: int = 50,
     retry_failed: bool = False,
     *,
+    batch_size: int = 1,
     collection_id: str = "",
     operation_id: str = "",
     source_kind: str = "",
@@ -508,6 +591,7 @@ def process_pending_embedding_jobs(
     normalized_source_kind = str(source_kind or "").strip()
     normalized_source_id = str(source_id or "").strip()
     normalized_time_budget_seconds = _bounded_int(time_budget_seconds, default=0, minimum=0, maximum=86_400)
+    normalized_batch_size = _bounded_int(batch_size, default=1, minimum=1, maximum=256)
     now = _utc_now_sql()
     if normalized_operation_id and _knowledge_indexing_operation_is_paused(normalized_operation_id):
         return _paused_embedding_operation_report(
@@ -585,13 +669,32 @@ def process_pending_embedding_jobs(
 
     processed_jobs: list[dict[str, Any]] = []
     probed_dimension_model_ids: set[str] = set()
-    for row in rows:
-        if deadline and time.monotonic() >= deadline:
-            break
+
+    def mark_claimed_row_failed(row: Any, exc: Exception) -> None:
         job_id = str(row["job_id"] or "")
-        claimed = _claim_embedding_job(job_id, now=now)
-        if claimed is None:
-            continue
+        classification = classify_embedding_processing_error(exc)
+        failed = update_embedding_job_status(
+            job_id,
+            str(classification["status"]),
+            error=str(exc),
+            error_type=str(classification["error_type"]),
+            next_retry_at=_retry_at(minutes=5) if classification["status"] == "retry_wait" else "",
+        )
+        processed_jobs.append(
+            {
+                "job_id": job_id,
+                "status": failed["status"],
+                "chunk_id": str(row["chunk_id"] or ""),
+                "operation_id": str(row["operation_id"] or ""),
+                "source_kind": str(row["source_kind"] or ""),
+                "source_id": str(row["source_id"] or ""),
+                "embedding_model_id": str(row["embedding_model_id"] or ""),
+                "error": str(exc),
+            }
+        )
+
+    def process_claimed_row(row: Any) -> None:
+        job_id = str(row["job_id"] or "")
         try:
             provider_key = str(row["provider_key"] or "")
             model_name = str(row["model"] or "")
@@ -632,26 +735,112 @@ def process_pending_embedding_jobs(
                 }
             )
         except Exception as exc:
+            mark_claimed_row_failed(row, exc)
+
+    def claim_and_process_single_row(row: Any) -> None:
+        if deadline and time.monotonic() >= deadline:
+            return
+        job_id = str(row["job_id"] or "")
+        claimed = _claim_embedding_job(job_id, now=now)
+        if claimed is None:
+            return
+        process_claimed_row(row)
+
+    def row_batch_key(row: Any) -> tuple[str, str, str]:
+        return (
+            str(row["provider_key"] or ""),
+            str(row["model"] or ""),
+            str(row["embedding_model_id"] or ""),
+        )
+
+    def process_batch_rows(batch_rows: list[Any]) -> None:
+        claimed_rows: list[Any] = []
+        for row in batch_rows:
+            if deadline and time.monotonic() >= deadline:
+                break
+            job_id = str(row["job_id"] or "")
+            claimed = _claim_embedding_job(job_id, now=now)
+            if claimed is not None:
+                claimed_rows.append(row)
+        if not claimed_rows:
+            return
+        if len(claimed_rows) == 1:
+            process_claimed_row(claimed_rows[0])
+            return
+        try:
+            first_row = claimed_rows[0]
+            provider_key = str(first_row["provider_key"] or "")
+            model_name = str(first_row["model"] or "")
+            model = resolve_embedding_model(str(first_row["embedding_model_id"] or ""))
+            dimensions = int(model["dimensions"] or 0)
+            should_probe_dimensions = _should_probe_default_embedding_dimensions(model)
+            texts = [str(row["content"] or "") for row in claimed_rows]
+            vectors, embedding_meta = embed_texts_with_model_ref(
+                model_ref=f"{provider_key}/{model_name}",
+                texts=texts,
+                dimensions=None if should_probe_dimensions else dimensions,
+            )
+            if len(vectors) != len(claimed_rows):
+                raise RuntimeError(f"Embedding batch returned {len(vectors)} vector(s), expected {len(claimed_rows)}.")
+            if should_probe_dimensions and vectors:
+                updated_model = maybe_update_default_embedding_dimensions(model, vectors[0])
+                if (
+                    dict(updated_model.get("metadata") or {}).get("dimensions_source") == "provider_probe"
+                    and int(updated_model["dimensions"] or 0) != dimensions
+                ):
+                    probed_dimension_model_ids.add(str(updated_model["embedding_model_id"] or ""))
+            for batch_item_index, (row, vector) in enumerate(zip(claimed_rows, vectors, strict=True)):
+                job_id = str(row["job_id"] or "")
+                vector_record = upsert_embedding_vector(
+                    str(row["chunk_id"] or ""),
+                    str(row["embedding_model_id"] or ""),
+                    vector,
+                    str(row["chunk_content_hash"] or row["content_hash"] or ""),
+                )
+                completed = update_embedding_job_status(job_id, "completed")
+                processed_jobs.append(
+                    {
+                        "job_id": job_id,
+                        "status": completed["status"],
+                        "chunk_id": str(row["chunk_id"] or ""),
+                        "operation_id": str(row["operation_id"] or ""),
+                        "source_kind": str(row["source_kind"] or ""),
+                        "source_id": str(row["source_id"] or ""),
+                        "embedding_id": vector_record["embedding_id"],
+                        "embedding_model_id": str(row["embedding_model_id"] or ""),
+                        "embedding_meta": {
+                            **embedding_meta,
+                            "batch_size": len(claimed_rows),
+                            "batch_item_index": batch_item_index,
+                        },
+                    }
+                )
+        except Exception as exc:
             classification = classify_embedding_processing_error(exc)
-            failed = update_embedding_job_status(
-                job_id,
-                str(classification["status"]),
-                error=str(exc),
-                error_type=str(classification["error_type"]),
-                next_retry_at=_retry_at(minutes=5) if classification["status"] == "retry_wait" else "",
-            )
-            processed_jobs.append(
-                {
-                    "job_id": job_id,
-                    "status": failed["status"],
-                    "chunk_id": str(row["chunk_id"] or ""),
-                    "operation_id": str(row["operation_id"] or ""),
-                    "source_kind": str(row["source_kind"] or ""),
-                    "source_id": str(row["source_id"] or ""),
-                    "embedding_model_id": str(row["embedding_model_id"] or ""),
-                    "error": str(exc),
-                }
-            )
+            if str(classification["status"]) != "retry_wait":
+                for row in claimed_rows:
+                    process_claimed_row(row)
+                return
+            for row in claimed_rows:
+                mark_claimed_row_failed(row, exc)
+
+    row_index = 0
+    while row_index < len(rows):
+        if deadline and time.monotonic() >= deadline:
+            break
+        if normalized_batch_size <= 1:
+            claim_and_process_single_row(rows[row_index])
+            row_index += 1
+            continue
+        batch_rows = [rows[row_index]]
+        batch_key = row_batch_key(rows[row_index])
+        row_index += 1
+        while row_index < len(rows) and len(batch_rows) < normalized_batch_size:
+            if row_batch_key(rows[row_index]) != batch_key:
+                break
+            batch_rows.append(rows[row_index])
+            row_index += 1
+        process_batch_rows(batch_rows)
 
     reset_blocked_dimension_mismatch_count = 0
     reset_blocked_operation_ids: set[str] = set()
@@ -696,6 +885,7 @@ def process_pending_embedding_jobs(
         "blocked_count": blocked_count,
         "retried_failed_count": retried_failed_count,
         "reset_blocked_dimension_mismatch_count": reset_blocked_dimension_mismatch_count,
+        "batch_size": normalized_batch_size,
         "remaining_count": remaining_count,
         "scope": {
             "collection_id": normalized_collection_id,
@@ -964,7 +1154,7 @@ def _select_embedding_job_candidate_rows(
                 JOIN embedding_models AS m ON m.embedding_model_id = j.embedding_model_id
                 {where}
                 AND {_not_paused_operation_sql("j")}
-                ORDER BY j.priority ASC, j.created_at ASC, j.job_id ASC
+                ORDER BY j.priority ASC, j.created_at ASC, c.document_id ASC, c.ordinal ASC, j.job_id ASC
                 LIMIT ? OFFSET ?
                 """,
                 [*params, page_size, offset],
@@ -1008,7 +1198,7 @@ def reset_stale_running_embedding_jobs(
     normalized_source_kind = str(source_kind or "").strip()
     normalized_source_id = str(source_id or "").strip()
     normalized_now = str(now or "").strip() or _utc_now_sql()
-    where = "WHERE j.status = 'running' AND j.lease_expires_at != '' AND j.lease_expires_at <= ?"
+    where = "WHERE j.status = 'running' AND (j.lease_expires_at = '' OR j.lease_expires_at <= ?)"
     params: list[Any] = [normalized_now]
     if normalized_model_id:
         where += " AND j.embedding_model_id = ?"

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { fetchKnowledgeBases, importKnowledgeFolder } from "./knowledge.ts";
+import { fetchKnowledgeBases, importKnowledgeFolder, retryKnowledgeBase } from "./knowledge.ts";
 
 const originalFetch = globalThis.fetch;
 
@@ -149,6 +149,67 @@ test("knowledge API imports a local folder into a managed source package", async
     assert.equal(response.folder_package.root, "knowledge/xian_policy/source");
     assert.equal(response.knowledge_base.current_operation?.stage, "source_imported");
     assert.equal(response.operation.status, "ingesting");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("knowledge API can retry a whole collection when no operation is available", async () => {
+  let requestedUrl = "";
+
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify({
+        collection_id: "xian_policy",
+        name: "Xian policy",
+        source_root: "knowledge/xian_policy/source",
+        original_path: "C:/policy/xian",
+        template_id: "knowledge_folder_retrieval_ingestion",
+        document_count: 1,
+        chunk_count: 4,
+        embedding_job_count: 4,
+        completed_embedding_job_count: 0,
+        embedding_vector_count: 0,
+        pending_embedding_job_count: 4,
+        running_embedding_job_count: 0,
+        retry_wait_embedding_job_count: 0,
+        failed_embedding_job_count: 0,
+        blocked_embedding_job_count: 0,
+        indexing_status: "indexing",
+        last_error_type: "",
+        last_error: "",
+        next_retry_at: "",
+        current_operation: {
+          operation_id: "kop_recovery",
+          collection_id: "xian_policy",
+          source_root: "knowledge/xian_policy/source",
+          template_id: "knowledge_folder_retrieval_ingestion",
+          ingestion_run_id: "",
+          embedding_run_ids: [],
+          status: "embedding",
+          stage: "retry_requested",
+          last_error_type: "",
+          last_error: "",
+          next_retry_at: "",
+          created_at: "2026-06-07T00:00:00Z",
+          updated_at: "2026-06-07T00:00:00Z",
+          completed_at: "",
+          metadata: { recovery: "collection_retry" },
+        },
+        last_run_id: "",
+        imported_at: "2026-06-07T00:00:00Z",
+        updated_at: "2026-06-07T00:00:00Z",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const response = await retryKnowledgeBase("xian_policy");
+
+    assert.equal(requestedUrl, "/api/knowledge/bases/xian_policy/retry");
+    assert.equal(response.current_operation?.stage, "retry_requested");
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -85,12 +85,37 @@ test("KnowledgePage exposes operation-aware progress and status controls", () =>
   assert.match(componentSource, /\/settings\/model-providers/);
 });
 
+test("KnowledgePage auto-refreshes live indexing progress without manual refresh", () => {
+  assert.match(componentSource, /onUnmounted/);
+  assert.match(componentSource, /KNOWLEDGE_WORKSPACE_REFRESH_INTERVAL_MS/);
+  assert.match(componentSource, /knowledgeRefreshTimer/);
+  assert.match(componentSource, /startKnowledgeProgressPolling/);
+  assert.match(componentSource, /stopKnowledgeProgressPolling/);
+  assert.match(componentSource, /hasLiveKnowledgeIndexingWork/);
+  assert.match(componentSource, /setInterval\(\(\)\s*=>\s*\{[\s\S]*refreshKnowledgeProgress/);
+  assert.match(componentSource, /onUnmounted\(\(\)\s*=>\s*\{[\s\S]*stopKnowledgeProgressPolling\(\)/);
+  assert.match(componentSource, /mergeKnowledgeWorkspaceResponse/);
+  assert.match(componentSource, /if \(hasLiveKnowledgeIndexingWork\(\)\) \{[\s\S]*startKnowledgeProgressPolling\(\)/);
+  assert.match(componentSource, /await refreshKnowledgeProgress\(\)/);
+});
+
 test("Knowledge API exposes operation recovery endpoints", () => {
   assert.match(apiSource, /KnowledgeOperationActionResponse\s*=\s*KnowledgeBase/);
+  assert.match(apiSource, /retryKnowledgeBase/);
+  assert.match(apiSource, /\/bases\/\$\{encodePathSegment\(collectionId\)\}\/retry/);
   assert.match(apiSource, /retryKnowledgeOperation/);
   assert.match(apiSource, /\/operations\/\$\{encodePathSegment\(operationId\)\}\/retry/);
   assert.match(apiSource, /pauseKnowledgeOperation/);
   assert.match(apiSource, /\/operations\/\$\{encodePathSegment\(operationId\)\}\/pause/);
   assert.match(apiSource, /resumeKnowledgeOperation/);
   assert.match(apiSource, /\/operations\/\$\{encodePathSegment\(operationId\)\}\/resume/);
+});
+
+test("KnowledgePage retries collection-level failures when no operation is available", () => {
+  assert.match(componentSource, /retryKnowledgeBase/);
+  assert.match(componentSource, /async function retrySelectedOperation\(\)/);
+  assert.match(componentSource, /if \(!operation\) \{[\s\S]*await runCollectionRetryAction\(base\);[\s\S]*return;/);
+  assert.match(componentSource, /async function runCollectionRetryAction/);
+  assert.match(componentSource, /await retryKnowledgeBase\(base\.collection_id\)/);
+  assert.match(componentSource, /return hasRecoverableKnowledgeJobs\(base\)/);
 });

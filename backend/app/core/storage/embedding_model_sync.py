@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.model_catalog import build_model_ref, normalize_model_embedding_settings, split_model_ref
+from app.core.model_catalog import build_model_ref, split_model_ref
 from app.core.storage import settings_store
 from app.core.storage.embedding_store import embedding_model_has_vectors, register_embedding_model, resolve_embedding_model
+from app.tools.model_provider_client import embed_text_with_model_ref
 
 
 DEFAULT_EMBEDDING_MODEL_DIMENSIONS = 384
+EMBEDDING_DIMENSION_PROBE_TEXT = "TooGraph embedding dimension probe."
 
 
 def sync_default_embedding_model_from_settings(
@@ -74,6 +76,64 @@ def get_default_embedding_model_refs_from_settings(settings: dict[str, Any] | No
     return [model_ref] if model_ref else []
 
 
+def probe_embedding_model_dimensions(
+    settings: dict[str, Any] | None = None,
+    model_ref: str = "",
+) -> dict[str, Any]:
+    source_settings = settings if isinstance(settings, dict) else settings_store.load_app_settings()
+    model = sync_default_embedding_model_from_settings(settings=source_settings, model_ref=model_ref)
+    if model is None:
+        return {
+            "status": "unconfigured",
+            "model_ref": str(model_ref or source_settings.get("embedding_model_ref") or "").strip(),
+            "dimensions": None,
+            "dimensions_source": "",
+            "error": "No embedding-capable model is configured.",
+        }
+
+    normalized_model_ref = build_model_ref(str(model["provider_key"]), str(model["model"]))
+    metadata = dict(model.get("metadata") or {})
+    try:
+        vector, embedding_meta = embed_text_with_model_ref(
+            model_ref=normalized_model_ref,
+            text=EMBEDDING_DIMENSION_PROBE_TEXT,
+            dimensions=None,
+        )
+        dimensions = len(vector) if isinstance(vector, list) else 0
+        if dimensions <= 0:
+            raise RuntimeError("Embedding probe returned an empty vector.")
+        updated_model = register_embedding_model(
+            provider_key=str(model["provider_key"]),
+            model=str(model["model"]),
+            dimensions=dimensions,
+            enabled=True,
+            metadata={
+                **metadata,
+                "source": "model_providers.embedding_dimension_probe",
+                "model_ref": normalized_model_ref,
+                "dimensions_source": "provider_probe",
+            },
+        )
+        return {
+            "status": "succeeded",
+            "model_ref": normalized_model_ref,
+            "embedding_model_id": updated_model["embedding_model_id"],
+            "dimensions": int(updated_model["dimensions"]),
+            "dimensions_source": "provider_probe",
+            "error": "",
+            "embedding_meta": embedding_meta,
+        }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "model_ref": normalized_model_ref,
+            "embedding_model_id": model["embedding_model_id"],
+            "dimensions": int(model["dimensions"] or 0) if model.get("dimensions") else None,
+            "dimensions_source": str(metadata.get("dimensions_source") or "default"),
+            "error": str(exc),
+        }
+
+
 def _find_provider(settings: dict[str, Any], provider_key: str) -> dict[str, Any] | None:
     providers = settings.get("model_providers")
     if not isinstance(providers, dict):
@@ -100,16 +160,7 @@ def _model_supports_embedding(model: dict[str, Any]) -> bool:
     return isinstance(capabilities, dict) and bool(capabilities.get("embedding"))
 
 
-def _embedding_dimensions(model: dict[str, Any]) -> int:
-    dimensions, _source = _embedding_dimensions_with_source(model)
-    return dimensions
-
-
 def _embedding_dimensions_with_source(model: dict[str, Any]) -> tuple[int, str]:
-    embedding = normalize_model_embedding_settings(model.get("embedding"))
-    dimensions = embedding.get("dimensions")
-    if isinstance(dimensions, int) and dimensions > 0:
-        return dimensions, "configured"
     return DEFAULT_EMBEDDING_MODEL_DIMENSIONS, "default"
 
 

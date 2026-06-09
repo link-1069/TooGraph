@@ -66,7 +66,7 @@ class SchedulerOfficialSeedTests(unittest.TestCase):
             embedding["retry_policy"],
             {"max_attempts": 3, "delay_seconds": 300, "backoff_multiplier": 2.0},
         )
-        self.assertEqual(embedding["input_bindings"], {"model_ref": "", "job_limit": 50})
+        self.assertEqual(embedding["input_bindings"], {"model_ref": "", "job_limit": 50, "batch_size": 32})
         knowledge_embedding = jobs["official_knowledge_embedding_drain"]
         self.assertEqual(knowledge_embedding["template_id"], "knowledge_embedding_drain")
         self.assertEqual(knowledge_embedding["schedule_kind"], "event")
@@ -79,6 +79,7 @@ class SchedulerOfficialSeedTests(unittest.TestCase):
                 "operation_id": "{{event.operation_id}}",
                 "model_ref": "",
                 "job_limit": 250,
+                "batch_size": 32,
                 "time_budget_seconds": 300,
             },
         )

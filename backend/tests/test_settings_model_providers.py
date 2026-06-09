@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -19,6 +19,14 @@ from app.api import routes_settings
 
 
 class SettingsModelProviderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._message_platform_schedule_patch = patch("app.main.message_platform_runtime.schedule_enabled_bindings")
+        self._message_platform_stop_patch = patch("app.main.message_platform_runtime.stop", new=AsyncMock())
+        self._message_platform_schedule_patch.start()
+        self._message_platform_stop_patch.start()
+        self.addCleanup(self._message_platform_stop_patch.stop)
+        self.addCleanup(self._message_platform_schedule_patch.stop)
+
     def test_discovers_openai_compatible_models_from_base_url(self) -> None:
         with patch(
             "app.api.routes_settings.discover_provider_model_items",
@@ -399,7 +407,7 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(saved_embedding_model["capabilities"]["embedding"], True)
         self.assertEqual(
             saved_embedding_model["embedding"],
-            {"dimensions": 4096},
+            {},
         )
         self.assertEqual(saved_model["permissions"], ["rerank"])
 
@@ -506,8 +514,72 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(saved_payload["embedding_model_ref"], "local/text-embedding-qwen3-embedding-8b")
         self.assertIsNotNone(model_row)
-        self.assertEqual(model_row[:4], ("local", "text-embedding-qwen3-embedding-8b", 4096, 1))
+        self.assertEqual(model_row[:4], ("local", "text-embedding-qwen3-embedding-8b", 384, 1))
         self.assertEqual(json.loads(model_row[4])["source"], "model_providers.default_embedding_model_ref")
+        self.assertEqual(json.loads(model_row[4])["dimensions_source"], "default")
+
+    def test_embedding_model_probe_endpoint_records_provider_vector_dimensions(self) -> None:
+        from app.core.storage import database
+
+        settings = {
+            "embedding_model_ref": "local/text-embedding-qwen3-embedding-8b",
+            "model_providers": {
+                "local": {
+                    "label": "Local",
+                    "transport": "openai-compatible",
+                    "base_url": "http://127.0.0.1:1234/v1",
+                    "api_key": "sk-local",
+                    "enabled": True,
+                    "auth_header": "Authorization",
+                    "auth_scheme": "Bearer",
+                    "models": [
+                        {
+                            "model": "text-embedding-qwen3-embedding-8b",
+                            "label": "text-embedding-qwen3-embedding-8b",
+                            "capabilities": {"chat": False, "embedding": True},
+                        }
+                    ],
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir):
+                with patch("app.core.storage.database.DB_PATH", data_dir / "toograph.db"):
+                    database.initialize_storage()
+                    with patch("app.api.routes_settings.load_app_settings", return_value=settings):
+                        with patch(
+                            "app.core.storage.embedding_model_sync.embed_text_with_model_ref",
+                            return_value=([0.0] * 4096, {"provider_id": "local", "model": "text-embedding-qwen3-embedding-8b"}),
+                        ) as embed:
+                            with TestClient(app) as client:
+                                response = client.post(
+                                    "/api/settings/embedding-model/probe",
+                                    json={"model_ref": "local/text-embedding-qwen3-embedding-8b"},
+                                )
+
+                    with closing(sqlite3.connect(database.DB_PATH)) as connection:
+                        model_row = connection.execute(
+                            """
+                            SELECT provider_key, model, dimensions, enabled, metadata_json
+                            FROM embedding_models
+                            WHERE provider_key = 'local' AND model = 'text-embedding-qwen3-embedding-8b'
+                            """
+                        ).fetchone()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "succeeded")
+        self.assertEqual(response.json()["dimensions"], 4096)
+        self.assertEqual(response.json()["dimensions_source"], "provider_probe")
+        embed.assert_called_once_with(
+            model_ref="local/text-embedding-qwen3-embedding-8b",
+            text="TooGraph embedding dimension probe.",
+            dimensions=None,
+        )
+        self.assertIsNotNone(model_row)
+        self.assertEqual(model_row[:4], ("local", "text-embedding-qwen3-embedding-8b", 4096, 1))
+        self.assertEqual(json.loads(model_row[4])["dimensions_source"], "provider_probe")
 
     def test_update_settings_persists_model_context_budget(self) -> None:
         saved_payload: dict = {}
@@ -1478,7 +1550,7 @@ class SettingsModelProviderTests(unittest.TestCase):
         self.assertEqual(local_provider["models"][0]["capabilities"], {"chat": False, "rerank": True})
         self.assertEqual(
             local_provider["models"][0]["embedding"],
-            {"dimensions": 1024},
+            {},
         )
         self.assertEqual(local_provider["models"][0]["permissions"], ["rerank"])
 

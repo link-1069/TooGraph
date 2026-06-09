@@ -300,8 +300,10 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIs(embedding_template["capabilityDiscoverable"], False)
         self.assertEqual(
             sorted(node_id for node_id, node in embedding_template["nodes"].items() if node["kind"] == "input"),
-            ["input_limit", "input_model_ref", "input_retry_failed"],
+            ["input_batch_size", "input_limit", "input_model_ref", "input_retry_failed"],
         )
+        self.assertEqual(embedding_template["state_schema"]["batch_size"]["type"], "number")
+        self.assertEqual(embedding_template["state_schema"]["batch_size"]["value"], 32)
         self.assertEqual(embedding_template["state_schema"]["retry_failed"]["type"], "boolean")
         self.assertEqual(embedding_template["nodes"]["input_retry_failed"]["config"]["value"], False)
         self.assertEqual(embedding_template["nodes"]["process_embedding_jobs"]["kind"], "tool")
@@ -345,6 +347,17 @@ class TemplateLayoutTests(unittest.TestCase):
                         "managed": True,
                     },
                 },
+                {
+                    "state": "batch_size",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "embedding_job_processor",
+                        "fieldKey": "batch_size",
+                        "managed": True,
+                    },
+                },
             ],
         )
         self.assertEqual(
@@ -360,6 +373,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertIn({"source": "input_model_ref", "target": "process_embedding_jobs"}, embedding_template["edges"])
         self.assertIn({"source": "input_limit", "target": "process_embedding_jobs"}, embedding_template["edges"])
         self.assertIn({"source": "input_retry_failed", "target": "process_embedding_jobs"}, embedding_template["edges"])
+        self.assertIn({"source": "input_batch_size", "target": "process_embedding_jobs"}, embedding_template["edges"])
         self.assertIn({"source": "process_embedding_jobs", "target": "output_embedding_report"}, embedding_template["edges"])
 
         page_operation_template = templates["toograph_page_operation_workflow"]
@@ -901,6 +915,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(
             sorted(node_id for node_id, node in nodes.items() if node["kind"] == "input"),
             [
+                "input_batch_size",
                 "input_collection_id",
                 "input_job_limit",
                 "input_model_ref",
@@ -914,6 +929,8 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(states["model_ref"]["value"], "")
         self.assertEqual(states["job_limit"]["type"], "number")
         self.assertEqual(states["job_limit"]["value"], 250)
+        self.assertEqual(states["batch_size"]["type"], "number")
+        self.assertEqual(states["batch_size"]["value"], 32)
         self.assertEqual(states["time_budget_seconds"]["type"], "number")
         self.assertEqual(states["time_budget_seconds"]["value"], 300)
         for state_key in [
@@ -1015,6 +1032,17 @@ class TemplateLayoutTests(unittest.TestCase):
                         "managed": True,
                     },
                 },
+                {
+                    "state": "batch_size",
+                    "required": False,
+                    "binding": {
+                        "kind": "tool_input",
+                        "actionKey": "",
+                        "toolKey": "embedding_job_processor",
+                        "fieldKey": "batch_size",
+                        "managed": True,
+                    },
+                },
             ],
         )
         self.assertEqual(
@@ -1038,6 +1066,7 @@ class TemplateLayoutTests(unittest.TestCase):
                 {"source": "input_model_ref", "target": "process_scoped_embedding_jobs"},
                 {"source": "input_job_limit", "target": "process_scoped_embedding_jobs"},
                 {"source": "input_time_budget_seconds", "target": "process_scoped_embedding_jobs"},
+                {"source": "input_batch_size", "target": "process_scoped_embedding_jobs"},
                 {"source": "process_scoped_embedding_jobs", "target": "output_processor_status"},
                 {"source": "process_scoped_embedding_jobs", "target": "output_processor_report"},
                 {"source": "process_scoped_embedding_jobs", "target": "output_processed_count"},
