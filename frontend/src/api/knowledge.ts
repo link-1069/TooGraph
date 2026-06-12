@@ -34,6 +34,12 @@ export type KnowledgeBase = {
   failed_embedding_job_count: number;
   blocked_embedding_job_count: number;
   embedding_vector_count: number;
+  source_file_count: number;
+  pending_source_file_count: number;
+  processing_source_file_count: number;
+  completed_source_file_count: number;
+  skipped_source_file_count: number;
+  failed_source_file_count: number;
   indexing_status: string;
   last_error_type: string;
   last_error: string;

@@ -183,7 +183,9 @@
         "toolKey": "knowledge_folder_normalizer",
         "staticInputs": {
           "collection": "knowledge_action_policy",
-          "max_files": 10000,
+          "operation_id": "",
+          "batch_size": 100,
+          "max_files": 100000,
           "include_binary_text": false,
           "metadata": {
             "template_id": "knowledge_folder_retrieval_ingestion",
@@ -297,7 +299,7 @@
           "source_kind": "knowledge_document",
           "embedding_model_refs": "",
           "operation_id": "",
-          "sync_mode": "sync_scope",
+          "sync_mode": "upsert",
           "scope": {
             "collection": "knowledge_action_policy"
           },

@@ -45,6 +45,20 @@
               <span class="knowledge-page__section-kicker">{{ t("knowledge.baseList") }}</span>
               <h3>{{ t("knowledge.baseCount", { count: bases.length }) }}</h3>
             </div>
+            <ElButton
+              type="primary"
+              class="knowledge-page__base-panel-create"
+              :disabled="importing"
+              data-virtual-affordance-id="knowledge.action.create"
+              :data-virtual-affordance-label="t('knowledge.createKnowledge')"
+              data-virtual-affordance-role="button"
+              data-virtual-affordance-zone="knowledge.list"
+              data-virtual-affordance-actions="click"
+              @click="openCreateKnowledgeDialog"
+            >
+              <ElIcon aria-hidden="true"><Plus /></ElIcon>
+              <span>{{ t("knowledge.createKnowledge") }}</span>
+            </ElButton>
           </div>
 
           <article v-if="loading" class="knowledge-page__empty">{{ t("common.loading") }}</article>
@@ -78,169 +92,55 @@
         </aside>
 
         <section class="knowledge-page__detail-panel">
-          <article class="knowledge-page__import-panel">
-            <div class="knowledge-page__panel-heading">
-              <div>
-                <span class="knowledge-page__section-kicker">{{ t("knowledge.importFolder") }}</span>
-                <h3>{{ t("knowledge.importAndIngest") }}</h3>
-                <p class="knowledge-page__muted">{{ t("knowledge.importFolderBody") }}</p>
-              </div>
-            </div>
-
-            <ElForm class="knowledge-page__form" label-position="top" @submit.prevent>
-              <div class="knowledge-page__form-grid">
-                <ElFormItem :label="t('knowledge.knowledgeName')" required>
-                  <ElInput v-model="importDraft.name" :placeholder="t('knowledge.knowledgeNamePlaceholder')" />
-                </ElFormItem>
-                <ElFormItem :label="t('knowledge.collectionId')">
-                  <ElInput v-model="importDraft.collection_id" :placeholder="t('knowledge.collectionIdPlaceholder')" />
-                </ElFormItem>
-                <ElFormItem class="knowledge-page__form-field--wide" :label="t('knowledge.sourcePath')" required>
-                  <div class="knowledge-page__path-control">
-                    <ElInput
-                      v-model="importDraft.source_path"
-                      :placeholder="t('knowledge.sourcePathPlaceholder')"
-                    />
-                    <ElButton
-                      class="knowledge-page__action"
-                      type="default"
-                      data-virtual-affordance-id="knowledge.action.openFolder"
-                      :data-virtual-affordance-label="t('knowledge.openFolder')"
-                      data-virtual-affordance-role="button"
-                      data-virtual-affordance-zone="knowledge.import"
-                      data-virtual-affordance-actions="click"
-                      @click="openFolderPicker"
-                    >
-                      <ElIcon aria-hidden="true"><FolderOpened /></ElIcon>
-                      <span>{{ t("knowledge.openFolder") }}</span>
-                    </ElButton>
-                  </div>
-                </ElFormItem>
-                <ElFormItem class="knowledge-page__form-field--wide" :label="t('knowledge.template')" required>
-                  <div class="knowledge-page__template-control">
-                    <ElSelect
-                      v-model="importDraft.template_id"
-                      class="knowledge-page__select toograph-select"
-                      popper-class="toograph-select-popper"
-                      filterable
-                      :loading="templatesLoading"
-                      :placeholder="t('knowledge.templatePlaceholder')"
-                      @change="selectIngestionTemplate"
-                    >
-                      <ElOption
-                        v-for="option in templateOptions"
-                        :key="option.value"
-                        :label="option.label"
-                        :value="option.value"
-                        :disabled="option.disabled"
-                      >
-                        <span class="knowledge-page__template-option">
-                          <strong>{{ option.name }}</strong>
-                          <small>{{ option.disabledReason || option.value }}</small>
-                        </span>
-                      </ElOption>
-                    </ElSelect>
-                    <ElButton
-                      class="knowledge-page__action"
-                      :disabled="templatesLoading"
-                      @click="resetTemplateBindingToDefault"
-                    >
-                      {{ t("knowledge.resetDefaultBinding") }}
-                    </ElButton>
-                  </div>
-                </ElFormItem>
-                <ElFormItem class="knowledge-page__form-field--wide" :label="t('knowledge.folderInput')" required>
-                  <ElSelect
-                    v-model="selectedFolderInputNodeId"
-                    class="knowledge-page__select toograph-select"
-                    popper-class="toograph-select-popper"
-                    filterable
-                    :disabled="!selectedImportTemplate || folderInputNodeOptions.length === 0"
-                    :placeholder="t('knowledge.folderInputPlaceholder')"
-                  >
-                    <ElOption
-                      v-for="option in folderInputNodeOptions"
-                      :key="option.value"
-                      :label="option.label"
-                      :value="option.value"
-                      :disabled="option.disabled"
-                    >
-                      <span
-                        class="knowledge-page__binding-option"
-                        :class="{ 'knowledge-page__binding-option--disabled': option.disabled }"
-                      >
-                        <span class="knowledge-page__binding-option-main">
-                          <strong>{{ option.nodeName }}</strong>
-                          <small>{{ option.stateName || t("common.state") }}</small>
-                        </span>
-                        <code>{{ option.stateKey || option.value }}</code>
-                        <small v-if="option.disabledReason" class="knowledge-page__binding-option-reason">
-                          {{ option.disabledReason }}
-                        </small>
-                      </span>
-                    </ElOption>
-                  </ElSelect>
-                  <div
-                    v-if="selectedFolderInputOption"
-                    class="knowledge-page__binding-state-card"
-                    aria-live="polite"
-                  >
-                    <span>{{ t("knowledge.selectedFolderInput") }}</span>
-                    <strong>{{ selectedFolderInputOption.stateName || t("common.state") }}</strong>
-                    <code>{{ selectedFolderInputOption.stateKey }}</code>
-                  </div>
-                  <div v-else class="knowledge-page__binding-state-card knowledge-page__binding-state-card--empty">
-                    <span>{{ t("knowledge.selectedFolderInput") }}</span>
-                    <strong>{{ t("knowledge.noFolderInput") }}</strong>
-                  </div>
-                </ElFormItem>
-              </div>
-
-              <div class="knowledge-page__save-row">
-                <ElButton
-                  type="primary"
-                  class="knowledge-page__action"
-                  :loading="importing"
-                  data-virtual-affordance-id="knowledge.action.importFolder"
-                  :data-virtual-affordance-label="t('knowledge.importAndIngest')"
-                  data-virtual-affordance-role="button"
-                  data-virtual-affordance-zone="knowledge.import"
-                  data-virtual-affordance-actions="click"
-                  @click="importFolderAndRunIngestion"
-                >
-                  <ElIcon aria-hidden="true"><FolderOpened /></ElIcon>
-                  <span>{{ t("knowledge.importAndIngest") }}</span>
-                </ElButton>
-              </div>
-            </ElForm>
+          <article v-if="!selectedBase" class="knowledge-page__detail-empty">
+            <span class="knowledge-page__section-kicker">{{ t("knowledge.selectedBase") }}</span>
+            <h3>{{ t("knowledge.noBaseSelectedTitle") }}</h3>
+            <p class="knowledge-page__muted">{{ t("knowledge.noBaseSelectedBody") }}</p>
+            <ElButton type="primary" class="knowledge-page__action" @click="openCreateKnowledgeDialog">
+              <ElIcon aria-hidden="true"><Plus /></ElIcon>
+              <span>{{ t("knowledge.createKnowledge") }}</span>
+            </ElButton>
           </article>
-
-          <article v-if="!selectedBase" class="knowledge-page__empty">{{ t("knowledge.noBases") }}</article>
           <template v-else>
-            <section class="knowledge-page__facts">
-              <article>
-                <span>{{ t("knowledge.managedSource") }}</span>
-                <strong>{{ selectedBase.source_root || t("common.none") }}</strong>
-              </article>
-              <article>
-                <span>{{ t("knowledge.copiedSource") }}</span>
-                <strong>{{ selectedBase.original_path || t("common.none") }}</strong>
-              </article>
-              <article>
-                <span>{{ t("knowledge.template") }}</span>
-                <strong>{{ selectedBase.template_id || t("common.none") }}</strong>
-              </article>
-              <article>
-                <span>{{ t("scheduler.lastRun") }}</span>
-                <RouterLink
-                  v-if="selectedBase.last_run_id"
-                  class="knowledge-page__run-link"
-                  :to="`/runs/${encodeURIComponent(selectedBase.last_run_id)}`"
-                >
-                  {{ shortId(selectedBase.last_run_id) }}
-                </RouterLink>
-                <strong v-else>{{ t("common.none") }}</strong>
-              </article>
+            <section class="knowledge-page__detail-hero">
+              <div class="knowledge-page__detail-heading">
+                <div>
+                  <span class="knowledge-page__section-kicker">{{ selectedBase.collection_id }}</span>
+                  <h3 class="knowledge-page__detail-title">{{ selectedBase.name || selectedBase.collection_id }}</h3>
+                  <div class="knowledge-page__detail-status-row">
+                    <span class="knowledge-page__status" :class="knowledgeStatusClass(selectedBase)">
+                      {{ knowledgeStatusLabel(selectedBase) }}
+                    </span>
+                    <span>{{ t("knowledge.indexingProgress", { percent: selectedBaseProgress }) }}</span>
+                  </div>
+                </div>
+                <strong class="knowledge-page__progress-percent">{{ selectedBaseProgress }}%</strong>
+              </div>
+
+              <ElProgress class="knowledge-page__progress" :percentage="selectedBaseProgress" :stroke-width="8" />
+
+              <div class="knowledge-page__detail-metrics">
+                <article>
+                  <span>{{ t("knowledge.sourceFilesMetric") }}</span>
+                  <strong>{{ selectedBase.source_file_count }}</strong>
+                </article>
+                <article>
+                  <span>{{ t("knowledge.documentsMetric") }}</span>
+                  <strong>{{ selectedBase.document_count }}</strong>
+                </article>
+                <article>
+                  <span>{{ t("knowledge.chunksMetric") }}</span>
+                  <strong>{{ selectedBase.chunk_count }}</strong>
+                </article>
+                <article>
+                  <span>{{ t("knowledge.vectorsMetric") }}</span>
+                  <strong>{{ selectedBase.embedding_vector_count }}</strong>
+                </article>
+                <article>
+                  <span>{{ t("knowledge.pendingJobsMetric") }}</span>
+                  <strong>{{ selectedBase.pending_embedding_job_count }}</strong>
+                </article>
+              </div>
             </section>
 
             <section class="knowledge-page__operation-panel">
@@ -320,9 +220,188 @@
                 </RouterLink>
               </div>
             </section>
+
+            <section class="knowledge-page__facts">
+              <article>
+                <span>{{ t("knowledge.managedSource") }}</span>
+                <strong>{{ selectedBase.source_root || t("common.none") }}</strong>
+              </article>
+              <article>
+                <span>{{ t("knowledge.copiedSource") }}</span>
+                <strong>{{ selectedBase.original_path || t("common.none") }}</strong>
+              </article>
+              <article>
+                <span>{{ t("knowledge.template") }}</span>
+                <strong>{{ selectedBase.template_id || t("common.none") }}</strong>
+              </article>
+              <article>
+                <span>{{ t("scheduler.lastRun") }}</span>
+                <RouterLink
+                  v-if="selectedBase.last_run_id"
+                  class="knowledge-page__run-link"
+                  :to="`/runs/${encodeURIComponent(selectedBase.last_run_id)}`"
+                >
+                  {{ shortId(selectedBase.last_run_id) }}
+                </RouterLink>
+                <strong v-else>{{ t("common.none") }}</strong>
+              </article>
+            </section>
           </template>
         </section>
       </section>
+
+      <ElDialog
+        v-model="createDialogOpen"
+        class="knowledge-page__create-dialog"
+        :title="t('knowledge.createKnowledge')"
+        width="720px"
+        :close-on-click-modal="!importing"
+        :close-on-press-escape="!importing"
+        @closed="handleCreateDialogClosed"
+      >
+        <div class="knowledge-page__create-dialog-body">
+          <p class="knowledge-page__muted">{{ t("knowledge.importFolderBody") }}</p>
+
+          <ElForm class="knowledge-page__form" label-position="top" @submit.prevent>
+            <div class="knowledge-page__form-grid">
+              <ElFormItem :label="t('knowledge.knowledgeName')" required>
+                <ElInput v-model="importDraft.name" :placeholder="t('knowledge.knowledgeNamePlaceholder')" />
+              </ElFormItem>
+              <ElFormItem :label="t('knowledge.collectionId')">
+                <ElInput v-model="importDraft.collection_id" :placeholder="t('knowledge.collectionIdPlaceholder')" />
+              </ElFormItem>
+              <ElFormItem class="knowledge-page__form-field--wide" :label="t('knowledge.sourcePath')" required>
+                <div class="knowledge-page__path-control">
+                  <ElInput
+                    v-model="importDraft.source_path"
+                    :placeholder="t('knowledge.sourcePathPlaceholder')"
+                  />
+                  <ElButton
+                    class="knowledge-page__action"
+                    type="default"
+                    data-virtual-affordance-id="knowledge.action.openFolder"
+                    :data-virtual-affordance-label="t('knowledge.openFolder')"
+                    data-virtual-affordance-role="button"
+                    data-virtual-affordance-zone="knowledge.import"
+                    data-virtual-affordance-actions="click"
+                    @click="openFolderPicker"
+                  >
+                    <ElIcon aria-hidden="true"><FolderOpened /></ElIcon>
+                    <span>{{ t("knowledge.openFolder") }}</span>
+                  </ElButton>
+                </div>
+              </ElFormItem>
+            </div>
+
+            <details class="knowledge-page__advanced-settings">
+              <summary>
+                <span>{{ t("knowledge.advancedSettings") }}</span>
+                <small>{{ t("knowledge.advancedSettingsHint") }}</small>
+              </summary>
+              <div class="knowledge-page__advanced-body">
+                <ElFormItem class="knowledge-page__form-field--wide" :label="t('knowledge.template')" required>
+                  <div class="knowledge-page__template-control">
+                    <ElSelect
+                      v-model="importDraft.template_id"
+                      class="knowledge-page__select toograph-select"
+                      popper-class="toograph-select-popper"
+                      filterable
+                      :loading="templatesLoading"
+                      :placeholder="t('knowledge.templatePlaceholder')"
+                      @change="selectIngestionTemplate"
+                    >
+                      <ElOption
+                        v-for="option in templateOptions"
+                        :key="option.value"
+                        :label="option.label"
+                        :value="option.value"
+                        :disabled="option.disabled"
+                      >
+                        <span class="knowledge-page__template-option">
+                          <strong>{{ option.name }}</strong>
+                          <small>{{ option.disabledReason || option.value }}</small>
+                        </span>
+                      </ElOption>
+                    </ElSelect>
+                    <ElButton
+                      class="knowledge-page__action"
+                      :disabled="templatesLoading"
+                      @click="resetTemplateBindingToDefault"
+                    >
+                      {{ t("knowledge.resetDefaultBinding") }}
+                    </ElButton>
+                  </div>
+                </ElFormItem>
+                <ElFormItem class="knowledge-page__form-field--wide" :label="t('knowledge.folderInput')" required>
+                  <ElSelect
+                    v-model="selectedFolderInputNodeId"
+                    class="knowledge-page__select toograph-select"
+                    popper-class="toograph-select-popper"
+                    filterable
+                    :disabled="!selectedImportTemplate || folderInputNodeOptions.length === 0"
+                    :placeholder="t('knowledge.folderInputPlaceholder')"
+                  >
+                    <ElOption
+                      v-for="option in folderInputNodeOptions"
+                      :key="option.value"
+                      :label="option.label"
+                      :value="option.value"
+                      :disabled="option.disabled"
+                    >
+                      <span
+                        class="knowledge-page__binding-option"
+                        :class="{ 'knowledge-page__binding-option--disabled': option.disabled }"
+                      >
+                        <span class="knowledge-page__binding-option-main">
+                          <strong>{{ option.nodeName }}</strong>
+                          <small>{{ option.stateName || t("common.state") }}</small>
+                        </span>
+                        <code>{{ option.stateKey || option.value }}</code>
+                        <small v-if="option.disabledReason" class="knowledge-page__binding-option-reason">
+                          {{ option.disabledReason }}
+                        </small>
+                      </span>
+                    </ElOption>
+                  </ElSelect>
+                  <div
+                    v-if="selectedFolderInputOption"
+                    class="knowledge-page__binding-state-card"
+                    aria-live="polite"
+                  >
+                    <span>{{ t("knowledge.selectedFolderInput") }}</span>
+                    <strong>{{ selectedFolderInputOption.stateName || t("common.state") }}</strong>
+                    <code>{{ selectedFolderInputOption.stateKey }}</code>
+                  </div>
+                  <div v-else class="knowledge-page__binding-state-card knowledge-page__binding-state-card--empty">
+                    <span>{{ t("knowledge.selectedFolderInput") }}</span>
+                    <strong>{{ t("knowledge.noFolderInput") }}</strong>
+                  </div>
+                </ElFormItem>
+              </div>
+            </details>
+          </ElForm>
+        </div>
+
+        <template #footer>
+          <div class="knowledge-page__dialog-footer">
+            <ElButton :disabled="importing" @click="closeCreateKnowledgeDialog">{{ t("common.cancel") }}</ElButton>
+            <ElButton
+              type="primary"
+              class="knowledge-page__action"
+              :loading="importing"
+              data-virtual-affordance-id="knowledge.action.importFolder"
+              :data-virtual-affordance-label="t('knowledge.importAndIngest')"
+              data-virtual-affordance-role="button"
+              data-virtual-affordance-zone="knowledge.import"
+              data-virtual-affordance-actions="click"
+              @click="importFolderAndRunIngestion"
+            >
+              <ElIcon aria-hidden="true"><FolderOpened /></ElIcon>
+              <span>{{ t("knowledge.importAndIngest") }}</span>
+            </ElButton>
+          </div>
+        </template>
+      </ElDialog>
 
       <ElDialog
         v-model="folderPickerOpen"
@@ -410,7 +489,7 @@
 
 <script setup lang="ts">
 import { ElMessage } from "element-plus";
-import { ArrowUp, Document, FolderOpened, Refresh } from "@element-plus/icons-vue";
+import { ArrowUp, Document, FolderOpened, Plus, Refresh } from "@element-plus/icons-vue";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
@@ -447,6 +526,7 @@ const importing = ref(false);
 const error = ref("");
 const actionError = ref("");
 const operationActionLoading = ref<"retry" | "pause" | "resume" | "">("");
+const createDialogOpen = ref(false);
 const folderPickerOpen = ref(false);
 const folderPickerListing = ref<LocalDirectoryEntries | null>(null);
 const folderPickerLoading = ref(false);
@@ -508,6 +588,10 @@ const selectedBaseJobStats = computed(() => {
     return [];
   }
   return [
+    { key: "source_files", label: t("knowledge.sourceFilesMetric"), value: base.source_file_count },
+    { key: "pending_source_files", label: t("knowledge.pendingSourceFiles"), value: base.pending_source_file_count },
+    { key: "processing_source_files", label: t("knowledge.processingSourceFiles"), value: base.processing_source_file_count },
+    { key: "completed_source_files", label: t("knowledge.completedSourceFiles"), value: base.completed_source_file_count },
     { key: "completed", label: t("knowledge.completedJobs"), value: base.completed_embedding_job_count },
     { key: "pending", label: t("knowledge.pendingJobs"), value: base.pending_embedding_job_count },
     { key: "running", label: t("knowledge.runningJobs"), value: base.running_embedding_job_count },
@@ -599,6 +683,7 @@ async function importFolderAndRunIngestion() {
     mergeKnowledgeBase(updatedBase);
     selectedCollectionId.value = updatedBase.collection_id;
     ElMessage.success(t("knowledge.graphRunQueued", { runId: shortId(run.run_id) }));
+    createDialogOpen.value = false;
     resetImportDraft();
     await refreshKnowledgeProgressAfterAction();
   } catch (err) {
@@ -607,6 +692,23 @@ async function importFolderAndRunIngestion() {
   } finally {
     importing.value = false;
   }
+}
+
+function openCreateKnowledgeDialog() {
+  actionError.value = "";
+  resetImportDraft();
+  createDialogOpen.value = true;
+}
+
+function closeCreateKnowledgeDialog() {
+  if (importing.value) {
+    return;
+  }
+  createDialogOpen.value = false;
+}
+
+function handleCreateDialogClosed() {
+  resetImportDraft();
 }
 
 async function retrySelectedOperation() {
@@ -655,6 +757,9 @@ async function runSelectedOperationAction(
     const updated = await handler(base.collection_id, operation.operation_id);
     mergeKnowledgeBase(updated);
     selectedCollectionId.value = updated.collection_id;
+    if (action === "retry" && isSourceIngestionOperation(updated)) {
+      await startKnowledgeIngestionRunForBase(updated);
+    }
     ElMessage.success(t(successKey));
     await refreshKnowledgeProgressAfterAction();
   } catch (err) {
@@ -679,6 +784,9 @@ async function runCollectionRetryAction(base: KnowledgeBase) {
     const updated = await retryKnowledgeBase(base.collection_id);
     mergeKnowledgeBase(updated);
     selectedCollectionId.value = updated.collection_id;
+    if (isSourceIngestionOperation(updated)) {
+      await startKnowledgeIngestionRunForBase(updated);
+    }
     ElMessage.success(t("knowledge.retryRequested"));
     await refreshKnowledgeProgressAfterAction();
   } catch (err) {
@@ -694,6 +802,39 @@ async function refreshKnowledgeProgressAfterAction() {
     startKnowledgeProgressPolling();
     await refreshKnowledgeProgress();
   }
+}
+
+async function startKnowledgeIngestionRunForBase(base: KnowledgeBase) {
+  const operation = base.current_operation;
+  if (!operation?.operation_id) {
+    return;
+  }
+  const template = await fetchTemplate(base.template_id || DEFAULT_INGESTION_TEMPLATE_ID);
+  const folderInputNodeId = resolveDefaultFolderInputNodeId(template);
+  if (!folderInputNodeId) {
+    throw new Error(t("knowledge.inputMissingState"));
+  }
+  const folderPackage: LocalFolderPackage = {
+    kind: "local_folder",
+    root: base.source_root,
+    selection_mode: "all",
+    selected: [],
+  };
+  const graph = buildKnowledgeIngestionGraph(
+    template,
+    base,
+    folderPackage,
+    operation.operation_id,
+    folderInputNodeId,
+  );
+  const run = await runGraph(graph);
+  const updatedBase = await recordKnowledgeBaseRun(base.collection_id, {
+    run_id: run.run_id,
+    template_id: base.template_id || DEFAULT_INGESTION_TEMPLATE_ID,
+    operation_id: operation.operation_id,
+  });
+  mergeKnowledgeBase(updatedBase);
+  selectedCollectionId.value = updatedBase.collection_id;
 }
 
 async function refreshKnowledgeProgress() {
@@ -879,6 +1020,11 @@ function syncSelectedFolderInputNode() {
   selectedFolderInputNodeId.value = preferredOption?.value ?? "";
 }
 
+function resolveDefaultFolderInputNodeId(template: TemplateRecord) {
+  const options = buildFolderInputNodeOptions(template).filter((option) => !option.disabled);
+  return options.find((option) => option.stateKey === "knowledge_folder")?.value ?? options[0]?.value ?? "";
+}
+
 function selectIngestionTemplate(value: unknown) {
   importDraft.value.template_id = String(value || "");
   selectedFolderInputNodeId.value = "";
@@ -940,6 +1086,8 @@ function patchKnowledgeToolNode(node: ToolNode, base: KnowledgeBase, operationId
   const staticInputs = { ...(node.config.staticInputs ?? {}) };
   if (node.config.toolKey === "knowledge_folder_normalizer") {
     staticInputs.collection = base.collection_id;
+    staticInputs.operation_id = operationId;
+    staticInputs.batch_size = Number(staticInputs.batch_size || 100);
     staticInputs.metadata = {
       ...asPlainRecord(staticInputs.metadata),
       collection: base.collection_id,
@@ -948,7 +1096,7 @@ function patchKnowledgeToolNode(node: ToolNode, base: KnowledgeBase, operationId
   }
   if (node.config.toolKey === "retrieval_ingestion_writer") {
     staticInputs.source_kind = "knowledge_document";
-    staticInputs.sync_mode = "sync_scope";
+    staticInputs.sync_mode = "upsert";
     staticInputs.operation_id = operationId;
     staticInputs.scope = {
       ...asPlainRecord(staticInputs.scope),
@@ -980,6 +1128,11 @@ function mergeKnowledgeBase(base: KnowledgeBase) {
 }
 
 function knowledgeProgressPercent(base: KnowledgeBase) {
+  const sourceTotal = Number(base.source_file_count || 0);
+  const sourceDone = Number(base.completed_source_file_count || 0) + Number(base.skipped_source_file_count || 0);
+  if (sourceTotal > 0 && (base.indexing_status === "ingesting" || base.current_operation?.status === "ingesting")) {
+    return clampPercent(Math.round((sourceDone / sourceTotal) * 100));
+  }
   const total = Math.max(
     Number(base.embedding_job_count || 0),
     Number(base.completed_embedding_job_count || 0)
@@ -1087,10 +1240,20 @@ function isOperationInFlight(base: KnowledgeBase) {
     || stage === "user_resumed";
 }
 
+function isSourceIngestionOperation(base: KnowledgeBase) {
+  return base.current_operation?.status === "ingesting";
+}
+
 function activeEmbeddingJobCount(base: KnowledgeBase) {
   return Number(base.pending_embedding_job_count || 0)
     + Number(base.running_embedding_job_count || 0)
     + Number(base.retry_wait_embedding_job_count || 0);
+}
+
+function unfinishedSourceFileCount(base: KnowledgeBase) {
+  return Number(base.pending_source_file_count || 0)
+    + Number(base.processing_source_file_count || 0)
+    + Number(base.failed_source_file_count || 0);
 }
 
 function canRetryKnowledgeOperation(base: KnowledgeBase) {
@@ -1104,7 +1267,18 @@ function hasRecoverableKnowledgeJobs(base: KnowledgeBase) {
     || Number(base.failed_embedding_job_count || 0) > 0
     || Number(base.blocked_embedding_job_count || 0) > 0
     || Number(base.retry_wait_embedding_job_count || 0) > 0
+    || Number(base.failed_source_file_count || 0) > 0
+    || unfinishedSourceFileCount(base) > 0
+    || isCompletedEmptyKnowledgeOperation(base)
     || Boolean(base.current_operation?.last_error || base.last_error);
+}
+
+function isCompletedEmptyKnowledgeOperation(base: KnowledgeBase) {
+  return base.current_operation?.status === "completed"
+    && Number(base.document_count || 0) === 0
+    && Number(base.chunk_count || 0) === 0
+    && Number(base.embedding_job_count || 0) === 0
+    && Boolean(base.source_root);
 }
 
 function canPauseKnowledgeOperation(base: KnowledgeBase) {
@@ -1220,7 +1394,8 @@ onUnmounted(() => {
 
 .knowledge-page__header-actions,
 .knowledge-page__badges,
-.knowledge-page__save-row {
+.knowledge-page__save-row,
+.knowledge-page__dialog-footer {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -1242,7 +1417,8 @@ onUnmounted(() => {
 }
 
 .knowledge-page__metric span,
-.knowledge-page__facts span {
+.knowledge-page__facts span,
+.knowledge-page__detail-metrics span {
   display: block;
   color: var(--toograph-text-muted);
   font-size: 0.78rem;
@@ -1250,7 +1426,8 @@ onUnmounted(() => {
 }
 
 .knowledge-page__metric strong,
-.knowledge-page__facts strong {
+.knowledge-page__facts strong,
+.knowledge-page__detail-metrics strong {
   display: block;
   margin-top: 5px;
   overflow-wrap: anywhere;
@@ -1289,6 +1466,10 @@ onUnmounted(() => {
   align-items: flex-start;
 }
 
+.knowledge-page__base-panel-create {
+  flex: 0 0 auto;
+}
+
 .knowledge-page__base-card-heading strong {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -1313,6 +1494,9 @@ onUnmounted(() => {
 
 .knowledge-page__base-card,
 .knowledge-page__import-panel,
+.knowledge-page__detail-empty,
+.knowledge-page__detail-hero,
+.knowledge-page__detail-metrics article,
 .knowledge-page__facts article {
   min-width: 0;
   border: 1px solid rgba(120, 53, 15, 0.1);
@@ -1445,6 +1629,96 @@ onUnmounted(() => {
   display: grid;
   gap: 14px;
   padding: 14px;
+}
+
+.knowledge-page__detail-empty,
+.knowledge-page__detail-hero {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.knowledge-page__detail-empty {
+  align-content: start;
+}
+
+.knowledge-page__detail-empty h3,
+.knowledge-page__detail-title {
+  margin: 0;
+  color: var(--toograph-text-strong);
+  letter-spacing: 0;
+}
+
+.knowledge-page__detail-title {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  font-size: 1.48rem;
+  line-height: 1.2;
+}
+
+.knowledge-page__detail-heading,
+.knowledge-page__detail-status-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.knowledge-page__detail-status-row {
+  justify-content: flex-start;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--toograph-text-muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.knowledge-page__detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.knowledge-page__detail-metrics article {
+  padding: 10px;
+}
+
+.knowledge-page__create-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+
+.knowledge-page__dialog-footer {
+  justify-content: flex-end;
+}
+
+.knowledge-page__advanced-settings {
+  border: 1px solid rgba(120, 53, 15, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.knowledge-page__advanced-settings summary {
+  display: grid;
+  gap: 3px;
+  padding: 11px 12px;
+  cursor: pointer;
+  color: var(--toograph-text-strong);
+  font-weight: 800;
+  list-style-position: inside;
+}
+
+.knowledge-page__advanced-settings summary small {
+  color: var(--toograph-text-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.knowledge-page__advanced-body {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid rgba(120, 53, 15, 0.1);
+  padding: 12px;
 }
 
 .knowledge-page__form :deep(.el-select) {
@@ -1851,8 +2125,17 @@ onUnmounted(() => {
   .knowledge-page__operation-meta,
   .knowledge-page__path-control,
   .knowledge-page__template-control,
+  .knowledge-page__detail-heading,
   .knowledge-page__binding-state-card {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-page__detail-heading {
+    display: grid;
+  }
+
+  .knowledge-page__detail-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .knowledge-page__job-grid {
@@ -1875,12 +2158,15 @@ onUnmounted(() => {
 
   .knowledge-page__header-actions,
   .knowledge-page__header-actions > *,
+  .knowledge-page__base-panel-create,
   .knowledge-page__save-row > *,
+  .knowledge-page__dialog-footer > *,
   .knowledge-page__operation-actions > * {
     width: 100%;
   }
 
   .knowledge-page__job-grid,
+  .knowledge-page__detail-metrics,
   .knowledge-page__mini-progress {
     grid-template-columns: 1fr;
   }

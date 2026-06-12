@@ -742,7 +742,9 @@ class TemplateLayoutTests(unittest.TestCase):
             normalizer_node["config"]["staticInputs"],
             {
                 "collection": "knowledge_action_policy",
-                "max_files": 10000,
+                "operation_id": "",
+                "batch_size": 100,
+                "max_files": 100000,
                 "include_binary_text": False,
                 "metadata": {
                     "template_id": "knowledge_folder_retrieval_ingestion",
@@ -806,7 +808,7 @@ class TemplateLayoutTests(unittest.TestCase):
         self.assertEqual(writer_node["config"]["staticInputs"]["source_kind"], "knowledge_document")
         self.assertEqual(writer_node["config"]["staticInputs"]["embedding_model_refs"], "")
         self.assertEqual(writer_node["config"]["staticInputs"]["operation_id"], "")
-        self.assertEqual(writer_node["config"]["staticInputs"]["sync_mode"], "sync_scope")
+        self.assertEqual(writer_node["config"]["staticInputs"]["sync_mode"], "upsert")
         self.assertEqual(writer_node["config"]["staticInputs"]["scope"], {"collection": "knowledge_action_policy"})
         self.assertEqual(
             _read_contracts(writer_node["reads"]),

@@ -18,12 +18,16 @@ test("KnowledgePage is a managed-folder ingestion console for the new retrieval 
   assert.doesNotMatch(componentSource, /knowledge_bases|knowledge_documents|knowledge_chunks/);
 });
 
-test("KnowledgePage exposes folder import, graph-template selection, and run links", () => {
+test("KnowledgePage opens folder import from the knowledge list as a create dialog", () => {
   assert.match(componentSource, /class="knowledge-page__layout"/);
-  assert.match(componentSource, /class="knowledge-page__import-panel"/);
+  assert.match(componentSource, /class="knowledge-page__base-panel-create"/);
+  assert.match(componentSource, /createDialogOpen/);
+  assert.match(componentSource, /class="knowledge-page__create-dialog"/);
   assert.match(componentSource, /class="knowledge-page__base-list"/);
   assert.match(componentSource, /v-model="importDraft\.source_path"/);
   assert.match(componentSource, /v-model="importDraft\.template_id"/);
+  assert.match(componentSource, /openCreateKnowledgeDialog/);
+  assert.match(componentSource, /closeCreateKnowledgeDialog/);
   assert.match(componentSource, /fetchLocalPickerDirectoryEntries/);
   assert.match(componentSource, /knowledge-page__folder-picker/);
   assert.match(componentSource, /selectPickerFolder/);
@@ -33,6 +37,14 @@ test("KnowledgePage exposes folder import, graph-template selection, and run lin
   assert.doesNotMatch(componentSource, /importUploadedKnowledgeFolder/);
   assert.match(componentSource, /data-virtual-affordance-id="knowledge.action.importFolder"/);
   assert.match(componentSource, /RouterLink[\s\S]*\/runs\/\$\{encodeURIComponent\(selectedBase\.last_run_id\)\}/);
+});
+
+test("KnowledgePage prioritizes selected base detail over persistent create form", () => {
+  assert.match(componentSource, /class="knowledge-page__detail-hero"/);
+  assert.match(componentSource, /class="knowledge-page__detail-title"/);
+  assert.match(componentSource, /class="knowledge-page__detail-status-row"/);
+  assert.match(componentSource, /class="knowledge-page__detail-empty"/);
+  assert.doesNotMatch(componentSource, /<article class="knowledge-page__import-panel">/);
 });
 
 test("KnowledgePage keeps the knowledge name generic and does not filter template choices to old ingestion markers", () => {
@@ -58,6 +70,8 @@ test("KnowledgePage records ingestion runs with the indexing operation id", () =
   assert.match(componentSource, /knowledge_operation_id:\s*operationId/);
   assert.match(componentSource, /patchKnowledgeToolNode\(node,\s*base,\s*operationId\)/);
   assert.match(componentSource, /staticInputs\.operation_id\s*=\s*operationId/);
+  assert.match(componentSource, /staticInputs\.batch_size\s*=/);
+  assert.match(componentSource, /staticInputs\.sync_mode\s*=\s*"upsert"/);
   assert.match(
     componentSource,
     /recordKnowledgeBaseRun\(imported\.knowledge_base\.collection_id,\s*\{[\s\S]*run_id:\s*run\.run_id,[\s\S]*template_id:\s*importDraft\.value\.template_id\.trim\(\),[\s\S]*operation_id:\s*imported\.operation\.operation_id,[\s\S]*\}\)/,
@@ -69,6 +83,12 @@ test("KnowledgePage exposes operation-aware progress and status controls", () =>
   assert.match(componentSource, /knowledgeProgressPercent/);
   assert.match(componentSource, /knowledgeStatusLabel/);
   assert.match(componentSource, /knowledgeStatusClass/);
+  assert.match(componentSource, /source_file_count/);
+  assert.match(componentSource, /pending_source_file_count/);
+  assert.match(componentSource, /completed_source_file_count/);
+  assert.match(componentSource, /unfinishedSourceFileCount/);
+  assert.match(componentSource, /unfinishedSourceFileCount\(base\) > 0/);
+  assert.match(componentSource, /startKnowledgeIngestionRunForBase/);
   assert.match(componentSource, /canRetrySelectedOperation/);
   assert.match(componentSource, /canPauseSelectedOperation/);
   assert.match(componentSource, /canResumeSelectedOperation/);
