@@ -9,6 +9,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.runtime.node_handlers import execute_tool_node
+from app.core.runtime import node_handlers
 from app.core.schemas.node_system import NodeSystemAgentNode, NodeSystemStateDefinition, NodeSystemToolNode
 
 
@@ -84,6 +85,24 @@ class ToolRuntimeContextTests(unittest.TestCase):
                 "buddy_current_message_id": "msg_current",
             },
         )
+        self.assertEqual(captured_contexts[0]["run_id"], "run_1")
+        self.assertEqual(captured_contexts[0]["node_id"], "load_history")
+
+    def test_tool_context_uses_graph_context_run_id_when_runtime_state_is_only_values(self) -> None:
+        context = node_handlers._build_tool_invocation_context(
+            state={"user_message": "hello"},
+            node_name="select_review_source",
+            tool_key="buddy_review_source_selector",
+            graph_context={
+                "run_id": "run_scheduled_review",
+                "metadata": {
+                    "runtime_context": {"buddy_background_review_id": "review_1"},
+                },
+            },
+        )
+
+        self.assertEqual(context["run_id"], "run_scheduled_review")
+        self.assertEqual(context["runtime_context"], {"buddy_background_review_id": "review_1"})
 
     def test_context_pressure_tool_collects_target_agent_context_without_input_ports(self) -> None:
         captured_inputs: list[dict] = []

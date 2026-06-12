@@ -145,6 +145,55 @@ class RuntimeActionInvocationTests(unittest.TestCase):
         self.assertEqual(result["artifact_dir"], str(artifact_dir))
         self.assertEqual(result["artifact_relative_dir"], "run_1/writer/web_search/invocation_001")
 
+    def test_script_action_runner_passes_invocation_metadata_as_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            action_dir = Path(temp_dir) / "invocation_echo"
+            action_dir.mkdir()
+            entrypoint = action_dir / "run.py"
+            entrypoint.write_text(
+                "\n".join(
+                    [
+                        "import json",
+                        "import os",
+                        "print(json.dumps({",
+                        "  'status': 'succeeded',",
+                        "  'run_id': os.environ.get('TOOGRAPH_ACTION_RUN_ID'),",
+                        "  'node_id': os.environ.get('TOOGRAPH_ACTION_NODE_ID'),",
+                        "  'capability_kind': os.environ.get('TOOGRAPH_ACTION_CAPABILITY_KIND'),",
+                        "  'capability_key': os.environ.get('TOOGRAPH_ACTION_CAPABILITY_KEY'),",
+                        "  'invocation_index': os.environ.get('TOOGRAPH_ACTION_INVOCATION_INDEX'),",
+                        "}))",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            runner = ScriptActionRunner(
+                action_key="invocation_echo",
+                action_dir=action_dir,
+                runtime_type="python",
+                entrypoint="run.py",
+            )
+
+            result = invoke_action(
+                runner,
+                {},
+                context={
+                    "run_id": "run_review_1",
+                    "node_id": "select_review_source",
+                    "capability_kind": "tool",
+                    "capability_key": "buddy_review_source_selector",
+                    "invocation_index": 2,
+                },
+            )
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["run_id"], "run_review_1")
+        self.assertEqual(result["node_id"], "select_review_source")
+        self.assertEqual(result["capability_kind"], "tool")
+        self.assertEqual(result["capability_key"], "buddy_review_source_selector")
+        self.assertEqual(result["invocation_index"], "2")
+
     def test_script_action_runner_does_not_inherit_provider_secret_environment(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             action_dir = Path(temp_dir) / "env_echo"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
@@ -137,6 +138,23 @@ class BuddyReviewSourceSelectorToolTests(unittest.TestCase):
         self.assertEqual(result["review_id"], "")
         self.assertEqual(result["selection_report"]["skipped_reason"], "no_unreviewed_completed_buddy_run")
         self.assertEqual(len(review_records), 1)
+
+    def test_selector_reads_review_run_id_from_script_invocation_environment(self) -> None:
+        module = _load_selector_tool_module()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir) / "data"
+            with patch("app.core.storage.database.DATA_DIR", data_dir), patch(
+                "app.core.storage.database.DB_PATH",
+                data_dir / "toograph.db",
+            ), patch.dict(os.environ, {"TOOGRAPH_ACTION_RUN_ID": "run_scheduled_review"}, clear=False):
+                database.initialize_storage()
+
+                result = module.buddy_review_source_selector({"mode": "auto_unreviewed"})
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertIs(result["has_source_run"], False)
+        self.assertEqual(result["selection_report"]["skipped_reason"], "no_unreviewed_completed_buddy_run")
 
     def test_selector_explicit_mode_claims_provided_source_run(self) -> None:
         module = _load_selector_tool_module()

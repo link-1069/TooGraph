@@ -138,6 +138,7 @@ def _execute_node(
     execute_subgraph_worker_func: Any | None = None,
 ) -> dict[str, Any]:
     graph_context = {
+        "run_id": state.get("run_id", ""),
         "metadata": state.get("metadata", {}),
         "state": state.get("state_values", {}),
         "state_schema": graph.state_schema,

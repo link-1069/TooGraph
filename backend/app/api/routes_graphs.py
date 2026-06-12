@@ -31,7 +31,11 @@ from app.core.storage.graph_store import (
     restore_graph_revision,
     save_graph_with_revision,
 )
-from app.core.storage.knowledge_store import DEFAULT_TEMPLATE_ID, mark_knowledge_ingestion_run_completed
+from app.core.storage.knowledge_store import (
+    DEFAULT_TEMPLATE_ID,
+    mark_knowledge_ingestion_run_completed,
+    mark_knowledge_ingestion_run_failed,
+)
 from app.core.storage.run_store import save_run
 from app.scheduler import runner as scheduler_runner
 
@@ -251,7 +255,7 @@ def _run_graph_worker(
         cancellation_token.request(str(metadata.get("cancellation_reason") or "Run cancellation requested."))
     try:
         execute_node_system_graph_langgraph(graph, run_state, persist_progress=True)
-        _trigger_knowledge_ingestion_completed_if_needed(run_state)
+        _trigger_knowledge_ingestion_completed_if_needed(run_state, graph=graph)
         _sync_improvement_candidate_validation_run(run_state)
     except Exception as exc:  # pragma: no cover - defensive runtime path
         logger.exception("Graph run %s failed: %s", run_state.get("run_id"), exc)
@@ -268,7 +272,11 @@ def _run_graph_worker(
         unregister_run_cancellation_token(run_id)
 
 
-def _trigger_knowledge_ingestion_completed_if_needed(run_state: dict[str, Any]) -> None:
+def _trigger_knowledge_ingestion_completed_if_needed(
+    run_state: dict[str, Any],
+    *,
+    graph: NodeSystemGraphDocument | None = None,
+) -> None:
     if str(run_state.get("status") or "") != "completed":
         return
     metadata = run_state.get("metadata") if isinstance(run_state.get("metadata"), dict) else {}
@@ -279,12 +287,30 @@ def _trigger_knowledge_ingestion_completed_if_needed(run_state: dict[str, Any]) 
         return
     template_id = _compact_text(metadata.get("template_id")) or DEFAULT_TEMPLATE_ID
     try:
+        failed_tool = _first_failed_tool_output(run_state)
+        if failed_tool is not None:
+            mark_knowledge_ingestion_run_failed(
+                collection_id,
+                run_id=run_id,
+                operation_id=operation_id,
+                template_id=template_id,
+                error_type=_compact_text(failed_tool.get("error_type")) or "tool_failed",
+                error=_compact_text(failed_tool.get("error")) or "Knowledge ingestion tool failed.",
+            )
+            return
         base = mark_knowledge_ingestion_run_completed(
             collection_id,
             run_id=run_id,
             operation_id=operation_id,
             template_id=template_id,
         )
+        operation = base.get("current_operation") if isinstance(base.get("current_operation"), dict) else {}
+        if operation and operation.get("status") == "ingesting":
+            if graph is not None:
+                _start_knowledge_ingestion_continuation(graph, base, operation)
+            return
+        if operation and operation.get("status") != "embedding":
+            return
         scheduler_runner.run_event_scheduled_graph_jobs_inline(
             "knowledge.ingestion.completed",
             event={
@@ -308,3 +334,37 @@ def _sync_improvement_candidate_validation_run(run_state: dict[str, Any]) -> Non
 
 def _compact_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _first_failed_tool_output(run_state: dict[str, Any]) -> dict[str, Any] | None:
+    tool_outputs = run_state.get("tool_outputs") if isinstance(run_state.get("tool_outputs"), list) else []
+    for output in tool_outputs:
+        if isinstance(output, dict) and str(output.get("status") or "").strip().lower() == "failed":
+            return output
+    return None
+
+
+def _start_knowledge_ingestion_continuation(
+    graph: NodeSystemGraphDocument,
+    base: dict[str, Any],
+    operation: dict[str, Any],
+) -> None:
+    run_state = create_initial_run_state(
+        graph_id=graph.graph_id,
+        graph_name=graph.name,
+        max_revision_round=int(graph.metadata.get("max_revision_round", 1)),
+    )
+    run_state["runtime_backend"] = "langgraph"
+    run_state["metadata"] = {
+        **dict(graph.metadata),
+        "knowledge_collection_id": str(base.get("collection_id") or ""),
+        "knowledge_operation_id": str(operation.get("operation_id") or ""),
+        "template_id": str(base.get("template_id") or graph.metadata.get("template_id") or DEFAULT_TEMPLATE_ID),
+        "knowledge_ingestion_continuation": True,
+        "resolved_runtime_backend": "langgraph",
+    }
+    run_state["graph_snapshot"] = graph.model_dump(by_alias=True, mode="json")
+    run_state["node_status_map"] = {node_name: "idle" for node_name in graph.nodes}
+    touch_run_lifecycle(run_state)
+    save_run(run_state)
+    _run_graph_worker(graph, run_state)

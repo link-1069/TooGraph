@@ -201,6 +201,17 @@ class ScriptActionRunner:
             env["TOOGRAPH_ACTION_ARTIFACT_DIR"] = artifact_dir
         if artifact_relative_dir:
             env["TOOGRAPH_ACTION_ARTIFACT_RELATIVE_DIR"] = artifact_relative_dir
+        invocation_env = {
+            "run_id": "TOOGRAPH_ACTION_RUN_ID",
+            "node_id": "TOOGRAPH_ACTION_NODE_ID",
+            "capability_kind": "TOOGRAPH_ACTION_CAPABILITY_KIND",
+            "capability_key": "TOOGRAPH_ACTION_CAPABILITY_KEY",
+            "invocation_index": "TOOGRAPH_ACTION_INVOCATION_INDEX",
+        }
+        for context_key, env_key in invocation_env.items():
+            value = str(context.get(context_key) or "").strip()
+            if value:
+                env[env_key] = value
         cleanup_paths: list[Path] = []
         action_runtime_context = context.get("action_runtime_context")
         if isinstance(action_runtime_context, dict):

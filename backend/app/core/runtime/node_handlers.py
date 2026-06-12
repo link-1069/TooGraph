@@ -238,6 +238,8 @@ def execute_tool_node(
         },
         error=error,
     )
+    if status == "failed":
+        raise RuntimeError(f"Tool '{tool_key}' failed: {error or error_type or 'Unknown error.'}")
     return {
         "outputs": output_values,
         "selected_tools": [tool_key],
@@ -1890,7 +1892,7 @@ def _build_tool_invocation_context(
         capability_kind="tool",
     )
     context = create_capability_artifact_context(
-        run_id=str(state.get("run_id") or "run"),
+        run_id=_resolve_tool_invocation_run_id(state=state, graph_context=graph_context),
         node_id=node_name,
         capability_kind="tool",
         capability_key=tool_key,
@@ -1901,6 +1903,22 @@ def _build_tool_invocation_context(
         context["runtime_context"] = runtime_context
         context["action_runtime_context"] = runtime_context
     return context
+
+
+def _resolve_tool_invocation_run_id(*, state: dict[str, Any], graph_context: dict[str, Any] | None) -> str:
+    run_id = _compact_text(state.get("run_id"))
+    if run_id:
+        return run_id
+    if isinstance(graph_context, dict):
+        run_id = _compact_text(graph_context.get("run_id"))
+        if run_id:
+            return run_id
+        metadata = graph_context.get("metadata")
+        if isinstance(metadata, dict):
+            run_id = _compact_text(metadata.get("run_id"))
+            if run_id:
+                return run_id
+    return "run"
 
 
 def _resolve_graph_runtime_context(graph_context: dict[str, Any] | None) -> dict[str, Any]:

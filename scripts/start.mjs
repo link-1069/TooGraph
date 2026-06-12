@@ -24,6 +24,8 @@ const appBindHost = String(process.env.TOOGRAPH_HOST || process.env.HOST || "127
 const appPublicHost = String(
   process.env.TOOGRAPH_PUBLIC_HOST || (appBindHost === "0.0.0.0" || appBindHost === "::" ? "127.0.0.1" : appBindHost),
 ).trim() || "127.0.0.1";
+const serverStartupHealthRetries = 120;
+const serverStartupHealthDelayMs = 500;
 const legacyBackendPort = String(process.env.TOOGRAPH_LEGACY_BACKEND_PORT || "8765");
 const serverLogPath = resolve(rootDir, ".toograph_server.log");
 const pidPath = resolve(rootDir, ".toograph_pids.json");
@@ -804,7 +806,7 @@ async function main() {
 
   writePidState();
 
-  const serverReady = await waitForHttp(`${appBaseUrl()}/health`, 30, 500);
+  const serverReady = await waitForHttp(`${appBaseUrl()}/health`, serverStartupHealthRetries, serverStartupHealthDelayMs);
   if (!serverReady) {
     console.error(`TooGraph failed to start. Check ${serverLogPath}`);
     await printLogTail(serverLogPath);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -14,7 +15,7 @@ DEFAULT_TEMPLATE_ID = "buddy_autonomous_review"
 
 def buddy_review_source_selector(payload: dict[str, Any] | None, *, context: dict[str, Any] | None = None) -> dict[str, Any]:
     inputs = payload if isinstance(payload, dict) else {}
-    invocation_context = _dict(context)
+    invocation_context = _resolve_invocation_context(context)
     runtime_context = _dict(invocation_context.get("runtime_context"))
     mode = _text(inputs.get("mode")) or "auto_unreviewed"
     review_run_id = _text(invocation_context.get("run_id"))
@@ -168,6 +169,52 @@ def _failed(error_type: str, error: str, *, selected_source_run_id: str = "") ->
 
 
 def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _resolve_invocation_context(explicit_context: dict[str, Any] | None) -> dict[str, Any]:
+    context = dict(explicit_context) if isinstance(explicit_context, dict) else {}
+    runtime_context: dict[str, Any] = {}
+    runtime_context.update(_read_runtime_context_from_environment())
+    nested = context.get("runtime_context")
+    if isinstance(nested, dict):
+        runtime_context.update(nested)
+    action_nested = context.get("action_runtime_context")
+    if isinstance(action_nested, dict):
+        runtime_context.update(action_nested)
+    if runtime_context:
+        context["runtime_context"] = runtime_context
+        context["action_runtime_context"] = runtime_context
+    review_run_id = (
+        _text(context.get("run_id"))
+        or _text(runtime_context.get("run_id"))
+        or _text(os.environ.get("TOOGRAPH_ACTION_RUN_ID"))
+    )
+    if review_run_id:
+        context["run_id"] = review_run_id
+    return context
+
+
+def _read_runtime_context_from_environment() -> dict[str, Any]:
+    inline_context = _decode_json_object(_text(os.environ.get("TOOGRAPH_ACTION_RUNTIME_CONTEXT")))
+    if inline_context:
+        return inline_context
+    file_path = _text(os.environ.get("TOOGRAPH_ACTION_RUNTIME_CONTEXT_FILE"))
+    if not file_path:
+        return {}
+    try:
+        return _decode_json_object(Path(file_path).read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _decode_json_object(raw: str) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except Exception:
+        return {}
     return value if isinstance(value, dict) else {}
 
 

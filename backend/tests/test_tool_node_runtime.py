@@ -213,43 +213,71 @@ class ToolNodeRuntimeTests(unittest.TestCase):
             calls.append({"called": True})
             return {"status": "succeeded", "result": {"unexpected": True}}
 
-        result = node_handlers.execute_tool_node(
-            graph.state_schema,
-            node,
-            {"source": {"ok": True}},
-            {
-                "state": {"source": {"ok": True}},
-                "metadata": {
-                    "tool_runtime_fixture": {
-                        "failures": {
-                            "passthrough": {
-                                "tool_key": "json_passthrough",
-                                "error_type": "fixture_tool_timeout",
-                                "message": "fixture injected timeout",
-                                "outputs": {"result": {"fallback_required": True}},
+        with self.assertRaisesRegex(RuntimeError, "Tool 'json_passthrough' failed: fixture injected timeout"):
+            node_handlers.execute_tool_node(
+                graph.state_schema,
+                node,
+                {"source": {"ok": True}},
+                {
+                    "state": {"source": {"ok": True}},
+                    "metadata": {
+                        "tool_runtime_fixture": {
+                            "failures": {
+                                "passthrough": {
+                                    "tool_key": "json_passthrough",
+                                    "error_type": "fixture_tool_timeout",
+                                    "message": "fixture injected timeout",
+                                    "outputs": {"result": {"fallback_required": True}},
+                                }
                             }
                         }
-                    }
+                    },
                 },
-            },
-            node_name="passthrough",
-            state={"run_id": "run-1"},
-            get_tool_registry_func=lambda *, include_disabled: {"json_passthrough": object()},
-            get_tool_definition_registry_func=lambda *, include_disabled: {
-                "json_passthrough": _tool_definition("json_passthrough")
-            },
-            invoke_tool_func=run_tool,
-            record_activity_event_func=lambda state, **event: events.append(event) or event,
-        )
+                node_name="passthrough",
+                state={"run_id": "run-1"},
+                get_tool_registry_func=lambda *, include_disabled: {"json_passthrough": object()},
+                get_tool_definition_registry_func=lambda *, include_disabled: {
+                    "json_passthrough": _tool_definition("json_passthrough")
+                },
+                invoke_tool_func=run_tool,
+                record_activity_event_func=lambda state, **event: events.append(event) or event,
+            )
 
         self.assertEqual(calls, [])
-        self.assertEqual(result["outputs"], {"result": {"fallback_required": True}})
-        self.assertEqual(result["tool_outputs"][0]["status"], "failed")
-        self.assertEqual(result["tool_outputs"][0]["error"], "fixture injected timeout")
-        self.assertEqual(result["tool_outputs"][0]["error_type"], "fixture_tool_timeout")
-        self.assertNotIn("tool_runtime_fixture", result["tool_outputs"][0])
         self.assertEqual(events[0]["status"], "failed")
         self.assertEqual(events[0]["detail"]["error_type"], "fixture_tool_timeout")
+
+    def test_execute_tool_node_raises_when_tool_returns_failed_result(self) -> None:
+        graph = _tool_graph()
+        node = graph.nodes["passthrough"]
+        events: list[dict[str, Any]] = []
+
+        def run_tool(_tool_func: object, _tool_inputs: dict[str, Any], **_kwargs: Any) -> dict[str, Any]:
+            return {
+                "status": "failed",
+                "error_type": "tool_timeout",
+                "error": "Tool timed out.",
+                "result": {"partial": True},
+            }
+
+        with self.assertRaisesRegex(RuntimeError, "Tool 'json_passthrough' failed: Tool timed out."):
+            node_handlers.execute_tool_node(
+                graph.state_schema,
+                node,
+                {"source": {"ok": True}},
+                {"state": {"source": {"ok": True}}},
+                node_name="passthrough",
+                state={"run_id": "run-1"},
+                get_tool_registry_func=lambda *, include_disabled: {"json_passthrough": object()},
+                get_tool_definition_registry_func=lambda *, include_disabled: {
+                    "json_passthrough": _tool_definition("json_passthrough")
+                },
+                invoke_tool_func=run_tool,
+                record_activity_event_func=lambda state, **event: events.append(event) or event,
+            )
+
+        self.assertEqual(events[0]["status"], "failed")
+        self.assertEqual(events[0]["detail"]["error_type"], "tool_timeout")
 
     def test_execute_dynamic_state_tool_receives_read_states_as_context_items(self) -> None:
         graph = NodeSystemGraphDocument.model_validate(

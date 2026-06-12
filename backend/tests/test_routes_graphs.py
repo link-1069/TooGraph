@@ -74,6 +74,44 @@ class GraphRoutesWorkerTests(unittest.TestCase):
             requested_by="knowledge_ingestion_completed",
         )
 
+    def test_completed_graph_with_failed_tool_marks_knowledge_ingestion_failed_without_embedding_event(self) -> None:
+        run_state = {
+            "run_id": "run_failed_ingestion",
+            "status": "completed",
+            "metadata": {
+                "knowledge_collection_id": "xian_policy",
+                "knowledge_operation_id": "kop_policy",
+                "template_id": "knowledge_folder_retrieval_ingestion",
+            },
+            "tool_outputs": [
+                {
+                    "node_id": "normalize_knowledge_folder",
+                    "tool_key": "knowledge_folder_normalizer",
+                    "status": "failed",
+                    "error_type": "max_files_exceeded",
+                    "error": "Selected too many files.",
+                }
+            ],
+        }
+
+        with (
+            patch("app.api.routes_graphs.mark_knowledge_ingestion_run_completed") as mark_completed,
+            patch("app.api.routes_graphs.mark_knowledge_ingestion_run_failed") as mark_failed,
+            patch("app.api.routes_graphs.scheduler_runner.run_event_scheduled_graph_jobs_inline") as run_event_jobs,
+        ):
+            routes_graphs._trigger_knowledge_ingestion_completed_if_needed(run_state)
+
+        mark_completed.assert_not_called()
+        mark_failed.assert_called_once_with(
+            "xian_policy",
+            run_id="run_failed_ingestion",
+            operation_id="kop_policy",
+            template_id="knowledge_folder_retrieval_ingestion",
+            error_type="max_files_exceeded",
+            error="Selected too many files.",
+        )
+        run_event_jobs.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
